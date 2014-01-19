@@ -1,0 +1,146 @@
+$Id: TREMULA,v 0.2 2003/08/03 07:44:02 kellogg Exp kellogg $
+
+TREe design Meta rULes for Ada
+
+In principle, the tree structure closely follows the RM grammar,
+except where good reasons suggest not to.
+
+- Most of the RM rules are mirrored here, both as rules and as tree
+  nodes. For an explanation of which rules are not mirrored, see
+  the next paragraph.
+  Rule names are given in lowercase letters.
+  Node types are given in uppercase letters.
+  Node types named after RM grammar rules represent the corresponding
+  items of the RM.
+  Node types not named after RM grammar rules are auxiliary nodes.
+  The main purpose of such nodes is to normalize the node structure.
+  (For an index of all node types implemented, see the second and
+  third part of the "tokens" section of the AdaLexer in ada.g.)
+
+- Only a few RM grammar rules are not mirrored, namely those which
+  are trivially reconstructed from finer grained rules/nodes.
+  An example of such are the simple_statement and compound_statement
+  rules/nodes which are trivially reconstructed from the individual
+  statement nodes.
+  The reason for omitting this kind of nodes is to avoid burdening
+  the tree with "pass-thru" nodes that offer very little added value.
+
+- Additionally, optional items in the RM grammar (i.e. the parts
+  enclosed in square brackets) have their own rules, and also their
+  own nodes in the tree. The rule name ends in _opt. The node type
+  ends in _OPT, except for the MODIFIERS node which accomodates all
+  the possible modifiers: ABSTRACT, ACCESS, ALIASED, ALL, CONSTANT,
+  IN, LIMITED, OUT, PRIVATE, PROTECTED, REVERSE, TAGGED, UNTIL, and
+  legal combinations thereof.
+  Subsequent optional items, be they nested or in series, are mapped
+  to a single options node.
+
+- Tree Design Formula:
+  To go from an RM rule to the tree, prune the RM rule of terminals.
+  The items that remain after this pruning have a direct correspondence
+  in the tree node, with the abovementioned augmentation of optional
+  items applying.  The sequence of items is preserved in the node.
+  The only syntactic items not mirrored in the tree are:
+  1. The "END [identifier]" at the end of Ada units et al.
+     The optional identifier, if given, is checked to match with the
+     corresponding defining_identifier at the start of the unit during
+     parsing, but the END keyword and the ending identifier do not
+     enter the tree.
+  2. The ending semicolon of all statements/declarations.
+
+Here is an example for the mapping from RM grammar to the ANTLR rule,
+and to the Abstract Syntax Tree.
+
+  RM grammar rule:
+     block_statement ::= [block_statement_identifier:]
+        [ DECLARE
+             declarative_part ]
+        BEGIN
+           handled_sequence_of_statements
+        END [block_identifier];
+
+  Corresponding ANTLR rule:
+     block_statement
+  Direct subordinate rules invoked by block_statement:
+     statement_identifier_opt
+        Handles the "[block_statement_identifier:]".
+        This is a node of type STATEMENT_IDENTIFIER_OPT which is
+        always present, but whose contents may be empty because the
+        block_statement_identifier is optional. The ending colon
+        does not appear in the node.
+     declare_opt
+        Handles the "[ DECLARE declarative_part ]".
+        This is a node of type DECLARE_OPT which is always present,
+        but whose contents may be empty because the "DECLARE
+        declarative_part" is optional.
+        The DECLARE keyword does not appear in the node.
+     block_body
+        Handles the "BEGIN handled_sequence_of_statements".
+        Returns a node of type HANDLED_SEQUENCE_OF_STATEMENTS.
+        The BEGIN keyword does not appear in the node.
+     end_id_opt
+        Handles the "END [block_identifier]".
+        Checks that the block_identifier matches the
+        block_statement_identifier given at the beginning.
+        However, no node is constructed.
+     semi
+        Handles the ending semicolon.
+        No node is constructed.
+     Note: The existence of the last three rules (block_body, end_id_opt,
+     and semi) does not directly follow from the Tree Design Formula
+     given above.  In fact, those three rules could be inlined into
+     the block_statement rule without ripple.  It just so happens that
+     these rules can be reused in a number of other rules.
+     Thus, the Tree Design Formula is extended as follows:
+  - If a subset of a rule is found to occur in more than one place
+    within the grammar, then this subset is factored into a separate
+    rule.  The new rule is "synthetic" in that it does not appear in
+    the RM grammar.  There may also exist a node type that corresponds
+    to the synthetic rule.  However, the design decision about whether
+    or not such a node exists is not yet formalized. @@FIXME
+
+  AST node:  type = BLOCK_STATEMENT
+     Subordinate nodes:
+        STATEMENT_IDENTIFIER_OPT
+        DECLARE_OPT
+        HANDLED_SEQUENCE_OF_STATEMENTS
+
+==
+Applying the Tree Design Formula to the Ada grammar has worked out
+fine - with the following exceptions:
+
+1. derived_type_definition
+   The derived_type_definition rule does not exclude the following:
+
+      TYPE child IS ABSTRACT NEW parent;
+
+   which of course is not valid Ada. In order to maintain a clean
+   node design, the derived_type_definition is split into two
+   rules/nodes, namely ordinary_derived_type and
+   derived_record_extension (rules) resp. ORDINARY_DERIVED_TYPE
+   and DERIVED_RECORD_EXTENSION (nodes).
+
+2. Mentions of PROCEDURE and FUNCTION
+   The Annex P grammar always lumps together mentions of PROCEDURE
+   and FUNCTION in a single rule.  (The rules are:
+   subprogram_specification, access_to_subprogram_definition,
+   generic_renaming_declaration, generic_instantiation.)
+   However, this is not fine grained enough, i.e. applying the Tree
+   Design Formula it is not possible to discard the terminals,
+   PROCEDURE and FUNCTION, to arrive at the node structure.
+   This problem is solved by specializing the RM rules to contain the
+   distinction.
+   Example: The single RM rule `subprogram_body' is split into two nodes:
+   PROCEDURE_BODY and FUNCTION_BODY.
+
+3. generic_instantiation
+   The Annex P grammar has only one rule, generic_instantiation, for a
+   package, procedure, or function instantiation. In order not to lose
+   this information, the PACKAGE, PROCEDURE, or FUNCTION distinction must
+   be promoted into the GENERIC_INSTANTIATION node, similar as in 2.
+
+4. The type_definition rules used by the full_type_declaration rule are
+   reflected as _DECLARATION nodes in the tree. This is for economy -
+   a definition can be turned into a declaration by simply adding the
+   defining_identifier.
+

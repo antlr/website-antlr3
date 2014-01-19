@@ -1,0 +1,286 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Changes for stream offset determination
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Changes%20for%20stream%20offset%20determination&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="014120.html">
+   <LINK REL="Next"  HREF="014126.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Changes for stream offset determination</H1>
+    <B>Jim Crafton</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Changes%20for%20stream%20offset%20determination&In-Reply-To="
+       TITLE="[antlr-interest] Changes for stream offset determination">jim.crafton at gmail.com
+       </A><BR>
+    <I>Wed Oct 26 16:53:12 PDT 2005</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="014120.html">[antlr-interest] ASTPair handling in C# runtime for 2.7.6
+</A></li>
+        <LI>Next message: <A HREF="014126.html">[antlr-interest] Re: antlr-interest Digest, Vol 11, Issue 48
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#14121">[ date ]</a>
+              <a href="thread.html#14121">[ thread ]</a>
+              <a href="subject.html#14121">[ subject ]</a>
+              <a href="author.html#14121">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Here are the changes I made to allow a custom AST node to determine
+the current offset of the lexer.
+
+In CharScanner.hpp, class antlr::CharScanner
+
+protected:
+unsigned int offset_;
+
+public:
+  unsigned int offset() const {
+    return offset_;
+  }
+
+
+	virtual void consume()
+	{
+		if (inputState-&gt;guessing == 0)
+		{
+			int c = LA(1);
+			if (caseSensitive)
+			{
+				append(c);
+			}
+			else
+			{
+				// use input.LA(), not LA(), to get original case
+				// CharScanner.LA() would toLower it.
+				append(inputState-&gt;getInput().LA(1));
+			}
+//*************************************************************
+			offset_ ++;
+//*************************************************************
+
+			// RK: in a sense I don't like this automatic handling.
+			if (c == '\t')
+				tab();
+			else
+				inputState-&gt;column++;
+		}
+		inputState-&gt;getInput().consume();
+	}
+
+I increment the offset_ member in the consume() method.
+
+
+In CharScanner.cpp
+
+CharScanner::CharScanner(InputBuffer&amp; cb, bool case_sensitive )
+	: saveConsumedInput(true) //, caseSensitiveLiterals(true)
+	, offset_(0) &lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;-------I added initializer for offset to 0
+	, caseSensitive(case_sensitive)
+	, literals(CharScannerLiteralsLess(this))
+	, inputState(new LexerInputState(cb))
+	, commitToPath(false)
+	, tabsize(8)
+	, traceDepth(0)
+{
+	setTokenObjectFactory(&amp;CommonToken::factory);
+}
+
+CharScanner::CharScanner(InputBuffer* cb, bool case_sensitive )
+	: saveConsumedInput(true) //, caseSensitiveLiterals(true)
+	, offset_(0) &lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;-------I added initializer for offset to 0
+	, caseSensitive(case_sensitive)
+	, literals(CharScannerLiteralsLess(this))
+	, inputState(new LexerInputState(cb))
+	, commitToPath(false)
+	, tabsize(8)
+	, traceDepth(0)
+{
+	setTokenObjectFactory(&amp;CommonToken::factory);
+}
+
+CharScanner::CharScanner( const LexerSharedInputState&amp; state, bool
+case_sensitive )
+	: saveConsumedInput(true) //, caseSensitiveLiterals(true)
+	, offset_(0) &lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;-------I added initializer for offset to 0
+	, caseSensitive(case_sensitive)
+	, literals(CharScannerLiteralsLess(this))
+	, inputState(state)
+	, commitToPath(false)
+	, tabsize(8)
+	, traceDepth(0)
+{
+	setTokenObjectFactory(&amp;CommonToken::factory);
+}
+
+
+In Token.hpp, class antlr::Token
+
+public:
+virtual void setOffset( unsigned int offset ){
+
+}
+
+virtual unsigned int getOffset() const{
+   return 0;
+}
+
+
+In CommonToken.hpp class antlr::CommonToken
+
+protected:
+unsigned int offset_;
+
+public:
+virtual void setOffset( unsigned int offset ) {
+	offset_ = offset;
+}
+
+virtual unsigned int getOffset() const {
+	return offset_;
+}
+
+
+
+In CommonToken.cpp
+
+CommonToken::CommonToken() : Token(), line(1), col(1), offset_(0), text(&quot;&quot;)
+{}
+
+CommonToken::CommonToken(int t, const ANTLR_USE_NAMESPACE(std)string&amp; txt)
+:<i> Token(t)
+</I>, line(1)
+, col(1)
+,offset_(0)
+, text(txt)
+{}
+
+CommonToken::CommonToken(const ANTLR_USE_NAMESPACE(std)string&amp; s)
+:<i> Token()
+</I>, line(1)
+, col(1)
+, offset_(0)
+, text(s)
+{}
+
+
+Note that the offset_ member is initialized to 0.
+
+Then in my custom AST class I do something like this:
+
+
+class CppASTNode : public CommonAST {
+public:
+
+	CppASTNode(): line_(0), column_(0), offset_(0) {}
+
+
+	CppASTNode( antlr::RefToken t ): line_(0), column_(0), offset_(0) {
+		CommonAST::setType(t-&gt;getType() );
+		CommonAST::setText(t-&gt;getText() );
+
+		line_ = t-&gt;getLine();
+		column_ = t-&gt;getColumn();
+		offset_ = t-&gt;getOffset() - t-&gt;getText().size();
+	}
+
+	void initialize(int t, const std::string&amp; txt) {
+		CommonAST::setType(t);
+		CommonAST::setText(txt);
+
+		line_ = 0; // to be noticed !
+		column_ = 0;
+    }
+
+	void initialize( RefCppASTNode t ) {
+        CommonAST::setType(t-&gt;getType() );
+		CommonAST::setText(t-&gt;getText() );
+
+		line_ = t-&gt;line_;
+		column_ = t-&gt;column_;
+
+		offset_ = t-&gt;offset_;
+    }
+
+	void initialize( RefAST t ) {
+        CommonAST::initialize(t);
+    }
+
+	void initialize( antlr::RefToken t )  {
+        CommonAST::initialize(t);
+
+		line_ = t-&gt;getLine();
+		column_ = t-&gt;getColumn();
+		offset_ = t-&gt;getOffset() - t-&gt;getText().size();
+    }
+
+	void setText(const std::string&amp; txt) {
+		CommonAST::setText(txt);
+	}
+
+	void setType(int type) {
+		CommonAST::setType(type);
+	}
+
+	static antlr::RefAST factory( void ) {		
+		antlr::RefAST ret =
+			static_cast&lt;antlr::RefAST&gt;(RefCppASTNode(new CppASTNode()));	
+		
+		return ret;
+	}
+
+	int getLineNumber() const {
+		return line_;
+	}
+
+	int getColumnNumber() const {
+		return column_;
+	}
+
+	unsigned int getOffset() const {
+		return offset_;
+	}
+protected:
+	int line_;
+	int column_;
+	unsigned int offset_;
+};
+
+
+Cheers, and hope this proves useful to others.
+
+Jim
+</PRE>
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="014120.html">[antlr-interest] ASTPair handling in C# runtime for 2.7.6
+</A></li>
+	<LI>Next message: <A HREF="014126.html">[antlr-interest] Re: antlr-interest Digest, Vol 11, Issue 48
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#14121">[ date ]</a>
+              <a href="thread.html#14121">[ thread ]</a>
+              <a href="subject.html#14121">[ subject ]</a>
+              <a href="author.html#14121">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

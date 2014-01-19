@@ -1,0 +1,250 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [stringtemplate-interest] IAttributeRenderer and Type	Inheritance in C#
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20IAttributeRenderer%20and%20Type%0A%09Inheritance%20in%20C%23&In-Reply-To=%3CDD5A5D428FE040429CCDF377FAA892840152DDF7%40martini.ironwillgames.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002337.html">
+   <LINK REL="Next"  HREF="002339.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[stringtemplate-interest] IAttributeRenderer and Type	Inheritance in C#</H1>
+    <B>Sam Harwell</B> 
+    <A HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20IAttributeRenderer%20and%20Type%0A%09Inheritance%20in%20C%23&In-Reply-To=%3CDD5A5D428FE040429CCDF377FAA892840152DDF7%40martini.ironwillgames.com%3E"
+       TITLE="[stringtemplate-interest] IAttributeRenderer and Type	Inheritance in C#">sharwell at pixelminegames.com
+       </A><BR>
+    <I>Fri Oct 23 18:52:30 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002337.html">[stringtemplate-interest] IAttributeRenderer	and	Type	Inheritancein C#
+</A></li>
+        <LI>Next message: <A HREF="002339.html">[stringtemplate-interest] IAttributeRenderer and Type	Inheritance in C#
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2338">[ date ]</a>
+              <a href="thread.html#2338">[ thread ]</a>
+              <a href="subject.html#2338">[ subject ]</a>
+              <a href="author.html#2338">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>This semi-solves one problem, but doesn&#8217;t address another at all. What if you want to add a renderer for &#8220;[non-interface] type X and all types derived from X&#8221;? Also, it still doesn&#8217;t address the performance issue of the feature itself. Below is one way it could be implemented without changing the public interface.
+
+ 
+
+Covered:
+
+&#183;         Performance when the feature is not in use
+
+&#183;         Registering renderers for interface type
+
+Not covered:
+
+&#183;         Performance implication when a renderer is registered for an interface type
+
+&#183;         Registering renderers for a base type and having it also apply to derived types
+
+ 
+
+ 
+
+    public virtual void RegisterRenderer( Type attributeClassType, IAttributeRenderer renderer )
+
+    {
+
+        Dictionary&lt;Type, IAttributeRenderer&gt; renderers;
+
+        // renderers for interface types are kept separately due to their performance implications
+
+        if (!attributeClassType.IsInterface)
+
+        {
+
+            if (_attributeRenderers == null)
+
+                _attributeRenderers = new Dictionary&lt;Type, IAttributeRenderer&gt;();
+
+ 
+
+            renderers = _attributeRenderers;
+
+        }
+
+        else
+
+        {
+
+            if (_interfaceRenderers == null)
+
+                _interfaceRenderers = new Dictionary&lt;Type, IAttributeRenderer&gt;();
+
+ 
+
+            renderers = _interfaceRenderers;
+
+        }
+
+ 
+
+        renderers[attributeClassType] = renderer;
+
+    }
+
+ 
+
+    public virtual IAttributeRenderer GetAttributeRenderer( Type attributeClassType )
+
+    {
+
+        IAttributeRenderer renderer = null;
+
+        if ( _attributeRenderers != null )
+
+        {
+
+            if ( !_attributeRenderers.TryGetValue( attributeClassType, out renderer ) )
+
+                renderer = null;
+
+        }
+
+ 
+
+        // Only need to perform the expensive interface checks if the user registered a renderer for an interface type
+
+        if (renderer == null &amp;&amp; _interfaceRenderers != null)
+
+        {
+
+            renderer = _interfaceRenderers.FirstOrDefault(pair =&gt; pair.Key.IsAssignableFrom(attributeClassType)).Value;
+
+        }
+
+ 
+
+        if ( renderer != null )
+
+        {
+
+            // found it!
+
+            return renderer;
+
+        }
+
+ 
+
+        // we have no renderer overrides for the template or none for class arg
+
+        // check parent template if we are embedded
+
+        if ( _enclosingInstance != null )
+
+        {
+
+            return _enclosingInstance.GetAttributeRenderer( attributeClassType );
+
+        }
+
+        // else check group
+
+        return _group.GetAttributeRenderer( attributeClassType );
+
+    }
+
+ 
+
+ 
+
+From: <A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">stringtemplate-interest-bounces at antlr.org</A> [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">stringtemplate-interest-bounces at antlr.org</A>] On Behalf Of Jonathan Buhacoff
+Sent: Friday, October 23, 2009 6:55 PM
+To: StringTemplate Mailing List
+Subject: Re: [stringtemplate-interest] IAttributeRendererand Type Inheritancein C#
+
+ 
+
+Hi Sam,
+
+ 
+
+My last suggestion solves the performance and priority issues:
+
+ 
+
+A separate method for setting a list of interface renderers  
+
+ 
+
+Something like:  public void setRenderers(List&lt;AttributeRenderer&gt; renderers)
+
+ 
+
+Then in StringTemplate this list of renderers would be checked only if a class renderer wasnt found.
+
+ 
+
+Performance issues would then only affect people using this feature.
+
+ 
+
+ 
+
+ 
+
+ 
+
+
+Sent from my iPhone
+
+
+On Oct 22, 2009, at 9:10 PM, &quot;Sam Harwell&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">sharwell at pixelminegames.com</A>&gt; wrote:
+
+	Hi Vincent and Jonathan,
+
+	 
+
+	I can&#8217;t tell who said what here due to the way your editors formatted the text. I thought about a possible solution to the performance problems I mentioned, but I don&#8217;t think it will be viable. I thought about always caching the results of the lookup, so object interfaces would only need to be checked the first time a type was used in a template. Unfortunately, due to the way templates inherit attribute renderers, several problems emerge:
+
+	 
+
+	1.       Caching the renderers would result in a copy of all type-&gt;renderer maps in every template, incurring both a space and time overhead.
+
+	2.       Caching the renderers would break the attribute renderer inheritance scheme.
+
+	3.       Not caching the renderers would mean checking all interface base types and interfaces while walking up the template inheritance chain. This would be a more substantial hit than GetAttribute, likely more than doubling the time required to render templates. I&#8217;ll profile this to make sure, but if my analysis proves correct the feature will have to be completely reengineered before we could talk about incorporating it into the library.
+
+	 
+
+	Sam
+
+	 
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/stringtemplate-interest/attachments/20091023/bdbc3757/attachment-0001.html">http://www.antlr.org/pipermail/stringtemplate-interest/attachments/20091023/bdbc3757/attachment-0001.html</A> 
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002337.html">[stringtemplate-interest] IAttributeRenderer	and	Type	Inheritancein C#
+</A></li>
+	<LI>Next message: <A HREF="002339.html">[stringtemplate-interest] IAttributeRenderer and Type	Inheritance in C#
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2338">[ date ]</a>
+              <a href="thread.html#2338">[ thread ]</a>
+              <a href="subject.html#2338">[ subject ]</a>
+              <a href="author.html#2338">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">More information about the stringtemplate-interest
+mailing list</a><br>
+</body></html>

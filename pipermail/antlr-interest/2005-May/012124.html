@@ -1,0 +1,155 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Using a Parser as a TokenFilter
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Using%20a%20Parser%20as%20a%20TokenFilter&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="012123.html">
+   <LINK REL="Next"  HREF="012138.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Using a Parser as a TokenFilter</H1>
+    <B>Chris Black</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Using%20a%20Parser%20as%20a%20TokenFilter&In-Reply-To="
+       TITLE="[antlr-interest] Using a Parser as a TokenFilter">chris at lotuscat.com
+       </A><BR>
+    <I>Wed May 11 11:06:50 PDT 2005</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="012123.html">[antlr-interest] Thanks
+</A></li>
+        <LI>Next message: <A HREF="012138.html">[antlr-interest] Using a Parser as a TokenFilter
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#12124">[ date ]</a>
+              <a href="thread.html#12124">[ thread ]</a>
+              <a href="subject.html#12124">[ subject ]</a>
+              <a href="author.html#12124">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I'm trying to accomplish some token filtering by following Monty's 
+document <A HREF="http://www.codetransform.com/filterexample.html">http://www.codetransform.com/filterexample.html</A> but am running 
+into a few problems. This is related to the previous thread about 
+detecting transitions in stanza-based files. Initially I thought the 
+TokenStreamRewriteFilter would be a good base class, but it turns out 
+that it doesn't implement TokenStream and is instead for spitting actual 
+text back out.
+
+The goal is to insert imaginary tokens to help the downline parser in 
+some cases (when I see short lines) and remove some tokens in other 
+cases. I thought this would be relatively easy but I think I'm missing 
+something.
+
+To start I'm just trying to do the killing of extra commas at the end of 
+the line thing, I have something like what is at the end of this 
+message. Not only does this give me a stack overflow error when it 
+actually does encounter extra commas, but it also seems to cause an 
+&quot;unexpected token: null&quot; error in the downline parser in other cases, 
+even after adding an EOF at the end of the main rule. After 
+building/running with -trace, I think this may have something to do with 
+the lookahead being filled with nulls.
+
+At this point I feel like I'm missing something fundamental because I've 
+been trying to get this filter idea to work for hours. Does anyone have 
+a working example or any pointers?
+
+Chris
+
+PS Sorry for the mess, I had tried to have a special endOfLine rule but 
+I don't think that will work since there would be nondeterminism and no 
+way to detect the transition from line body to the last three tokens 
+that I know of. In regex I could anchor this to the end of the line. I 
+looked at mark/rewind but haven't figured out the proper way to do this. 
+But at this point that is the least of my problems :)
+
+// filter to change lines like &quot;foo,bar,baz,,,,,,,,&quot; into &quot;foo,bar,baz,&quot;
+    public void consume() {
+        try {
+          if(LA(1) == DELIM &amp;&amp; LA(2) == DELIM &amp;&amp; LA(3) == DELIM) {
+              //System.out.println(&quot;skipping extra commas&quot;);
+              //System.out.flush();
+              queue.append(LT(1)); consumeUntil(NEWLINE);
+          } else {
+              queue.append(LT(1));
+          }
+          super.consume();
+        } catch(TokenStreamException e) {
+            System.err.println(&quot;error in consume&quot;);
+            System.err.println(e);
+            e.printStackTrace();
+        }
+    }
+   
+    public Token nextToken() throws TokenStreamException {
+        Token ret;
+        if(queue.length() &lt;= 0) {
+            try {
+                line();
+            } catch(RecognitionException e) { ; }
+            catch(TokenStreamException e) { ; }
+        }
+        if(queue.length() &gt; 0) {
+            ret = queue.elementAt(0);
+            queue.removeFirst();
+            return ret;
+        }
+        System.out.println(&quot;no more queue, returning EOF&quot;);
+        return new Token(Token.EOF_TYPE,&quot;&quot;);
+    }
+}
+
+line:
+    (NEWLINE) =&gt; emptyLine
+    | ((FIELD | DELIM)+ NEWLINE) =&gt; contentLine
+    ;
+
+emptyLine: NEWLINE ;
+
+contentLine: (FIELD | DELIM)+ NEWLINE ;
+//contentLine: (FIELD | DELIM)+ endOfLine ;
+
+endOfLine:
+    (DELIM FIELD NEWLINE) =&gt; fieldNewlineEOL
+    | (FIELD DELIM NEWLINE) =&gt; fieldDelimNewlineEOL
+    | (DELIM DELIM NEWLINE) =&gt; extraDelimsEOL
+    ;
+   
+fieldNewlineEOL: DELIM FIELD NEWLINE ;
+
+fieldDelimNewlineEOL: FIELD DELIM NEWLINE ;
+
+extraDelimsEOL: DELIM (DELIM!)+ NEWLINE ;
+</PRE>
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="012123.html">[antlr-interest] Thanks
+</A></li>
+	<LI>Next message: <A HREF="012138.html">[antlr-interest] Using a Parser as a TokenFilter
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#12124">[ date ]</a>
+              <a href="thread.html#12124">[ thread ]</a>
+              <a href="subject.html#12124">[ subject ]</a>
+              <a href="author.html#12124">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,186 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] ANTLR performance
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20ANTLR%20performance&In-Reply-To=%3C66cce1fb0901160608i71ca9ecyb2bc24fc65c4f9d8%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="032345.html">
+   <LINK REL="Next"  HREF="032355.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] ANTLR performance</H1>
+    <B>Jan Obdr&#382;&#225;lek</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20ANTLR%20performance&In-Reply-To=%3C66cce1fb0901160608i71ca9ecyb2bc24fc65c4f9d8%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] ANTLR performance">obdrzalek at gmail.com
+       </A><BR>
+    <I>Fri Jan 16 06:08:02 PST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="032345.html">[antlr-interest] ANTLR performance
+</A></li>
+        <LI>Next message: <A HREF="032355.html">[antlr-interest] ANTLR performance
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#32353">[ date ]</a>
+              <a href="thread.html#32353">[ thread ]</a>
+              <a href="subject.html#32353">[ subject ]</a>
+              <a href="author.html#32353">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello,
+
+thank you very much for your help. Here are the answers.
+
+&gt;<i> 1) Did you you tune the token and tree node allocation pool to reflect
+</I>&gt;<i> something like the number of tokens you might expect (this really just
+</I>&gt;<i> small, large) the default is usually good for most things. This grammar is
+</I>&gt;<i> creating 909856 tree nodes according to your stats and this does not seem
+</I>&gt;<i> quite right but possibly is - if it is then you need to change the
+</I>&gt;<i> allocation pools to be much bigger, in which case the algorithm will make
+</I>&gt;<i> far less. Have you by chance turned on output=AST but not shaped the tree in
+</I>&gt;<i> anyway, resulting in a flat tree that must be rewritten all the time? The
+</I>&gt;<i> other possibility is the tree building mechanism - currently the way that
+</I>&gt;<i> the code is generated is not optimal, even though the runtime mechanisms are
+</I>&gt;<i> - we do a lot of stream rewriting which isn;t strictly speaking necessary
+</I>&gt;<i> and the gcc compiler won't be doing this.
+</I>
+The grammar generates a pretty standard AST tree (definitely not a
+flat one). Turning off the tree-building mechanism made all the
+difference - it saved about 80% of the running time. Being on par with
+gcc here (although we still need to remember that gcc does a full
+compilation) is quite a nice result for a generated parser.
+
+&lt;&lt;&lt;
+~/tmp/test$ time ./parser
+Reading a.c
+
+real    0m0.481s
+user    0m0.360s
+sys     0m0.108s
+&gt;&gt;&gt;<i>
+</I>
+The problem is I need the AST :(
+
+&gt;<i> 2) You don't say whether you are doing anything in the grammar, such as
+</I>&gt;<i> accessing text and so on - you have to take out any action code to see what
+</I>&gt;<i> the actual baseline is for the parser. For instance accessing token text is
+</I>&gt;<i> a convenience function and you would not use it in a compiler that requires
+</I>&gt;<i> speed;
+</I>
+There is no action code except for handling typedefs. This is not a problem.
+
+&gt;<i> 3) As per the examples, when you know that the input stream is 8 bit or 16
+</I>&gt;<i> bit, you can set a macro in your grammar such that it traverses the input
+</I>&gt;<i> stream directly using pointers and not via function calls. Did you turn this
+</I>&gt;<i> on.
+</I>
+I tried
+
+@lexer::header{
+#define ANTLR3_INLINE_INPUT_ASCII
+}
+
+This actually makes the parser a tiny bit slower than without the #define.
+
+&gt;<i> 4) I would need to see your grammar rather than a gprof (BTW - use
+</I>&gt;<i> kcachegrind for better views of this). Realistically, the gcc compiler has
+</I>&gt;<i> been worked on for years and is hand crafted, whereas if your grammar has
+</I>&gt;<i> predicates or other inefficient methodology, it isn't much of a comparison.
+</I>&gt;<i> It may not be so much that ANTLR generates slower code as that the grammar
+</I>&gt;<i> could be better, but there is no way to know without your grammar to look at
+</I>&gt;<i> (which I would like to see before looking further).
+</I>
+Thanks for suggesting kcachegrind. It is much better than gprof :) I
+do not think valgrind existed the last time I did any serious
+programming in plain C ... My only complaint is the cycle detection.
+Having &lt;cycle1&gt; accounting for most of the time is not what I really
+want. However if I skip cycle detection, kcachegring grabs 100% of one
+CPU core and keeps crunching ...
+
+The profiling info in kcachegring after turning off the tree-building
+seems to be about what I expected. To give you the idea:
+20.6% (inclusive time) mTokens[called 255 744 times] - this is the lexer part
+12% (inclusive time) antlr3dfapredict  - that's not too bad. I can
+definitely decrease this significantly.
+12% (inclusive time) isTypeName [called 21 800 times] - this function
+checks whether the given identifier is a type name or not. It calls ~3
+800 000 times strcmp (4.13%) That can also be improved.
+
+&gt;<i> 5) Are you taking out the time spent reading the file? Are you reading the
+</I>&gt;<i> file into memory the same way that gcc does it?
+</I>
+No, I'm not. This is what I do:
+
+input = antlr3AsciiFileStreamNew(fName);
+       lxr = GNUCaLexerNew(input);
+       tstream = antlr3CommonTokenStreamSourceNew(ANTLR3_SIZE_HINT,
+TOKENSOURCE(lxr));
+       psr = GNUCaParserNew(tstream);
+       psr-&gt;translationUnit(psr);
+
+I can
+
+&gt;<i> 6) I presume that this is the latest 3.1.1 C runtime?
+</I>
+yep
+
+&gt;<i> At the end of the day though it is difficult to compete against hand crafted
+</I>&gt;<i> C code that has had a lot of effort put into optimizing it :-).
+</I>
+Sure, I'm not expecting miracles :) That time without the
+tree-building seems reasonable to me.
+
+&gt;<i> Publish your grammars so I can take a look at this.
+</I>
+Sure, the grammar will be published soon under GPL. It just needs some clean-up.
+
+To sum up - the main culprit is the tree-building mechanism. Other
+than that the performance of the generated parser is quite reasonable.
+The problem is that tree-building/rewriting capabilities of ANTLR are
+the main reason why we use ANTLR. Second - I need (or would prefer) a
+fast Java target. Java does not have to be much slower than C. If Java
+is that much slower, we will probably end up using C target for the
+parser and then translating the AST into a Java structure ... I will
+turn off the tree-building in Java and see what happens.
+
+Once again, thanks to everybody for their suggestions!
+
+Regards,
+Jan
+
+--
+Dr. Jan Obdr&#382;&#225;lek &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">obdrzalek at fi.muni.cz</A>&gt;
+Faculty of Informatics, Masaryk University, Brno, Czech Republic
+</PRE>
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="032345.html">[antlr-interest] ANTLR performance
+</A></li>
+	<LI>Next message: <A HREF="032355.html">[antlr-interest] ANTLR performance
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#32353">[ date ]</a>
+              <a href="thread.html#32353">[ thread ]</a>
+              <a href="subject.html#32353">[ subject ]</a>
+              <a href="author.html#32353">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

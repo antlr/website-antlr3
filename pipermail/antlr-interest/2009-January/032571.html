@@ -1,0 +1,153 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] A lost label?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20A%20lost%20label%3F&In-Reply-To=%3C497BD06A.70406%40temporal-wave.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="032570.html">
+   <LINK REL="Next"  HREF="032573.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] A lost label?</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20A%20lost%20label%3F&In-Reply-To=%3C497BD06A.70406%40temporal-wave.com%3E"
+       TITLE="[antlr-interest] A lost label?">jimi at temporal-wave.com
+       </A><BR>
+    <I>Sat Jan 24 18:37:30 PST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="032570.html">[antlr-interest] A lost label?
+</A></li>
+        <LI>Next message: <A HREF="032573.html">[antlr-interest] Accessing the input stream from	displayRecognitionError
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#32571">[ date ]</a>
+              <a href="thread.html#32571">[ thread ]</a>
+              <a href="subject.html#32571">[ subject ]</a>
+              <a href="author.html#32571">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Markus Stoeger wrote:
+&gt;<i> I ran into a nasty &quot;ArgumentNullException&quot; problem with the following 
+</I>&gt;<i> rule today:
+</I>&gt;<i>
+</I>&gt;<i> label returns [string name]
+</I>&gt;<i>     : x=unsignedInt {$name = $x.text;}
+</I>&gt;<i>     | x=identifier {$name = $x.text;}
+</I>&gt;<i>     ;
+</I>&gt;<i>
+</I>&gt;<i> The generated code (CSharp2) for this rule is below. For some reason 
+</I>&gt;<i> ANTLR doesn't assign the label x in the first alternative which results 
+</I>&gt;<i> in &quot;name&quot; being null all the time:
+</I>&gt;<i>
+</I>&gt;<i> case 1 : {
+</I>&gt;<i>         unsignedInt(); // missing assignment to label x!
+</I>&gt;<i>         name =  ((x != null) ? 
+</I>&gt;<i> input.ToString((IToken)(x.Start),(IToken)(x.Stop)) : null);
+</I>&gt;<i>         break;
+</I>&gt;<i>     }
+</I>&gt;<i> case 2 : {
+</I>&gt;<i>         x = identifier();
+</I>&gt;<i>         name =  ((x != null) ? 
+</I>&gt;<i> input.ToString((IToken)(x.Start),(IToken)(x.Stop)) : null);
+</I>&gt;<i>         break;
+</I>&gt;<i>     }
+</I>&gt;<i>
+</I>&gt;<i> If I call one label x and the other one y it works fine (both get assigned).
+</I>&gt;<i>
+</I>&gt;<i> Shouldn't it be possible to use the x label for both assignments, since 
+</I>&gt;<i> they are assigned in two different alternatives? 
+</I>
+You cannot do this because the object that is returned from 
+'unsignedInt' may or may not be exactly equivalent to the object 
+returned from 'identifier', but even if they are, they will be different 
+type, derived from the generic rule_return class. Consider:
+
+unsignedInt returns [int x, int y] ...
+
+identifier returns [string name]...
+
+Unless you are generating an AST, the analysis will determine that the 
+identifier rule returns a single value and so the generated method will 
+just return String. However the unsignedInt rule will return a reference 
+to an object that contains two ints, x and y. You cannot create your x 
+label declared as two different things simultaneously, and that's why 
+you cannot reuse the label unless the label is to be assigned from 
+exactly the same rule. At some point the error messages about this stuff 
+will improve ;-)
+
+You could however, do this:
+
+:<i> x = identOrUint { $name = $x.text; }
+</I>
+And then have your identOrUint assign accordingly, but at some level, 
+you will run in to the same thing. I suppose that when you are asking 
+for the text reference it coudl be worked out that x is a String in both 
+cases, but there are probably more useful things to work on just yet.
+
+So, your proposed workaround is what you need to do.
+
+Jim
+
+
+&gt;<i> The book (page 124) 
+</I>&gt;<i> says &quot;variables are visible to the immediately surrounding alternative, 
+</I>&gt;<i> but not other alternatives&quot;. 
+</I>I think that this really means that if you have:
+
+:<i> y=rule1
+</I>|<i> x=rule2
+</I>
+That you cannot write:
+
+|<i> x=rule2 { $name = $y.text; }
+</I>&gt;<i> If I understand this right, each 
+</I>&gt;<i> alternative has its own scope so reusing the variable name in another 
+</I>&gt;<i> scope should be possible? Or maybe ANTLR could display an error while 
+</I>&gt;<i> generating the parser in such a case? That would be better than silently 
+</I>&gt;<i> discarding the assignment... :-)
+</I>&gt;<i>   
+</I>It would indeed and I am sure that this will happen at some point. The 
+devil is in the details of all the code generation and so on.
+
+Jim
+&gt;<i> Max
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i>   
+</I>
+</PRE>
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="032570.html">[antlr-interest] A lost label?
+</A></li>
+	<LI>Next message: <A HREF="032573.html">[antlr-interest] Accessing the input stream from	displayRecognitionError
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#32571">[ date ]</a>
+              <a href="thread.html#32571">[ thread ]</a>
+              <a href="subject.html#32571">[ subject ]</a>
+              <a href="author.html#32571">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

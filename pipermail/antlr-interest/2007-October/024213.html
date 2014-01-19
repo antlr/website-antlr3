@@ -1,0 +1,225 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Generate token types file from .tokens file
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Generate%20token%20types%20file%20from%20.tokens%20file&In-Reply-To=%3C471512A1.1020908%40jazillian.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="024196.html">
+   <LINK REL="Next"  HREF="024197.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Generate token types file from .tokens file</H1>
+    <B>Andy Tripp</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Generate%20token%20types%20file%20from%20.tokens%20file&In-Reply-To=%3C471512A1.1020908%40jazillian.com%3E"
+       TITLE="[antlr-interest] Generate token types file from .tokens file">antlr at jazillian.com
+       </A><BR>
+    <I>Tue Oct 16 12:36:01 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="024196.html">[antlr-interest] ENHANCEMENT - Add option to output tokens as	symbolic constants (enum)
+</A></li>
+        <LI>Next message: <A HREF="024197.html">[antlr-interest] AntlrWork problem
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24213">[ date ]</a>
+              <a href="thread.html#24213">[ thread ]</a>
+              <a href="subject.html#24213">[ subject ]</a>
+              <a href="author.html#24213">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Here's a Java class that reads a .tokens file and produces a 
+MyGrammarTokenTypes.java file.
+It produces code that follows the &quot;Constant Interface antipattern&quot;, but 
+could be easily changed to
+generate an enum. Note that there's a table mapping symbols to names, 
+for symbols that aren't allowed
+in Java variable names (e.g. &quot;.&quot; becomes &quot;DOT&quot;).
+
+Sorry, no clever StringTemplate for output generation or even ANTLR for 
+parsing.
+Just vanilla Java.
+
+---------------------------------------------------
+/*
+ * GenerateTokenTypes.java
+ * Copyright 2007 Andy Tripp
+ *
+ * This class reads an ANTLR-generated .tokens file and
+ * generate a Java class from it. For example, running:
+ *
+ * $ java GenerateTokenTypes VB &gt; VBTokenTypes.java
+ *
+ * will read VB.tokens and create VBTokenTypes.java
+ * The class contains a bunch of constant ints, one for each token type.
+ * This is useful for when you want to specify a particular type in your
+ * java code, so you can say:
+ * if (token.getType() == VBTokenTypes.StringLiteral)
+ * ...rather than...
+ * if (token.getType() == 123)
+ *
+ * Be sure to run this after each run of ANTLR, as each run of ANTLR will
+ * re-generate your .tokens file.
+ */
+
+import java.io.*;
+import java.util.*;
+
+public class GenerateTokenTypes {
+    private final static String INDENT = &quot;    &quot;;
+    public static void main(String[] args) {
+        if (args.length != 1) {
+            System.err.println(&quot;Usage: GenerateTokenTypes &lt;grammarName&gt;&quot;);
+            return;
+        }
+        String fileName = args[0] + &quot;.tokens&quot;;
+        File file = new File(fileName);
+        if (!file.exists()) {
+            System.err.println(&quot;file does not exist:&quot; + fileName);
+            return;
+        }
+
+        String contents = IOUtils.fileToString(fileName);
+        String[] lines = contents.split(&quot;\n&quot;);
+        String[] names = new String[lines.length+10];
+        for (String line: lines) {
+            int i=0;
+            // when we have something like:
+            // '='=66
+            // be sure to skip over the single-quotes when looking for '='
+            if (line.startsWith(&quot;\'&quot;)) {
+                i = line.indexOf('\'', 1);
+            }
+            i = line.indexOf('=', i);
+            if (i == -1) {
+                System.err.println(&quot;Missing '=' on line:&quot; + line);
+                return;
+            }
+            String name = line.substring(0, i);
+            String value = line.substring(i+1);
+            if (name.startsWith(&quot;'&quot;)) {
+                String literal = name.substring(1, name.length()-1);
+                name = generateLiteralName(literal);
+            }
+            try {
+                int val = Integer.parseInt(value);
+                names[val] = name;
+            } catch (NumberFormatException e) {
+                System.err.println(&quot;invalid number on line:&quot; + line);
+                return;
+            }
+        }
+
+        String className = Character.toUpperCase(args[0].charAt(0)) +
+            args[0].substring(1) +
+            &quot;TokenTypes&quot;;
+        printOutclass(className, names);
+    }
+
+    private static void printOutclass(String className, String[] names) {
+
+        System.out.println(&quot;public class &quot; + className + &quot; {&quot;);
+        for (int i=0; i&lt;names.length; i++) {
+            if (names[i] != null) {
+                System.out.println( INDENT + &quot;final static int &quot;
+                    + names[i] + '=' + i + ';');
+            }
+        }
+
+        System.out.println('}');
+    }
+
+    // map literal chars like '#' to strings
+    // that are valid in variables like &quot;HASH&quot;
+    private final static Map&lt;String,String&gt; VALID_NAMES = new 
+HashMap&lt;String,String&gt;();
+    private final static String[][] MAPPING = {
+        {&quot;=&quot;, &quot;ASSIGN&quot;},
+        {&quot;:=&quot;, &quot;COLON_ASSIGN&quot;},
+        {&quot;==&quot;, &quot;COMPARE&quot;},
+        {&quot;\\\\&quot;, &quot;BACKSLASH&quot;},
+        {&quot;\\r&quot;, &quot;CR&quot;},
+        {&quot;!&quot;, &quot;BANG&quot;},
+        {&quot;&amp;&quot;, &quot;AMPERSAND&quot;},
+        {&quot;:&quot;, &quot;COLON&quot;},
+        {&quot;,&quot;, &quot;COMMA&quot;},
+        {&quot;$&quot;, &quot;DOLLAR&quot;},
+        {&quot;.&quot;, &quot;DOT&quot;},
+        {&quot;_&quot;, &quot;UNDERSCORE&quot;},
+        {&quot;;&quot;, &quot;SEMI&quot;},
+        {&quot;~&quot;, &quot;TILDE&quot;},
+        {&quot;\\n&quot;, &quot;NEWLINE&quot;},
+        {&quot;^&quot;, &quot;BNOT&quot;},
+        {&quot;&gt;&quot;, &quot;GT&quot;},
+        {&quot;&gt;=&quot;, &quot;GE&quot;},
+        {&quot;&lt;&quot;, &quot;LT&quot;},
+        {&quot;&lt;=&quot;, &quot;LE&quot;},
+        {&quot;&lt;&gt;&quot;, &quot;NE&quot;},
+        {&quot;?&quot;, &quot;QUESTION&quot;},
+        {&quot;{&quot;, &quot;LCURLY&quot;},
+        {&quot;}&quot;, &quot;RCURLY&quot;},
+        {&quot;[&quot;, &quot;LBRACK&quot;},
+        {&quot;]&quot;, &quot;RBRACK&quot;},
+        {&quot;(&quot;, &quot;LPAREN&quot;},
+        {&quot;)&quot;, &quot;RPAREN&quot;},
+        {&quot;+&quot;, &quot;PLUS&quot;},
+        {&quot;-&quot;, &quot;MINUS&quot;},
+        {&quot;*&quot;, &quot;STAR&quot;},
+        {&quot;%&quot;, &quot;MODULO&quot;},
+        {&quot;/&quot;, &quot;DIV&quot;},
+        {&quot;#&quot;, &quot;HASH&quot;},
+        {&quot;@&quot;, &quot;AT&quot;},
+    };
+    static {
+        for (int i=0; i&lt;MAPPING.length; i++) {
+            VALID_NAMES.put(MAPPING[i][0], MAPPING[i][1]);
+        }
+    }
+    private static String generateLiteralName(String literal) {
+        String value = VALID_NAMES.get(literal);
+        if (value != null) {
+            return &quot;LITERAL_&quot; + value;
+        }
+
+        literal = literal.replace(' ', '_'); // replace spaces with 
+underscores
+        literal = literal.replace('.', '_'); // replace dots with 
+underscores
+        literal = literal.replace(&quot;#&quot;, &quot;HASH_&quot;); // #IF becomes HASH_IF
+
+        return &quot;LITERAL_&quot; + literal;
+    }
+}
+</PRE>
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="024196.html">[antlr-interest] ENHANCEMENT - Add option to output tokens as	symbolic constants (enum)
+</A></li>
+	<LI>Next message: <A HREF="024197.html">[antlr-interest] AntlrWork problem
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24213">[ date ]</a>
+              <a href="thread.html#24213">[ thread ]</a>
+              <a href="subject.html#24213">[ subject ]</a>
+              <a href="author.html#24213">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

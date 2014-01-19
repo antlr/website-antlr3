@@ -1,0 +1,176 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Insert Node Into AST
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Insert%20Node%20Into%20AST&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="011570.html">
+   <LINK REL="Next"  HREF="011574.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Insert Node Into AST</H1>
+    <B>Chantal Ackermann</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Insert%20Node%20Into%20AST&In-Reply-To="
+       TITLE="[antlr-interest] Insert Node Into AST">chantal.ackermann at web.de
+       </A><BR>
+    <I>Wed Mar 23 08:15:32 PST 2005</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="011570.html">[antlr-interest] Re: ANTLR GUI name
+</A></li>
+        <LI>Next message: <A HREF="011574.html">[antlr-interest] Assertion failure
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#11569">[ date ]</a>
+              <a href="thread.html#11569">[ thread ]</a>
+              <a href="subject.html#11569">[ subject ]</a>
+              <a href="author.html#11569">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello all,
+
+I'm parsing natural language (German) but with a very limited grammar. 
+Here are some examples translated in English.
+
+'&quot;Navigation to Foo Street 2 in Bla-Town&quot;
+(keywords: Navigation (menu), Foo Street (street), 2 (Streenumber), 
+Bla-Town (city))
+&quot;I want to go to Foo Street&quot;
+(keywords: Foo Street (street))
+
+Note, the input needs not be correct German (or English, in this case) 
+grammar as only some keywords are of interest. There are some semantic 
+rules, though, as to what keywords can appear together, in one input, 
+which should show up in the AST.
+
+It ist possible to have these combinations in any order:
+(navigation)? (street (streetnumber)? )? (city)?
+? - means all are optional though certainly at least one should show up 
+to make some sense
+
+it's not possible to have the keywords
+(telephone) (street)
+in one input as (telephone) directs to the menu &quot;telephone&quot; while 
+(street) implies the menu &quot;navigation&quot;.
+
+And here comes my problem:
+I managed to parse these input sentences and the parser (without and 
+with AST) correctly extracted the keywords, but I'd like to insert the 
+implied menu information while parsing to have the AST always reflect 
+the menu structure.
+
+So, input of the kind: &quot;I want to go to Foo Street&quot;
+should not just produce: &quot;Foo Street (street)&quot; as it does now, but 
+&quot;Navigation (menu), Foo Street (street)&quot;
+
+Please, don't bother with the form of the output here. I just chose 
+this notation to show the name-value pairs of the keywords. The AST 
+toStringList method would rather output something like:
+( Navigation ( Foo Street ) ) -- hopefully.
+
+This is the body of my Paser class with buildAST=true (I'm working with 
+Java, by the way):
+It does not compile (=&quot;run through antlr&quot;) because of the rule 
+&quot;naviInput&quot;. (it compiles after removing &quot;naviInput&quot; and the comments 
+in &quot;topLevelInput&quot; and the call to &quot;naviInput&quot; in there, though.)
+
+topLevelInput
+//	:	( NAVIGATION^ ) =&gt; NAVIGATION^ ( adresse )?
+//	|	adresse // doesn't work: { #NAVIGATION = #( NAVIGATION ); }
+	:	naviInput
+	|	( TELEFON^ ) =&gt; TELEFON^ ( NUMMER! ) NUMBER ( telefonaktion )?
+	|	( NUMMER! ) NUMBER telefonaktion
+	;
+
+naviInput!
+	:	( NAVIGATION ) =&gt; NAVIGATION ( adresse )?
+	|	a:adresse
+	        { #naviInput = #([naviInput], a ); }
+	;
+
+anschrift
+	:	STREET^ (( HAUSNUMMER! | NUMMER! )? n:NUMBER )?
+	;
+
+adresse
+	:	( CITY ) =&gt; CITY ( anschrift )?
+	|	anschrift ( CITY )?
+	;
+
+telefonaktion
+	:	ANRUFEN
+	|	SPEICHERN
+	;
+
+The TreeWalker looks like this:
+
+class ProtoTreeWalker extends TreeParser;
+
+topLevelInput
+	:	#( naviInput CITY STREET )
+	|	#( TELEFON NUMBER ( ANRUFEN | SPEICHERN )? )
+	;
+
+Well, this doesn't work at all. Changing &quot;naviInput&quot; to &quot;Navigation&quot; 
+after reverting the above Parser to functional state (see above comment 
+on the parser), works.
+
+So, shortly, I'd like to insert the node &quot;Navigation&quot; even if it is not 
+in the input -- if that contains a street or city or anything alike. 
+Maybe I'm thinking along the wrong tracks here -- I admit, I don't 
+quite understand what to put into the Parser and what into the 
+TreeWalker. Why do I need the TreeWalker, anyway.
+
+Did any of you gurus reach this point? Thanks a lot for reading through!
+I'll gladly appreciate advise of any kind (concerning any aspect of my 
+code).
+
+Thanks!
+Chantal
+
+P.S.: Just for the records -- in the documentation there is an error in 
+the following example:
+decl!:
+     modifiers type ID SEMI;
+         { #decl = #([DECL], ID, ([TYPE] type),
+                     ([MOD] modifiers) ); }
+     ;
+trees.html -&gt; &quot;A few examples&quot;
+There is one superficial semicolon after &quot;SEMI&quot;. What I am missing 
+about this example is: What happens to the node declaration when there 
+is more than one alternative -- does it only apply to the one it comes 
+right after, does it work at all? It's not working for me, at the 
+moment. :-/
+
+</PRE>
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="011570.html">[antlr-interest] Re: ANTLR GUI name
+</A></li>
+	<LI>Next message: <A HREF="011574.html">[antlr-interest] Assertion failure
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#11569">[ date ]</a>
+              <a href="thread.html#11569">[ thread ]</a>
+              <a href="subject.html#11569">[ subject ]</a>
+              <a href="author.html#11569">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

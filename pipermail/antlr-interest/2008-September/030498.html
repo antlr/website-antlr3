@@ -1,0 +1,222 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Re : Re : How to get a list of all	validoptions for the next token?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Re%20%3A%20Re%20%3A%20How%20to%20get%20a%20list%20of%20all%0A%09validoptions%20for%20the%20next%20token%3F&In-Reply-To=%3CA8F615EE446C9B4D837FB67447C0D99702664D0B%40EXCHANGE3.campus.tue.nl%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="030470.html">
+   <LINK REL="Next"  HREF="030473.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Re : Re : How to get a list of all	validoptions for the next token?</H1>
+    <B>Niemeijer, R.A.</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Re%20%3A%20Re%20%3A%20How%20to%20get%20a%20list%20of%20all%0A%09validoptions%20for%20the%20next%20token%3F&In-Reply-To=%3CA8F615EE446C9B4D837FB67447C0D99702664D0B%40EXCHANGE3.campus.tue.nl%3E"
+       TITLE="[antlr-interest] Re : Re : How to get a list of all	validoptions for the next token?">r.a.niemeijer at tue.nl
+       </A><BR>
+    <I>Wed Sep  3 07:13:05 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="030470.html">[antlr-interest] Re : Re : How to get a list of all	validoptions for the next token?
+</A></li>
+        <LI>Next message: <A HREF="030473.html">[antlr-interest] how to exit when first error is encountered?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30498">[ date ]</a>
+              <a href="thread.html#30498">[ thread ]</a>
+              <a href="subject.html#30498">[ subject ]</a>
+              <a href="author.html#30498">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Unfortunately that doesn't work. Both computeContextSensitiveRuleFOLLOW
+and computeErrorRecoverySet call combineFollows. combineFollows uses
+state.following and state.followingStackPointer, which don't contain the
+information I need.
+Perhaps an example is in order.
+
+One of the possible rules in my system is a definition, which is roughly
+comparable to a variable assignment. As a simple example, let's use &quot;h
+is its height&quot;. The associated text that the parser receives is
+&quot;:TEXTh:IS:ITS:PROPNheight&quot;
+
+When I parse &quot;:TEXTh&quot; I get a MismatchedTokenException that says it
+expects the token ':IS'. No problem there.
+When I parse &quot;:TEXTh:IS&quot; I get a NoViableAltException. Let's look at (a
+condensed version of) the code just before that:
+
+switch ( input.LA(1) ) 
+{
+  case 28:
+  case 33:
+  case 36: { alt3 = 1; } break;
+  case 11: { ... } break;
+  case 12: { ... } break;
+  case 34:
+  case 39:
+  case 40:
+  case 41:
+  case 42:
+  case 43: { alt3 = 2; } break;
+  default:
+    NoViableAltException nvaes_d3s0 = new NoViableAltException(&quot;&quot;, 3, 0,
+input);
+    throw nvaes_d3s0;
+}
+
+Since the input ends, input.LA(1) returns -1, so the switch statement
+goes to the default case and throws an error. The numbers in the case
+statements (28, 33, 36, etc.) are the tokens that can legally follow the
+':IS' token, and hence the ones I would like to put in the description
+of the NoViableAltException so I can present these options to the user.
+This information cannot be found in the following bitset, as
+followingStackPointer is 0 and following[0] is an empty bitset (none of
+the other entries in following have anything approaching the correct
+sequence either).
+
+Today I managed to produce the following code that seems to give me the
+right tokens in several cases:
+
+var methodName0 = new System.Diagnostics.StackFrame().GetMethod().Name;
+var followBits0 =
+    from field in GetType().GetFields()
+    let followWhat = input.LA(1) &gt; -1 ? input.LA(1) : input.LA(-1)
+    let followWhatFixed = TokenNames[followWhat].StartsWith(&quot;'&quot;) ?
+followWhat.ToString() : TokenNames[followWhat]
+    where field.Name.StartsWith(&quot;FOLLOW_&quot; + followWhatFixed + &quot;_&quot;)
+    select field;
+var filtered0 = followBits0.Where(field =&gt;
+    field.Name.Contains(&quot;in_&quot; + methodName0));
+var followTokens0 =
+    from field in (filtered0.Any() ? filtered0 : followBits0)
+    from bit in ((BitSet)field.GetValue(this)).ToArray()
+    select tokenNames[bit].Trim('\'');
+    
+    NoViableAltException nvaes_d4s0 =
+        new NoViableAltException(followTokens0.Aggregate(&quot;&quot;, (t1, t2) =&gt;
+t1 + &quot; &quot; + t2), 4, 0, input);
+
+    throw nvaes_d4s0;
+
+As you can see it's hardly elegant due to all the special cases, but it
+sort of works... provided that input has one or more tokens. It works
+for definitions, as they can only start with a :TEXT token, so I get a
+MismatchedTokenException. Conditions (e.g. its height must be more than
+100 mm), however, have multiple valid starting tokens. When trying to
+provide intellisense for the first token of a condition input.LA(1)
+produces -1 and input.LA(-1) throws a NullReferenceException. It
+wouldn't matter much if it didn't, since there's nothing to follow, so
+none of the FOLLOW_ bitsets will be usable. Using following here doesn't
+work either, as all it contains is the ':OR' token, which can combine
+multiple conditions into one.
+
+So that brings me back to my previous question:
+Is there a way to process the edges variable (say, replacing all the
+non-numeric characters with spaces) before spitting it out into the
+generated code or, preferably, is there a way to get the list of numbers
+used for creating the preceding case/if statements directly?
+
+Thanks again for all your help.
+
+
+
+-----Original Message-----
+From: Thomas Brandon [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">tbrandonau at gmail.com</A>] 
+Sent: dinsdag 2 september 2008 18:48
+To: Niemeijer, R.A.
+Cc: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: Re: [antlr-interest] Re : Re : How to get a list of all
+validoptions for the next token?
+
+Can't you reuse the ANTLR routines for this, e.g.
+BaseRecognizer.computeContextSensitiveRuleFOLLOW and
+BaseRecognizer.computeErrorRecoverySet. Otherwise I think you want to
+be operating on the follow set stack maintained by ANTLR
+(RecognizerSharedState.following) rather than the static follow set
+variables.
+Otherwise a few comments based on a quick reading are below.
+On Wed, Sep 3, 2008 at 1:12 AM, Niemeijer, R.A. &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">r.a.niemeijer at tue.nl</A>&gt;
+wrote:
+&gt;<i> Hello,
+</I>&gt;<i>
+</I>&gt;<i> I've given editing the templates a go and it is indeed not as hard as
+</I>I imagined. However, I have some difficulty getting the data I need.
+&gt;<i>
+</I>&gt;<i> The only exceptions I've found so far that need to be changed are
+</I>NoViableAltExceptions, since MismatchedTokenExceptions already have an
+Expecting variable. NoViableAltExceptions are generated in two places in
+the codegen template: dfaState and dfaStateSwitch.
+&gt;<i>
+</I>&gt;<i> As for the one in dfaStateSwitch:
+</I>&gt;<i> By replacing &lt;description&gt; (which always seems to be empty) with
+</I>&gt;<i>
+</I>&gt;<i> (from field in GetType().GetFields()
+</I>&gt;<i>  where field.Name.StartsWith(&quot;FOLLOW_&quot; + input.LA(1))
+</I>&gt;<i>  from bit in ((BitSet)field.GetValue(this)).ToArray()
+</I>&gt;<i>  select tokenNames[bit].Trim('\'')).Aggregate((t1, t2) =&gt; t1 + &quot; &quot; +
+</I>t2)
+&gt;<i>
+</I>&gt;<i> I can get a space-separated list of tokens. It is by no means a
+</I>perfect solution though. Some issues:
+&gt;<i> - This gets all the tokens that could ever follow the last token, not
+</I>just the ones in the current rule. Depending on the grammar this may or
+may not be a problem.
+The follow set names contain the rule they apply to, you can filter on
+that.
+&gt;<i> - It only works on non-named tokens (input.LA(1) returns an int). This
+</I>should be fairly trivial to fix though.
+You need to use the token name, not the token type as returned by LA.
+Use the tokenNames array from the parser (or reflection if you don't
+have access to the parser).
+&gt;<i> - Throws an error if it can't find any FOLLOW_ variables. Also easily
+</I>fixed.
+&gt;<i> - It works in the one test case I tried it with. I'm not guaranteeing
+</I>it works in others.
+&gt;<i>
+</I>&gt;<i> This doesn't work in dfaState though, since there input.LA(1) is
+</I>always -1.
+LA returning -1 indicates the next token is EOF. Assuming you weren't
+at the end of the stream I can't see why this would occur. Also, it
+should be LA(&lt;k&gt;) not LA(1). And you should have access to the cached
+value via LA&lt;decisionNumber&gt;_&lt;stateNumber&gt;.
+&gt;<i>What I need (and it would work for dfaStateSwitch as well) is the list
+</I>of the numbers in the case statements preceding the default/else
+statement containing the NoViableAltException. The only way to sort of
+get at this info I've found is the edges parameter that is passed to the
+two functions, but it contains the entire generated source code for
+those parts. Using it directly or in quotes results in tons of compile
+errors.
+&gt;<i>
+</I>&gt;<i> So my question: is there a way to process the edges variable (say,
+</I>replacing all the non-numeric characters with spaces) before spitting it
+out into the generated code or, preferably, is there a way to get the
+list of numbers used for creating the case statements directly?
+&gt;<i>
+</I>&gt;<i> Thanks again.
+</I>&gt;<i>
+</I>
+Tom.
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="030470.html">[antlr-interest] Re : Re : How to get a list of all	validoptions for the next token?
+</A></li>
+	<LI>Next message: <A HREF="030473.html">[antlr-interest] how to exit when first error is encountered?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30498">[ date ]</a>
+              <a href="thread.html#30498">[ thread ]</a>
+              <a href="subject.html#30498">[ subject ]</a>
+              <a href="author.html#30498">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

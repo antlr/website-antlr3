@@ -1,0 +1,190 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Has anybody ever tried to integrate with VS?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Has%20anybody%20ever%20tried%20to%20integrate%20with%20VS%3F&In-Reply-To=004901c658b4%24f2556c80%24030fa8c0%40ssdev1">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="015905.html">
+   <LINK REL="Next"  HREF="015901.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Has anybody ever tried to integrate with VS?</H1>
+    <B>P. van der Velde</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Has%20anybody%20ever%20tried%20to%20integrate%20with%20VS%3F&In-Reply-To=004901c658b4%24f2556c80%24030fa8c0%40ssdev1"
+       TITLE="[antlr-interest] Has anybody ever tried to integrate with VS?">p.vandervelde at raketnet.nl
+       </A><BR>
+    <I>Thu Apr  6 17:26:33 PDT 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="015905.html">[antlr-interest] Has anybody ever tried to integrate with VS?
+</A></li>
+        <LI>Next message: <A HREF="015901.html">[antlr-interest] distinguishing between DIV and regular expression
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#15912">[ date ]</a>
+              <a href="thread.html#15912">[ thread ]</a>
+              <a href="subject.html#15912">[ subject ]</a>
+              <a href="author.html#15912">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Don
+
+Thanks for this great overview. It seems that the whole process is a lot 
+harder than I would have thought :-(. I'll see if I can find any simpler 
+ways of achieving my goal and if not I'll use your hints and tips.
+
+Again, thanks heaps.
+
+Patrick
+
+Don Caton wrote:
+&gt;<i> Patrick:
+</I>&gt;<i>
+</I>&gt;<i> I've built a language package for VS that uses Antlr.  It is a commercial
+</I>&gt;<i> product so I can't share the code, but I can give you a few tips.
+</I>&gt;<i>
+</I>&gt;<i> You'll need a lexer for syntax highlighting.  There's no need for a parser,
+</I>&gt;<i> the language service just needs a sequence of tokens with certain
+</I>&gt;<i> information such as the starting column and length, the text type (i.e.
+</I>&gt;<i> text, comment, etc.), and some other things.
+</I>&gt;<i>
+</I>&gt;<i> The lexer is called once for each line of source code, so it should be as
+</I>&gt;<i> simple and efficient as possible (e.g. don't use semantic predicates), and
+</I>&gt;<i> you should reuse the same lexer instance for the entire time your package is
+</I>&gt;<i> loaded.   You don't want to create a new instance of the lexer each time it
+</I>&gt;<i> is needed, the initialization costs are very high (especially the init of
+</I>&gt;<i> the tokens table) and it will slow down typing and scrolling in the editor
+</I>&gt;<i> if it isn't very efficient.
+</I>&gt;<i>
+</I>&gt;<i> I use a static stringstream object to feed the lexer and just reinitialize
+</I>&gt;<i> it each time the lexer is called.  In addition, you need to call
+</I>&gt;<i> lex-&gt;setColumn(0) and lex-&gt;getInputBuffer().reset() to &quot;reset&quot; the lexer
+</I>&gt;<i> each time you need to parse a new line.  You don't need to worry about the
+</I>&gt;<i> line counter, since you will never be parsing more than one line at a time.
+</I>&gt;<i>
+</I>&gt;<i> You also do not want to ignore comments in this lexer (since they must be
+</I>&gt;<i> colorized too) and you must maintain state for multiline comments and you
+</I>&gt;<i> cannot assume that when you encounter the beginning of a ML-comment you will
+</I>&gt;<i> find the end.  The end might be on a different line and you only get to lex
+</I>&gt;<i> one line at a time, so you must return a state code to the language service,
+</I>&gt;<i> which it will then return to you when it asks you to tokenize the next line.
+</I>&gt;<i> You must structure your lexer to be able to be entered in a state where you
+</I>&gt;<i> are within a multiline comment.
+</I>&gt;<i>
+</I>&gt;<i> If your language has any other constructs that can span multiple lines (like
+</I>&gt;<i> literal strings in C/C++) then you must maintain state for that as well.
+</I>&gt;<i> You cannot assume that you will be lexing each line in sequence, or if you
+</I>&gt;<i> will be lexing any particular line at all.  The language service maintains
+</I>&gt;<i> your returned state code for each line that has been colorized, and you will
+</I>&gt;<i> always be given the state code for the preceding line when you are asked to
+</I>&gt;<i> lex another line.
+</I>&gt;<i>
+</I>&gt;<i> To get tokens without using a parser, do something like this:
+</I>&gt;<i>
+</I>&gt;<i>    RefToken tok = lex-&gt;nextToken();
+</I>&gt;<i>    while ( tok-&gt;getType() != Token::EOF_TYPE )
+</I>&gt;<i>    {
+</I>&gt;<i>       // ...
+</I>&gt;<i>       tok = lex-&gt;nextToken();
+</I>&gt;<i>    }
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Next, you will need another lexer and a parser to support code collapsing,
+</I>&gt;<i> intellisense and various other things that the VS editor supports.  This is
+</I>&gt;<i> more like a traditional parser, where you want to ignore comments and
+</I>&gt;<i> whitespace.  You will be asked to parse all, or part of the source file.
+</I>&gt;<i> Rules in your parser will have to return the proper information to the
+</I>&gt;<i> language service, depending on the reason for the parse.  There are numerous
+</I>&gt;<i> reasons for invoking a full or partial parse (code collapsing, intellisense,
+</I>&gt;<i> etc.).  
+</I>&gt;<i>
+</I>&gt;<i> If your parser is efficient enough, it is easier to parse the entire source
+</I>&gt;<i> file each time, but the language service will also give you the coordinates
+</I>&gt;<i> of only the text that's changed.  You can maintain state information and
+</I>&gt;<i> only parse the changed source or parse the entire source file each time.
+</I>&gt;<i> Although colorizing and intellisense operations are generally called on
+</I>&gt;<i> background threads, you want them to be as efficient as possible so there is
+</I>&gt;<i> no noticeable delay to the end user.
+</I>&gt;<i>
+</I>&gt;<i> This lexer and parser generally does not need to be as thorough as those
+</I>&gt;<i> used in a compiler.  You only need to parse things to a point that you can
+</I>&gt;<i> supply the needed information back to the language service.  So, you don't
+</I>&gt;<i> really need to be concerned with things like operator precedence and things
+</I>&gt;<i> of that nature that are only significant if you are actually going to
+</I>&gt;<i> generate code.  Again, you want to make this as efficient as possible so
+</I>&gt;<i> there is no noticeable delay to the end user.
+</I>&gt;<i>
+</I>&gt;<i> Some language services like C# actually attempt to do a background compile
+</I>&gt;<i> (minus codegen) while you type, so that syntax and semantic errors can be
+</I>&gt;<i> displayed in real time in the error list pane.  That requires a more through
+</I>&gt;<i> parser that does semantic analysis, type resolution and so forth, and you
+</I>&gt;<i> may want to generate and persist an AST if you attempt this.  Some of C#'s
+</I>&gt;<i> advanced intellisense features also require this level of parsing.  
+</I>&gt;<i>
+</I>&gt;<i> Writing a Visual Studio language (or project) package is not a trivial thing
+</I>&gt;<i> to undertake, especially given the quality of the sample code and
+</I>&gt;<i> documentation that's provided, so be prepared for a bit of work.
+</I>&gt;<i>
+</I>&gt;<i> Don
+</I>&gt;<i>  
+</I>&gt;<i>
+</I>&gt;<i>   
+</I>&gt;&gt;<i> -----Original Message-----
+</I>&gt;&gt;<i> From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> 
+</I>&gt;&gt;<i> [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of P. van 
+</I>&gt;&gt;<i> der Velde
+</I>&gt;&gt;<i> Sent: Wednesday, April 05, 2006 1:23 AM
+</I>&gt;&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;&gt;<i> Subject: [antlr-interest] Has anybody ever tried to integrate with VS?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Hi All
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I want to build a new language integration tool for VS2005. I 
+</I>&gt;&gt;<i> want to integrate Latex into VS (I'm lazy, I'm spoiled and I 
+</I>&gt;&gt;<i> need my code complete thingies ;-). However to do that I need 
+</I>&gt;&gt;<i> a parser and a lexer. 
+</I>&gt;&gt;<i> The documents assume you use Flex and Bison, however I was 
+</I>&gt;&gt;<i> thinking about Antlr. So now my questions are:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 1) Has anybody ever build a language package for VS with antlr
+</I>&gt;&gt;<i> 2) Has anybody ever created a LaTex grammar?
+</I>&gt;&gt;<i> 3) Has anybody ever tried to create those two things.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Also if anybody has any hints or tips I would love to hear those
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Regards
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Patrick
+</I>&gt;&gt;<i>     
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>   
+</I></PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="015905.html">[antlr-interest] Has anybody ever tried to integrate with VS?
+</A></li>
+	<LI>Next message: <A HREF="015901.html">[antlr-interest] distinguishing between DIV and regular expression
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#15912">[ date ]</a>
+              <a href="thread.html#15912">[ thread ]</a>
+              <a href="subject.html#15912">[ subject ]</a>
+              <a href="author.html#15912">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

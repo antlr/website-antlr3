@@ -1,0 +1,136 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] greedy vs nongreedy lexer rules
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20greedy%20vs%20nongreedy%20lexer%20rules&In-Reply-To=%3C219661399-1271633165-cardhu_decombobulator_blackberry.rim.net-1891177779-%40bda428.bisx.prod.on.blackberry%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="038391.html">
+   <LINK REL="Next"  HREF="038337.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] greedy vs nongreedy lexer rules</H1>
+    <B>kferrio at gmail.com</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20greedy%20vs%20nongreedy%20lexer%20rules&In-Reply-To=%3C219661399-1271633165-cardhu_decombobulator_blackberry.rim.net-1891177779-%40bda428.bisx.prod.on.blackberry%3E"
+       TITLE="[antlr-interest] greedy vs nongreedy lexer rules">kferrio at gmail.com
+       </A><BR>
+    <I>Sun Apr 18 16:26:04 PDT 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="038391.html">[antlr-interest] greedy vs nongreedy lexer rules
+</A></li>
+        <LI>Next message: <A HREF="038337.html">[antlr-interest] greedy vs nongreedy lexer rules
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#38344">[ date ]</a>
+              <a href="thread.html#38344">[ thread ]</a>
+              <a href="subject.html#38344">[ subject ]</a>
+              <a href="author.html#38344">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Yep.  Pretty complex.  I don't have answers but as a user I concur that antlr lexers have become perhaps a bit unwieldy and this probably gives the maintainers of the existing targets grief, to say nothing of the impact on new targets.  
+
+I understand the appeal of eliminating codegen for lexers.  It would be interesting to see how that works in practice.  Seems like a dilemma worthy of Macbeth.  
+I also have some appreciation of how ugly rewinding to resolve ambiguities becomes in the presence of actions.  That seems like one of those things which cannot be made elegant without giving up a lot of powerful and *common* use cases.  
+
+Although I usually cringe at breaking changes, I say go for it if it is good for the long haul.  It's not like v3 has been out long enough to become canon and hey you can always write another book!  :)
+
+Sorry I can't actually help...but I think I see what you're trying to do.  v4 promises to 'unify' and set us up for an extended run.  
+
+Kyle 
+
+Sent from my Verizon Wireless BlackBerry
+
+-----Original Message-----
+From: Terence Parr &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">parrt at cs.usfca.edu</A>&gt;
+Date: Sun, 18 Apr 2010 15:40:15 
+To: &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">kferrio at gmail.com</A>&gt;
+Cc: ANTLR&lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>&gt;
+Subject: Re: [antlr-interest] greedy vs nongreedy lexer rules
+
+Hi Kyle.  Thanks for the thoughts!  I'm also having more evil thoughts.  
+
+The ANTLR lexers are really out of control in what they allow just to support edge cases.  For MOST grammars, you have no actions in lexer rules except for skip() calls in whitespace rules etc...  Some are complicated like ANTLR's action splitter. here's a few rules:
+
+SET_DYNAMIC_SCOPE_ATTR
+	:	'$' x=ID '::' y=ID WS? '=' expr=ATTR_VALUE_EXPR ';'
+		{delegate.setDynamicScopeAttr($text, $x, $y, $expr);}
+	;
+
+DYNAMIC_SCOPE_ATTR
+	:	'$' x=ID '::' y=ID {delegate.dynamicScopeAttr($text, $x, $y);}
+	;
+
+QUALIFIED_ATTR
+	:	'$' x=ID '.' y=ID {input.LA(1)!='('}? {delegate.qualifiedAttr($text, $x, $y);}
+	;
+
+Actions are at right edges (easy to do) but they ref labels from rule refs.  I can implement this easily enough with a DFA that saves named substrings and then ref them in the action.  But, actions sort of imply I'm going to generate code for the rules. I would LOVE to do away with lexer code gen (makes new targets easier too).  With predicates and actions in middle of rules, though, we'd have to stuff those in another &quot;support&quot; function somewhere and then exec them AFTER we match rules in case we have an ambiguous case.  For example:
+
+FOO : 'f' {an-action} 'oo' ;
+ID : 'a'..'z'+ ;
+
+Here, after matching 'f', we can't distinguish FOO vs ID yet we have to exec an action!  The only way is to match FOO vs ID with the DFA and then rewind and exec FOO (the winner). Ugh. That means generating a FOO() method.  Or, we could simply disallow ambig action exec, which is easy for me to detect in the NFA-&gt;DFA conversion.
+
+What about local variables?
+
+DUH : {int n=0;} ('a'..'z' {n++;})+ {do something with n;} ;
+
+can't yank {int n=0;} into its own function.  I'm thinking we need to formalize locals so I can avoid genrating code that won't compile.
+
+What about backward compatibility?  Losing recursion breaks some grammars.  Formalizing locals breaks some.  Perhaps easy answer is to simply allow v3 lexers to hook in to v4 parsers.  The imports within the v3 lexer would have change to
+
+import org.antlr.v4.runtime.legacy.Lexer;
+
+etc... but we could make it work.
+
+A tough decision.  I'm aiming for really small lexers w/o code gen except for user actions and semantic predicates.  
+
+Ter
+
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="038391.html">[antlr-interest] greedy vs nongreedy lexer rules
+</A></li>
+	<LI>Next message: <A HREF="038337.html">[antlr-interest] greedy vs nongreedy lexer rules
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#38344">[ date ]</a>
+              <a href="thread.html#38344">[ thread ]</a>
+              <a href="subject.html#38344">[ subject ]</a>
+              <a href="author.html#38344">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

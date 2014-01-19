@@ -1,0 +1,531 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html><head><title>Manual Tree Walking Is Better Than Tree Grammars</title>
+
+
+    
+    <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<style type="text/css">
+pre { background: #00FFCC }
+</style></head><body>
+<center><font size="+5"><b>Manual Tree Walking Is Better Than Tree Grammars</b></font></center>
+<p>
+<table align="center" bgcolor="#99ffcc" border="1" width="60%"><tbody><tr><td align="center"><font size="+1"><b>
+A whitepaper that advocates hand-written code for walking an AST rather than using
+ANTLR Tree Grammars.</b></font></td></tr></tbody></table>
+
+</p><h2>Introduction</h2>
+In an article titled <a href="http://antlr.org/article/1100569809276/use.tree.grammars.tml">
+Translators Should Use Tree Grammars</a>
+(hereafter, "the article"), Terence Parr makes the case for using a technology
+called "Tree Grammars" for translation. In this article, I will take the opposing view
+and explain why I believe that manually walking an AST is a better solution than
+Tree Grammars.
+
+<p>
+To a large degree, how you want to design some AST transformation code is a matter of taste.
+If you're the type of person who likes to look at some example code first, you're in luck!
+We have two sets of example code, each of which simply walks through an AST and prints it out
+as nicely formated Java code. We have <a href="http://jazillian.com/articles/java.tree.g">the "Tree Grammar" approach</a>
+in ANTLR and Java syntax by Terence Parr. And we have the <a href="http://jazillian.com/articles/JavaEmitter.java">
+the "plain AST walker" approach</a> by Andy Tripp.
+</p><p>
+If you don't want to go into too much detail and skip all the mumbo-jumbo, 
+you may want to just compare those two and
+decide for yourself which one you prefer.
+</p><p>
+...Now, on to the mumbo-jumbo...
+
+</p><h2>Starting Points</h2>
+The article starts with this simple statement: <i>One of the most
+common questions programmers have when building a translator is, 'what do I do with my AST
+now that I've built it?'".</i> I think it's more appropriate to take a step back and
+use a different starting point.
+<p>
+When someone is building a language translator, having an AST and wondering what to do with it
+is not a reasonable starting point. Rather, a reasonable starting point is having a set of
+requirements; a fairly detailed description of needs to be done in order to perform
+the translation, 
+
+<table align="right" bgcolor="#ffff99" border="1" width="30%"><tbody><tr><td align="center"><font size="+1"><b>
+Start with requirements for translation.</b></font></td></tr></tbody></table>
+
+and wondering how to implement it. For example, a
+C-to-Java translator might start with something like this:
+<a href="http://www.jazillian.com/how.html">How to Convert C to Java</a> as a requirement,
+and the developer's job is to write software that does all that automatically.
+</p><p>
+What difference does the starting point make? 
+Well, these are more than two different mindsets, they are also two different approaches.
+On the one hand, the approach is "Let's do as much as we can with the AST". The other
+approach is "We must do all of the things in our requirements, and we'll leverage the AST as best we can."
+And so the two approaches will likely lead us to two different solutions. The goal of language
+translation is not "What to do with this AST?", it's "What's the best way to do all those things in
+that huge list above?" Starting with this second goal, you may never even want to have
+an AST, as I argue in 
+<a href="http://antlr.org/article/1136917339929/stringTemplate.html">another article</a>.
+But for the purposes of this paper, I'll assume that you have chosen to use ASTs as the
+basis for your language translation tool.
+</p><p>
+The point here is that we should not approach the problem with an AST in hand, wondering
+how to best traverse it, but rather that we have a set of given requirements that we need
+to implement and an AST in hand, and where should we go from here? One solution may be
+to simply walk the AST, but more likely, when we look in detail at our requirements, we'll
+find that we'll need to do many walks of the AST, we may need to do some
+very complex searching and manipulation of the AST, we may need multiple ASTs as well as
+other data structures, and so on.
+</p><p>
+So it may be more complex than simply walking the AST once, so what? Good question. Just
+to give one example, if we have to walk the tree many times, doing transformations in
+each pass, the whole idea of what it means to "validate the tree structure" becomes very complex. So if one
+strategy has the advantage that it "validates the tree structure", we'll now have to wonder
+if that's even something that's possible or desirable. More generally, we need to approach
+the problem with a firm grasp on the real-world complexities that we need to solve. That way,
+we won't come up with solution that seem very simple on the surface (e.g. "be sure to
+initialize variables at their declaration...") but turn out to be devilishly complex
+in reality ("...but only if control flow analysis shows that we need to.").
+</p><p>
+Anyway, we've got a set of requirements for our language translator. We've decided to
+ignore my 
+<a href="http://antlr.org/article/1136917339929/stringTemplate.html">advice</a>
+ and architect it around the idea of AST manipulation. We've used a lexer and parser to build
+our AST. Now what?
+
+</p><h2>Visitors</h2>
+The first approach that the article suggests is to use a "generic depth-first-tree walker"
+which uses the <a href="http://en.wikipedia.org/wiki/Visitor_pattern">Visitor design pattern</a>.
+As you can see from my <a href="http://jazillian.com/articles/JavaEmitter.java">JavaEmitter.java</a> example,
+I prefer the "just write some generic AST-walking code" approach, either with
+or without the use of the visitor pattern. And so I'll try to debunk the article's claims
+that there are problems with this approach.
+
+<table align="right" bgcolor="#ffff99" border="1" width="30%"><tbody><tr><td align="center"><font size="+1"><b>
+The "Manually walk the AST" approach may or may not involve the Vistor pattern.</b></font></td></tr></tbody></table>
+
+<p>
+First, let me just outline what it is we're talking about here. In this approach, we simply
+write some generic code in, say, Java, that traverses a tree. It may involve use of the Visitor
+pattern, but doesn't have to. Here is some code that does not use it:
+</p><pre>void walk(AST ast) {
+	switch(ast.getType()) {
+		case Types.PACKAGE_DEF:
+			print("package ");
+			walk(ast.getFirstChild());
+			print(";\n\n");
+			break;
+		case Types.IMPORT:
+			print("import ");
+			walk(ast.getFirstChild());
+			print(";");
+			break;
+		case Types.CLASS_DEF:
+			walk(getChild(ast, MODIFIERS));
+			print("class ");
+			walk(getChild(ast, IDENT));
+			print(" ");
+			walk(getChild(ast, EXTENDS_CLAUSE));
+			walk(getChild(ast, IMPLEMENTS_CLAUSE));
+			startBlock();
+			walk(getChild(ast, OBJBLOCK));
+			endBlock();
+			break;
+
+       // ...handle every other possible node type in the AST...
+	}
+}
+</pre>
+Here, for example, when we encounter a "PACKAGE_DEF" node in our AST, we print out
+"package ", then print the first child of the AST (via a recursive call to walk()), 
+and then print ";" and a couple of
+newline characters.
+ 
+<p>
+The article lists three problems with visitors:
+<i>
+</i></p><ol>
+<li><i>tree structure is not validated
+</i></li><li><i>actions execute without convenient context information
+</i></li><li><i>inconvenient data passing between actions
+</i></li></ol>
+
+Let's examine each of these in detail.
+
+<h3>Tree Structure Validation</h3>
+First, we have the supposed disadvantage that the tree structure is not validated. 
+The article says <i>"A generic visitor walks a tree totally ignoring structural constraints"</i>.
+I suppose that depends on how you implement it, but as you can see from the code above,
+you can certainly implement it so that there are many validations. 
+The code above, for example, will produce an
+error if a PACKAGE_DEF node in the AST has no children. 
+<p>
+On the other hand, if we look at the CLASS_DEF processing in the code above, we see that
+it apparently will not check the order of the children nodes (e.g. that any MODIFIERS
+child comes first). And with a little effort, we could tell that this code:
+</p><pre>walk(getChild(ast, IDENT));
+</pre>
+Is not actually requiring that the CLASS_DEF node have a IDENT child.
+<p>
+So this code is really doing only <b>some</b> tree structure validation...just about as much
+as it needs to in order to do its job.
+Is that really a
+disadvantage? 
+</p><p>
+Let's take a step back and look at the normal chain of events for a typical compiler:
+</p><p><b>
+preprocessor --&gt; lexer ---&gt; parser  --&gt; code generator --&gt; assembler --&gt; linker
+</b></p><p>
+Our translator probably will be very similar, something like:
+</p><p><b>
+preprocessor --&gt; lexer ---&gt; parser --&gt; AST transformer --&gt; prettyprinter
+</b></p><p>
+Looking at the compiler steps and all the existing compilers out there, how much
+input validation does each step do, and
+what is the result? The answer is that in general, all steps do some sort of
+validation of their input as part of their normal course of processing. But none really
+"goes out of it's way" to attempt to completely verify the integrity of its input. The parser assumes that
+the stream of tokens it got from the lexer is valid, the code generator assumes that
+the AST produced by the parser is valid, and so on.
+</p><p>
+So looking at the chain for our translator, do we really need or even want our
+"AST Transformer" step to be doing any extra work to validate that the parser produced
+a valid AST? The answer, to me, is a clear "no".
+
+<table align="right" bgcolor="#ffff99" border="1" width="30%"><tbody><tr><td align="center"><font size="+1"><b>
+We don't need each step to completely validate its input.</b></font></td></tr></tbody></table>
+
+
+ None of the other steps are doing that sort
+of thing. And doing so would mean that we're duplicating code and effort...the concept of
+"what is a valid AST" would then be implemented in both the parser <b>and</b> the "AST transformer"
+phases. We no more want the AST transformer double-checking that the parser produced a valid
+AST than we'd want our parser to be double-checking that the
+lexer produced a valid token stream. The parser leaves the lexing to the lexer, and assumes
+that what it got is correct. The AST transformer should leave the parsing to the parser and
+assume that the AST is correct.
+</p><p>
+
+<a name="context"></a>
+</p><h3>Context Information</h3>
+The second supposed drawback of using visitors is that
+<i>"actions execute without convenient context information"</i>. The article gives an example where
+you are dealing with a subexpression, and you need to know whether you're inside a
+"while" statement or whether you're inside an assignment statement. It points out that
+we must walk up the AST and then points out the drawback:
+<p> 
+<i>Aside from making your actions dependent on the physical structure of the tree, 
+manually looking upwards is extremely inconvenient and very inefficient.</i>
+</p>
+As for depending on the physical structure of the AST, there's simply no getting around
+that. If you're going to do one thing when below a WHILE node, and something else when
+below an ASSIGN node, you're by definition depending on the physical structure of the tree.
+You may take the approach of building up some data structure and passing it around, but that's
+still depending on the structure of the tree. There's nothing wrong with depending on the
+physical structure of the AST. In fact, that's what our "AST Transformer" - the heart of
+our translator - does for a living. It massages the tree based on its structure.
+<p>
+So I don't see how TreeWalker approach somehow gives you context information
+"for free". If we look at the <a href="http://jazillian.com/articles/java.tree.g">java.tree.g</a> example which uses
+the TreeWalker approach to print a Java AST, we see many calls to getFirstChild() and
+getNextSibling() every time we need context information - information about children
+of the current AST node. We also see methods such as indent(), undent(), and nl(), which
+are written in Java, and preserve context information (how much we are currently indented
+and whether the last output was a newline or not). I can find nothing in that java.tree.g
+that "looks up the tree" or uses information that was passed down during the walk.
+</p><p>
+So rather than this example showing how the TreeWalker approach provides context information
+for free, it only shows that this example is simple enough not to need it.
+ 
+</p><p>
+As for looking upwards being inconvenient and inefficient, this would only be true if you've
+done a poor job of designing your AST data structure. 
+
+<table align="right" bgcolor="#ffff99" border="1" width="20%"><tbody><tr><td align="center"><font size="+1"><b>
+Walking up the tree is fast and easy.</b></font></td></tr></tbody></table>
+
+If each AST node has a pointer to
+its parent node, this will be extremely efficient, and trivial to develop. For
+example, to search up the tree for a node of a given type:
+</p><pre>class MyAST {
+	boolean searchUp(int type) {
+	   if (this.type == type) return true;
+	   if (getParent() == null) return false;
+	   return getParent().searchUp(type);
+	}
+}
+</pre>
+
+<h3>Data Passing</h3>
+The third supposed drawback of visitors is <i>"inconvenient data passing between actions"</i>.
+And the explanation is this:
+<p>
+<i>Node actions may compute data needed by future actions. 
+Because each action is isolated..., you cannot use the usual programming constructs 
+like local variables, parameters, and return values to pass information</i>
+</p><p>
+Let's split "future actions" into two groups and deal with each group. One case is where
+you save data during a tree walk for some "future action" that's <b>under</b> the current node in the tree.
+There are several solutions here, none of which is inherently "bad". You could simply not
+save any data, and look up the tree when you need to, as we showed in the previous section.
+A second approach is to build up some stack-type data structure pushing when you step down the tree
+and popping when you step up. And a third approach would be to have some sort of
+non-local variable that stores this information. For example, you might maintain a
+boolean "isUnderWhile" variable. Yes, these second two options are
+ bit messy, and the "search up the tree as
+needed" is almost certainly better. But the point is that there's no glaring problem here:
+the AST has all the information that we need, and any use of parameters and return values
+is probably not needed.
+</p><p>
+The other group of "future actions" is the case where some part of the AST affects some other part
+that's not under it. For example, suppose we're analysing some AST node that represents
+a function call and we want to search the AST for the function definition. Here again, we simply need
+simple routines that would search the AST. No local variables, parameters, and return values
+is going to help us with this situation no matter how we structure things.
+
+<table align="right" bgcolor="#ffff99" border="1" width="15%"><tbody><tr><td align="center"><font size="+1"><b>
+The AST *is* the context.</b></font></td></tr></tbody></table>
+
+</p><p>
+The article says <i>"You must use instance variables which are clumsy and violate 
+data hiding principles."</i>.
+A I said above, the response is "yes, you use the AST, which is an instance variable", but
+that (assuming done reasonably) is not clumsy nor violate data hiding principles.
+
+
+
+</p><p>
+The article then goes on to explain that there's nothing inherently wrong with the visitor pattern
+and the author is not biased against them, which I agree with completely. As a side note, it's
+interesting to note that the original Design Patterns ("Gang Of Four") book actually uses
+the walking of ASTs as it's example to illustrate the need for the Visitor Pattern.
+
+</p><h2>Manual Tree Walkers</h2>
+In its "Manual Tree Walkers" section the article outlines how one might walk the AST by having
+a class for each AST node type and explicit code for walking the node like this:
+<pre>class PlusNode extends ExprNode {
+  ExprNode left;
+  ExprNode right;
+  public PlusNode(ExprNode left, ExprNode right) {...}
+  public void walk() {
+    left.walk();
+    right.walk();
+    ... plus node action ...
+  }
+</pre>
+It is indeed a bit scary to think anyone might consider doing this by hand.
+The only time you tend to see this kind of code these days is in a compiler book that is
+showing you how you might do a parser by hand. This is in the chapter just before the one
+that says "and now we will use a generator to generate all that, because no one would want
+to write that by hand."
+<p>
+So I agree completely with the list of drawbacks given in the article:
+<i>
+</i></p><ol>
+<li><i> action and tree structure walking code is entangled; you risk breaking action code when altering the walking code
+</i></li><li><i> manually built tree walkers have no guarantee that their parsing logic is complete and consistent
+</i></li><li><i> manually building tree walkers is much more laborious than the visitor pattern
+</i></li></ol>
+
+...with the additional note relating to the second item: no tree-walking strategy will ever guarantee that
+our parsing logic is complete and consistent. But that's not the job of the tree-walker anyway, that's
+the job of the parser that produced the AST.
+<p>
+And the article continues on to talk about the drawbacks of writing a treewalker "by hand".
+ 
+<table align="right" bgcolor="#ffff99" border="1" width="30%"><tbody><tr><td align="center"><font size="+1"><b>
+Generating lots of classes to do the walking is indeed a bad idea.</b></font></td></tr></tbody></table>
+
+These are all
+valid points, similar to the drawbacks of writing a parser "by hand". But, from what I can tell, these
+points only address writing a treewalker by hand as opposed to using a generic treewalker (possibly
+using a visitor pattern). It does not make any points about how a "Tree Grammar" would be better than
+a generic treewalker.
+</p><p>
+In other words, the three drawbacks listed above do apply to a treewalker that's written
+"by hand" and has a class for each node type. But it does not apply to a treewalker that's
+written "by hand" that looks like the <a href="http://jazillian.com/articles/JavaEmitter.java">JavaEmitter code</a>
+that I showed earlier - the one big switch statement
+inside a walk() method. 
+
+</p><h2>Tree Grammars</h2>
+Try, if you dare, to really wrap your brain around the following statement from the article:
+<p>
+<i>I realized that tree parsing is identical to text parsing, albeit in two dimensions instead of one.</i>
+</p><p>
+Go ahead and take an few minutes, a few hours, or a full PhD program to really absorb that. I'll wait
+right here....
+</p><p>
+...done? OK. Good. You see how parsing a linear stream of tokens is just like parsing a
+tree data structure, but with one less dimension? If so, you're a better man than I am.
+While I can see how they're a little analogous, I can't clearly see that they're really
+"the same thing" in that I'd want to then use the same language and approach to do these two things.
+
+<table align="right" bgcolor="#ffff99" border="1" width="40%"><tbody><tr><td align="center"><font size="+1"><b>
+A great parser-generator language does not necessarily make a great tree-transformation language.</b></font></td></tr></tbody></table>
+
+In the one case, we're taking a token stream as input and producing an AST as output, and
+some BNF-like grammar (e.g. ANTLR or yacc syntax) with interspersed code is a great way
+to do it, and that's how virtually everyone has done it for decades. This works well because
+the BNF-like grammar looks so much like the output. The whole parser has boiled down to saying
+"this is what the AST should look like".
+</p><p>
+In the other case,
+we're taking an AST as input, and perhaps a different AST as output. Here, the situation
+is not nearly as clear. The mapping from one AST structure to another is quite complex
+(see <a href="http://www.w3.org/TR/xslt">XSLT</a>, <a href="http://www.txl.ca/">TXL</a>, or <a href="http://treedl.sourceforge.net/about.html">TreeDL</a> for example),
+and a single BNF-like grammar doesn't capture it.
+</p><p>
+In any case, let's get right to the supposed advantages of tree grammars over writing your own
+code (visitor pattern and all that) that walks an AST. From the article:
+<i>
+</i></p><ol>
+<li><i>terse, type-system independent, formal specification of the tree structure
+</i></li><li><i>actions have implicit context by virtue of their location in the grammar
+</i></li><li><i>unlike visitors, data can be passed around easily between actions using parameters, return values, and local variables
+</i></li></ol>
+
+<p>
+As for the first item, we've covered this issue already. It's a formal specification
+of the <b>input</b> AST structure, not any output. We don't want a complete
+specification of the input tree structure in our AST-transformation phase. It's enough
+for the phase to assume that the previous phase (the parser) is doing its job correctly,
+just as all phases do. Having a complete specification here is actually harmful, because
+now we have that same "specification" in two places: one is the heart of the parser, and the
+second is here at the start of the transformer.
+Yes, certainly we'll have to deal with
+error cases in our AST-transformation phase if it gets an AST that it can't handle. But I really
+don't want to have anything like a complete specification of the AST structure - that's the parser's job.
+</p><p>
+As for the second item: <i>"actions having explicit context by virtue of the 
+location in the grammar"</i>...obviously this
+makes no sense to me since I don't even want the grammar here. We also covered this earlier
+under <a href="#context">"Context Information"</a>. 
+</p><p>
+This idea of "having explicit context" goes to what we said earlier about instance variables.
+In my view, the AST <b>is</b> the context. We are in the midst of walking an AST, and if
+we want to find out our context, we simply look up the tree. There's no need for passing variables
+and return values. And there's no need to have the code structure match the AST structure.
+</p><p>
+And the third issue <i>"data can be passed around easily between actions"</i>, is really the
+same issue. I don't see a need to be passing around data, whether implicit ("context") or
+explicit ("parameters"). Just use the AST itself.  
+
+</p><h2>The Disadvantages Of Tree Grammars</h2>
+I see the following as disadvantages of the Tree Grammar approach:
+<ol>
+<li>The need to know an additional language
+</li><li>Mixing of languages
+</li><li>Code structure matches input AST structure, not logical structure.
+</li></ol>
+The first two are closely related, but not identical. Obviously, if you're
+going to use the "Tree Grammar" approach, you're going to need to know another
+language, such as ANTLR. This may not be a big disadvantage if you already know
+ANTLR syntax. Perhaps you even wrote your lexer and parser in ANTLR. But there
+are also plenty of situations where you simply used an existing lexer and parser.
+This is my personal situation, where I used the existing ANTLR C lexer and parser code.
+<p>
+I have always hated it when people mix two languages together, whether it's HTML and
+
+<table align="right" bgcolor="#ffff99" border="1" width="30%"><tbody><tr><td align="center"><font size="+1"><b>
+Mixing de langues es muy feo*
+</b></font></td></tr></tbody></table>
+
+
+CSS, Java and JSP, or whatever. It can be very difficult to "see the uglyness" of
+two mixed languages when you know both languages well, so let me highlight it for you.
+<a href="http://jazillian.com/articles/java.tree.color.g">Here</a> is the "Tree Grammar" which prints out a Java
+AST, colored to distinguish between ANTLR syntax, Java syntax, and Java syntax which
+requires knowledge of ANTLR. The sight of all these intermingled languages should make
+you cringe.
+</p><p>
+If it doesn't, imagine an analogous situation.
+Imagine trying to read about 10 pages of text, of which about 50%
+is in English, 25% is in Spanish, and 25% is in a hybrid of English and Spanish.
+</p><p>
+Finally, and most important, is the issue of the structure of our AST transformation code.
+Comparing the <a href="http://jazillian.com/articles/java.tree.g">"Tree Grammar" approach</a>
+and the <a href="http://jazillian.com/articles/JavaEmitter.java">"by-hand walker" approach</a>, the crucial issue is
+that the structure of the Tree Grammar approach matches the input AST structure. 
+It essentially says "Here is what the AST looks like, and actions to print it out are embedded
+within". Whereas the "by-hand" approach says "Here is how to print out each of the node types".
+Which is the better way?
+</p><p>
+Well, at the risk of over-analyzing things... the question comes down to whether we really care
+what the <b>overall</b> structure of the input AST is. Specifically, do we want our
+AST-transformation phase to be tied tightly (to "look like", really) the AST structure
+of the parser? In my opinion, the answer is "no". By not having the AST-transformer tightly
+bound to the AST structure, it's easier to maintain, enhance, and modify to work
+with other languages and AST structures.
+
+<table align="right" bgcolor="#ffff99" border="1" width="30%"><tbody><tr><td align="center"><font size="+1"><b>
+Structuring the code to match the input doesn't help anything.</b></font></td></tr></tbody></table>
+
+Glancing at the "by-hand" code gives little clue as to the input AST structure, and I think that's
+a good thing, because that way, it is less dependent on the input AST structure. For example,
+all the node types that are binary operators are lumped together because they are all 
+processed in the same way, and we don't care where they may appear in the AST.
+
+</p><h2>Conclusion</h2>
+The decision about whether to use a "Tree Grammar" approach to translation vs. just 
+"doing it by hand" is a matter of taste. Let's look at an analogous situation
+with natural languages. Suppose we have parsed some English sentence
+and placed into a tree-like structure, as our 7th-grade teacher taught us.
+And now, we'd like to write some code that converts that tree to an equivalent
+"Spanish" tree. The big question is whether we want our code to look generally
+like this:
+<pre>Sentence : [Noun {Action}] 
+           Verb {VerbAction}
+           [DirectObject {DirectObjectAction}] 
+           *(Conjunction {ConjunctionAction} Sentence) 
+           EndPunctuation {EndPunctuationAction};
+</pre>
+...or do we want it to look like this...
+<pre>switch (nodeType) {
+	case Noun:
+		nounAction;
+		break;
+	case Verb:
+		VerbAction;
+		break;
+	case DirectObject:
+		DirectObjectAction;
+		break;
+	case Conjunction:
+		ConjunctionAction;
+		break;
+	case EndPunctuation:
+		EndPunctuationAction;
+		break;
+}
+</pre>
+The first case is more terse and reflects the structure of the input, but is less readable
+and mixes two languages (although we only see one language here, presumably we'll have to
+embed some Java code as things get complicated).
+<p>
+I think the approach that you'll prefer depends on your background. If you're 
+already intimately familiar with the ":", "[". "]", "*" , "{", "}", and ";" constructs
+in the first approach, you will prefer the terse approach. On the other hand, if you
+don't want to be bothered with all that "extra syntax", 
+you'll prefer the more verbose "plain Java" approach.
+</p><p>
+Not sure which one you are? Well, I'll give you a hint. People who actually <b>like</b> dealing with
+<table align="right" bgcolor="#ffff99" border="1" width="30%"><tbody><tr><td align="center"><font size="+1"><b>
+*"Mixing of languages is very ugly"</b></font></td></tr></tbody></table>
+"extra syntax" tend to be language junkies and language tool builders and tend to think in
+terms of "I have an AST, now what should I do with it?". People who <b>don't like</b> dealing
+with "extra syntax" tend to view the translation problem as "Here are all the things
+I need to do in order to perform translation, what's the best way to go about it?"
+</p><p>
+
+
+
+<br>
+<br>
+<br>
+<br>
+<table align="center" bgcolor="#ffcc00" border="1" width="40%"><tbody><tr><td align="center"><font size="+1"><b>
+By:<br>
+Andy Tripp<br>
+CTO, Founder, Jazillian, Inc.<br>
+February 22, 2006</b></font></td></tr></tbody></table>
+ 
+
+</p></body></html>

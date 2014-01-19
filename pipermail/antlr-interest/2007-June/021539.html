@@ -1,0 +1,183 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Doing translation in the lexer (the right tool for	the job?)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Doing%20translation%20in%20the%20lexer%20%28the%20right%20tool%20for%0A%09the%20job%3F%29&In-Reply-To=%3C7479ECCD-F424-4A72-968A-6402426A5E0C%40wincent.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="021536.html">
+   <LINK REL="Next"  HREF="021550.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Doing translation in the lexer (the right tool for	the job?)</H1>
+    <B>Wincent Colaiuta</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Doing%20translation%20in%20the%20lexer%20%28the%20right%20tool%20for%0A%09the%20job%3F%29&In-Reply-To=%3C7479ECCD-F424-4A72-968A-6402426A5E0C%40wincent.com%3E"
+       TITLE="[antlr-interest] Doing translation in the lexer (the right tool for	the job?)">win at wincent.com
+       </A><BR>
+    <I>Tue Jun 19 23:57:15 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="021536.html">[antlr-interest] Possible to conditionally skip token in rule?
+</A></li>
+        <LI>Next message: <A HREF="021550.html">[antlr-interest] Doing translation in the lexer (the right tool	for the job?)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#21539">[ date ]</a>
+              <a href="thread.html#21539">[ thread ]</a>
+              <a href="subject.html#21539">[ subject ]</a>
+              <a href="author.html#21539">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>One of the many translation tasks I'd like to use ANTLR for is  
+translating wikitext to HTML. Two things make this quite difficult:
+
+1. The translator has to be extremely tolerant of malformed input  
+(users may not understand the wikitext syntax or may deliberately  
+subvert it) and make reasonable &quot;cleanup&quot; attempts for bad input  
+(such as closing tags that were left open by the user).
+
+2. Wikitext structure is not unlike HTML structure, which means it is  
+highly recursive and is very sensitive to nesting and ordering issues.
+
+This means that the translator must be able to handle things like:
+
+- improperly interleaved tags: &lt;em&gt;&lt;strong&gt;&lt;/em&gt;&lt;/strong&gt;
+
+- missing closing tags: &lt;em&gt;foo
+
+- missing opening tags: foo&lt;/em&gt;
+
+- mismatched tags (really just a combination of the above): &lt;em&gt;foo&lt;/ 
+strong&gt;
+
+And it must enforce scoping rules that can be quite complicated at  
+times; for example:
+
+- an &lt;em&gt; span may appear inside a &lt;strong&gt; span;
+
+- and a &lt;strong&gt; span may appear inside an &lt;em&gt; span;
+
+- but an &lt;em&gt; span may not appear inside an &lt;em&gt; span, so both  
+&lt;em&gt;&lt;em&gt;foo&lt;/em&gt;&lt;/em&gt; and &lt;em&gt;&lt;strong&gt;&lt;em&gt;foo&lt;/em&gt;&lt;/strong&gt;&lt;/em&gt; are  
+invalid
+
+- a &lt;blockquote&gt; may contain other block level elements such as &lt;p&gt;  
+and even another &lt;blockquote&gt;;
+
+- but &lt;p&gt; may not contain &lt;blockquote&gt;
+
+- etc, etc, etc...
+
+So if it weren't for the fact that the translator has to gracefully  
+handle bad input the task would be significantly easier. In other  
+words, if ANTLR could assume that all input were perfectly formed and  
+just throw errors on encountering bad input then it wouldn't be too  
+hard. But even assuming syntactically perfect input there is still  
+the issue of the complicated scoping rules.
+
+My first na&#239;ve attempt at doing this had me trying to express scope  
+restrictions using only standard parser rules, but I very quickly got  
+into trouble with recursion due to non-LL(*) decisions and non- 
+determinisms.
+
+So I then tried using predicates combined with a stack stored in a  
+global scope. Basically, on entering a new rule, information would be  
+pushed onto the stack describing what tags were explicitly allowed  
+and what tags explicitly disallowed. Semantic predicates could then  
+be used in subsequent rules to check the stack to see if a particular  
+alternative to match.
+
+For example, on entering a &lt;blockquote&gt;, the list of allowed tags is  
+basically any block-level tag (&lt;p&gt;, &lt;blockquote&gt; etc) so those are  
+pushed as a list onto the stack. On entering a &lt;p&gt;, the list of  
+allowed tags is basically any inline element (&lt;em&gt;, &lt;strong&gt; etc).  
+The predicate's job is then basically to walk the stack and confirm  
+that (a) a given tag is explicitly allowed, and (b) it is not  
+explicitly disallowed in any previous level of the stack.
+
+I soon found that the predicates were being hoisted/lowered into  
+unexpected places which prevented that idea from working. Perhaps  
+someone with more intimate knowledge of how ANTLR does this would be  
+able to make the solution work, but I didn't see much hope of getting  
+it to work so I abandoned it. I also wasn't even sure that my stack  
+of allowed/disallowed tags was a good design, even in the abstract  
+sense.
+
+So finally, the thing I'm doing is jettisoning the parser entirely  
+and doing absolutely everything in the lexer. Ok, not exactly: I've  
+made an extremely simple filtering lexer which has no predicates, no  
+actions, just spits out tokens and has a catch-all rule at the bottom  
+so that all input characters are guaranteed to come out as tokens on  
+the other end.
+
+Then in my support code I ask the lexer for tokens one at a time and  
+perform translation &quot;by hand&quot;. Once again I maintain a stack, but  
+this time a slightly simpler one. Instead of maintaining a list of  
+allowed and disallowed tags at each level I instead maintain a stack  
+which indicates my current scope, kind of like a CSS selector: ie. if  
+I've previously seen &lt;blockquote&gt;, &lt;p&gt; and &lt;em&gt; then my stack  
+contains &quot;blockquote&quot;, &quot;p&quot; and &quot;em&quot;; if I see another &quot;&lt;em&gt;&quot; I know I  
+can't match it because that's already on the stack, and on seeing &quot;&lt;/ 
+em&gt;&quot; I pop it off the stack. In this way I can basically ignore  
+unexpected tags (well, actually I output them literally as  
+&quot;&amp;lt;em&amp;gt;&quot; etc) and insert missing tags when I think I should have  
+seen them.
+
+All of this manually management is a bit of effort, but it does work  
+and that's very important: the code is simple enough to look at and  
+see that it will work. If I tried to do all of this in ANTLR then  
+there would be an element of black magic; I'd never feel sure that I  
+knew what ANTLR was really doing behind the scenes. But I am left  
+with the lingering doubt that I might not be doing things the best  
+way. Do you think that this lexer-only-plus-supporting-code approach  
+is the using the right tool for the job? Or am I missing something  
+obvious?
+
+Cheers,
+Wincent
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="021536.html">[antlr-interest] Possible to conditionally skip token in rule?
+</A></li>
+	<LI>Next message: <A HREF="021550.html">[antlr-interest] Doing translation in the lexer (the right tool	for the job?)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#21539">[ date ]</a>
+              <a href="thread.html#21539">[ thread ]</a>
+              <a href="subject.html#21539">[ subject ]</a>
+              <a href="author.html#21539">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

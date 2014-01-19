@@ -1,0 +1,211 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Problem with C target output on example C	grammar
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Problem%20with%20C%20target%20output%20on%20example%20C%0A%09grammar&In-Reply-To=%3C388567796.20080401224440%40data.pl%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="027544.html">
+   <LINK REL="Next"  HREF="027555.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Problem with C target output on example C	grammar</H1>
+    <B>Kamil Burzynski</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Problem%20with%20C%20target%20output%20on%20example%20C%0A%09grammar&In-Reply-To=%3C388567796.20080401224440%40data.pl%3E"
+       TITLE="[antlr-interest] Problem with C target output on example C	grammar">nopik at data.pl
+       </A><BR>
+    <I>Tue Apr  1 13:44:40 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="027544.html">[antlr-interest] Problem with C target output on example C	grammar
+</A></li>
+        <LI>Next message: <A HREF="027555.html">[antlr-interest] Problem with C target output on example C	grammar
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#27550">[ date ]</a>
+              <a href="thread.html#27550">[ thread ]</a>
+              <a href="subject.html#27550">[ subject ]</a>
+              <a href="author.html#27550">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello,
+
+&gt;&gt;<i> Now I had downloaded from fisheye, to the same result. This is no
+</I>&gt;&gt;<i> surprise, since in both cases external_declaration goes to
+</I>&gt;&gt;<i> function_definition without going through declaration, and
+</I>&gt;&gt;<i> function_definition in turn calls declarator and direct_declarator,
+</I>&gt;&gt;<i> while they require declaration to be on stack...
+</I>
+&gt;<i> Hmm, that does sound like a problem with the grammar construction
+</I>&gt;<i> if there is a path through the rules that does not cause a scope to be
+</I>&gt;<i> stacked for the symbol table. Can you provide either your sample input
+</I>&gt;<i> or a small example, or confirm that you are using the default supplied
+</I>&gt;<i> input? Of course the example grammars are not meant to be rigorous
+</I>&gt;<i> examples of a parser for the language, more examples of how to use
+</I>&gt;<i> rules and so on, but they should not crash, at least not with the
+</I>&gt;<i> sample input. I will try the examples on Linux and make sure it isn't
+</I>&gt;<i> just something stupid here.
+</I>
+Yeah, it is a problem in grammar for me. I was testing on default input
+provided with the example. You can find exact path in my original gdb
+output, code went through this path:
+
+#0 0x08054f75 in direct_declarator (ctx=0x80b0868) at CParser.c:16284
+#1 0x08055897 in declarator (ctx=0x80b0868) at CParser.c:16156
+#2 0x0806efa4 in function_definition (ctx=0x80b0868) at CParser.c:13775
+#3 0x0806f5c3 in external_declaration (ctx=0x80b0868) at CParser.c:13652
+#4 0x0806f89e in translation_unit (ctx=0x80b0868) at CParser.c:13543
+#5 0x0806fbef in main (argc=1, argv=0xbf9b45a4) at main.c:188
+
+I am really puzzled how it worked at least once - probably on non-linux
+platform (or just different compiler) program was faulty but did not
+crashed.
+
+I have also described how to fix the grammar in some previous post,
+though I am not sure if my solution was 100% correct.
+
+&gt;&gt;<i> In meantime I have also managed to play a little with C target and
+</I>&gt;&gt;<i> while
+</I>&gt;&gt;<i> it is working, I am little worried, as for now I have found 2 problems.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> a) I wanted to do some lex/yacc-type return values:
+</I>
+&gt;<i> This isn't anything to do with the C target - you cannot do that in lexers.
+</I>
+I think there was small misunderstanding. Indeed lexer do not build
+symbol tree, but I was doing something different. I wanted something
+like code I've found in examples/Python/calc/Calculator.g:
+
+evaluate returns [result]: r = expression { result = r; };
+
+(this is python syntax, though the usage of 'returns' keyword should
+stay the same). The problem is that C target when sees something like &quot;r
+= expression&quot; does initialize internal variable with NULL before
+assignment. This is improper even in plain C. Consider this example
+(just reduced and slightly modified version of
+examples/Python/calc/Calculator.g):
+
+
+grammar Calculator;
+options {
+  language = C;
+}
+
+@members
+{
+        struct foo
+        {
+                int bar;
+        };
+}
+
+evaluate returns [struct foo result]: r=INTEGER {result.bar = 42;};
+
+INTEGER: DIGIT+;
+
+fragment
+DIGIT: '0'..'9';
+
+Try to compile it. C compiler will say, that you cannot assign NULL to
+foo.
+
+&gt;&gt;<i> b) In some cases, by adding 'innocent' code whole thing crashes. Namely
+</I>&gt;&gt;<i> I only add:
+</I>&gt;&gt;<i> scope MyScope
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i>       int foo;
+</I>&gt;&gt;<i> }
+</I>&gt;&gt;<i> to the working project based on C.g3pl (without using MyScope anywhere)
+</I>&gt;&gt;<i> and program crashes in very nasty way.
+</I>
+&gt;<i> Well, are you sure that you have recompiled everything correctly?
+</I>
+Well, in meantime I switched machines, and on the new machine got the
+same problem. Tried to debug it with step-by-step debugging under gdb
+and found out, that psr-&gt;translation_unit() call from main() does leave
+main, but even do not enter translation_unit() function. After
+recompilation it started to work, indeed. Strange thing is that it was
+new machine where I downloaded sources from svn and compiled.. Anyway,
+program is stable now. And I have found another problem with C target :D
+
+Namely, when I use two scopes in target, e.g. like this:
+
+translation_unit
+ scope Symbols;
+ scope MyScope;
+ @init
+ {
+      $Symbols::types = ....; //This line stops to work after adding
+      MyScope.
+ }
+
+Program crashes, since $Symbols is not initialized. It seems, that only
+last scope is initialized - as I can access MyScope. If I reverse
+scopes like this:
+
+translation_unit
+ scope MyScope;
+ scope Symbols;
+
+I can @init Symbols, but not MyScope.
+
+&gt;<i> If I get the input you are using, I can try to reproduce it. If you
+</I>&gt;<i> are using the supplied input without modification, then it should work
+</I>&gt;<i> because I tested it. It is possible that something has broken since I
+</I>
+Yeah, I also suspected that you tested it, that is why the first problem
+described here puzzled me ;)
+
+&gt;<i> last tested it, but I usually test the examples before a snapshot, so
+</I>&gt;<i> I am surprised. If I could get anyone to volunteer to write some
+</I>&gt;<i> regression/unit tests then I could have more confidence ;-)
+</I>
+&gt;<i> I see, so you haven't done anything... except change the linking
+</I>&gt;<i> model ;-) How are you building the .so and did you relink your calling
+</I>&gt;<i> binary program with it or just rebuild the library and try to run with
+</I>&gt;<i> it. If the latter, then I suggest that that may well be your problem
+</I>&gt;<i> and the reason that stack is out of whack. Do you mean you can't
+</I>&gt;<i> reproduce either problem with the original example, or just this
+</I>&gt;<i> second one which I think is the way you are building it?
+</I>
+Yeah, it turned out to be my fault, as described above. It also explains
+why I was not able to reproduce problem on supplied example. I linked
+.so correctly, just main.o was not recompiled.
+
+&gt;<i> Well, you haven't really given me an exact set of instruction with
+</I>&gt;<i> which to reproduce your problems! It wasn't until this email that I
+</I>
+Yes, I know. It was because I did not had them :) And this is why I knew
+that I am alone, as I was not able to tell anybody how to reproduce..
+
+-- 
+Best regards from
+Kamil Burzynski
+
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="027544.html">[antlr-interest] Problem with C target output on example C	grammar
+</A></li>
+	<LI>Next message: <A HREF="027555.html">[antlr-interest] Problem with C target output on example C	grammar
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#27550">[ date ]</a>
+              <a href="thread.html#27550">[ thread ]</a>
+              <a href="subject.html#27550">[ subject ]</a>
+              <a href="author.html#27550">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

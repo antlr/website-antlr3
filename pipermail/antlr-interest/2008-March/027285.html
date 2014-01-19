@@ -1,0 +1,356 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Parsing names
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Parsing%20names&In-Reply-To=%3C47DF4841.3050902%40Yahoo.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="027283.html">
+   <LINK REL="Next"  HREF="027287.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Parsing names</H1>
+    <B>Austin Hastings</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Parsing%20names&In-Reply-To=%3C47DF4841.3050902%40Yahoo.com%3E"
+       TITLE="[antlr-interest] Parsing names">Austin_Hastings at Yahoo.com
+       </A><BR>
+    <I>Mon Mar 17 21:42:41 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="027283.html">[antlr-interest] Parsing names
+</A></li>
+        <LI>Next message: <A HREF="027287.html">[antlr-interest] C# run-time and strong name
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#27285">[ date ]</a>
+              <a href="thread.html#27285">[ thread ]</a>
+              <a href="subject.html#27285">[ subject ]</a>
+              <a href="author.html#27285">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Alan,
+
+Terence has some links on the antlr website, and I think some of the 
+examples include building a rudimentary symbol table. But for purposes 
+of this language, you don't need very much. You DO need to smarten up 
+the lexer, because spaces are allowed in the names.
+
+First, parse the &quot;Seat 7: Pretty Pam 10 (3,355)&quot; line.
+
+That looks to me like a simple regular expression. Everything after &quot;: &quot; 
+(colon, space) up to &quot; (&quot; (space, paren) is a name.
+
+seat_spec: 'Seat' Num PlayerNameDef '(' CommaNum ')' ;
+
+Writing the PlayerNameDef lexer target will be a little bit challenging 
+because you have to look ahead for the terminator. An easier approach 
+might be to make a single token, called &quot;SEAT_INFO&quot; or something, that 
+gobbles up the entire line. Then you could parse the player name out by 
+hand.
+
+After all the Seat 1..n lines, all player names appear to start at the 
+beginning of the line. Create a second lexer target &quot;PlayerName&quot; that 
+matches. The trick is to compare with an array or tree of player names 
+you captured in memory from the seat_spec lines.
+
+Create an array of strings (or objects -- make this more complex when 
+you're comfortable), player_names[] = { &quot;miannie&quot;, &quot;LATUK&quot;, &quot;stigs2&quot;, 
+&quot;PeggySue07&quot;, ... &quot;Pretty Pam 10&quot;, ... };
+
+Then as you are lexing the PlayerName, defer adding a character until 
+you are sure it matches one or more possible names in the list. 
+Otherwise, either report an error or end the token. (A space ends the 
+token, a non-space probably indicates an error.) You might do this at 
+the parser level, too--grab a bunch of &quot;player words&quot; and append them. 
+But you'll have to append them character-by-character, so that doesn't 
+buy you much.
+
+Slightly off topic, here's a hinky lexer rule I built that knows more 
+than it should about the innards of how the lexer works. The 
+&quot;input.LA(1)&quot; stuff is me looking ahead at the next character. The 
+&quot;matchAny&quot; routine is a lexer built-in that does what it sounds like. 
+The other mFoo() stuff are various patterns I was recursing into, 
+specific to my grammar. You can see that I'm basically looping, gobbling 
+one or more character at a time.
+
+==========
+
+fragment
+NestedCodeBlock
+    : '{'
+    {
+	loopNCB:
+	do
+	{
+	    int next_char = input.LA(1);
+
+	    switch (next_char)
+	    {
+	    case '}':
+		break loopNCB;
+
+	    case '&quot;': mQlit_Double(); break;
+	    case '\'': mQlit_Single(); break;
+	    case '\u00AB': mQlit_Willies(); break;
+	    case '&lt;':
+		if (input.LA(2) == '&lt;')
+		    mQlit_Angles();
+		else
+		    matchAny();
+		break;
+
+	    case '/':
+		switch (input.LA(2))
+		{
+		case '/': mSingleLineComment(); break;
+		case '*': mMultiLineComment(); break;
+		default: matchAny(); break;
+		}
+		break;
+
+	    case '{': mNestedCodeBlock(); break;
+	    default: matchAny(); break;
+	    }
+
+	    if (failed) return;
+	}
+	while (true);
+	match('}');
+	if (!failed) return;
+    }
+    .* '}'
+    ;
+
+==========
+
+Note that the last line but one, &quot;.* '}'&quot; is there to confuse ANTLR. If 
+you don't confuse it, it knows too much and screws up my code. (Some of 
+the &quot;if failed return&quot; stuff is there for the same reason. Freaking Java 
+won't let you keep &quot;dead code&quot; in your methods.)
+
+You can probably get away with a loop that looks like
+
+top-of-loop:
+get-next-char
+append-next-char-to-buffer
+for (all names in seat list)
+do
+    if (buffer equals name.substring(buffer.length))
+        accept this character, continue loop
+done
+
+if (character is space)
+    accept buffer, keep space as next input
+else
+    reject this name-plus-extra-letter as bogus (&quot;Pretty Pam 10[ ]&quot; is 
+okay. &quot;Pretty Pam 10[0]&quot; is not okay.)
+
+go to top of loop
+
+
+=Austin
+
+
+
+
+alan brown wrote:
+&gt;<i> Happy to provide example text...
+</I>&gt;<i>
+</I>&gt;<i> The following is a hand being played with &quot;Pretty Pam 10&quot;.  My lexer 
+</I>&gt;<i> creates tokens that are mostly words and numbers and my parser is 
+</I>&gt;<i> being forced to do major look ahead to work out what each line is 
+</I>&gt;<i> trying to convey (because things like 'PeggySue has 15 seconds to 
+</I>&gt;<i> act'  or 'johnvfardella is feeling happy' (among others) can appear 
+</I>&gt;<i> almost anywhere).
+</I>&gt;<i>
+</I>&gt;<i> How would I implement a symbol table dynamically.  Can you point me to 
+</I>&gt;<i> an example or some documentation?  I don't see it in the book.  I 
+</I>&gt;<i> haven't created a symbol table before.
+</I>&gt;<i>
+</I>&gt;<i> In the example below I'd like to make the 10 players names first class 
+</I>&gt;<i> citizens (ie single tokens).
+</I>&gt;<i>
+</I>&gt;<i> alan
+</I>&gt;<i>
+</I>&gt;<i> Game #5678328259: Table Play Chip 798 - 10/20 - Limit Hold'em - 
+</I>&gt;<i> 22:09:21 ET - 2008/03/17
+</I>&gt;<i> Seat 1: miannie (949)
+</I>&gt;<i> Seat 2: LATUK (320)
+</I>&gt;<i> Seat 3: stigs2 (1,110)
+</I>&gt;<i> Seat 4: PeggySue07 (1,080)
+</I>&gt;<i> Seat 5: tishlidji (300)
+</I>&gt;<i> Seat 6: brownalan (200)
+</I>&gt;<i> Seat 7: Pretty Pam 10 (3,355)
+</I>&gt;<i> Seat 8: larrydj (31,142)
+</I>&gt;<i> Seat 9: johnvfardella (200)
+</I>&gt;<i> stigs2 posts the small blind of 5
+</I>&gt;<i> PeggySue07 posts the big blind of 10
+</I>&gt;<i> brownalan posts 10
+</I>&gt;<i> johnvfardella posts 10
+</I>&gt;<i> larrydj posts a dead small blind of 5
+</I>&gt;<i> larrydj posts 10
+</I>&gt;<i> The button is in seat #2
+</I>&gt;<i> *** HOLE CARDS ***
+</I>&gt;<i> Dealt to brownalan [Qh Qd]
+</I>&gt;<i> tishlidji calls 10
+</I>&gt;<i> brownalan raises to 20
+</I>&gt;<i> Pretty Pam 10 calls 20
+</I>&gt;<i> larrydj calls 10
+</I>&gt;<i> johnvfardella calls 10
+</I>&gt;<i> miannie has 8 seconds left to act
+</I>&gt;<i> johnvfardella is feeling happy
+</I>&gt;<i> miannie calls 20
+</I>&gt;<i> LATUK calls 20
+</I>&gt;<i> stigs2 calls 15
+</I>&gt;<i> PeggySue07 calls 10
+</I>&gt;<i> tishlidji calls 10
+</I>&gt;<i> *** FLOP *** [Kc 5d 2s]
+</I>&gt;<i> stigs2 has 8 seconds left to act
+</I>&gt;<i> stigs2 checks
+</I>&gt;<i> PeggySue07 checks
+</I>&gt;<i> tishlidji checks
+</I>&gt;<i> brownalan checks
+</I>&gt;<i> Pretty Pam 10 checks
+</I>&gt;<i> larrydj checks
+</I>&gt;<i> johnvfardella: Hi Pam
+</I>&gt;<i> johnvfardella checks
+</I>&gt;<i> miannie checks
+</I>&gt;<i> LATUK checks
+</I>&gt;<i> *** TURN *** [Kc 5d 2s] [2c]
+</I>&gt;<i> stigs2 has 8 seconds left to act
+</I>&gt;<i> stigs2 bets 20
+</I>&gt;<i> PeggySue07 calls 20
+</I>&gt;<i> tishlidji calls 20
+</I>&gt;<i> johnvfardella: looking good
+</I>&gt;<i> brownalan raises to 40
+</I>&gt;<i> Pretty Pam 10 folds
+</I>&gt;<i> larrydj calls 40
+</I>&gt;<i> johnvfardella calls 40
+</I>&gt;<i> miannie folds
+</I>&gt;<i> LATUK folds
+</I>&gt;<i> stigs2 raises to 60
+</I>&gt;<i> PeggySue07 calls 40
+</I>&gt;<i> tishlidji calls 40
+</I>&gt;<i> brownalan calls 20
+</I>&gt;<i> larrydj calls 20
+</I>&gt;<i> johnvfardella calls 20
+</I>&gt;<i> *** RIVER *** [Kc 5d 2s 2c] [7s]
+</I>&gt;<i> Pretty Pam 10: hello
+</I>&gt;<i> stigs2 has 8 seconds left to act
+</I>&gt;<i> stigs2 bets 20
+</I>&gt;<i> PeggySue07 calls 20
+</I>&gt;<i> tishlidji raises to 40
+</I>&gt;<i> brownalan has 8 seconds left to act
+</I>&gt;<i> brownalan folds
+</I>&gt;<i> larrydj folds
+</I>&gt;<i> johnvfardella calls 40
+</I>&gt;<i> stigs2 raises to 60
+</I>&gt;<i> PeggySue07 folds
+</I>&gt;<i> tishlidji raises to 80
+</I>&gt;<i> johnvfardella folds
+</I>&gt;<i> stigs2 calls 20
+</I>&gt;<i> *** SHOW DOWN ***
+</I>&gt;<i> tishlidji shows [7h 2h] a full house, Twos full of Sevens
+</I>&gt;<i> stigs2 shows [Ks 2d] a full house, Twos full of Kings
+</I>&gt;<i> stigs2 wins the pot (765) with a full house, Twos full of Kings
+</I>&gt;<i> *** SUMMARY ***
+</I>&gt;<i> Total pot 765 | Rake 0
+</I>&gt;<i> Board: [Kc 5d 2s 2c 7s]
+</I>&gt;<i> Seat 1: miannie folded on the Turn
+</I>&gt;<i> Seat 2: LATUK (button) folded on the Turn
+</I>&gt;<i> Seat 3: stigs2 (small blind) showed [Ks 2d] and won (765) with a full 
+</I>&gt;<i> house, Twos full of Kings
+</I>&gt;<i> Seat 4: PeggySue07 (big blind) folded on the River
+</I>&gt;<i> Seat 5: tishlidji showed [7h 2h] and lost with a full house, Twos full 
+</I>&gt;<i> of Sevens
+</I>&gt;<i> Seat 6: brownalan folded on the River
+</I>&gt;<i> Seat 7: Pretty Pam 10 folded on the Turn
+</I>&gt;<i> Seat 8: larrydj folded on the River
+</I>&gt;<i> Seat 9: johnvfardella folded on the River
+</I>&gt;<i>
+</I>&gt;<i> On Mon, Mar 17, 2008 at 8:54 PM, Austin Hastings 
+</I>&gt;<i> &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">Austin_Hastings at yahoo.com</A> &lt;mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">Austin_Hastings at yahoo.com</A>&gt;&gt; wrote:
+</I>&gt;<i>
+</I>&gt;<i>     Alan,
+</I>&gt;<i>
+</I>&gt;<i>     1. How about giving us some example text?
+</I>&gt;<i>
+</I>&gt;<i>     2. Create a symbol table. This is a &quot;higher level&quot; solution, but
+</I>&gt;<i>     probably right.
+</I>&gt;<i>
+</I>&gt;<i>     3. It may be that your text is more amenable to parsing with a &quot;lower
+</I>&gt;<i>     level&quot; approach. Possibly more use of regular expressions is needed.
+</I>&gt;<i>
+</I>&gt;<i>     Before you make any permanent decisions, see #1.
+</I>&gt;<i>
+</I>&gt;<i>     =Austin
+</I>&gt;<i>
+</I>&gt;<i>      alan brown wrote:
+</I>&gt;<i>     &gt; I'm having a problem with my lexer/parser design.  I'm trying to
+</I>&gt;<i>     parse
+</I>&gt;<i>     &gt; a poker hand history file and extract the relevant information.
+</I>&gt;<i>      I got
+</I>&gt;<i>     &gt; a working solution but it's quite brittle.  My problem is that my
+</I>&gt;<i>     &gt; lexer is creating tokens of the words and my parser is reading those
+</I>&gt;<i>     &gt; words to work out player names and bets and so on.  My issue is that
+</I>&gt;<i>     &gt; the player names (among other things) is causing me grief.  A player
+</I>&gt;<i>     &gt; name can be &quot;alan 10 folds&quot; which as you might imagine, can
+</I>&gt;<i>     cause some
+</I>&gt;<i>     &gt; confusion.
+</I>&gt;<i>     &gt;
+</I>&gt;<i>     &gt; What I'd like to do is to parse the file to create the tokens
+</I>&gt;<i>     that the
+</I>&gt;<i>     &gt; lexer would look for so when my parser runs over the tokens all the
+</I>&gt;<i>     &gt; names are single tokens.
+</I>&gt;<i>     &gt;
+</I>&gt;<i>     &gt; How do I dynamically define the tokens for the lexer to parse?
+</I>&gt;<i>     &gt;
+</I>&gt;<i>     &gt; alan
+</I>&gt;<i>
+</I>&gt;<i>
+</I>
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="027283.html">[antlr-interest] Parsing names
+</A></li>
+	<LI>Next message: <A HREF="027287.html">[antlr-interest] C# run-time and strong name
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#27285">[ date ]</a>
+              <a href="thread.html#27285">[ thread ]</a>
+              <a href="subject.html#27285">[ subject ]</a>
+              <a href="author.html#27285">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

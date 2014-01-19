@@ -1,0 +1,190 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [stringtemplate-interest] Understanding template recursion
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20Understanding%20template%20recursion&In-Reply-To=%3C465505DE.1000302%40rcn.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001073.html">
+   <LINK REL="Next"  HREF="001075.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[stringtemplate-interest] Understanding template recursion</H1>
+    <B>John Snyders</B> 
+    <A HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20Understanding%20template%20recursion&In-Reply-To=%3C465505DE.1000302%40rcn.com%3E"
+       TITLE="[stringtemplate-interest] Understanding template recursion">jjsnyders at rcn.com
+       </A><BR>
+    <I>Wed May 23 20:26:22 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001073.html">[stringtemplate-interest] Understanding template recursion
+</A></li>
+        <LI>Next message: <A HREF="001075.html">[stringtemplate-interest] Understanding template recursion
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1074">[ date ]</a>
+              <a href="thread.html#1074">[ thread ]</a>
+              <a href="subject.html#1074">[ subject ]</a>
+              <a href="author.html#1074">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>One more note on this.
+
+I thought I could get around the problem by using the literal list 
+construction to force a new list to be created
+as in
+
+recurse2(x) ::= &quot;$x$ $if(x)$$recurse2([rest(x)])$$endif$&quot;
+
+or
+
+$useItTwice([rest(items)])$
+
+But this does not help because the list construct returns an iterator as 
+well
+In ActionEvaluator.java: list method
+        value = new CatIterator(elements);
+       ...
+        return value;
+
+This too will need to be fixed.
+
+-John
+
+
+John Snyders wrote:
+&gt;<i> Hi Trevor,
+</I>&gt;<i>
+</I>&gt;<i> recurse(x) ::= &quot;&lt;x&gt;&lt;rest(x):recurse()&gt;&quot;
+</I>&gt;<i>
+</I>&gt;<i> In this case on the first call x is the whole list so &quot;abcd&quot; is output. 
+</I>&gt;<i> then it loops over the rest of x calling recurse with the x being the 
+</I>&gt;<i> current item it. It is the same as recurse(x=it).
+</I>&gt;<i> When I try this I get &quot;abcdbcd&quot;
+</I>&gt;<i> For me this is behaving as you and I would expect. I don't know why it 
+</I>&gt;<i> doesn't work for you. We may have different versions of ST.
+</I>&gt;<i>
+</I>&gt;<i> recurse2(x) ::= &quot;&lt;x&gt;&lt;recurse2(rest(x))&gt;&quot;
+</I>&gt;<i>
+</I>&gt;<i> I think what might be happening here is infinite recursion. The typical 
+</I>&gt;<i> pattern for recursion is to have a test for the case that is going to 
+</I>&gt;<i> stop the recursion. You might intend something like this (I just happen 
+</I>&gt;<i> to use $$ rather than &lt;&gt;)
+</I>&gt;<i>
+</I>&gt;<i> recurse2(x) ::= &quot;$x$ $if(x)$$recurse2(rest(x))$$endif$&quot;
+</I>&gt;<i>
+</I>&gt;<i> Sadly this does not do what I expect. The first time it should output 
+</I>&gt;<i> &quot;abcd&quot; because x is items. Now it calls recurse2 with the rest of x 
+</I>&gt;<i> which is [ b, c, d ] and that is what should be output next &quot;bcd&quot; Now it 
+</I>&gt;<i> recurses again with [ c, d ] and should output &quot;cd&quot; and again resulting 
+</I>&gt;<i> in &quot;d&quot; at which point rest is null and the if would be false. So the 
+</I>&gt;<i> total output I expect is &quot;abcd bcd cd d &quot;
+</I>&gt;<i>
+</I>&gt;<i> What I get is &quot;abcd bcd &quot;
+</I>&gt;<i>
+</I>&gt;<i> The reason I believe has to do with how ST uses iterators. On the first 
+</I>&gt;<i> recursive call to recurse2(rest(x)) rest(x) returns an iterator and not 
+</I>&gt;<i> a new list that is a slice of the old list. Now on the recursive call x 
+</I>&gt;<i> is an iterator and as soon as you use it once it is used up. The next 
+</I>&gt;<i> recursive call rest(x) returns null because x was used up in $x$.
+</I>&gt;<i>
+</I>&gt;<i> This is a very serious bug and I thought I had reported it before in 
+</I>&gt;<i> some way but now I can't find it in the archives.
+</I>&gt;<i> A very simple way to see this bug is with the following
+</I>&gt;<i> useItTwice(x) ::= &lt;&lt;
+</I>&gt;<i> once : $x;separator=&quot;, &quot;$
+</I>&gt;<i> twice: $x;separator=&quot;, &quot;$
+</I>&gt;<i>  &gt;&gt;
+</I>&gt;<i> test() ::= &lt;&lt;
+</I>&gt;<i> $useItTwice(items)$
+</I>&gt;<i> $useItTwice(rest(items))$
+</I>&gt;<i>  &gt;&gt;
+</I>&gt;<i> With your definition of items calling
+</I>&gt;<i> $useItTwice(items)$
+</I>&gt;<i> $useItTwice(rest(items))$
+</I>&gt;<i> it should print
+</I>&gt;<i> once : a, b, c, d
+</I>&gt;<i> twice: a, b, c, d
+</I>&gt;<i> once : b, c, d
+</I>&gt;<i> twice: b, c, d
+</I>&gt;<i>
+</I>&gt;<i> but it prints
+</I>&gt;<i> once : a, b, c, d
+</I>&gt;<i> twice: a, b, c, d
+</I>&gt;<i> once : b, c, d
+</I>&gt;<i> twice:
+</I>&gt;<i>
+</I>&gt;<i> Iterators should never be passed to templates. This bug will prevent you 
+</I>&gt;<i> from doing anything interesting with recursive templates.
+</I>&gt;<i>
+</I>&gt;<i> P.S. I went to umass Amherst back in the 80's.
+</I>&gt;<i>
+</I>&gt;<i> -John
+</I>&gt;<i>
+</I>&gt;<i> Trevor Strohman wrote:
+</I>&gt;<i>   
+</I>&gt;&gt;<i> I'm having trouble understanding recursion in templates.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Suppose I have a list called &quot;items&quot; that contains Strings: &quot;a&quot;, &quot;b&quot;,  
+</I>&gt;&gt;<i> &quot;c&quot;, &quot;d&quot;, and these two templates:
+</I>&gt;&gt;<i> recurse(x) ::= &quot;&lt;x&gt;&lt;rest(x):recurse()&gt;&quot;
+</I>&gt;&gt;<i> recurse2(x) ::= &quot;&lt;x&gt;&lt;recurse2(rest(x))&gt;&quot;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I expect &lt;recurse(items)&gt; to become:
+</I>&gt;&gt;<i> 	abcdcdd
+</I>&gt;&gt;<i> and &lt;recurse2(items)&gt; to become:
+</I>&gt;&gt;<i> 	abcd
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> However, &lt;recurse(items)&gt; becomes &quot;abcd&quot; and &lt;recurse2(items)&gt; throws  
+</I>&gt;&gt;<i> an Exception.  What am I misunderstanding?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Also, I notice that functions first, last and rest don't seem to be  
+</I>&gt;&gt;<i> first-class citizens in the language.  These expressions throw  
+</I>&gt;&gt;<i> exceptions:
+</I>&gt;&gt;<i> 	&lt;if(first(rest(items))&gt;
+</I>&gt;&gt;<i> 	&lt;first(items).isEnabled&gt;
+</I>&gt;&gt;<i> This has been a problem for me this afternoon.  I feel like I must be  
+</I>&gt;&gt;<i> misunderstanding the right way to approach recursive template  
+</I>&gt;&gt;<i> invocation.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Trevor
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> _______________________________________________
+</I>&gt;&gt;<i> stringtemplate-interest mailing list
+</I>&gt;&gt;<i> <A HREF="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">stringtemplate-interest at antlr.org</A>
+</I>&gt;&gt;<i> <A HREF="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest</A>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>   
+</I>&gt;&gt;<i>     
+</I>&gt;<i> _______________________________________________
+</I>&gt;<i> stringtemplate-interest mailing list
+</I>&gt;<i> <A HREF="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">stringtemplate-interest at antlr.org</A>
+</I>&gt;<i> <A HREF="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest</A>
+</I>&gt;<i>
+</I>&gt;<i>   
+</I></PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001073.html">[stringtemplate-interest] Understanding template recursion
+</A></li>
+	<LI>Next message: <A HREF="001075.html">[stringtemplate-interest] Understanding template recursion
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1074">[ date ]</a>
+              <a href="thread.html#1074">[ thread ]</a>
+              <a href="subject.html#1074">[ subject ]</a>
+              <a href="author.html#1074">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">More information about the stringtemplate-interest
+mailing list</a><br>
+</body></html>

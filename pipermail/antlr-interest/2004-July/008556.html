@@ -1,0 +1,278 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Is this nondeterminism solvable?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Is%20this%20nondeterminism%20solvable%3F&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="008555.html">
+   <LINK REL="Next"  HREF="008561.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Is this nondeterminism solvable?</H1>
+    <B>Steffen Schuemann</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Is%20this%20nondeterminism%20solvable%3F&In-Reply-To="
+       TITLE="[antlr-interest] Is this nondeterminism solvable?">s.schuemann at pobox.com
+       </A><BR>
+    <I>Mon Jul  5 23:49:55 PDT 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="008555.html">Unsubscription by antlr-interest member
+</A></li>
+        <LI>Next message: <A HREF="008561.html">[antlr-interest] Is this nondeterminism solvable?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#8556">[ date ]</a>
+              <a href="thread.html#8556">[ thread ]</a>
+              <a href="subject.html#8556">[ subject ]</a>
+              <a href="author.html#8556">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Implementing a scripting language for a group of pbems. It is a
+complete redesign of an existing tool, and my working prototype,
+consisting of some kind of compiler and a vm backend is about 40 times
+faster than my old tool. So I'm glad I started this redesign. ;-)
+
+Right now I'm fighting some nondeterminism problems with no luck so
+far.
+
+My Grammars got rather complex now, but I reduced it to this:
+
+// ---- begin: test.g -----------------------------------------
+
+options {
+    language=&quot;Cpp&quot;;
+}
+
+class MyParser extends Parser;
+options {
+    buildAST=true;
+}
+
+script
+    :   scriptElement (SSEP! scriptElement)* EOF!
+    |   SSEP! EOF!
+    ;
+
+scriptElement
+    :   subroutine
+    ;
+
+subroutine
+    :   CMD_PROC^ WS! name:IDENT (WS! VARIABLE)* statementBlock
+    ;
+
+
+statementBlock
+    : SBLOCK^ (statement (SSEP! statement)*)* EBLOCK
+    ;
+
+statement
+    :   assignExpression
+    ;
+
+assignExpression
+    :   expression (ASSIGN^ expression)?
+    ;
+
+expressionList
+    :   expression (COMMA! expression)*
+    ;
+    
+expression
+    :   additiveExpression
+    ;
+
+additiveExpression
+    :   multiplicativeExpression ((PLUS^|MINUS^) multiplicativeExpression)*
+    ;
+
+multiplicativeExpression
+    :   postfixExpression (STAR^ postfixExpression)*
+    ;
+
+postfixExpression
+    :   LPAREN! expression RPAREN!
+    
+        /*
+           The following grammar line results in this message:
+           warning:nondeterminism upon
+               k==1:LPAREN
+               between alt 2 and exit branch of block
+         */
+    |   atom ((LBRACK^ expressionList RBRACK!)|(LPAREN^ (expressionList)? RPAREN!))*
+    ;
+
+atom:   INTEGER
+    |   IDENT
+    ;
+
+
+
+class MyLexer extends Lexer;
+options {
+    k=2;
+}
+
+CMD_PROC
+    :   &quot;#proc&quot;
+    ;
+
+WS  :   (WS_)+
+        (
+            (NL_ (NL_|WS_)*) {_ttype=SSEP;} 
+            (   '{' {inputState-&gt;tokenStartLine = getLine();} (NL_|WS_)* {_ttype=SBLOCK;}
+            |   '}' {inputState-&gt;tokenStartLine = getLine();} (WS_)* {_ttype=EBLOCK;}
+            )?
+        )?
+    ;
+
+SSEP
+    :   ':' (WS_)*
+    |   (NL_ (NL_|WS_)*)
+        (   '{' {inputState-&gt;tokenStartLine = getLine();} (NL_|WS_)* {_ttype=SBLOCK;}
+        |   '}' {inputState-&gt;tokenStartLine = getLine();} (WS_)* {_ttype=EBLOCK;}
+        )?
+    ;
+
+SBLOCK
+    :   '{' (NL_|WS_)*
+    ;
+
+EBLOCK
+    :   '}' (WS_)*
+    ;
+
+protected
+WS_ :   (   ' '
+        |   '\t'
+        )
+    ;
+
+protected
+NL_ options {generateAmbigWarnings=false;}
+    :   (   { LA(2)=='\n' }? &quot;\r\n&quot;  // DOS/Windows
+        |   '\r'    // Macintosh
+        |   '\n'    // Unix
+        )
+        { newline(); }
+    ;
+
+LPAREN
+    :   '('
+    ;
+
+RPAREN
+    :   ')'
+    ;
+
+LBRACK: '['
+    ;
+
+RBRACK: ']'
+    ;
+
+STAR:   '*'
+    ;
+
+PLUS:   '+'
+    ;
+
+MINUS:  '-'
+    ;
+
+ASSIGN
+    :   '='
+    ;
+
+COMMA
+    :   ','
+    ;
+
+IDENT
+    :   ('a'..'z'|'A'..'Z'|'_') ('a'..'z'|'A'..'Z'|'_'|'0'..'9')*
+    ;
+
+VARIABLE
+    :   '$' ('a'..'z'|'A'..'Z'|'_') ('a'..'z'|'A'..'Z'|'_'|'0'..'9')*
+    ;
+
+INTEGER
+    :   ('1'..'9') ('0'..'9')*
+    ;
+
+// ---- end: test.g -----------------------------------------
+
+As you see, there are some komplex rules involved in handling of
+whitespace and newlines combined with ':', '{' and '}'. The Language
+has some unusual aspects:
+
+- spaces (outside of strings) seperate parameters
+  (as a result, it is not allowed to use spaces in an expression)
+
+- ':' seperates statements in same line
+
+- newlines seperate statements
+
+- only statements with blocks (#proc/#while/#if) can have
+  newlines around curly backets
+
+There are no #if/#while-statements in this reduced grammar,
+but the exotic whitespace/newline-handling is still there,
+just in case this is the source of all my trouble.
+
+Is the nondeterminism solvable, or will I have to disable
+the warning? I tried for some days now, and start to get
+frustated a bit. ;-)
+
+Any help (or hint on improving the whitespace/newline
+handling) is really apreciated.
+
+PS: If someone is interessted in the full grammar, I can
+    upload it to my site. Of course compiler/interpreter
+    and vm will be open source, but they are rather specific
+    to german atlantis pbems at the moment.
+
+-- 
+web: <A HREF="http://www.gulrak.net">http://www.gulrak.net</A>
+
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+    <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+    <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+    <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="008555.html">Unsubscription by antlr-interest member
+</A></li>
+	<LI>Next message: <A HREF="008561.html">[antlr-interest] Is this nondeterminism solvable?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#8556">[ date ]</a>
+              <a href="thread.html#8556">[ thread ]</a>
+              <a href="subject.html#8556">[ subject ]</a>
+              <a href="author.html#8556">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

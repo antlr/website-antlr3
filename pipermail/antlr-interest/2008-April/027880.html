@@ -1,0 +1,216 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Fwd:  Better Error Reporting in ANTLR
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Fwd%3A%20%20Better%20Error%20Reporting%20in%20ANTLR&In-Reply-To=%3Cb9a39b060804171029p3bc92479n410ea9077878cef1%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="027882.html">
+   <LINK REL="Next"  HREF="027883.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Fwd:  Better Error Reporting in ANTLR</H1>
+    <B>Adam Connelly</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Fwd%3A%20%20Better%20Error%20Reporting%20in%20ANTLR&In-Reply-To=%3Cb9a39b060804171029p3bc92479n410ea9077878cef1%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Fwd:  Better Error Reporting in ANTLR">adam.rpconnelly at googlemail.com
+       </A><BR>
+    <I>Thu Apr 17 10:29:19 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="027882.html">[antlr-interest] Fwd:  C# Error Recovery
+</A></li>
+        <LI>Next message: <A HREF="027883.html">[antlr-interest] Fwd:  Better Error Reporting in ANTLR
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#27880">[ date ]</a>
+              <a href="thread.html#27880">[ thread ]</a>
+              <a href="subject.html#27880">[ subject ]</a>
+              <a href="author.html#27880">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Decided to forward this since I just realised I accidentally didn't send it
+to the list.
+
+Adam
+
+---------- Forwarded message ----------
+From: Adam Connelly &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">adam.rpconnelly at googlemail.com</A>&gt;
+Date: 13 Apr 2008 03:22
+Subject: Re: [antlr-interest] Better Error Reporting in ANTLR
+To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">siemsen at ucar.edu</A>
+
+I think I've got a better way to do the error handling in ANTLR, but I'm not
+sure whether Terence would like it since I think there are reasons for the
+way it's currently handled.
+
+I came up with this with the help of a colleague after getting annoyed with
+stuff like SEMI being output instead of ';' in the error text.  The main
+idea is that you have an IErrorHandler interface that every parser has an
+instance of and delegates any error handling to.  You also have a
+ITokenInfoSource interface that lets the IErrorHandler retrieve information
+about tokens.  This way it removes the reporting of errors from the parser
+and allows you to mix and match parsers, error handlers and info sources.
+
+The main parts of the system are:
+Parser &lt;- contains an instance of IErrorHandler and uses
+IErrorHandler.ReportError() to report errors
+IErrorhandler &lt;- does the reporting of errors
+ITokenInfoSource &lt;- allows access to various pieces of information about a
+token
+ITokenInfo &lt;- Information about a token
+ErrorHandlerService &lt;- singleton that allows handlers to be registered by
+name
+
+There are a few reasons that I think this system would be better than the
+current one.  They include:
+
+1. The ability to easily alter the mechanism of error handling without
+altering the parser, and at run time (for example switching between
+reporting errors to the console and some logging system)
+2. Easier multilingual support (i.e. you could write different language
+error handlers)
+3. The use of ITokenInfo would allow more human understandable error
+reporting and would support having multiple lexers for the same parser with
+different error information for the different lexers (back to the
+multilingual thing?)
+4. A number of default error handlers could be packaged with ANTLR for stuff
+like built in support for well known logging frameworks, etc.
+5. You remove the exception logic for error reporting out of the parser and
+make the grammar easier to understand.
+
+Along with altering the parser class it would be good to alter the ANTLR
+grammar to support some kind of description to be associated with lexer
+rules (the &quot;error text&quot;).  This would stop the token name being output in
+situations where it would be more appropriate to have a textual description.
+
+The TokenInfos would all be generated when the parser was being generated
+using a slightly modified token file (that would just have more information
+in it).
+
+I've attached a png with a class diagram if anyone's interested - I wouldn't
+take it too seriously since I think I altered some stuff since I made it,
+but it'll help you understand what I'm proposing better than my jibberings
+(since I don't think I've done it justice).
+
+Any thoughts?
+
+Cheers,
+Adam
+
+
+On 10/04/2008, <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">siemsen at ucar.edu</A> &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">siemsen at ucar.edu</A>&gt; wrote:
+&gt;<i>
+</I>&gt;<i>  I also report semantic errors with System.err.println().  Line and
+</I>&gt;<i> character information is in the token.  In your ifStatement rule, try this:
+</I>&gt;<i> if (!($expression.value instanceof Boolean)) {
+</I>&gt;<i>     System.err.println(&quot;(&quot; + $expression.token.getLine() + &quot;:&quot; +
+</I>&gt;<i>                        $expression.token.getCharPositionInLine() + &quot;): &quot; +
+</I>&gt;<i>                        &quot;if expression '&quot; + $expression.text + &quot;'does not
+</I>&gt;<i> evaluate to a boolean&quot;);
+</I>&gt;<i>     return;
+</I>&gt;<i> }
+</I>&gt;<i>
+</I>&gt;<i> I would also like to do this the &quot;right&quot; way, with an exception.  When I
+</I>&gt;<i> tried, the exception logic made it harder to understand, so I stuck with
+</I>&gt;<i> System.err.println().  I hope someone can suggest a better way.
+</I>&gt;<i> -- Pete
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> On Apr 10, 2008, at 9:06 AM, Robert Stehwien wrote:
+</I>&gt;<i>
+</I>&gt;<i> I have a simple grammar where there can be semantic errors.  Right now
+</I>&gt;<i> I'm using System.err.println() to report those errors.  What I'd like
+</I>&gt;<i> to do is create and throw an exception that takes just an error string
+</I>&gt;<i> and have the same line and character information reported that ANTLR
+</I>&gt;<i> errors report.  Any good suggestions on how I can do that?
+</I>&gt;<i>
+</I>&gt;<i> Here are examples of the errors in my grammar:
+</I>&gt;<i> --------------------
+</I>&gt;<i> ifStatement     : ^(IF expression s+=.+)
+</I>&gt;<i>   {
+</I>&gt;<i>     if (!($expression.value instanceof Boolean)) {
+</I>&gt;<i>       System.err.println(&quot;if expression '&quot; + $expression.text + &quot;'
+</I>&gt;<i> does not evaluate to a boolean&quot;);
+</I>&gt;<i>       return;
+</I>&gt;<i>     }
+</I>&gt;<i>     if (((Boolean)$expression.value).booleanValue()) {
+</I>&gt;<i>       runStatement((CommonTree)$s.get(0));
+</I>&gt;<i>     }
+</I>&gt;<i>     else if ($s.size() &gt; 1) {
+</I>&gt;<i>       runStatement((CommonTree)$s.get(1));
+</I>&gt;<i>     }
+</I>&gt;<i>   }
+</I>&gt;<i>   ;
+</I>&gt;<i> --------------------
+</I>&gt;<i> @members {
+</I>&gt;<i>     private Map&lt;String, Object&gt; variables = new HashMap&lt;String, Object&gt;();
+</I>&gt;<i>
+</I>&gt;<i>     private void defineInt(String name) {
+</I>&gt;<i>         if (variables.containsKey(name)) {
+</I>&gt;<i>             System.err.println(&quot;variable '&quot; + name + &quot;' already defined&quot;);
+</I>&gt;<i>         }
+</I>&gt;<i>         variables.put(name, BigInteger.ZERO);
+</I>&gt;<i>     }
+</I>&gt;<i> }
+</I>&gt;<i> --------------------
+</I>&gt;<i>
+</I>&gt;<i> Thanks,
+</I>&gt;<i> Robert
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20080417/e95bf579/attachment-0001.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20080417/e95bf579/attachment-0001.html</A> 
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: ErrorHandler.png
+Type: image/png
+Size: 6770 bytes
+Desc: not available
+Url : <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20080417/e95bf579/attachment-0001.png">http://www.antlr.org/pipermail/antlr-interest/attachments/20080417/e95bf579/attachment-0001.png</A> 
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="027882.html">[antlr-interest] Fwd:  C# Error Recovery
+</A></li>
+	<LI>Next message: <A HREF="027883.html">[antlr-interest] Fwd:  Better Error Reporting in ANTLR
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#27880">[ date ]</a>
+              <a href="thread.html#27880">[ thread ]</a>
+              <a href="subject.html#27880">[ subject ]</a>
+              <a href="author.html#27880">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

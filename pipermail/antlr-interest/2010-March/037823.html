@@ -1,0 +1,224 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Wiki Markup Like Grammar Example
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Wiki%20Markup%20Like%20Grammar%20Example&In-Reply-To=%3C3cac8fdf1003011603t3fe1b953nd694cfb9d8496008%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="037822.html">
+   <LINK REL="Next"  HREF="037824.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Wiki Markup Like Grammar Example</H1>
+    <B>Kirby Bohling</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Wiki%20Markup%20Like%20Grammar%20Example&In-Reply-To=%3C3cac8fdf1003011603t3fe1b953nd694cfb9d8496008%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Wiki Markup Like Grammar Example">kirby.bohling at gmail.com
+       </A><BR>
+    <I>Mon Mar  1 16:03:03 PST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="037822.html">[antlr-interest] (no subject)
+</A></li>
+        <LI>Next message: <A HREF="037824.html">[antlr-interest] Help with Null Pointer Exception
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37823">[ date ]</a>
+              <a href="thread.html#37823">[ thread ]</a>
+              <a href="subject.html#37823">[ subject ]</a>
+              <a href="author.html#37823">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Eric,
+
+   I have a grammar for Wikimedia that recognizes ~90% of the pages on
+Wikipedia.  It probably needs quite a bit of tender loving care.  I
+can't release it, because I did it on the company dime, and I haven't
+yet won the argument to release it.  Sorry.
+
+   The key question is: Do you expect your users to have perfect
+markup, or do you need to gracefully handle *anything* given to you?
+
+   If users are expected to have perfect markup, and you can tweak the
+markup to be easy to parse, the problem is fairly straight forward.
+If you can make the grammar public, I'd happily look at it on or off
+list.
+
+   I wanted to parse Wikimedia markup to be able to allow for the
+extraction of text with higher semantic quality for some NLP research.
+ I spent a bunch of time, there are a number of grammars for ANTLR for
+that.  None of them that I saw were in a working state.
+
+The approach I took was:
+
+Lex all characters that can ever be treated as &quot;special&quot;, as a
+individual token types.  If it can have a special meaning based upon
+it's position in a line, I'd treat those independently (so '=' at the
+beginning of a line vs. not the beginning means something different,
+same thing for '*', some where STAR tokens, others were
+LIST_ITEM_START tokens).
+
+I treated the &quot;bold&quot; and the &quot;italics&quot; cases as toggles (that's the
+way Wikimedia's PHP code handles it).  You later walk the code to
+identify if this is an &quot;on&quot; or an &quot;off&quot; case.  It also was careful
+about accounting for an inline &lt;b&gt; or &lt;/b&gt;.  If all you are doing is
+translating to HTML, that makes sense.
+
+All non-newline whitespace, I lexed into whitespace tokens.  From
+there the trickiest part was realizing that all multi-character markup
+couldn't be handled as tokens (if it could be ambiguous).  So handling
+{| vs. {{ vs. {{{ was couldn't be done in the lexer, had to be done in
+the parser.  Otherwise it was impossible to match things like
+{{{{{Foo}}} Bar}} or {{{{{Foo}} Bar}}}.  The lexer is greedy, and is
+incapable of matching the former, only the latter.
+
+Finally I had a token type for &quot;INLINE_TEXT&quot; that was a constructed
+token type.  All of the characters that could never mean anything
+special would be lexed into &quot;TEXT&quot; tokens.  In my &quot;I give up, your
+markup is busted&quot; rule that was right near the top most rule, I'd push
+any markup I couldn't parse with the sane rules, underneath an
+&quot;INLINE_TEXT&quot;.  So anything underneath of an &quot;INLINE_TEXT&quot; I new to
+just push out after escaping for the output.
+
+I had a couple of things that were very difficult, including the
+&lt;nowiki&gt; tag.  That I just lexed from &lt;nowiki&gt; to &lt;/nowiki&gt; with the
+plan that I would write a custom grammar/handling for those tokens
+special.  I saw several attempts to disable token generation, and have
+the grammar maintain state.  It was just way to complex from what I
+saw.  Trying to cram way too much logic lexer.
+
+Finally, plan on making a ton of things optional.  Normal people can't
+write things that parsers are happy with.  So virtually every &quot;close&quot;
+tag had to be optional.  Even if I just read until EOF, and accepted
+that.  So a lot of &lt;ref&gt; tags would go until the end of the document,
+because they weren't closed correctly.  Or a bullet item that was on a
+line that didn't end with a newline, it ended with EOF.  Lots of rules
+needed lots of flexibility.  If you have a bunch of sample text, I'd
+plan on brute force testing your grammar upon it.  I just downloaded
+the Wikimedia dumps, and wrote the XML parser, and feed the text to my
+parser and wrote out dump files upon every page I couldn't parse.  I
+slowly fixed each case one by one, and eventually got pretty solid
+coverage.
+
+The other thing I found very useful is to imagine how I would write
+the code by hand.  Then I'd think about how could I get ANTLR to
+generate code that looked like that.  One problem I had, but never got
+a chance to try out my solution was mismatched open/closes.  In
+Wikimedia if you have the following:
+
+{{ foo [[ bar }} ]]
+
+It considers the [[ bar }} ]] to be a link, and you have a dangling {{
+at the beginning of the text.  In that case, I wanted to use a scope,
+with a isTerminated(tokenStream) function.  So every loop would
+continue as long as &quot;isTerminated&quot; returned false.  As I saw a new
+open, I'd push onto the stack the scope the thing that matched the
+close just seen.  I had a ton of pathological cases in my attempts to
+work around this.  Far too many cases ended up in the
+&quot;bad_markup_catchall&quot; rule that I needed to match if I wanted to work
+for on the production Wikitext.  I think it'll work because I can see
+that's ANTLR outputs rules that are very similar to the types of code
+in the Wikimedia PHP rules.  It's just much faster, and far easier to
+maintain.  For bonus, it's not even in PHP (*shudders*)....
+
+Kirby
+
+
+
+On Sun, Feb 28, 2010 at 6:44 PM, Eric Webb &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">eric at collectivegenius.net</A>&gt; wrote:
+&gt;<i> I am working on a note taking language (think wiki markup, but somewhat
+</I>&gt;<i> more specialized), and I am trying to use Antlr 3.2 to parse and create
+</I>&gt;<i> an AST of the content/structure.
+</I>&gt;<i>
+</I>&gt;<i> Does anyone have any sample wiki (or similar) grammar that works in
+</I>&gt;<i> Antlr 3.2? &#160;I found this:
+</I>&gt;<i>
+</I>&gt;<i> <A HREF="http://dirkriehle.com/publications/2008/wiki-creole/">http://dirkriehle.com/publications/2008/wiki-creole/</A>
+</I>&gt;<i>
+</I>&gt;<i> which is for Creole 1.0 (with is meant to be a standard Wiki markup
+</I>&gt;<i> language). &#160;Unfortunately, it doesn't work for me.
+</I>&gt;<i>
+</I>&gt;<i> Thanks in advance.
+</I>&gt;<i>
+</I>&gt;<i> cheers,
+</I>&gt;<i> eric
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> ** More Information for the Interested **
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> I have a working grammar that can parse document sections and
+</I>&gt;<i> paragraphs, for example:
+</I>&gt;<i>
+</I>&gt;<i> &#160; &#160;*section 1
+</I>&gt;<i> &#160; &#160;---
+</I>&gt;<i>
+</I>&gt;<i> &#160; &#160;this is a paragraph in the section
+</I>&gt;<i>
+</I>&gt;<i> &#160; &#160;section 1.1
+</I>&gt;<i> &#160; &#160;---
+</I>&gt;<i>
+</I>&gt;<i> &#160; &#160;nested sections!
+</I>&gt;<i>
+</I>&gt;<i> &#160; &#160;---
+</I>&gt;<i> &#160; &#160;---
+</I>&gt;<i> &#160; &#160;*
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> It works great (after a bit of trial and error and reading The
+</I>&gt;<i> Definitive ANTLR Reference and giving gUnit a spin). &#160;Now, I am trying
+</I>&gt;<i> to start supporting other standard wiki type things in my grammar, like:
+</I>&gt;<i>
+</I>&gt;<i> Lists:
+</I>&gt;<i>
+</I>&gt;<i> &#160;* this is a list item
+</I>&gt;<i> &#160;* this is another list item
+</I>&gt;<i>
+</I>&gt;<i> Formatting:
+</I>&gt;<i>
+</I>&gt;<i> this is **bold**!
+</I>&gt;<i> this is //italic//.
+</I>&gt;<i>
+</I>&gt;<i> The problem is, my grammar for the the sections/paragraphs above is
+</I>&gt;<i> &quot;word&quot; based (ie: I create WORD tokens with the lexer), while the Creole
+</I>&gt;<i> example tokenizes the stream into character tokens to be able to
+</I>&gt;<i> identify the list, formatting, and other delimiters.
+</I>&gt;<i>
+</I>&gt;<i> I am hoping for a working example that shows some best practices for a
+</I>&gt;<i> language like wiki markup before I go about re-structuring my grammar to
+</I>&gt;<i> support these other things (which I think I need to do).
+</I>&gt;<i>
+</I>&gt;<i> Or, if I am totally misguided, let me know that too.
+</I>&gt;<i>
+</I>&gt;<i> cheers,
+</I>&gt;<i> eric
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i>
+</I></PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="037822.html">[antlr-interest] (no subject)
+</A></li>
+	<LI>Next message: <A HREF="037824.html">[antlr-interest] Help with Null Pointer Exception
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37823">[ date ]</a>
+              <a href="thread.html#37823">[ thread ]</a>
+              <a href="subject.html#37823">[ subject ]</a>
+              <a href="author.html#37823">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

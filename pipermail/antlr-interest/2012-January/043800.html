@@ -1,0 +1,205 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Appropriate use of honey badger listeners
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Appropriate%20use%20of%20honey%20badger%20listeners&In-Reply-To=%3C722D47FD-8256-4BF4-9587-27FF9E92FEFA%40cs.usfca.edu%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="043779.html">
+   <LINK REL="Next"  HREF="043802.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Appropriate use of honey badger listeners</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Appropriate%20use%20of%20honey%20badger%20listeners&In-Reply-To=%3C722D47FD-8256-4BF4-9587-27FF9E92FEFA%40cs.usfca.edu%3E"
+       TITLE="[antlr-interest] Appropriate use of honey badger listeners">parrt at cs.usfca.edu
+       </A><BR>
+    <I>Thu Jan 12 15:39:40 PST 2012</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="043779.html">[antlr-interest] Appropriate use of honey badger listeners
+</A></li>
+        <LI>Next message: <A HREF="043802.html">[antlr-interest] Appropriate use of honey badger listeners
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#43800">[ date ]</a>
+              <a href="thread.html#43800">[ thread ]</a>
+              <a href="subject.html#43800">[ subject ]</a>
+              <a href="author.html#43800">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+On Jan 11, 2012, at 8:39 PM, Kyle Ferrio wrote:
+
+&gt;<i> Hi Ter,
+</I>&gt;<i> 
+</I>&gt;<i> I don't have answers, but I have questions which might at least cut off some dead ends...
+</I>&gt;<i> 
+</I>&gt;<i> I agree that point #2 seems pretty clear.  And I realize that this:
+</I>&gt;<i> 
+</I>&gt;<i>     newtree = listener.someEvent(oldtree);
+</I>&gt;<i>     if ( newtree!=oldtree ) replace-oldtree-with-newtree;
+</I>&gt;<i> 
+</I>&gt;<i> is pseudo-code.  You probably have this all worked out, but it occurs to me that comparing two trees may be more expensive than necessary.
+</I>
+I would be comparing pointers. if the pointers are different, I would slip in the new pointer. only the replace operation is pseudocode. In reality it would simply be &quot;set the ith child pointer to the new pointer&quot;.
+
+&gt;<i>   Despite the fact that walking a tree of n nodes is O(n), and so comparing two trees (non-naively) is also O(n), there may be a lot of data in those nodes to compare.  If all we care about is detecting changes, a significant speedup is possible if the interface for a tree object (or for listeners acting on trees?) includes a flag that gets flipped by any operation which has the possibility of changing the tree.  (N.B. Possibility, not guarantee.  A guarantee would require the eval we're trying to avoid.)  This tiny bit of added API built into a Listener baseclass for processing tree changes (which are all covered by a small, finite set of generic operations) would turn the subsequent O(n) comparison into O(1).  I'm not sure how this fits with your design.  Of course, all bets are off if someone messes with the tree directly.  (N.B. Alternatively, a hash on trees would be almost as cheap and require no extra API, but that only works if we're willing to treat topologically equivalent trees with different memory layouts (e.g. flipping a tree left-to right) as different.)
+</I>
+I don't think we need to do anything fancy. All we are doing is altering pointers in the tree. If you want to delete a subtree, return null. If you want to leaves the tree as it is, return the original pointer. If you want to alter a subtree, return a pointer to the new tree.
+
+&gt;<i> Ok, now point #1.  Not sure how to approach this, but...
+</I>&gt;<i> 
+</I>&gt;<i> Thought: If the root of a rule r which returns a value does not declare the type of value expected, two questions arise. One, where/when does the antlr tool perform type-checking for the rules which consume rule r? 
+</I>
+ANTLR would not be involved in this case because all ANTLR does is create the parse trees. Our listener would be annotating those trees.
+
+&gt;<i> Two, where/when does the antlr tool perform type-checking of the retvals from listeners for different alts of r? 
+</I>
+ Again, I don't think ANTLR is involved here. the only way it would get involved as if we defined return values or parameters that get shoved into the context objects. And the context objects are the parse tree nodes.
+
+&gt;<i> Perhaps an explicit decoration/declaration of a type T at the root of r is the easiest, clearest and safest way to communicate to all of the listeners of all of the alts of r that they must return type T.  My thinking here is probably clouded by my preternaturally strong preference for static typing.  
+</I>
+I too am leaning toward some static typing, but I hesitate to put &quot;returns [T v]&quot; into the grammar because T it is application-specific. and, more importantly, it is pass specific. each pass might need a different type so we would need to do something like &quot;returns [T v, U w]&quot; but then the grammar is specifically tied to a particular application and literally the parser would not compile without having those types available. there would be no way to provide such a generic grammar to users on the ANTLR website.
+
+We need a way to decorate or annotate a node in a type safe way.  To do that in Java, we have to use of classes or interfaces or something. Certainly, we can provide a factory that creates the various contexts to use our subclasses of ParserRuleContext like T and U. The only problem is that the tree node types can only be sent once: on construction.
+
+What if we had some kind of adapter that fed the listeners proxies? So the original parse tree has generic nodes like ruleContext and we need T and U for 2 different phases. As the parse tree walker moved along, it could wrap the generic ruleContext objects with a proxy, of type T, that had the extra information we need. T with points at ruleContext instead of using inheritance.  If we didn't reuse the proxies, however, we would have to create a new object for every listener event. That's not the end of the world as I do that during parsing. But, we could think about reusing proxy objects, though I doubt we would know when the application was going to refer to multiple contexts. As long as the proxy object popped into existence for the listener event and popped out of existence afterwards, should not burden the garbage collector (which does not walk dead objects).
+
+let's see what this would look like. Here is a chunk of the parse tree walker:
+
+ParseTree.RuleNode r = (ParseTree.RuleNode)t;
+enterRule(listener, r);
+int n = r.getChildCount();
+for (int i = 0; i&lt;n; i++) {
+    walk(listener, r.getChild(i));
+}       
+exitRule(listener, r);
+
+And let's say we have an adapter that knows how to create wrappers for parse tree nodes:
+
+adaptor.wrap(t); // returns type T or U or whatever you want
+
+may be like this:
+
+class T {
+    ParserRuleContext delegate; // hide in a superclass somewhere
+    int v; // my field
+    public T(ParserRuleContext ctx) { delegate = ctx; }
+}
+
+class myAdaptor&lt;T&gt; implements ParseTreeWrapper {
+    public T wrap(ParserRuleContext t) { return new T(t); }
+}
+
+Then, all we have to do is change the enter event to look like this:
+
+enterRule(listener, adaptor.wrap(r));
+
+The listener event would have to cast the ParserRuleContext to T or U etc&#8230;
+
+public void exitRule(AParser.multContext ctx) {
+    T t = (T)ctx;
+    t.v = t.a.v * t.b.v;
+}
+
+MUCH cleaner and type safe.
+
+OTOH, we could reverse it by adding a pointer to every parse tree node that points to an object with extra fields. Only those parse trees that need extra fields would have a pointer to an auxiliary object or object extension if you will. 
+
+Or, As Sam said, we could provide a factory for creating the various parse tree nodes. If our application needed object extensions, we could pass in a factory that created special context objects that had our fields. Those objects would have to have a union of all the values needed by all phases, but that's not necessarily a bad thing. It's often the case that I want my type computation information to persist through multiple phases all the way through to code generation. On the other hand, if we have lots of temporary values we need just for computation, the tree node would have lots of extra fields, mucking up our class. I suppose nothing beats the simplicity of a factory creating the right objects. Then we can create a class like this
+
+class T extends ParserRuleContext {
+    int v; // temp value
+    TypeInfo type; // persists across tree passes
+}
+
+The problem is that we would need a new class definition for every context, meaning every rule, in the grammar. yuck.  actually, maybe it is not too bad because we would only need to annotate some of the nodes such as eContext.  We would still need a typecast in the listeners like:  T t = (T)ctx;
+
+It'd be simpler to add a field to ParserRuleContext and had a generic type because it means creating only a single object:
+
+class ParserRuleContext&lt;T&gt; {
+    T extension;
+    &#8230; existing stuff ...
+}
+
+All of the various context object types could point at the single type of extension object.  I guess it would mean adding code in the listeners like this:
+
+public void exitRule(AParser.multContext&lt;T&gt; ctx) {
+    if ( ctx.extension==null ) ctx.extension = new T();
+    T t = ctx.extension;
+    T a = ctx.a.extension; // ugh; kind of a mouthful
+    T b = ctx.b.extension;
+    t.v = a.v * b.v;
+}
+
+Hmm&#8230;
+
+one thing I should note about the stack solution. I wonder if it might get confusing knowing what is on the stack and what is not, particularly if not every event has a listener implementation (that pushed a value). If the values are stored in the parse tree contexts, you know that that no does not have a value. With a stack, you would see a value computed way below that you don't necessarily want. You would not know that it is not the value you want because it is a disembodied value on the stack. That said, it's simplicity is appealing. If we need to annotate the tree anyway, however, maybe we do need a solution like I describe above.
+
+&gt;<i> Well, I'm not sure if any of this helps.  But I'm reasonably confident that it does not hurt.
+</I>
+&quot;no animals were hurt during the production of this e-mail&quot; :)
+
+Ter
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="043779.html">[antlr-interest] Appropriate use of honey badger listeners
+</A></li>
+	<LI>Next message: <A HREF="043802.html">[antlr-interest] Appropriate use of honey badger listeners
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#43800">[ date ]</a>
+              <a href="thread.html#43800">[ thread ]</a>
+              <a href="subject.html#43800">[ subject ]</a>
+              <a href="author.html#43800">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,224 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] How can I insert a Token in the token stream?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20How%20can%20I%20insert%20a%20Token%20in%20the%20token%20stream%3F&In-Reply-To=%3C1222031412.12946.10.camel%40jimi.temporal-wave.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="030774.html">
+   <LINK REL="Next"  HREF="030785.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] How can I insert a Token in the token stream?</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20How%20can%20I%20insert%20a%20Token%20in%20the%20token%20stream%3F&In-Reply-To=%3C1222031412.12946.10.camel%40jimi.temporal-wave.com%3E"
+       TITLE="[antlr-interest] How can I insert a Token in the token stream?">jimi at temporal-wave.com
+       </A><BR>
+    <I>Sun Sep 21 14:10:12 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="030774.html">[antlr-interest] How can I insert a Token in the token stream?
+</A></li>
+        <LI>Next message: <A HREF="030785.html">[antlr-interest] How can I insert a Token in the token stream?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30783">[ date ]</a>
+              <a href="thread.html#30783">[ thread ]</a>
+              <a href="subject.html#30783">[ subject ]</a>
+              <a href="author.html#30783">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Sun, 2008-09-21 at 13:00 +0800, Yet ANOTHER Test Runner wrote:
+&gt;<i> Sorry for my poor English :(
+</I>&gt;<i> 
+</I>&gt;<i> Many computer languages like TTCN3, allows near '}' token or at the
+</I>&gt;<i> last statement inside block statement omit ';' token correctly, like
+</I>&gt;<i> this:
+</I>&gt;<i> 
+</I>&gt;<i> if(xx){
+</I>&gt;<i> 
+</I>&gt;<i>     const integer i:=1;    //error if missing ';'
+</I>&gt;<i> 
+</I>&gt;<i>     const integer i2:=2  //ok! even though missing ';'
+</I>&gt;<i> 
+</I>&gt;<i> }
+</I>&gt;<i> 
+</I>&gt;<i> How can I insert a token ';' in the TokenStream if it is omitted.
+</I>
+
+Don't do it that way as you have to override the nextToken() method and
+make it produce multiple tokens, as well as the fact that you will hide
+the logic away too much.
+
+The JavaFX language allows that too (though I think it is a pointless
+idea myself). The best thing is to create an empty rule that decides
+whether it should throw an error or not, though this does mean that you
+have to construct your grammar such that it is not ambiguous in the
+absence of a SEMI token specified as terminator for a statement. That is
+easy enough, though you still need the SEMI to disambiguate
+statements/expressions.
+
+// -------------------------
+// Decides whether a SEMI is required at this point in the parse (and
+issues
+// an error if it is and is not present)
+//
+possiblyOptSemi
+	: 	
+			{
+				// Call super class function to decide whether to look for
+				// the SEMI or not and whether to log an error if one is 
+				// missing.
+				//
+				checkForSemi();
+			}
+	;
+
+
+Then:
+
+ /**
+     * Examines the token stream to see if we require a SEMI
+     * token to terminate the previous statement, or we do not.
+     * 
+     * The rules for deciding wheter a SEMI is required here or
+     * not are reasonably straight forward:
+     * 
+     * 1) If the next token is a '}' then we do not required a SEMI
+     *    as the last statement of a block does not need to terminate
+     *    with a SEMI;
+     * 
+     * 2) If the next token is EOF then we do not require a SEMI as
+     *    the last statement of the script does not require termination;
+     * 
+     * 3) If the previous token was a '}' then we do not require a SEMI
+     *    as brace blocks do not require termination ever.
+     * 
+     * 4) If the previous token was itself a SEMI then we assume that
+     *    the prior statement was terminated correctly.
+     * 
+     * 5) If the next token is ELSE, then the prior single statement
+     *    of a then clause does not require a SEMI.
+     *    For instance if (x) a else b;
+     * 
+     * Note that we always consume a SEMI colon here if there is one
+     * as there is never any harm in having too many SEMIs.
+     * 
+     * @param contextMessage Message context to use when reporting that a required SEMI is missing
+     */
+    protected void checkForSemi()
+    {
+         
+        Token nextTok       = input.LT(1);
+        int   nextTokType  = nextTok.getType();
+        
+        // If there is a SEMI colon next anyway, then we just eat it
+        //
+        if  (nextTokType == v4Parser.SEMI) {
+            // Just consume it and return then
+            //
+            input.consume();
+            return;
+        }
+        
+        // Ignore if next token is something that relaxes the rules
+        //
+        if  (      nextTokType == v4Parser.RBRACE 
+                || nextTokType == Token.EOF
+                || nextTokType == v4Parser.ELSE
+                || nextTokType == v4Parser.RBRACE_LBRACE_STRING_LITERAL
+                || nextTokType == v4Parser.RBRACE_QUOTE_STRING_LITERAL
+            ) {
+            
+            // The SEMI was optional anyway so just return
+            //
+            return;
+        }
+        
+        // Now we need to know the previous on channel token
+        //
+        Token prevToken = input.LT(-1);
+        
+        if  (      prevToken.getType() == v4Parser.RBRACE
+                || prevToken.getType() == v4Parser.SEMI
+            )
+        {
+            // We don't require a SEMI after a '}' or after a prior SEMI
+            //
+            return;
+        }
+
+        // OK, having got here, we must require a SEMI and it is missing
+        // so issue the error.
+        //
+        log.error(semiPos(), MsgSym.MESSAGE_JAVAFX_SEMI_REQUIRED);
+                 
+    }
+
+
+
+
+&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> e.g.:
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i>         if(xx) { } /* Don't insert ';' here */ else{} /* Insert ';'
+</I>&gt;<i>         here */
+</I>&gt;<i>         
+</I>&gt;<i>         if(yy) {} /* insert a ';' here*/
+</I>&gt;<i>         
+</I>&gt;<i>         if(zz) { const integer i1:=5; const integer i2:=6 }
+</I>&gt;<i>         
+</I>&gt;<i>         Like this:
+</I>&gt;<i>         
+</I>&gt;<i>         if(xx) {} else {};
+</I>&gt;<i>         
+</I>&gt;<i>         if(yy) {};
+</I>&gt;<i>         
+</I>&gt;<i>         if(zz) { const integer i1:=5; const integer i2:=6; } ;
+</I>&gt;<i>         
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> Thank you!!!
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i> 
+</I>-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20080921/85759aba/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20080921/85759aba/attachment.html</A> 
+</PRE>
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="030774.html">[antlr-interest] How can I insert a Token in the token stream?
+</A></li>
+	<LI>Next message: <A HREF="030785.html">[antlr-interest] How can I insert a Token in the token stream?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30783">[ date ]</a>
+              <a href="thread.html#30783">[ thread ]</a>
+              <a href="subject.html#30783">[ subject ]</a>
+              <a href="author.html#30783">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

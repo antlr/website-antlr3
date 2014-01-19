@@ -1,0 +1,165 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] conditional processing
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20conditional%20processing&In-Reply-To=%3Cf0fcc6820711270450h7290886ayd8372cb0aed80585%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="024930.html">
+   <LINK REL="Next"  HREF="024935.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] conditional processing</H1>
+    <B>Mark Volkmann</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20conditional%20processing&In-Reply-To=%3Cf0fcc6820711270450h7290886ayd8372cb0aed80585%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] conditional processing">r.mark.volkmann at gmail.com
+       </A><BR>
+    <I>Tue Nov 27 04:50:22 PST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="024930.html">[antlr-interest] conditional processing
+</A></li>
+        <LI>Next message: <A HREF="024935.html">[antlr-interest] conditional processing
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24934">[ date ]</a>
+              <a href="thread.html#24934">[ thread ]</a>
+              <a href="subject.html#24934">[ subject ]</a>
+              <a href="author.html#24934">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 11/27/07, Harald Mueller &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">harald_m_mueller at gmx.de</A>&gt; wrote:
+&gt;<i> Hi -
+</I>&gt;<i>
+</I>&gt;<i> You need a context that keeps knowledge about the world - variable values, but also results of evaluations e.g. for ifs, returns etc. Usually the context is a stack - see any text on fundamentals of progam language semantics. The context is threaded through all your calls (as a simple parameter), and your calls - e.g. &quot;simpleStatement&quot; - can then react to it:
+</I>&gt;<i>
+</I>&gt;<i> if (boolStack.Top) {
+</I>&gt;<i>     ...do evaluation...
+</I>&gt;<i> }
+</I>&gt;<i>
+</I>&gt;<i> Just imagine what data a virtual machine would need to do what you want - exactly these data are what you need in your context.
+</I>
+&gt;<i>From what you described, it sounds like my current solution might be
+</I>using the right approach. I don't have to worry about nested
+conditionals, so I probably don't need stacks now. Here's what I have.
+Note how the rule for simpleStatement just remembers what it saw but
+doesn't execute the statement. Also note how the rule that matches
+&quot;IF&quot; executes the statement if the condition evaluates to true. Does
+this seem like a reasonable way to implement this?
+
+tree grammar MathScriptTree;
+
+options {
+  ASTLabelType = CommonTree;
+  tokenVocab = MathScript;
+  output = template;
+}
+
+@members {
+  enum Operation { Add, Subtract, Print }
+  Operation operation;
+  int operand;
+  int value;
+
+  private void execute() {
+    switch (operation) {
+      case Add: value += operand; break;
+      case Subtract: value -= operand; break;
+      case Print: System.out.println(value); break;
+    }
+  }
+
+  private static int toInt(CommonTree node) {
+    return Integer.parseInt(node.getText());
+  }
+}
+
+script: ^(SCRIPT statement*);
+
+statement
+  : simpleStatement { execute(); }
+  | ^('IF' c=condition simpleStatement) { if ($c.result) execute(); }
+  ;
+
+simpleStatement
+  : ^('ADD' n=NUMBER) { operation = Operation.Add; operand = toInt(n); }
+  | ^('SUBTRACT' n=NUMBER) { operation = Operation.Subtract; operand =
+toInt(n); }
+  | 'PRINT' { operation = Operation.Print; }
+  ;
+
+condition returns [boolean result]
+  : 'POSITIVE' { $result = value &gt; 0; }
+  | 'NEGATIVE' { $result = value &lt; 0; }
+  | ^('&lt;' n=NUMBER) { $result = value &lt; toInt(n); }
+  | ^('&gt;' n=NUMBER) { $result = value &gt; toInt(n); }
+  | ^('=' n=NUMBER) { $result = value == toInt(n); }
+  ;
+
+&gt;<i> -------- Original-Nachricht --------
+</I>&gt;<i> &gt; Datum: Mon, 26 Nov 2007 21:02:46 -0600
+</I>&gt;<i> &gt; Von: &quot;Mark Volkmann&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">r.mark.volkmann at gmail.com</A>&gt;
+</I>&gt;<i> &gt; An: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> &gt; Betreff: [antlr-interest] conditional processing
+</I>&gt;<i>
+</I>&gt;<i> &gt; Part of my AST looks like this.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; ^('if' condition simpleStatement)
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; In my tree grammar, the rule for &quot;condition&quot; evaluates the matching
+</I>&gt;<i> &gt; content to true or false. The rule for &quot;simpleStatement&quot; executes the
+</I>&gt;<i> &gt; statement, for example, it could be a simple print statement. I only
+</I>&gt;<i> &gt; want simpleStatement to be executed if condition evaluates to true. I
+</I>&gt;<i> &gt; haven't been able to figure out how to make this work because when
+</I>&gt;<i> &gt; this part of my AST is matched, the rules for both condition and
+</I>&gt;<i> &gt; simpleStatement are fired.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; I'd appreciate any hints on how to achieve this.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; --
+</I>&gt;<i> &gt; R. Mark Volkmann
+</I>&gt;<i> &gt; Object Computing, Inc.
+</I>&gt;<i>
+</I>&gt;<i> --
+</I>&gt;<i> GMX FreeMail: 1 GB Postfach, 5 E-Mail-Adressen, 10 Free SMS.
+</I>&gt;<i> Alle Infos und kostenlose Anmeldung: <A HREF="http://www.gmx.net/de/go/freemail">http://www.gmx.net/de/go/freemail</A>
+</I>&gt;<i>
+</I>
+
+-- 
+R. Mark Volkmann
+Object Computing, Inc.
+</PRE>
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="024930.html">[antlr-interest] conditional processing
+</A></li>
+	<LI>Next message: <A HREF="024935.html">[antlr-interest] conditional processing
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24934">[ date ]</a>
+              <a href="thread.html#24934">[ thread ]</a>
+              <a href="subject.html#24934">[ subject ]</a>
+              <a href="author.html#24934">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

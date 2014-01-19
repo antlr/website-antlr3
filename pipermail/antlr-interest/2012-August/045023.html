@@ -1,0 +1,267 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] &quot;replace: range invalid&quot; error when rewriting an	imaginary token/empty block
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%22replace%3A%20range%20invalid%22%20error%20when%20rewriting%20an%0A%09imaginary%20token/empty%20block&In-Reply-To=%3C9082725F-B036-4D04-ABF9-4547F216E1DC%40seespotcode.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="045022.html">
+   <LINK REL="Next"  HREF="045024.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] &quot;replace: range invalid&quot; error when rewriting an	imaginary token/empty block</H1>
+    <B>Michael Glaesemann</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%22replace%3A%20range%20invalid%22%20error%20when%20rewriting%20an%0A%09imaginary%20token/empty%20block&In-Reply-To=%3C9082725F-B036-4D04-ABF9-4547F216E1DC%40seespotcode.net%3E"
+       TITLE="[antlr-interest] &quot;replace: range invalid&quot; error when rewriting an	imaginary token/empty block">grzm at seespotcode.net
+       </A><BR>
+    <I>Sun Aug  5 16:12:23 PDT 2012</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="045022.html">[antlr-interest] Is there a difference in performance using CommonTreeNode Vs BufferTreeNode
+</A></li>
+        <LI>Next message: <A HREF="045024.html">[antlr-interest] Antlr and Java 7
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#45023">[ date ]</a>
+              <a href="thread.html#45023">[ thread ]</a>
+              <a href="subject.html#45023">[ subject ]</a>
+              <a href="author.html#45023">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi!
+
+I'm writing a code annotator and am having issues annotating empty blocks.
+I'm just starting with ANTLR, and have searched both TDAR and Google, but
+haven't found a solution to my problem. I'm using AntlrWorks 1.4.3.
+
+What I want to do:
+
+# source
+begin statement end
+
+# annotated source indicating position of the block
+begin /* line 1 pos 0 */ statement end
+
+# source
+begin statement statement end
+
+# annotated source
+begin /* line 1 pos 0 */ statement statement end
+
+I have the above working. However, it fails with empty blocks:
+
+# source
+begin end
+
+#error
+java.lang.IllegalArgumentException: replace: range invalid: 2..0(size=4)
+
+Here are my combined and tree grammars:
+
+grammar EmptyBlock;
+options {
+  output=AST;
+  ASTLabelType=CommonTree;
+}
+
+tokens {
+	BLOCK;
+  SLIST;
+}
+
+@header { package mtblock; }
+@lexer::header { package mtblock; }
+
+block
+	: BEGIN stats END -&gt; ^(BLOCK BEGIN stats END)
+	;
+	
+stats
+	: stat* -&gt; ^(SLIST stat*)
+	;
+
+stat
+ 	: STAT
+ 	;
+
+STAT
+	: 'statement'
+	;
+
+BEGIN 
+	: 'begin'
+	;
+
+END
+	: 'end'
+	;
+
+WS  :   ( ' '
+        | '\t'
+        | '\r'
+        | '\n'
+        ) {$channel=HIDDEN;}
+    ;
+
+
+tree grammar Annotate;
+options {
+  tokenVocab=EmptyBlock;
+  ASTLabelType=CommonTree;
+  output=template;
+  rewrite=true;
+}
+@header { package mtblock; }
+
+block
+scope {
+  int line;
+  int pos;
+}
+	: ^(BLOCK {$block::line=$BLOCK.line; $block::pos=$BLOCK.pos;}
+	    BEGIN  stats END)
+	;
+
+stats
+	: ^(SLIST stat*)
+  	-&gt; template(l={$block::line},p={$block::pos},s={$text})
+  		&quot;/* line &lt;l&gt; pos &lt;p&gt; */ &lt;s&gt;&quot;
+	;
+
+stat
+	: STAT
+	;
+
+
+I found one post to the mailing list that I thought was similar:
+&lt;<A HREF="http://www.antlr.org/pipermail/antlr-interest/2009-September/035969.html">http://www.antlr.org/pipermail/antlr-interest/2009-September/035969.html</A>&gt;
+
+When I tried what was suggested (see below), I got the same error as before.
+
+I think it has to do with the fact that the SLIST token doesn't have any stream
+information associated with it. It has no indexes in the stream, so I'm getting
+the range error. However, if that's the case I'm at a loss as to how to add
+appropriate index information to the SLIST token.
+
+Thanks for any assistance.
+
+Michael Glaesemann
+grzm seespotcode net
+
+
+
+
+
+grammar EmptyBlock;
+options {
+  output=AST;
+  ASTLabelType=CommonTree;
+}
+
+tokens {
+	BLOCK;
+  SLIST;
+}
+
+@header { package mtblock; }
+@lexer::header { package mtblock; }
+
+block
+	: BEGIN block_body END -&gt; ^(BLOCK BEGIN block_body END)
+	;
+	
+block_body
+  :	 stats? -&gt; ^(SLIST stats?)
+  ;
+
+stats
+	: stat+
+	;
+
+stat
+ 	: STAT
+ 	;
+
+STAT
+	: 'statement'
+	;
+
+BEGIN 
+	: 'begin'
+	;
+
+END
+	: 'end'
+	;
+
+WS  :   ( ' '
+        | '\t'
+        | '\r'
+        | '\n'
+        ) {$channel=HIDDEN;}
+    ;
+
+
+tree grammar Annotate;
+options {
+  tokenVocab=EmptyBlock;
+  ASTLabelType=CommonTree;
+  output=template;
+  rewrite=true;
+}
+@header { package mtblock; }
+
+block
+scope {
+  int line;
+  int pos;
+}
+	: ^(BLOCK {$block::line=$BLOCK.line; $block::pos=$BLOCK.pos;}
+	    BEGIN block_body END)
+	;
+
+block_body
+	: ^(SLIST stats)
+  	-&gt; template(l={$block::line},p={$block::pos},s={$text})
+  		&quot;/* line &lt;l&gt; pos &lt;p&gt; */ &lt;s&gt;&quot;
+	| SLIST
+  	-&gt; template(l={$block::line},p={$block::pos})
+  		&quot;/* line &lt;l&gt; pos &lt;p&gt; */&quot;
+	;
+
+stats
+	: stat+
+	;
+
+stat
+	: STAT
+	;
+
+</PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="045022.html">[antlr-interest] Is there a difference in performance using CommonTreeNode Vs BufferTreeNode
+</A></li>
+	<LI>Next message: <A HREF="045024.html">[antlr-interest] Antlr and Java 7
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#45023">[ date ]</a>
+              <a href="thread.html#45023">[ thread ]</a>
+              <a href="subject.html#45023">[ subject ]</a>
+              <a href="author.html#45023">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

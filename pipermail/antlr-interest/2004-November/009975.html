@@ -1,0 +1,158 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] multiple lexer
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20multiple%20lexer&In-Reply-To=005601c4c403%24da3a8230%248cc79553%40marlboro">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="009923.html">
+   <LINK REL="Next"  HREF="009917.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] multiple lexer</H1>
+    <B>Ingo Maier</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20multiple%20lexer&In-Reply-To=005601c4c403%24da3a8230%248cc79553%40marlboro"
+       TITLE="[antlr-interest] multiple lexer">i.maier at gmx.de
+       </A><BR>
+    <I>Tue Nov  9 08:30:56 PST 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="009923.html">[antlr-interest] multiple lexer
+</A></li>
+        <LI>Next message: <A HREF="009917.html">MODERATE -- hst_12345@yahoo.com posted to antlr-interest
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#9975">[ date ]</a>
+              <a href="thread.html#9975">[ thread ]</a>
+              <a href="subject.html#9975">[ subject ]</a>
+              <a href="author.html#9975">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+On Sat, 2004-11-06 at 08:23, Alexey Demakov wrote:
+&gt;<i> From: &quot;hst_12345&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">hst_12345 at yahoo.com</A>&gt;
+</I>&gt;<i> &gt; I am wokring on a project to parse expressions which is part of the 
+</I>&gt;<i> &gt; doc.  So I wrote a seperate parser for the expression. And use 
+</I>&gt;<i> &gt; multiple lexer. The problem I have is that when switch back, one 
+</I>&gt;<i> &gt; token is eaten from the expression parser. Here is my doc syntax:
+</I>&gt;<i> &gt; main parser:
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; EXP { '1.2+3.5' T;  '3.6+6.8' H;}
+</I>&gt;<i> &gt; So the main parser rule:
+</I>&gt;<i> &gt; expression:
+</I>&gt;<i> &gt;      EXP LCURLY 
+</I>&gt;<i> &gt;      ( SINGLE_QUOTE {
+</I>&gt;<i> &gt;            _selector.select(&quot;expressionLex&quot;);
+</I>&gt;<i> &gt;            expressionParser.Parse();
+</I>&gt;<i> &gt;            _selector.select(&quot;mainLex&quot;);
+</I>&gt;<i> &gt;            }
+</I>&gt;<i> &gt;        SINGLE_QUOTE character
+</I>&gt;<i> &gt;       )+
+</I>&gt;<i> &gt;       ;
+</I>&gt;<i> &gt; The problem is when switch back, it complains to look for SINGLE_QUOTE 
+</I>&gt;<i> &gt; but get T which is next token. I do print out the expression which is 
+</I>&gt;<i> &gt; OK that does not include the single quote. So I do not know where 
+</I>&gt;<i> &gt; the single quote. why when it gets back to main parser and the single 
+</I>&gt;<i> &gt; quote went away.
+</I>&gt;<i> 
+</I>&gt;<i> It seems to me that expression parser takes the second single quote from
+</I>&gt;<i> input strem. In your situation, expression parser needs to see next character
+</I>&gt;<i> to decide whether to stop parsing expression. It calls nextToken() removing
+</I>&gt;<i> single token from input stream and donesn't consume it desining to stop 
+</I>&gt;<i> expression parsing.
+</I>&gt;<i> 
+</I>&gt;<i> The simplest solution - to have in nested lexer/parser stop condition that doesn't
+</I>&gt;<i> use next token. In this case it is single quote at the end of expression.
+</I>&gt;<i> And expression lexer will be responsilble for restoring main lexer:
+</I>&gt;<i> 
+</I>&gt;<i> expr: ... SINGLE_QOUTE { _selector.pop(); }
+</I>&gt;<i> 
+</I>&gt;<i> So, in main lexer you only push expression lexer:
+</I>&gt;<i> 
+</I>&gt;<i> expression:
+</I>&gt;<i>      EXP LCURLY 
+</I>&gt;<i>      ( SINGLE_QUOTE 
+</I>&gt;<i>        {
+</I>&gt;<i>            _selector.push(&quot;expressionLex&quot;);
+</I>&gt;<i>            expressionParser.Parse();
+</I>&gt;<i>            // restored by expression lexer
+</I>&gt;<i>            // _selector.select(&quot;mainLex&quot;);
+</I>&gt;<i>        }
+</I>&gt;<i>        // it is consumed by expression lexer
+</I>&gt;<i>        // SINGLE_QUOTE 
+</I>&gt;<i>        character
+</I>&gt;<i>       )+
+</I>&gt;<i>       ;
+</I>&gt;<i> 
+</I>&gt;<i> I've never changed lexer from my parser before and have used
+</I>&gt;<i> something like this in main lexer:
+</I>&gt;<i> 
+</I>&gt;<i> SINGLE_QUOTE: '\'' { _selector.push(&quot;expressionLex&quot;); }
+</I>&gt;<i> 
+</I>&gt;<i> So main parser can process tokens from expression lexer:
+</I>&gt;<i> 
+</I>&gt;<i> expression:
+</I>&gt;<i>      EXP LCURLY 
+</I>&gt;<i>      ( SINGLE_QUOTE 
+</I>&gt;<i>        realExpr // tokens from expression lexer
+</I>&gt;<i>        character
+</I>&gt;<i>       )+
+</I>&gt;<i>       ;
+</I>&gt;<i> 
+</I>&gt;<i> Regards,
+</I>&gt;<i> Alexey
+</I>
+There is no possibility to put the single quote read by the expression
+parser/lexer back to the input stream? I mean, so the main parser/lexer
+pair could get the chance to parse the single quote by itself (this may
+lead to a completely different token for the single quote).
+
+If you want to exchange the expression parser with a different one(s),
+you always have to modify the grammar(s) in your solution to fit into
+the main parser.
+
+Regards,
+Ingo
+
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+    <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+    <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+    <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="009923.html">[antlr-interest] multiple lexer
+</A></li>
+	<LI>Next message: <A HREF="009917.html">MODERATE -- hst_12345@yahoo.com posted to antlr-interest
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#9975">[ date ]</a>
+              <a href="thread.html#9975">[ thread ]</a>
+              <a href="subject.html#9975">[ subject ]</a>
+              <a href="author.html#9975">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

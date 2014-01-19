@@ -1,0 +1,239 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Fun with ANTLR3: mystery of the huge lexer (C#)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Fun%20with%20ANTLR3%3A%20mystery%20of%20the%20huge%20lexer%20%28C%23%29&In-Reply-To=%3C051466DAA0D608439E196797955018D76E5D%40wavemachine.temporal-wave.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="021898.html">
+   <LINK REL="Next"  HREF="021900.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Fun with ANTLR3: mystery of the huge lexer (C#)</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Fun%20with%20ANTLR3%3A%20mystery%20of%20the%20huge%20lexer%20%28C%23%29&In-Reply-To=%3C051466DAA0D608439E196797955018D76E5D%40wavemachine.temporal-wave.com%3E"
+       TITLE="[antlr-interest] Fun with ANTLR3: mystery of the huge lexer (C#)">jimi at temporal-wave.com
+       </A><BR>
+    <I>Sat Jun 30 09:47:15 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="021898.html">[antlr-interest] Fun with ANTLR3: mystery of the huge lexer (C#)
+</A></li>
+        <LI>Next message: <A HREF="021900.html">[antlr-interest] C# runtime - source code found!
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#21899">[ date ]</a>
+              <a href="thread.html#21899">[ thread ]</a>
+              <a href="subject.html#21899">[ subject ]</a>
+              <a href="author.html#21899">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>David,
+
+Your ML_COMMENT needs to be a fragment rule and you need a predicate to
+stop '.' interfering with ML_COMMENT. I just produce this rule for my
+T-SQL lexer in fact (C here but the predicate is just input.LA(n) for
+Java):
+
+// A multiline comment is akin to a C style comment and is bounded
+// by /* and */. However the T-SQL lexer allows for, and checks
+// embedded comments. See how here we use a fragment rule to define
+// the lexical construct, as this does not try to create tokens and
+// hence can be called recursively by itself. The actual token making
+// rule here then, just calls that fragment rule.
+//
+ML_COMMENT
+	:	ML_COMFRAG
+		{
+			$channel = HIDDEN;
+		}
+	;
+	
+// This rule is a fragment so that it can call itself recursively
+// and deal with multiple embedded comments.
+//
+fragment	ML_COMFRAG
+		:
+			'/*' ( options { greedy=false;}
+			
+					// The predicate looks for the
+start of an embedded comment
+					// and this triggers a recursive
+call of this rule
+					// and therefore automatically
+matches /* and */ pairs.
+					//
+					: {(LA(1)== '/' &amp;&amp; LA(2) ==
+'*')}? ML_COMFRAG 
+					|  .
+					)* '*/'
+					
+
+		;
+
+That should help with that part. Then is your PUNC rule something that
+returns a token, or are you using that somewhere else too?
+
+Check your lexer rules and if you use one rule inside another, ensure
+that it is a fragment rule. My guess is that will cure most of your
+issues here.
+
+Jim
+
+
+&gt;<i> -----Original Message-----
+</I>&gt;<i> From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:antlr-interest-
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">bounces at antlr.org</A>] On Behalf Of David Piepgrass
+</I>&gt;<i> Sent: Saturday, June 30, 2007 9:16 AM
+</I>&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> Subject: [antlr-interest] Fun with ANTLR3: mystery of the huge lexer
+</I>&gt;<i> (C#)
+</I>&gt;<i> 
+</I>&gt;<i> When I attempted to generate my &quot;first try&quot; at making a Lexer, ANTLR
+</I>&gt;<i> produced a 21.9 megabyte source file (310,643 lines) filled mostly
+</I>&gt;<i> with variables like dfa32_transition15; each transition array for the
+</I>&gt;<i> most part contains the same number repeated thousands of times.
+</I>&gt;<i> 
+</I>&gt;<i> I was curious to know if the grammar actually worked, but after 15
+</I>&gt;<i> minutes Visual C# still had not finished compiling it, though it was
+</I>&gt;<i> using 1.6 GB of virtual memory. I killed it since the whole computer
+</I>&gt;<i> was unresponsive (a longstanding flaw in Windows).
+</I>&gt;<i> 
+</I>&gt;<i> The problem seems related to these two rules, because without them, no
+</I>&gt;<i> transition arrays are created at all:
+</I>&gt;<i> 
+</I>&gt;<i> ML_COMMENT:  '/*' (ML_COMMENT | .)* '*/' { $channel = HIDDEN; };
+</I>&gt;<i> 
+</I>&gt;<i> PUNC: ( ('\\' WS_CHAR)=&gt;'\\'
+</I>&gt;<i>       | (':'|'.'|'~'|'!'|'@'|'$'|'%'|'^'|'&amp;'|'*'
+</I>&gt;<i>         |'-'|'+'|'='|'|'|','|'&lt;'|'&gt;'|'/'|'?')
+</I>&gt;<i>       )+;
+</I>&gt;<i> 
+</I>&gt;<i> If PUNC is in the grammar but not ML_COMMENT, a 2.38 MB file comes
+</I>&gt;<i> out. If ML_COMMENT is present but not PUNC, a 8.16 MB file comes out.
+</I>&gt;<i> I get a strange warning for ML_COMMENT (when PUNC is absent; if PUNC
+</I>&gt;<i> is present, it gets even stranger):
+</I>&gt;<i> 
+</I>&gt;<i> [08:35:47] warning(206): Huge.g:1:10: Alternative 4: after matching
+</I>&gt;<i> input such as '/''*''/''*''/''*''/''*''/'&lt;EOT&gt; decision cannot predict
+</I>&gt;<i> what comes next due to recursion overflow to ML_COMMENT from
+</I>&gt;<i> ML_COMMENT
+</I>&gt;<i> 
+</I>&gt;<i> Puzzling, yes? But with some fiddling, another warning suggests that
+</I>&gt;<i> the problem has something to do with backslashes:
+</I>&gt;<i> 
+</I>&gt;<i> warning(206): Huge.g:1:10: Alternative 4: after matching input such as
+</I>&gt;<i> '/''*''*''\\''/''*''*''\\''/''
+</I>&gt;<i> *''*''\\''/''*''*''\\''*'{'\u0000'..'\b', '\u000B'..'\f',
+</I>&gt;<i> '\u000E'..'\u001F', '!'..')', '+'..'.', '0
+</I>&gt;<i> '..'[', ']'..'\uFFFE'}'/''\u0000'..'\uFFFE' decision cannot predict
+</I>&gt;<i> what comes next due to recursion overflow to ML_COMMENT from
+</I>&gt;<i> ML_COMMENT
+</I>&gt;<i> 
+</I>&gt;<i> I realize it comes from my regular expression rule:
+</I>&gt;<i> 
+</I>&gt;<i> RE_STRING: {input.LA(2) != '*'}? '/' (RE_CHAR)+ '/'; //	| '@/'
+</I>&gt;<i> (RE_CHAR | WS_CHAR) '/';
+</I>&gt;<i> 
+</I>&gt;<i> RE_STRING: '/' (RE_CHAR)+ '/';
+</I>&gt;<i> fragment RE_CHAR: RE_ESC | ~('/' | '\\' | '\r' | '\n' | ' ' | '\t' );
+</I>&gt;<i> fragment RE_ESC: '\\' .;
+</I>&gt;<i> 
+</I>&gt;<i> So there's an ambiguity for something like /*\*/: is it a comment or a
+</I>&gt;<i> regex? So I try
+</I>&gt;<i> 
+</I>&gt;<i> RE_STRING: {input.LA(2) != '*'}? '/' (RE_CHAR)+ '/';
+</I>&gt;<i> 
+</I>&gt;<i> 19 MB.
+</I>&gt;<i> 
+</I>&gt;<i> ML_COMMENT: ('/*') =&gt; '/*' (ML_COMMENT | .)* '*/' { $channel = HIDDEN;
+</I>&gt;<i> };
+</I>&gt;<i> 
+</I>&gt;<i> 8.16 MB.
+</I>&gt;<i> 
+</I>&gt;<i> In fact, this is all it takes to get a 19 MB output file:
+</I>&gt;<i> 
+</I>&gt;<i>
+</I>-----------------------------------------------------------------------
+&gt;<i> ---
+</I>&gt;<i> lexer grammar Huge;
+</I>&gt;<i> options
+</I>&gt;<i> {
+</I>&gt;<i> 	language = 'CSharp';
+</I>&gt;<i> 	k = *;
+</I>&gt;<i> }
+</I>&gt;<i> fragment WS_CHAR: ' ' | '\t';
+</I>&gt;<i> ML_COMMENT: ('/*')=&gt; '/*' (ML_COMMENT | .)* '*/';
+</I>&gt;<i> RE_STRING: '/' (RE_CHAR)+ '/';
+</I>&gt;<i> fragment RE_CHAR: RE_ESC | ~('/' | '\\' | '\r' | '\n' | ' ' | '\t' );
+</I>&gt;<i> fragment RE_ESC: '\\' .;
+</I>&gt;<i> PUNC: ( ('\\' WS_CHAR)=&gt;'\\'
+</I>&gt;<i>       | (':'|'.'|'~'|'!'|'@'|'$'|'%'|'^'|'&amp;'|'*'
+</I>&gt;<i>         |'-'|'+'|'='|'|'|','|'&lt;'|'&gt;'|'/'|'?')
+</I>&gt;<i>       )+;
+</I>&gt;<i>
+</I>-----------------------------------------------------------------------
+&gt;<i> ---
+</I>&gt;<i> 
+</I>&gt;<i> Remove PUNC and you still get 6.3 MB and this warning:
+</I>&gt;<i> 
+</I>&gt;<i> [09:09:14] warning(206): Huge.g:1:10: Alternative 1: after matching
+</I>&gt;<i> input such as
+</I>&gt;<i>
+</I>'/''*''*''\\''/''*''*''\\''/''*''*''\\''/''*''*''\\''*'{'\u0000'..'\b',
+&gt;<i> '\u000B'..'\f', '\u000E'..'\u001F', '!'..')', '+'..'.', '0'..'[',
+</I>&gt;<i> ']'..'\uFFFE'}'/''\u0000'..'\uFFFE' decision cannot predict what comes
+</I>&gt;<i> next due to recursion overflow to ML_COMMENT from ML_COMMENT
+</I>&gt;<i> 
+</I>&gt;<i> The strange thing is, the Java target doesn't have a problem. This
+</I>&gt;<i> Lexer is &quot;only&quot; 30 KB in Java. I thought StringTemplate was just a
+</I>&gt;<i> somewhat superficial conversion process - why the big difference?
+</I>&gt;<i> 
+</I>&gt;<i> And why doesn't the syntactic predicate help?
+</I>&gt;<i> 
+</I>&gt;<i> There is no problem if ML_COMMENT is the only rule in the file, but in
+</I>&gt;<i> that case the rule doesn't work: apparently it never recognizes the
+</I>&gt;<i> closing &quot;*/&quot; as such. Luckily, this solves the problem:
+</I>&gt;<i> 
+</I>&gt;<i> ML_COMMENT: ('/*')=&gt; '/*' (options{greedy=false;} : ML_COMMENT | .)*
+</I>&gt;<i> '*/';
+</I>&gt;<i> 
+</I>&gt;<i> However, I am very curious to know how &quot;greedy=false&quot; affects the
+</I>&gt;<i> subrule &quot;ML_COMMENT&quot;; ANTLR would not let me use simply
+</I>&gt;<i> 
+</I>&gt;<i> ML_COMMENT: ('/*')=&gt; '/*' (ML_COMMENT | options{greedy=false;} : .)*
+</I>&gt;<i> '*/';
+</I>&gt;<i> 
+</I>&gt;<i> I know this has been long-winded but I hope someone could give me some
+</I>&gt;<i> advice about how to get ML_COMMENT, RE_STRING and PUNC to work
+</I>&gt;<i> together nicely.
+</I>&gt;<i> 
+</I>&gt;<i> --
+</I>&gt;<i> - David
+</I>&gt;<i> <A HREF="http://qism.blogspot.com">http://qism.blogspot.com</A>
+</I></PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="021898.html">[antlr-interest] Fun with ANTLR3: mystery of the huge lexer (C#)
+</A></li>
+	<LI>Next message: <A HREF="021900.html">[antlr-interest] C# runtime - source code found!
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#21899">[ date ]</a>
+              <a href="thread.html#21899">[ thread ]</a>
+              <a href="subject.html#21899">[ subject ]</a>
+              <a href="author.html#21899">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,235 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Newbie problem with line-oriented parsing
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Newbie%20problem%20with%20line-oriented%20parsing&In-Reply-To=%3C05108B1D7AEA1145B0A03759AA39FB220536B4F4%40de01exm70.ds.mot.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="037643.html">
+   <LINK REL="Next"  HREF="037648.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Newbie problem with line-oriented parsing</H1>
+    <B>Crocker Ron-QA1007</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Newbie%20problem%20with%20line-oriented%20parsing&In-Reply-To=%3C05108B1D7AEA1145B0A03759AA39FB220536B4F4%40de01exm70.ds.mot.com%3E"
+       TITLE="[antlr-interest] Newbie problem with line-oriented parsing">Ron.Crocker at motorola.com
+       </A><BR>
+    <I>Mon Feb 15 12:05:18 PST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="037643.html">[antlr-interest] Dynamic tokens
+</A></li>
+        <LI>Next message: <A HREF="037648.html">[antlr-interest] Newbie problem with line-oriented parsing
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37647">[ date ]</a>
+              <a href="thread.html#37647">[ thread ]</a>
+              <a href="subject.html#37647">[ subject ]</a>
+              <a href="author.html#37647">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi all -
+
+I'm new here, so be nice to me. Further, let me start by apologizing for
+such a verbose first message. 
+I have started porting a DSL, one that I've been supporting for 15+
+years, from lex/yacc based toolset (via a tool called MetaTool) to
+ANTLR.
+ 
+I've been looking through the various materials available on the net and
+have a copy of The Definitive ANTLR Reference. As I started porting the
+grammar (EBNF ish) I've run into something I don't know how to deal
+with. Unfortunately I need to drag everyone through some background to
+get to the question, however I can start with the grammar I'm struggling
+with and the immediate problem.
+
+&lt;&gt;&lt;&gt;&lt;&gt;&lt;&gt; cut here - flowgen.g &lt;&gt;&lt;&gt;&lt;&gt;&lt;&gt;
+grammar flowgen;
+
+options {
+  language = Java;
+}
+
+/* *********** */
+/* TRANSACTION */
+/* *********** */
+transaction:  ( ((KEY_START DEFINE_k) =&gt; xdefine*) tran_name message+ );
+
+xdefine: KEY_START DEFINE_k ID_name NEW_LINE;
+
+tran_name: ~(KEY_START|NP_START|NEWLINE_) .* NEW_LINE;
+
+message:  num1? from_name num2? to_name ((~(NP_START|WHITE|NEWLINE_)) =&gt;
+msg_name?) NEW_LINE;
+
+num1: FLOATnumber;
+num2: FLOATnumber;
+
+from_name: COLUMN_name;
+to_name:   COLUMN_name;
+
+msg_name: MSG_name;
+
+// Tokens - keywords
+DEFINE_k:       'DEFINE';
+
+// Tokens - operators
+fragment KEY_START: '$';
+fragment NP_START:  '%';
+NEW_LINE: NEWLINE_; 
+
+// Tokens - names and numbers
+fragment NUMBER:    '0'..'9';
+fragment UPPERCASE: 'A'..'Z';
+fragment VARBASE:   UPPERCASE (UPPERCASE|NUMBER|'_')*;
+fragment VARNAME:   '$' VARBASE;
+fragment WHITE:     ' '|'\t';
+fragment NEWLINE_:  '\n'|'\r';
+
+FLOATnumber: NUMBER+ ('.' NUMBER+)?;
+
+ID_name:  VARBASE;
+VAR_name: VARNAME;
+
+COLUMN_name: ( (ALPHA|NUMBER) (ALPHA|NUMBER|'_'|'&amp;'|'-')*
+             | VARNAME
+             );
+//  name:   &lt;([A-Za-z0-9][A-Za-z0-9_&amp;-]*)?(\$[A-Z][A-Z0-9_]*)*&gt;
+             
+WS:	(WHITE|NEWLINE_)+ {skip();};
+NON_PRINTING_COMMENT: NP_START .* NEWLINE_ {skip();};
+
+MSG_name:  .*;
+&lt;&gt;&lt;&gt;&lt;&gt;&lt;&gt; end &lt;&gt;&lt;&gt;&lt;&gt;&lt;&gt;
+
+When I run this through antlr I get the following error:
+Grammar: src/flowgen.g
+error(201): src/flowgen.g:57:12: The following alternatives can never be
+matched: 1
+ |---&gt; MSG_name:  .*;
+
+1 error
+
+BUILD FAIL
+(this is compliments of antlrv3ide plugin for eclipse; similar results
+occur with ANTLRworks)
+
+************ BEGIN BACKGROUND ************
+This language, flowgen, is used to specify Message Sequence Charts. We
+could be using ITU Z.120 for this, but since our local DSL predates
+Z.120 we have some interest in maintaining this language. The flowgen
+language is a simplified version of Z.120 in that the input language is
+simple and direct, and using the flowgen tools one can create the
+corresponding picture (and even the corresponding Z.120 input). [After
+re-reading that, I'm not sure the background helps OTHER than to note
+that it's an old DSL and there is a solid user base not interested in
+moving to another DSL that is overly-complicated for the particular job
+at hand.]
+ 
+The format of a flowgen input file is simple: The first non-commented
+line is the &quot;title&quot; of the flow, and all subsequent lines represent
+messages in the flow. Newline's separate the constructs. 
+
+Here is an example flowgen input file:
+
+	 1. % Here is a comment
+	 2. Simple flowgen flow
+	 3. % Show a message going from A to B to C and back.
+	 4. A	B	Message 1
+	 5. # This is the first message in the sequence
+	 6. B	C	Message 2
+	 7. # This is the next message
+	 8. C	B
+	 9. % Note how the above message has no message name
+	10. B	A	End
+
+And this is the output of &quot;classic&quot; flowgen.
+
+Simple flowgen flow    Page: 1
+
+           A              B              C
+           |              |              |
+           | [1] Message 1|              |
+           |o------------&gt;|              |
+           |              |              |
+           | This is the first message in the sequence
+           |              |              |
+           |              | [2] Message 2|
+           |              |o------------&gt;| 
+           |              |              |
+           |              | This is the next message
+           |              |              |
+           |              | [3]          |
+           |              |&lt;------------o| 
+           |              |              |
+           | [4] End      |              |
+           |&lt;------------o|              |
+           |              |              |
+
+Some notes:
+Lines 1 and 9 are &quot;comment&quot; lines and are ignored.
+
+In this language, there are several constructs that map well to
+grammar-based solutions.
+* A title is the text associated with the first non-commented line
+* A message is the pair (arrow,comment) where an arrow represents the
+message moving from one place to another and a comment is optional text
+used to describe something about the message. 
+* An arrow is the triple (from,to,message_text) where from and to are
+required and represent column names (equivalent to IDs in other
+pedagogic grammars), while message_text is optional and represents the
+&quot;name&quot; of the message. 
+* A note is associated with an arrow and is a multi-line construct. Each
+of these lines begins with any number of '#' characters, but it is only
+the text after the '#'s that comprise the note.
+* A comment starts with the % character and continues to the end of the
+line [akin to the C++/Java '//' operator]
+* Blank lines are ignored, independent of context.
+
+************ END BACKGROUND ************
+
+Given this understanding, I created the grammar above. I'm not sure a)
+what to do about the error, but more importantly, b) I'm much more
+concerned about HOW to convince an ANTLR grammar to do what I want it to
+do. In comparison with the prior toolset, the LL vs. LR question doesn't
+bother me. However, the way MetaTool handled restrictions on the lexical
+space was to take advantage of lex's &quot;start states&quot;. The flowgen grammar
+has become so complicated [I've only given a snapshot; it is much more
+substantial] that we've broken lex and are about to break flex. Similar
+problem with yacc/bison, hence the desire to migrate to something more
+robust.
+
+Thanks for hearing me out and I look forward to your
+recommendations/suggestions.
+
+Ron Crocker
+Fellow of the Technical Staff
+Motorola
+
+ 
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="037643.html">[antlr-interest] Dynamic tokens
+</A></li>
+	<LI>Next message: <A HREF="037648.html">[antlr-interest] Newbie problem with line-oriented parsing
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37647">[ date ]</a>
+              <a href="thread.html#37647">[ thread ]</a>
+              <a href="subject.html#37647">[ subject ]</a>
+              <a href="author.html#37647">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

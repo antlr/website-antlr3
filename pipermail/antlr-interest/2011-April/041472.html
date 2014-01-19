@@ -1,0 +1,134 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Really big generated C lexer?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Really%20big%20generated%20C%20lexer%3F&In-Reply-To=%3C2151C9EAB83C8F4AB1ADD411C14639700EB32C%40TK5EX14MBXC122.redmond.corp.microsoft.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="041471.html">
+   <LINK REL="Next"  HREF="041474.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Really big generated C lexer?</H1>
+    <B>Chris McConnell</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Really%20big%20generated%20C%20lexer%3F&In-Reply-To=%3C2151C9EAB83C8F4AB1ADD411C14639700EB32C%40TK5EX14MBXC122.redmond.corp.microsoft.com%3E"
+       TITLE="[antlr-interest] Really big generated C lexer?">chrimc at microsoft.com
+       </A><BR>
+    <I>Thu Apr 21 17:01:28 PDT 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="041471.html">[antlr-interest] Really big generated C lexer?
+</A></li>
+        <LI>Next message: <A HREF="041474.html">[antlr-interest] ANTLR4
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#41472">[ date ]</a>
+              <a href="thread.html#41472">[ thread ]</a>
+              <a href="subject.html#41472">[ subject ]</a>
+              <a href="author.html#41472">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>The issue was with GUID, but not b/c of the precision of the Lexer rules.   It might make sense to make them more general, but the real issue is that GUID and BAG overlap.  If I simply change the '{' on GUID to '#{' the lexer file goes from 10mb to 145k.   What led me to this was that the DATETIME rule is actually more complex than the GUID one, but it didn't affect the size much.  Because of the overlap, there seemed to be some multiplicative effect in the DFA.  
+
+GUID: '{' HEX_BYTE HEX_BYTE HEX_BYTE HEX_BYTE
+      '-' HEX_BYTE HEX_BYTE
+      '-' HEX_BYTE HEX_BYTE
+      '-' HEX_BYTE HEX_BYTE
+      '-' HEX_BYTE HEX_BYTE HEX_BYTE HEX_BYTE HEX_BYTE HEX_BYTE
+      '}'
+;
+
+BAG : '{' ('\\}' | ~('}'))+ '}';
+
+
+-----Original Message-----
+From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Justin Murray
+Sent: Thursday, April 21, 2011 12:27 PM
+To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: Re: [antlr-interest] Really big generated C lexer?
+
+Hi Jim,
+
+Would you mind elaborating on this just a bit? You bring up this same concept quite frequently on this list, but there is something that I am missing. I understand how matching more generically in earlier stages will lead to better error message in later stages, but this seems to me to be very inefficient. Taking the GUID example, you could have a very simple lexer rule:
+
+GUID: '{' (HEX_DIGIT|'-')+ '}';
+
+This would match a valid GUID, as well as something close (including a lot of common mistaken forms I'm sure). This assumes that the parsing stage will validate this token further in its semantics. That's all well and good, but the problem is now you have to implement a GUID parser within the semantic actions of the original parser. A GUID is a rather simple example, so I could easily whip up some string manipulation code to validate the format, but this seems a bit odd to me. The whole reason we are using ANTLR in the first place is to avoid writing our own recognizers from scratch, so I feel like I shouldn't need to write one within the semantics of the ANTLR generated one. Would this be an appropriate use case for island grammars? This seems like a lot of added complexity (in both written code and execution time), seemingly only for the benefit of better error messages. The beauty of Chris's original implementation of GUID is that it does not require any validation in semantics - the lexer will only match a completely valid GUID. As you said, the error message may not seem all that helpful. The example that I gave above has nearly the same problem though. It will allow you to put the '-' anywhere in the GUID, but will give just as bad of an error if a '~' character is in the middle of the input. So perhaps a better lexer rule would be:
+
+GUID: '{' ~('}')+ '}'
+
+Which will accept all sorts of screwed up syntax, but allow you to produce an error like &quot;A GUID cannot contain the character '~'. A GUID should be of the form ...&quot;. This makes the GUID recognizer within the semantics even more complex, because it has to handle even more invalid possibilities.
+
+I realize that there is probably a good balance between the two extremes, but it is not clear to me where that would be. I guess my question is, is this purely a trade-off between speed/simplicity and error handling, or am I missing something that would allow one to get the best of both worlds?
+
+Thanks,
+
+- Justin
+
+On 4/21/2011 2:36 PM, Jim Idle wrote:
+&gt;<i> You are just trying to do too much in the lexer really so it means you 
+</I>&gt;<i> get a lot of tables. Left factor and don't try to validate things in 
+</I>&gt;<i> the lexer. For instance you just need a very generic rule for matching 
+</I>&gt;<i> a GUID and then verify it semantically.
+</I>&gt;<i>
+</I>&gt;<i> Use antlr.markmail.org for getting advice on pushing error messages as 
+</I>&gt;<i> far down the tool chain as you can and why these kinds of things happen.
+</I>&gt;<i> Basically though you will get:
+</I>&gt;<i>
+</I>&gt;<i> Unexpected character 'x'
+</I>&gt;<i>
+</I>&gt;<i> vs:
+</I>&gt;<i>
+</I>&gt;<i> Line 12, offset 33: &quot;A GUID should be of the form XXXX-XXXXXXX- ....&quot;
+</I>&gt;<i>
+</I>&gt;<i> But, the C compiler will do a good job of dealing with the code you 
+</I>&gt;<i> generated.
+</I>&gt;<i>
+</I>&gt;<i> Jim
+</I>&gt;<i>
+</I>&gt;&gt;<i> -----Original Message-----
+</I>&gt;&gt;<i> From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:antlr-interest- 
+</I>&gt;&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">bounces at antlr.org</A>] On Behalf Of Chris McConnell
+</I>&gt;&gt;<i> Sent: Thursday, April 21, 2011 11:23 AM
+</I>&gt;&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;&gt;<i> Subject: [antlr-interest] Really big generated C lexer?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> The attached grammar generates a C lexer file of 150,000 lines.  Is 
+</I>&gt;&gt;<i> this typical or did I do something dumb in the grammar?  I'd attach 
+</I>&gt;&gt;<i> the C lexer file, but it is 10mb...
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: 
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>
+List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+
+</PRE>
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="041471.html">[antlr-interest] Really big generated C lexer?
+</A></li>
+	<LI>Next message: <A HREF="041474.html">[antlr-interest] ANTLR4
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#41472">[ date ]</a>
+              <a href="thread.html#41472">[ thread ]</a>
+              <a href="subject.html#41472">[ subject ]</a>
+              <a href="author.html#41472">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

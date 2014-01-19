@@ -1,0 +1,757 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] My parser hangs in an infinite loop on certain inputs
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20My%20parser%20hangs%20in%20an%20infinite%20loop%20on%20certain%20inputs&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005014.html">
+   <LINK REL="Next"  HREF="004927.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] My parser hangs in an infinite loop on certain inputs</H1>
+    <B>Matt Lowry</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20My%20parser%20hangs%20in%20an%20infinite%20loop%20on%20certain%20inputs&In-Reply-To="
+       TITLE="[antlr-interest] My parser hangs in an infinite loop on certain inputs">mclowry at cs.adelaide.edu.au
+       </A><BR>
+    <I>Mon Sep  8 22:50:40 PDT 2003</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005014.html">[antlr-interest] C# grammar
+</A></li>
+        <LI>Next message: <A HREF="004927.html">[antlr-interest] My parser hangs in an infinite loop on certain
+ inputs
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4926">[ date ]</a>
+              <a href="thread.html#4926">[ thread ]</a>
+              <a href="subject.html#4926">[ subject ]</a>
+              <a href="author.html#4926">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi folks. I'm having some trouble with my grammer concering &quot;multiset 
+formation&quot; constructs.
+The language I'm doing a parser for supports expressions like:
+
+{* foo , 3:bar *} 
+
+and
+
+{* foo ,.. bar *}
+
+
+These denote a multiset formed from foo and 3 instances of bar, and a 
+multiset formed from all sets in the range from foo to bar respectively.
+My spec for these constructs is as follows:
+
+multiset_formation
+   :   D_MS_OPEN!
+       content: multiset_formation_content
+       D_MS_CLOSE!
+       { #multiset_formation = #( [MULTISET_FORMATION, &quot;multiset_form&quot;], #content ); };
+
+multiset_formation_content
+   :   (expression D_RANGE)=&gt; multiset_range_content
+   |   optional_multiset_expr_list;
+
+multiset_range_content
+   : expression D_RANGE expression;
+
+optional_multiset_expr_list
+   : ( multiset_expr ( D_COMMA! multiset_expr )* )?;
+
+multiset_expr
+   : (expression D_COLON)=&gt; quantified_multiset_expr
+   | expression;
+
+quantified_multiset_expr
+   :   occur:expression D_COLON! val:expression
+       { #quantified_multiset_expr = #([QUANT_MSET_EXPR, &quot;quant_mset_expr&quot;],#occur,#val); }; // ACK! BLECH!
+
+
+Where D_MS_OPEN=&quot;{*&quot;,  D_MS_CLOSE=&quot;*}&quot;,. D_RANGE=&quot;,..&quot;, D_COMMA=',', and 
+D_COLON=':'.
+
+The problem is that the parser generated from this enters an infinite 
+loop and fails to terminate if I feed it a simple input like:
+{* foo , 3:bar *}
+
+However other valid inputs such as
+{* foo ,.. bar *}
+or
+{* *}
+are accepted as they should be.
+
+The infinite loop seems to be occuring as a result of the translated AST 
+action in the &quot;quantified_multiset_expr&quot; rule. If I remove this line; i.e.
+
+quantified_multiset_expr
+   :  occur:expression D_COLON! val:expression;
+
+
+Now suddenly everything works fine. The rules aren't producing an AST of 
+the form I want though :(.
+
+So, my question to the list:
+Is this behaviour because me do bad in the grammer and haven't realised 
+it, or because ANTLR has a bug?
+Or because my installation of ANTLR is bodged?
+(I've attached to full grammer and test input so people can try to 
+replicate this.)
+
+Also, perhaps someone could suggest an alternative to achieve what I want.
+If the parser sees:
+{* foo , 3:bar *}
+then I want the parser to generate a tree something like:
+
+multiset_contents -&gt; expression_list -&gt; expression -&gt; foo
+                                     -&gt; quantified_expression -&gt; 3
+                                                              -&gt; bar
+
+
+If I can achieve this without an AST action, and at the same time avoid 
+tickling an ANTLR bug, then could someone please tell me.
+
+Cheers muchly!
+
+-- 
+---------------------------------------------------------------
+&quot;He never sat down to program without a crowbar close at hand.&quot;
+  -- Stanislaw Lem
+---------------------------------------------------------------
+
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+-------------- next part --------------
+
+
+class Muck7Par extends Parser;
+options {
+    buildAST = true;
+    k = 1;
+}
+
+
+tokens {
+
+    EXPRESSION;
+    PARENTHESIZED_EXPRESSION;
+    SET_FORMATION;
+    MULTISET_FORMATION;
+    QUANT_MSET_EXPR;
+
+    UNARY_PLUS;
+    UNARY_MINUS;
+    UNARY_HASH;
+
+}
+
+
+
+design_file:
+        ( design_unit )* EOF!;
+
+design_unit:
+        expression D_SEMICOLON!;
+
+
+
+expression
+    : expr:precedence_0_expression { #expression = #( [EXPRESSION,&quot;expr&quot;] , #expr ); }
+    ;
+
+precedence_0_expression
+    : precedence_1_expression
+        (   ( D_REFLECT^ | D_EQUAL_GR_GR^ )
+            right_operand:precedence_1_expression 
+        )*
+    ;
+
+precedence_1_expression
+    : left_operand:precedence_2_expression 
+        (   D_EQUIV^
+            right_operand:precedence_2_expression 
+        )*
+    ;
+
+
+precedence_2_expression
+    : left_operand:precedence_3_expression 
+        (   ( D_IMPLIES^ | D_IMPLIED_BY^ | K_IMPLIES^ )
+            right_operand:precedence_3_expression 
+        )*
+    ;
+
+
+precedence_3_expression
+    : left_operand:precedence_4_expression 
+        (   ( K_OR^ | K_NOR^ | K_XOR^ | K_XNOR^ | K_MAX^ )
+            right_operand:precedence_4_expression
+        )*
+    ;
+
+
+precedence_4_expression
+    : left_operand:precedence_5_expression 
+        (   ( K_AND^ | K_NAND^ | K_MIN^ )
+            right_operand:precedence_5_expression 
+        )*
+    ;
+
+
+precedence_5_expression
+    : left_operand:precedence_6_expression 
+        (   ( D_EQUAL^ | D_NOT_EQUAL^ | D_LESS^ | D_GREATER^ | D_GRE_EQUAL^ | D_EQUAL_LESS^ | K_IN^ )
+            right_operand:precedence_6_expression 
+        )*
+    ;
+
+
+precedence_6_expression
+    : left_operand:precedence_7_expression 
+        (   K_SUB^
+            right_operand:precedence_7_expression 
+        )*
+    ;
+
+
+precedence_7_expression
+    : left_operand:precedence_8_expression 
+        (   ( D_PLUS^ | D_MINUS^ | D_AMPERSAND^ | D_AMPER_AMPER^ | D_VBAR_VBAR^ )
+            right_operand:precedence_8_expression 
+        )*
+    ;
+
+
+precedence_8_expression
+    : left_operand:precedence_9_expression 
+        (   ( D_ASTERISK^ | D_SOLIDUS^ | K_DIV^ | K_MOD^ | K_REM^ )
+            right_operand:precedence_9_expression 
+        )*
+    ;
+
+
+precedence_9_expression
+    : left_operand:precedence_10_expression 
+        (   ( D_CIRCUMFLEX^ | D_HASH^ )
+            right_operand:precedence_10_expression 
+        )?
+    ;
+
+
+precedence_10_expression
+    : ( K_NOT^
+       | D_PLUS^     { #D_PLUS.setType( UNARY_PLUS ); }
+       | D_MINUS^    {#D_MINUS.setType( UNARY_MINUS );}
+       | D_PERCENT^ 
+       | D_HASH^     { #D_HASH.setType( UNARY_HASH ); }
+       | D_TILDE^ 
+      )
+      unary_operand:precedence_10_expression 
+    | pre_11_expr:precedence_11_expression
+    ;
+
+
+
+precedence_11_expression
+    : (name D_AT)=&gt; at_operation
+    | (name D_APOSTROPHE)=&gt; tick_operation
+    | precedence_12_expression
+    ;
+
+at_operation
+    : left_operand:name D_AT! right_operand:precedence_12_expression
+    ;
+
+tick_operation
+    : operand:name D_APOSTROPHE!
+    ;
+
+
+precedence_12_expression
+    : expression_primary
+    ;
+        
+
+expression_primary
+    : parenthesized_expression
+    | literal
+    | name
+    | set_formation
+    | multiset_formation
+    ;
+
+
+parenthesized_expression
+    :   D_L_PAREN!
+        expr: expression
+        D_R_PAREN!
+        { #parenthesized_expression = #( [PARENTHESIZED_EXPRESSION, &quot;(expr)&quot;] , #expr ); }
+    ;
+
+
+literal
+    : ( STRING_LITERAL
+       | CHARACTER_LITERAL
+       | UNDEF_LITERAL_CHAR
+       | UNDEF_LITERAL_STRING
+       | INFINITY_LITERAL
+       | DECIMAL_LITERAL
+       | BASED_LITERAL
+       | BINARY_BITVECTOR
+       | OCTAL_BITVECTOR
+       | HEXADECIMAL_BITVECTOR
+      )
+    ;
+
+
+name
+    : label ( D_PERIOD! label )*
+    ;
+
+label
+    : SIMPLE_LABEL
+    | operator_interp_label
+    ;
+
+operator_interp_label
+    : OL_PERCENT  | OL_AMPERSAND  | OL_CIRCUMFLEX
+    | OL_AT       | OL_APOSTROPHE | OL_BIN_HASH    | OL_UNA_HASH    | OL_TILDE
+    | OL_ASTERISK | OL_SOLIDUS    | OL_BIN_PLUS    | OL_UNA_PLUS    | OL_BIN_MINUS | OL_UNA_MINUS
+    | OL_LESS     | OL_EQUAL      | OL_GREATER     | OL_EQUIV       | OL_GRE_EQUAL | OL_EQUAL_LESS | OL_NOT_EQUAL
+    | OL_IMPLIES  | OL_IMPLIED_BY | OL_AMPER_AMPER | OL_COLON_COLON | OL_VBAR_VBAR | OL_REFLECT    | OL_EQUAL_GR_GR
+    | OLK_IMPLIES | OLK_OR        | OLK_NOR        | OLK_XOR        | OLK_XNOR     | OLK_MAX
+    | OLK_AND     | OLK_NAND      | OLK_MIN        | OLK_IN         | OLK_SUB      | OLK_DIV
+    | OLK_MOD     | OLK_REM       | OLK_NOT
+    ;
+
+
+set_formation
+    :   D_L_BRACE!
+        content: set_formation_content
+        D_R_BRACE!
+        { #set_formation = #( [SET_FORMATION, &quot;set_form&quot;] , #content ); }
+    ;
+        
+set_formation_content
+    :   (expression D_RANGE)=&gt; (expression D_RANGE expression )
+    |   optional_expr_list
+    ;
+
+optional_expr_list
+    : ( expression ( D_COMMA! expression )* )?
+    ;
+
+
+
+
+multiset_formation
+    :   D_MS_OPEN!
+        content: multiset_formation_content
+        D_MS_CLOSE!
+        { #multiset_formation = #( [MULTISET_FORMATION, &quot;multiset_form&quot;], #content ); }
+    ;
+        
+multiset_formation_content
+    :   (expression D_RANGE)=&gt; multiset_range_content
+    |   optional_multiset_expr_list
+    ;
+
+multiset_range_content
+    : expression D_RANGE expression
+    ;
+
+optional_multiset_expr_list
+    : ( multiset_expr ( D_COMMA! multiset_expr )* )?
+    ;
+
+multiset_expr
+    : (expression D_COLON)=&gt; quantified_multiset_expr
+    | expression
+    ;
+
+quantified_multiset_expr
+    : occur:expression D_COLON! val:expression
+        { #quantified_multiset_expr = #([QUANT_MSET_EXPR, &quot;quant_mset_expr&quot;],#occur,#val); } // ACK! BLECH!
+        // would seem I need to eliminate the above AST action to avoid tickling ANTLR bug (???)
+    ;
+
+
+
+
+
+
+class Muck7Lex extends Lexer;
+options {
+    charVocabulary = '\u0003'..'\uFFFE';  // disallow -1,0,1,2 as character values ...
+    // charVocabulary = '\u0003'..'\u00FF';  // disallow -1,0,1,2 as character values ...
+    k = 6; // need at least 6-char lookahead to distinguish between long and short unicode literals.
+    // caseSensitive=true;
+    // caseSensitiveLiterals=false;
+}
+
+
+tokens {
+    K_IMPLIES = &quot;implies&quot;;
+    K_OR      = &quot;or&quot;;
+    K_NOR     = &quot;nor&quot;;
+    K_XOR     = &quot;xor&quot;;
+    K_XNOR    = &quot;xnor&quot;;
+    K_MAX     = &quot;max&quot;;
+    K_AND     = &quot;and&quot;;
+    K_NAND    = &quot;nand&quot;;
+    K_MIN     = &quot;min&quot;;
+    K_IN      = &quot;in&quot;;
+    K_SUB     = &quot;sub&quot;;
+    K_DIV     = &quot;div&quot;;
+    K_MOD     = &quot;mod&quot;;
+    K_REM     = &quot;rem&quot;;
+    K_NOT     = &quot;not&quot;;
+
+    OL_PERCENT     = &quot;%__&quot;;
+    OL_AMPERSAND   = &quot;__&amp;__&quot;;
+    OL_CIRCUMFLEX  = &quot;__^__&quot;;
+
+    OL_AT          = &quot;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">__ at __</A>&quot;;
+    OL_APOSTROPHE  = &quot;__'__&quot;;
+    OL_BIN_HASH    = &quot;__#__&quot;;
+    OL_UNA_HASH    = &quot;#__&quot;;
+    OL_TILDE       = &quot;~__&quot;;
+
+    OL_ASTERISK    = &quot;__*__&quot;;
+    OL_SOLIDUS     = &quot;__/__&quot;;
+    OL_BIN_PLUS    = &quot;__+__&quot;;
+    OL_UNA_PLUS    = &quot;+__&quot;;
+    OL_BIN_MINUS   = &quot;__-__&quot;;
+    OL_UNA_MINUS   = &quot;-__&quot;;
+
+    OL_LESS        = &quot;__&lt;__&quot;;
+    OL_EQUAL       = &quot;__=__&quot;;
+    OL_GREATER     = &quot;__&gt;__&quot;;
+    OL_EQUIV       = &quot;__==__&quot;;
+    OL_GRE_EQUAL   = &quot;__&gt;=__&quot;;
+    OL_EQUAL_LESS  = &quot;__=&lt;__&quot;;
+    OL_NOT_EQUAL   = &quot;__/=__&quot;;
+
+    OL_IMPLIES     = &quot;__=&gt;__&quot;;
+    OL_IMPLIED_BY  = &quot;__&lt;=__&quot;;
+
+    OL_AMPER_AMPER = &quot;__&amp;&amp;__&quot;;
+    OL_COLON_COLON = &quot;__::__&quot;;
+    OL_VBAR_VBAR   = &quot;__||__&quot;;
+
+    OL_REFLECT     = &quot;__&gt;&gt;&gt;__&quot;;
+    OL_EQUAL_GR_GR = &quot;__=&gt;&gt;__&quot;;
+
+    OLK_IMPLIES    = &quot;__implies__&quot;;
+    OLK_OR         = &quot;__or__&quot;;
+    OLK_NOR        = &quot;__nor__&quot;;
+    OLK_XOR        = &quot;__xor__&quot;;
+    OLK_XNOR       = &quot;__xnor__&quot;;
+    OLK_MAX        = &quot;__max__&quot;;
+    OLK_AND        = &quot;__and__&quot;;
+    OLK_NAND       = &quot;__nand__&quot;;
+    OLK_MIN        = &quot;__min__&quot;;
+    OLK_IN         = &quot;__in__&quot;;
+    OLK_SUB        = &quot;__sub__&quot;;
+    OLK_DIV        = &quot;__div__&quot;;
+    OLK_MOD        = &quot;__mod__&quot;;
+    OLK_REM        = &quot;__rem__&quot;;
+    OLK_NOT        = &quot;not__&quot;;
+
+}
+
+
+protected GRAPHIC_CHARACTER: '\u0003'..'\u00FF';
+// protected GRAPHIC_CHARACTER: '\u0003'..'\uFFFE';
+
+
+protected SHORT_UNICODE_SPECIFIER
+    : ('u'! | 'U'!) '+'! ( (BASED_DIGIT)? BASED_DIGIT )? BASED_DIGIT BASED_DIGIT BASED_DIGIT BASED_DIGIT;
+
+protected LONG_UNICODE_SPECIFIER
+    : ('u'! | 'U'!) '-'! BASED_DIGIT BASED_DIGIT BASED_DIGIT BASED_DIGIT 
+                         BASED_DIGIT BASED_DIGIT BASED_DIGIT BASED_DIGIT;
+
+CHARACTER_LITERAL
+    : '\''! ( GRAPHIC_CHARACTER | SHORT_UNICODE_SPECIFIER | LONG_UNICODE_SPECIFIER ) '\''!;
+
+STRING_LITERAL
+    : '&quot;'! ( {LA(2)=='&quot;'}? &quot;\&quot;\&quot;&quot; | ~'&quot;' )* '&quot;'! ;
+
+
+
+protected BINARY_DIGIT
+    : '0'..'1';
+
+protected OCTAL_DIGIT
+    : '0'..'7';
+
+protected DECIMAL_DIGIT
+    : '0'..'9';
+
+protected BASED_DIGIT 
+    : '0'..'9' | 'A'..'F' | 'a'..'f';
+
+
+BINARY_BITVECTOR
+    : ( 'b' | 'B' ) '&quot;' (BINARY_DIGIT)+ '&quot;';
+
+OCTAL_BITVECTOR
+    : ( 'o' | 'O' ) '&quot;' (OCTAL_DIGIT)+ '&quot;';
+
+HEXADECIMAL_BITVECTOR
+    : ( 'x' | 'X' ) '&quot;' (BASED_DIGIT)+ '&quot;';
+
+
+protected DECIMAL_DIGITS
+    : ( DECIMAL_DIGIT )+;
+
+protected BASED_DIGITS
+    : ( BASED_DIGIT )+;
+
+protected EXPONENT
+    : ( 'e' | 'E' ) ( '+' | '-' )? DECIMAL_DIGITS;
+
+
+DECIMAL_LITERAL
+    : DECIMAL_DIGITS ( '.' DECIMAL_DIGITS )? ( EXPONENT )?;
+
+BASED_LITERAL
+    : DECIMAL_DIGIT '\\' BASED_DIGITS ( '.' BASED_DIGITS )? ( '\\' EXPONENT )?;
+
+
+
+SIMPLE_LABEL
+    : LABEL_START_CHAR ( LABEL_CONNECT_CHAR | LABEL_EXTEND_CHAR )* ;
+
+protected LABEL_START_CHAR
+    : 'a'..'z' | 'A'..'Z' ;
+
+protected LABEL_CONNECT_CHAR
+    : '_';
+
+protected LABEL_EXTEND_CHAR
+    : LABEL_START_CHAR | DECIMAL_DIGIT;
+
+
+
+
+// NB inclusion of # and ~, exclusion of and &quot;
+/*
+protected DELIMITER
+    : D_PERCENT     | D_AMPERSAND   | D_CIRCUMFLEX | D_VERT_BAR
+    | D_AT          | D_APOSTROPHE  | D_HASH       | D_TILDE
+    | D_ASTERISK    | D_SOLIDUS     | D_PLUS       | D_MINUS
+    | D_COMMA       | D_LOW_LINE    | D_PERIOD     | D_COLON      | D_SEMICOLON
+    | D_L_PAREN     | D_R_PAREN     | D_L_SBRACKET | D_R_SBRACKET | D_L_BRACE   | D_R_BRACE
+    | D_LESS        | D_EQUAL       | D_GREATER    | D_EQUIV      | D_GRE_EQUAL | D_EQUAL_LESS | D_NOT_EQUAL
+    | D_IMPLIES     | D_IMPLIED_BY  | D_MS_OPEN    | D_MS_CLOSE
+    | D_AMPER_AMPER | D_COLON_COLON | D_VBAR_VBAR  | D_GOES_TO
+    | D_FN_START    | D_FN_END      | D_RANGE      | D_REFLECT    | D_EQUAL_GR_GR
+    ;
+*/
+
+D_PERCENT:     '%';
+D_AMPERSAND:   '&amp;';
+D_CIRCUMFLEX:  '^';
+D_VERT_BAR:    '|';
+
+D_AT:          '@';
+D_APOSTROPHE:  '\'';
+D_HASH:        '#';
+D_TILDE:       '~';
+
+D_ASTERISK:    '*';
+D_SOLIDUS:     '/';
+D_PLUS:        '+';
+D_MINUS:       '-';
+
+D_COMMA:       ',';
+D_LOW_LINE:    '_';
+D_PERIOD:      '.';
+D_COLON:       ':';
+D_SEMICOLON:   ';';
+
+D_L_PAREN:     '(';
+D_R_PAREN:     ')';
+D_L_SBRACKET:  '[';
+D_R_SBRACKET:  ']';
+D_L_BRACE:     '{';
+D_R_BRACE:     '}';
+
+D_LESS:        '&lt;';
+D_EQUAL:       '=';
+D_GREATER:     '&gt;';
+D_EQUIV:       &quot;==&quot;;
+D_GRE_EQUAL:   &quot;&gt;=&quot;;
+D_EQUAL_LESS:  &quot;=&lt;&quot;;
+D_NOT_EQUAL:   &quot;/=&quot;;
+
+D_IMPLIES:     &quot;=&gt;&quot;;
+D_IMPLIED_BY:  &quot;&lt;=&quot;;
+
+D_MS_OPEN:     &quot;{*&quot;;
+D_MS_CLOSE:    &quot;*}&quot;;
+
+D_AMPER_AMPER: &quot;&amp;&amp;&quot;;
+D_COLON_COLON: &quot;::&quot;;
+D_VBAR_VBAR:   &quot;||&quot;;
+D_GOES_TO:     &quot;-&gt;&quot;;
+
+D_FN_START:    &quot;&lt;*&quot;;
+D_FN_END:      &quot;*&gt;&quot;;
+D_RANGE:       &quot;,..&quot;;
+D_REFLECT:     &quot;&gt;&gt;&gt;&quot;;
+D_EQUAL_GR_GR: &quot;=&gt;&gt;&quot;;
+
+
+
+OL_PERCENT:     &quot;%__&quot;;
+OL_AMPERSAND:   &quot;__&amp;__&quot;;
+OL_CIRCUMFLEX:  &quot;__^__&quot;;
+
+OL_AT:          &quot;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">__ at __</A>&quot;;
+OL_APOSTROPHE:  &quot;__'__&quot;;
+OL_BIN_HASH:    &quot;__#__&quot;;
+OL_UNA_HASH:    &quot;#__&quot;;
+OL_TILDE:       &quot;~__&quot;;
+
+OL_ASTERISK:    &quot;__*__&quot;;
+OL_SOLIDUS:     &quot;__/__&quot;;
+OL_BIN_PLUS:    &quot;__+__&quot;;
+OL_UNA_PLUS:    &quot;+__&quot;;
+OL_BIN_MINUS:   &quot;__-__&quot;;
+OL_UNA_MINUS:   &quot;-__&quot;;
+
+OL_LESS:        &quot;__&lt;__&quot;;
+OL_EQUAL:       &quot;__=__&quot;;
+OL_GREATER:     &quot;__&gt;__&quot;;
+OL_EQUIV:       &quot;__==__&quot;;
+OL_GRE_EQUAL:   &quot;__&gt;=__&quot;;
+OL_EQUAL_LESS:  &quot;__=&lt;__&quot;;
+OL_NOT_EQUAL:   &quot;__/=__&quot;;
+
+OL_IMPLIES:     &quot;__=&gt;__&quot;;
+OL_IMPLIED_BY:  &quot;__&lt;=__&quot;;
+
+OL_AMPER_AMPER: &quot;__&amp;&amp;__&quot;;
+OL_COLON_COLON: &quot;__::__&quot;;
+OL_VBAR_VBAR:   &quot;__||__&quot;;
+
+OL_REFLECT:     &quot;__&gt;&gt;&gt;__&quot;;
+OL_EQUAL_GR_GR: &quot;__=&gt;&gt;__&quot;;
+
+OLK_IMPLIES:    &quot;__implies__&quot;;
+OLK_OR:         &quot;__or__&quot;;
+OLK_NOR:        &quot;__nor__&quot;;
+OLK_XOR:        &quot;__xor__&quot;;
+OLK_XNOR:       &quot;__xnor__&quot;;
+OLK_MAX:        &quot;__max__&quot;;
+OLK_AND:        &quot;__and__&quot;;
+OLK_NAND:       &quot;__nand__&quot;;
+OLK_MIN:        &quot;__min__&quot;;
+OLK_IN:         &quot;__in__&quot;;
+OLK_SUB:        &quot;__sub__&quot;;
+OLK_DIV:        &quot;__div__&quot;;
+OLK_MOD:        &quot;__mod__&quot;;
+OLK_REM:        &quot;__rem__&quot;;
+
+
+
+UNDEF_LITERAL_STRING: &quot;_|_&quot;;
+UNDEF_LITERAL_CHAR: '\u22A5';
+
+protected UNDEFINED_LITERAL: UNDEF_LITERAL_STRING | UNDEF_LITERAL_CHAR;
+
+INFINITY_LITERAL: '\u221E';
+
+
+
+
+COMMENT
+    : ( COMMENT_LINE | COMMENT_BLOCK ) { $setType(Token.SKIP); }
+    ;
+
+protected COMMENT_LINE
+    : &quot;//&quot; (~'\n')* LOCAL_NEWLINE;
+// NOTE really this should be &quot;//&quot; (~LOCAL_NEWLINE)* LOCAL_NEWLINE; but ANTLR won't support that.
+
+protected COMMENT_BLOCK
+    : &quot;/*&quot; 
+        ( options {greedy=false;}: ( ~'\n' | LOCAL_NEWLINE )
+        )*
+        &quot;*/&quot;
+    ;
+
+
+
+
+SEPERATOR
+    : ( UNICODE_SEPERATOR
+        | LOCAL_NEWLINE
+        | '\u0009' | '\u000B' | '\u000C' | '\r' // HozTab, VerTab, FF, CR
+        )
+        { $setType(Token.SKIP); }
+    ;
+
+protected UNICODE_SEPERATOR
+    : '\u0020' | '\u00A0' | '\u1680' | '\u180E' | '\u2000'..'\u200A' 
+    | '\u200B' | '\u202F' | '\u205F' | '\u3000' // Zs
+    | '\u2028' // Zl
+    | '\u2029' // Zp
+    ;
+
+// The draft sez cause of a new line is implementation-defined; I'm defining it as the &quot;LINE FEED&quot; character
+//  (note that CR characters are still &quot;seperators&quot;, so DOS-style line breaking appears as
+//  &lt;SEPERATOR&gt;&lt;NEWLINE&gt; and MAC-style as &lt;NEWLINE&gt;&lt;SEPERATOR&gt;
+protected LOCAL_NEWLINE
+    : '\n'  { newline();};
+
+
+-------------- next part --------------
+{**};
+{* foo ,.. bar *};
+{* foo , 3:bar *};
+
+//foo # { a ,.. b };
+//foo * { bar, b, bing };
+//{};
+//10 + 20 * 30;
+//10 + 50 * (-100);
+//10 + 50 * -100;
+//foo1 - foo2 + foo3;
+//&quot;foo&quot; # #&quot;bar&quot; and &quot;ning&quot;;
+//#2 # #3 and (10 + 20 + 30);
+//&quot;*****&quot; + 'U+0000';
+//2 / ( 10 + 50 ) &gt;&gt;&gt; &quot;*****&quot; + 'U+0000';
+//&quot;foo&quot; # # &quot;bar&quot; + &quot;ning&quot;;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005014.html">[antlr-interest] C# grammar
+</A></li>
+	<LI>Next message: <A HREF="004927.html">[antlr-interest] My parser hangs in an infinite loop on certain
+ inputs
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4926">[ date ]</a>
+              <a href="thread.html#4926">[ thread ]</a>
+              <a href="subject.html#4926">[ subject ]</a>
+              <a href="author.html#4926">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

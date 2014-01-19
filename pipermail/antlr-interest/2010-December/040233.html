@@ -1,0 +1,163 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] [C Target] Getting segmentation fault in	isNilNode() from libatnlr3c.so
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5BC%20Target%5D%20Getting%20segmentation%20fault%20in%0A%09isNilNode%28%29%20from%20libatnlr3c.so&In-Reply-To=%3C201012021822.07402.research%40science.su%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="040236.html">
+   <LINK REL="Next"  HREF="040234.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] [C Target] Getting segmentation fault in	isNilNode() from libatnlr3c.so</H1>
+    <B>L. Rahyen</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5BC%20Target%5D%20Getting%20segmentation%20fault%20in%0A%09isNilNode%28%29%20from%20libatnlr3c.so&In-Reply-To=%3C201012021822.07402.research%40science.su%3E"
+       TITLE="[antlr-interest] [C Target] Getting segmentation fault in	isNilNode() from libatnlr3c.so">research at science.su
+       </A><BR>
+    <I>Thu Dec  2 10:22:07 PST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="040236.html">[antlr-interest] gUnit in ANTLR 3.3
+</A></li>
+        <LI>Next message: <A HREF="040234.html">[antlr-interest] [C Target] Getting segmentation fault	in	isNilNode() from libatnlr3c.so
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40233">[ date ]</a>
+              <a href="thread.html#40233">[ thread ]</a>
+              <a href="subject.html#40233">[ subject ]</a>
+              <a href="author.html#40233">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>	I'm trying to get working (for C target) very simple example from &quot;The 
+Definitive ANTLR Reference&quot; book, page 73, &quot;3.3 Evaluating Expressions Using an 
+AST Intermediate Form&quot;. Of course, for Java target everything is fine. I'm 
+trying to write the same thing using C target but it looks like I did something 
+wrong because I get segmentation fault at this line in Test.cpp:
+
+  walker-&gt;prog(walker); (in isNilNode() from libatnlr3c.so)
+
+	I'm just getting started with ANTLR. I would really appreciate if somebody 
+suggest something that could help me to find where is the problem. To reproduce 
+the problem, please use attached files:
+
+	0) Save all files in the same directory, cd to it and run &quot;chmod +x 
+compile&quot;
+	1) Open Expr.g in ANTLRWorks, generate code, then do the same with Eval.g
+	2) Run (I'm using GNU C++ compiler): ./compile
+	3) Run: ./Test input
+-------------- next part --------------
+tree grammar Eval;
+options
+{
+  language=C;
+  tokenVocab = Expr; // Read token type from Expr tokens file
+  ASTLabelType = pANTLR3_BASE_TREE;
+}
+
+@members
+{
+  #include &lt;string&gt;
+  #include &lt;iostream&gt;
+  #include &lt;tr1/unordered_map&gt;  
+  #include &lt;antlr3commontree.h&gt;
+  namespace std { using namespace tr1; }
+  using namespace std;
+  
+  unordered_map&lt;string, int&gt; memory;
+}
+
+prog	:	stat+;
+
+stat	:	expr { cout &lt;&lt; $expr.value &lt;&lt; endl; }
+	|	^('=' ID expr) { memory.insert( { (char*)$ID.text-&gt;chars, $expr.value } ); };
+
+expr returns [int value]
+	:	^('-' a=expr b=expr) {$value = a-b; }
+	|	^('+' a=expr b=expr) {$value = a+b; }
+	|	^('*' a=expr b=expr) {$value = a*b; }
+	|	ID
+		{
+		  auto key = (char*)$ID.text-&gt;chars;
+		  if(memory.count(key) ) $value = memory[key]; // If found, set return value
+		  else cout &lt;&lt; &quot;Undefined variable &quot; &lt;&lt; $ID.text-&gt;chars &lt;&lt; endl;
+		}
+	|	INT {$value = atoi( (char*)$INT.text-&gt;chars); };
+-------------- next part --------------
+(3+4)*5
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: compile
+Type: application/x-shellscript
+Size: 97 bytes
+Desc: not available
+Url : <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20101202/252d35f3/attachment.bin">http://www.antlr.org/pipermail/antlr-interest/attachments/20101202/252d35f3/attachment.bin</A> 
+-------------- next part --------------
+grammar Expr;
+options
+{
+  language=C;
+  output = AST;
+  ASTLabelType = pANTLR3_BASE_TREE; // Type of $stat.tree ref etc...
+}
+
+@members
+{
+  #include &lt;iostream&gt;
+  using namespace std;
+}
+
+// START:stat
+/** Match a series of stat rules and, for each one, print out the
+ *  tree stat returns, $stat.tree.  toStringTree() prints the tree
+ *  out in form: (root child1 ... childN).  ANTLR's default tree 
+ *  construction mechanism will build a list (flat tree) of the stat
+ *  result trees.  This tree will be the input to the tree parser.
+ */
+prog	:	(stat { /* cout &lt;&lt; $stat.tree==NULL?&quot;NULL&quot;:$stat.tree-&gt;toStringTree() &lt;&lt; endl; */ } )+;
+stat	:	expr NEWLINE        -&gt; expr
+	|	ID '=' expr NEWLINE -&gt; ^('=' ID expr)
+	|	NEWLINE             -&gt;;
+// END:stat
+
+// START:expr
+expr	:	multExpr (('+'^|'-'^) multExpr)*;
+multExpr:	atom ('*'^ atom)*;
+atom	:	INT
+	|	ID
+	|	'('! expr ')'!;
+// END:expr
+
+// START:tokens
+ID	:	('a'..'z'|'A'..'Z')+;
+INT	:	'0'..'9'+;
+NEWLINE	:	'\r'? '\n';
+WS	:	(' '|'\t'|'\n'|'\r')+ { SKIP(); };
+// END:tokens
+</PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="040236.html">[antlr-interest] gUnit in ANTLR 3.3
+</A></li>
+	<LI>Next message: <A HREF="040234.html">[antlr-interest] [C Target] Getting segmentation fault	in	isNilNode() from libatnlr3c.so
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40233">[ date ]</a>
+              <a href="thread.html#40233">[ thread ]</a>
+              <a href="subject.html#40233">[ subject ]</a>
+              <a href="author.html#40233">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

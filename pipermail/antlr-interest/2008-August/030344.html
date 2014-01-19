@@ -1,0 +1,225 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] [C Runtime] Token issues (predicates and	indices) and	composition tree grammars
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5BC%20Runtime%5D%20Token%20issues%20%28predicates%20and%0A%09indices%29%20and%09composition%20tree%20grammars&In-Reply-To=%3C1219705921.15169.245.camel%40jimi%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="030341.html">
+   <LINK REL="Next"  HREF="030379.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] [C Runtime] Token issues (predicates and	indices) and	composition tree grammars</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5BC%20Runtime%5D%20Token%20issues%20%28predicates%20and%0A%09indices%29%20and%09composition%20tree%20grammars&In-Reply-To=%3C1219705921.15169.245.camel%40jimi%3E"
+       TITLE="[antlr-interest] [C Runtime] Token issues (predicates and	indices) and	composition tree grammars">jimi at temporal-wave.com
+       </A><BR>
+    <I>Mon Aug 25 16:12:01 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="030341.html">[antlr-interest] [C Runtime] Token issues (predicates and indices)	and composition tree grammars
+</A></li>
+        <LI>Next message: <A HREF="030379.html">[antlr-interest] [C Runtime] Token issues (predicates and	indices) and composition tree grammars
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30344">[ date ]</a>
+              <a href="thread.html#30344">[ thread ]</a>
+              <a href="subject.html#30344">[ subject ]</a>
+              <a href="author.html#30344">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Mon, 2008-08-25 at 15:53 -0600, Kurt Otte wrote:
+&gt;<i> Jim,
+</I>&gt;<i> 
+</I>&gt;<i> I have hit a series of issues which I think may be bugs in the c
+</I>&gt;<i> runtime.  I have extracted simple examples from my grammar to make it
+</I>&gt;<i> easier to show the problem and have attached them with this email. 
+</I>&gt;<i> 
+</I>&gt;<i> Is there a high level doc explaining the architecture/design of the
+</I>&gt;<i> runtime files?  Is there a good way to ramp up on how it works besides
+</I>&gt;<i> simply looking through the code?  I was going to try to help you debug
+</I>&gt;<i> this, but I am finding it a bit daunting.
+</I>
+
+
+it is easier just to send me examples. However, the Doxygen API docs may
+help you. Follow the link to the API docs from the ANTLR home page.
+
+&gt;<i> 
+</I>&gt;<i> The examples attached should compile and run for you although you will
+</I>&gt;<i> probably need to tweak the makefile with you paths and/or compilers.
+</I>&gt;<i> The examples are a quick and dirty solution to show the problem so
+</I>&gt;<i> they don't have a lot of polish to work in an arbitrary environment.  
+</I>
+The smaller example the better b
+
+&gt;<i> -------------------------------------------------------
+</I>&gt;<i> 
+</I>&gt;<i> Validating predicates in the tree grammars return incorrect token info
+</I>&gt;<i> 
+</I>&gt;<i> To reproduce this run: ex1.exe test/tree_validating_error.txt
+</I>&gt;<i> 
+</I>&gt;<i> This produces the following output:
+</I>&gt;<i> =====
+</I>&gt;<i> (BAR (CNAME (VAR (CNAME a) (CNAME b) c) (CNAME _a)) foo)
+</I>&gt;<i> -Imaginary-(0)  : error 6 : (0), at offset 0, near UP : syntax not
+</I>&gt;<i> recognized...
+</I>&gt;<i> 
+</I>&gt;<i> tree_validating_error.txt(4)  : error 3 : , at offset 11, near foo :
+</I>&gt;<i> cannot match to any predicted input...
+</I>
+I'll look but I think this is a grammar error. Probably trying to match
+^(TOKEN)
+
+
+&gt;<i> =====
+</I>&gt;<i> 
+</I>&gt;<i> Looking at the grammar in ex1walker.g, I have the following validation
+</I>&gt;<i> predicate:
+</I>&gt;<i> 
+</I>&gt;<i> // force this false to trigger an error
+</I>&gt;<i> var_cname
+</I>&gt;<i>  : ^(CNAME NAME {(0)}? cname?)
+</I>&gt;<i> ;
+</I>
+
+
+&gt;<i> 
+</I>&gt;<i> This forces a token to fail due to the predicate returning false
+</I>&gt;<i> (hard-coded in this example).  What token should the error be on?  I
+</I>&gt;<i> think there is some confusion here between a disambiguating semantic
+</I>&gt;<i> predicate and a validating semantic predicate.  It seems the
+</I>&gt;<i> disambiguating semantic predicate wants the error to be on the next
+</I>&gt;<i> token, but the validating semantic predicate want the error on the
+</I>&gt;<i> previous token.  However, when walking through the code, the function
+</I>&gt;<i> antlr3RecognitionExceptionNew seems to always grab the next token.  In
+</I>&gt;<i> my example, this token ends up being the imaginary UP token.  This
+</I>&gt;<i> leads to a confusing non-helpful error message.  Is it possible to
+</I>&gt;<i> look up different tokens in the error handler?  
+</I>
+The error handler is really just a template. I can't predict what you
+need from it, especially in tree walkers. Override the handler function
+with your own. The default is designed to be helpful to a grammar
+programmer and as such will confuse the hell out of your users. You
+should not be getting recognition errors on your AST though and unless
+there is some real strange reason to have them, you should not need
+syntactic predicates as you should produce an unambiguous AST.
+
+
+&gt;<i> 
+</I>&gt;<i> Changing antlr3RecognitionExceptionNew to call _LT(tns,-1) for the
+</I>&gt;<i> ANTLR3_COMMONTREENODE case (change 1 to -1 to get previous token)
+</I>&gt;<i> seems to fix the problem for this particular example, but won't work
+</I>&gt;<i> for the general case.  This change causes the following expected
+</I>&gt;<i> output:
+</I>&gt;<i> 
+</I>&gt;<i> test/tree_validating_error.txt(4)  : error 6 : (0), at offset 2, near
+</I>&gt;<i> a : syntax not recognized...
+</I>&gt;<i> 
+</I>&gt;<i> It seems there needs to be a way to change the error handling
+</I>&gt;<i> depending on whether we are in a disambiguating predicate or a
+</I>&gt;<i> validating predicate, but I am not sure how that would be done.
+</I>
+I think that you should be able to produce an AST that does need
+disambiguation, but there are times when you might need this for partial
+tree matching I supppose. 
+
+&gt;<i> 
+</I>&gt;<i> -------------------------------------------------------
+</I>&gt;<i> 
+</I>&gt;<i> Tokens have incorrect start and stop positions
+</I>&gt;<i> 
+</I>&gt;<i> To reproduce this, run: ex1.exe test/start_stop_error.txt
+</I>&gt;<i> 
+</I>&gt;<i> For example, if I force a syntax error in the file, I get the follow
+</I>&gt;<i> error
+</I>&gt;<i> =====
+</I>&gt;<i> start_stop_error.txt(3)  : error 3 : , at offset 0
+</I>&gt;<i>    near [Index: 0 (Start: 3497941-Stop: 3497941) ='a', type&lt;10&gt; Line:
+</I>&gt;<i> 3 LinePos:0]
+</I>&gt;<i> =====
+</I>&gt;<i> 
+</I>&gt;<i> Note the start and stop positions are way off.  I think there were
+</I>&gt;<i> some similar posts to the list about this problem, but I did not see a
+</I>&gt;<i> conclusion to the thread so I included an example to reproduce it.
+</I>
+Ah, I see what people are doing. These are absolute addresses, not
+offsets! See the API docs.
+
+&gt;<i> -------------------------------------------------------
+</I>&gt;<i> 
+</I>&gt;<i> Composition Tree Grammars won't compile
+</I>&gt;<i> 
+</I>&gt;<i> This looks like a simple string template issues of getting pParser
+</I>&gt;<i> rather than pTreeParser.
+</I>&gt;<i> 
+</I>&gt;<i> Here is the error:
+</I>&gt;<i> =====
+</I>&gt;<i> gen/ex1walker.c(314) : error C2039: 'pParser' : is not a member of
+</I>&gt;<i> 'ex1walker_tree_helper_Ctx_struct'
+</I>&gt;<i>        gen\ex1walker_tree_helper.h(84) : see declaration of
+</I>&gt;<i> 'ex1walker_tree_helper_Ctx_struct'
+</I>&gt;<i> =====
+</I>&gt;<i> 
+</I>&gt;<i> To reproduce, uncomment this line in ex1walker.g
+</I>&gt;<i> 
+</I>&gt;<i> // uncomment this line to see the problem with imported tree grammars
+</I>&gt;<i> import tree_helper;
+</I>&gt;<i> 
+</I>&gt;<i> This was the issue I emailed you about previously and you asked for an
+</I>&gt;<i> example.
+</I>&gt;<i> 
+</I>
+Right - I know what that is.
+
+This will take a few days, I am incredibly busy at the moment.
+
+Jim
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20080825/6ffdedd2/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20080825/6ffdedd2/attachment.html</A> 
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="030341.html">[antlr-interest] [C Runtime] Token issues (predicates and indices)	and composition tree grammars
+</A></li>
+	<LI>Next message: <A HREF="030379.html">[antlr-interest] [C Runtime] Token issues (predicates and	indices) and composition tree grammars
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30344">[ date ]</a>
+              <a href="thread.html#30344">[ thread ]</a>
+              <a href="subject.html#30344">[ subject ]</a>
+              <a href="author.html#30344">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

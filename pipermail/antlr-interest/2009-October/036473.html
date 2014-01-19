@@ -1,0 +1,264 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] c target  - bug
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20c%20target%20%20-%20bug&In-Reply-To=%3Cop.u171n3n6t3jqlu%40win-mupvrp0jyrf%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="036472.html">
+   <LINK REL="Next"  HREF="036489.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] c target  - bug</H1>
+    <B>&#1070;&#1088;&#1091;&#1096;&#1082;&#1080;&#1085; &#1052;&#1080;&#1093;&#1072;&#1080;&#1083;</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20c%20target%20%20-%20bug&In-Reply-To=%3Cop.u171n3n6t3jqlu%40win-mupvrp0jyrf%3E"
+       TITLE="[antlr-interest] c target  - bug">yurushkin at rambler.ru
+       </A><BR>
+    <I>Thu Oct 22 14:51:29 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="036472.html">[antlr-interest] Best way to construct informative AST nodes?
+</A></li>
+        <LI>Next message: <A HREF="036489.html">[antlr-interest] c target  - bug
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36473">[ date ]</a>
+              <a href="thread.html#36473">[ thread ]</a>
+              <a href="subject.html#36473">[ subject ]</a>
+              <a href="author.html#36473">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+line 2086
+ErrorType: last closing scope is redundant.
+&gt;<i> while ( (stream_term != NULL &amp;&amp; stream_term-&gt;hasNext(stream_term))  
+</I>&gt;<i> ||stream_SIGN != NULL &amp;&amp; stream_SIGN-&gt;hasNext(stream_SIGN))  )
+</I>
+
+====================
+LEXER:
+
+
+lexer grammar MathLexer;
+
+options {
+     language = C;
+}
+
+
+APOSTROPHE: '\''; // for derivative
+ASSIGN: '=';
+CARET: '^'; // for exponentiation
+FUNCTIONS: 'functions'; // for list command
+HELP: '?' | 'help';
+LEFT_PAREN: '(';
+LIST: 'list';
+PRINT: 'print';
+RIGHT_PAREN: ')';
+SIGN: '+' | '-';
+VARIABLES: 'variables'; // for list command
+
+NUMBER: INTEGER | FLOAT;
+fragment FLOAT: INTEGER '.' '0'..'9'+;
+fragment INTEGER: '0' | SIGN? '1'..'9' '0'..'9'*;
+NAME: LETTER (LETTER | DIGIT | '_')*;
+STRING_LITERAL: '&quot;' NONCONTROL_CHAR* '&quot;';
+
+fragment NONCONTROL_CHAR: LETTER | DIGIT | SYMBOL | SPACE;
+fragment LETTER: LOWER | UPPER;
+fragment LOWER: 'a'..'z';
+fragment UPPER: 'A'..'Z';
+fragment DIGIT: '0'..'9';
+fragment SPACE: ' ' | '\t';
+
+// Note that SYMBOL does not include the double-quote character.
+fragment SYMBOL: '!' | '#'..'/' | ':'..'@' | '['..'`' | '{'..'~';
+
+// Windows uses \r\n. UNIX and Mac OS X use \n.
+// To use newlines as a terminator,
+// they can't be written to the hidden channel!
+NEWLINE: ('\r'? '\n')+;
+WHITESPACE: SPACE+ { $channel = HIDDEN; };
+
+
+========================================
+
+PARSER:
+
+parser grammar MathParser;
+
+options {
+     // We're going to output an AST.
+     output = AST;
+     language = C;
+
+     // We're going to use the tokens defined in our MathLexer grammar.
+     tokenVocab = MathLexer;
+}
+
+// These are imaginary tokens that will serve as parent nodes
+// for grouping other tokens in our AST.
+tokens {
+     COMBINE;
+     DEFINE;
+     DERIVATIVE;
+     FUNCTION;
+     POLYNOMIAL;
+     TERM;
+}
+
+@parser::includes
+{
+     #include &lt;string&gt;
+     using std::string;
+
+     #define getTokenText(token) string((char*)token-&gt;getText(token)-&gt;chars)
+}
+
+
+
+// This is the &quot;start rule&quot;.
+// EOF is a predefined token that represents the end of input.
+// The &quot;start rule&quot; should end with this.
+// Note the use of the ! AST operator
+// to avoid adding the EOF token to the AST.
+script: statement* EOF!;
+
+statement: assign | define | interactiveStatement | combine | print;
+
+// These kinds of statements only need to be supported
+// when reading input from the keyboard.
+interactiveStatement: help | list;
+
+// Examples of input that match this rule include
+// &quot;a = 19&quot;, &quot;a = b&quot;, &quot;a = f(2)&quot; and &quot;a = f(b)&quot;.
+assign: NAME ASSIGN value terminator -&gt; ^(ASSIGN NAME value);
+
+value: NUMBER | NAME | functionEval;
+
+// A parenthesized group in a rule alternative is called a &quot;subrule&quot;.
+// Examples of input that match this rule include &quot;f(2)&quot; and &quot;f(b)&quot;.
+functionEval
+     : fn=NAME LEFT_PAREN (v=NUMBER | v=NAME) RIGHT_PAREN -&gt; ^(FUNCTION $fn
+$v);
+
+// EOF cannot be used in lexer rules, so we made this a parser rule.
+// EOF is needed here for interactive mode where each line entered ends in
+EOF
+// and for file mode where the last line ends in EOF.
+terminator: NEWLINE | EOF;
+
+// Examples of input that match this rule include
+// &quot;f(x) = 3x^2 - 4&quot; and &quot;g(x) = y^2 - 2y + 1&quot;.
+// Note that two parameters are passed to the polynomial rule.
+define
+     : fn=NAME LEFT_PAREN fv=NAME RIGHT_PAREN ASSIGN
+       polynomial[getTokenText($fn), getTokenText($fv)] terminator
+       -&gt; ^(DEFINE $fn $fv polynomial);
+
+// Examples of input that match this rule include
+// &quot;3x2 - 4&quot; and &quot;y^2 - 2y + 1&quot;.
+// fnt = function name text; fvt = function variable text
+// Note that two parameters are passed in each invocation of the term rule.
+polynomial[string fnt, string fvt]
+     : term[$fnt, $fvt] (SIGN term[$fnt, $fvt])*
+       -&gt; ^(POLYNOMIAL term (SIGN term)*);
+
+// Examples of input that match this rule include
+// &quot;4&quot;, &quot;4x&quot;, &quot;x^2&quot; and &quot;4x^2&quot;.
+// fnt = function name text; fvt = function variable text
+term[string fnt, string fvt]
+     // tv = term variable
+     : c=coefficient? (tv=NAME e=exponent?)?
+       // What follows is a validating semantic predicate.
+       // If it evaluates to false, a FailedPredicateException will be
+thrown.
+       // It is testing whether the term variable matches the function
+variable.
+       { tv == 0 ? true : getTokenText($tv) == $fvt }?
+       -&gt; ^(TERM $c? $tv? $e?)
+     ;
+     // This catches bad function definitions such as
+     // f(x) = 2y
+     catch [3] {
+       throw 0;
+     }
+
+coefficient: NUMBER;
+
+// An example of input that matches this rule is &quot;^2&quot;.
+exponent: CARET NUMBER -&gt; NUMBER;
+
+// Inputs that match this rule are &quot;?&quot; and &quot;help&quot;.
+help: HELP terminator -&gt; HELP;
+
+// Inputs that match this rule include
+// &quot;list functions&quot; and &quot;list variables&quot;.
+list
+     : LIST listOption terminator -&gt; ^(LIST listOption);
+
+// Inputs that match this rule are &quot;functions&quot; and &quot;variables&quot;.
+listOption: FUNCTIONS | VARIABLES;
+
+// Examples of input that match this rule include
+// &quot;h = f + g&quot; and &quot;h = f - g&quot;.
+combine
+     : fn1=NAME ASSIGN fn2=NAME op=SIGN fn3=NAME terminator
+       -&gt; ^(COMBINE $fn1 $op $fn2 $fn3);
+
+// An example of input that matches this rule is
+// print &quot;f(&quot; a &quot;) = &quot; f(a)
+print
+     : PRINT printTarget* terminator -&gt; ^(PRINT printTarget*);
+
+// Examples of input that match this rule include
+// 19, 3.14, &quot;my text&quot;, a, f(), f(2), f(a) and f'().
+printTarget
+     : NUMBER -&gt; NUMBER
+     | sl=STRING_LITERAL -&gt; $sl
+     | NAME -&gt; NAME
+     // This is a function reference to print a string representation.
+     | NAME LEFT_PAREN RIGHT_PAREN -&gt; ^(FUNCTION NAME)
+     | functionEval
+     | derivative
+     ;
+
+// An example of input that matches this rule is &quot;f'()&quot;.
+derivative
+     : NAME APOSTROPHE LEFT_PAREN RIGHT_PAREN -&gt; ^(DERIVATIVE NAME);
+
+
+              	        	}
+
+-- 
+Best regards,
+Michael
+</PRE>
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="036472.html">[antlr-interest] Best way to construct informative AST nodes?
+</A></li>
+	<LI>Next message: <A HREF="036489.html">[antlr-interest] c target  - bug
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36473">[ date ]</a>
+              <a href="thread.html#36473">[ thread ]</a>
+              <a href="subject.html#36473">[ subject ]</a>
+              <a href="author.html#36473">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

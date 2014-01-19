@@ -1,0 +1,149 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Strategy for mapping output to line numbers	from a tree walker
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Strategy%20for%20mapping%20output%20to%20line%20numbers%0A%09from%20a%20tree%20walker&In-Reply-To=%3Cf6be20450908240804xb5cf5dey97b844d6cbe7fe0b%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="035737.html">
+   <LINK REL="Next"  HREF="035741.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Strategy for mapping output to line numbers	from a tree walker</H1>
+    <B>Stanislav Sokorac</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Strategy%20for%20mapping%20output%20to%20line%20numbers%0A%09from%20a%20tree%20walker&In-Reply-To=%3Cf6be20450908240804xb5cf5dey97b844d6cbe7fe0b%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Strategy for mapping output to line numbers	from a tree walker">sokorac at gmail.com
+       </A><BR>
+    <I>Mon Aug 24 08:04:18 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="035737.html">[antlr-interest] Proper error handling in a C target parser
+</A></li>
+        <LI>Next message: <A HREF="035741.html">[antlr-interest] lexical rule problem
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#35740">[ date ]</a>
+              <a href="thread.html#35740">[ thread ]</a>
+              <a href="subject.html#35740">[ subject ]</a>
+              <a href="author.html#35740">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Thanks for the tips, Gavin. I ended up doing something along the lines of
+your &quot;each token keeps a list of includes&quot; idea, with a slight modification.
+I did the following:
+
+- each token in the &quot;main&quot; file stays as is, just a plain CommonToken
+- each token included from another stream has two additional fields which
+contain the first and the last token of the statement that caused the stream
+switch (i.e. an include statement, a macro being used, etc.). This is used
+for any nested includes, as well.
+
+This way, I can follow a chain of includes up to any level I want, but
+without having to keep a full list for each token... in most cases, I'll
+want to go up the chain until the node root, the start token, and the end
+token are all at the same level (i.e. same char stream), and then I can
+underline the node in one file. Of course, I can also choose to go up until
+I reach a CommonToken for all 3 and locate the originating include/macro
+statement, if needed. (&quot;No adding of reals and integers on line 23 of
+foo.inc, included from main.c, line 543&quot;).
+
+I think it's a flexible solution, and it's not too bad on memory usage.
+
+Stan
+
+On Sat, Aug 22, 2009 at 12:04 AM, Gavin Lambert &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr at mirality.co.nz</A>&gt;wrote:
+
+&gt;<i> At 13:06 22/08/2009, Stanislav Sokorac wrote:
+</I>&gt;<i>
+</I>&gt;&gt;<i> if (VALUE + a &gt; 0) { echo &quot;hi&quot;; }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> where 'VALUE' is a macro that's defined in an include file. Your lexer
+</I>&gt;&gt;<i> substituted VALUE with the defined value (say '1.0'), and marked the char
+</I>&gt;&gt;<i> stream appropriately. Now, your tree walker comes upon 1.0+a, and say your
+</I>&gt;&gt;<i> language doesn't allow additional of reals and integers, so you want to
+</I>&gt;&gt;<i> mark/underline the expression &quot;VALUE + a&quot; and say &quot;No adding of reals and
+</I>&gt;&gt;<i> integers&quot;.
+</I>&gt;&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Well, the error itself is anchored on the + (since, after all, each operand
+</I>&gt;<i> is ok, it's only when you try to add them that there's a problem).  You
+</I>&gt;<i> could probably get by with just flagging the + itself as the error and not
+</I>&gt;<i> worrying about where the operands came from.  Failing that, you can use the
+</I>&gt;<i> location of the + to decide whether you've found the &quot;right&quot; location for
+</I>&gt;<i> the operands or not.
+</I>&gt;<i>
+</I>&gt;<i>  Now what, how do you underline 'VALUE + a'? I.e. how do you figure out the
+</I>&gt;&gt;<i> starting and ending character of your expression in 'main.c'? The user
+</I>&gt;&gt;<i> doesn't want to see the VALUE definition in another file underlined as
+</I>&gt;&gt;<i> there's nothing wrong with the line of code.
+</I>&gt;&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Either don't have your lexer do the substitution (which is impractical if
+</I>&gt;<i> this is a C-style preprocessor that can have complex replacements), or
+</I>&gt;<i> expand the token definition so that the resulting &quot;1.0&quot; still remembers
+</I>&gt;<i> where the call site (the VALUE) was, so that you can use that for error
+</I>&gt;<i> reporting.
+</I>&gt;<i>
+</I>&gt;<i>  A similar problem occurs if you have a list of statements, and the first
+</I>&gt;&gt;<i> (or last) few came from an include file.. if you wanted to show the proper
+</I>&gt;&gt;<i> range in the original file, you can't determine the location of the
+</I>&gt;&gt;<i> 'include' statement by only examining your &quot;list of statements&quot; tree node
+</I>&gt;&gt;<i> and the tokens in it.
+</I>&gt;&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> You could add an extra value to the token definition and lexer members (an
+</I>&gt;<i> &quot;include list&quot;).  This starts out empty.  When any token is generated, the
+</I>&gt;<i> current include list is attached to it.  When that happens to be an include
+</I>&gt;<i> statement, the current include list is cloned and a reference to the include
+</I>&gt;<i> statement itself is added to the copy, then the copy is passed into the
+</I>&gt;<i> sublexer as its include list.
+</I>&gt;<i>
+</I>&gt;<i> That way, every token would carry with it the full chain of include files
+</I>&gt;<i> (and line numbers of the include statements) that it took to get there,
+</I>&gt;<i> which would make for very useful error messages.
+</I>&gt;<i>
+</I>&gt;<i> Obviously this will increase memory usage a bit (depending on how many
+</I>&gt;<i> levels of nested includes you have), but it's probably fairly minimal.  Just
+</I>&gt;<i> make sure you don't clone the list for each individual token ;)
+</I>&gt;<i>
+</I>&gt;<i>
+</I>-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20090824/cafbe438/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20090824/cafbe438/attachment.html</A> 
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="035737.html">[antlr-interest] Proper error handling in a C target parser
+</A></li>
+	<LI>Next message: <A HREF="035741.html">[antlr-interest] lexical rule problem
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#35740">[ date ]</a>
+              <a href="thread.html#35740">[ thread ]</a>
+              <a href="subject.html#35740">[ subject ]</a>
+              <a href="author.html#35740">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

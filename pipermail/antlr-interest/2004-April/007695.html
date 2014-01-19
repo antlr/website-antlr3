@@ -1,0 +1,226 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Embedded token stream technique
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Embedded%20token%20stream%20technique&In-Reply-To=BD6CAF8E-9A06-11D8-9A7D-000A95891192%40cs.usfca.edu">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="007694.html">
+   <LINK REL="Next"  HREF="007696.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Embedded token stream technique</H1>
+    <B>FranklinChen at cmu.edu</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Embedded%20token%20stream%20technique&In-Reply-To=BD6CAF8E-9A06-11D8-9A7D-000A95891192%40cs.usfca.edu"
+       TITLE="[antlr-interest] Embedded token stream technique">FranklinChen at cmu.edu
+       </A><BR>
+    <I>Thu Apr 29 11:09:22 PDT 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="007694.html">[antlr-interest] Re: missing class in 2.7.3 - ASTFrame$MyTreeSelectionListener
+</A></li>
+        <LI>Next message: <A HREF="007696.html">[antlr-interest] Embedded token stream technique
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#7695">[ date ]</a>
+              <a href="thread.html#7695">[ thread ]</a>
+              <a href="subject.html#7695">[ subject ]</a>
+              <a href="author.html#7695">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I asked earlier in several messages about a variety of lexer
+techniques I tried in order to do what I need to do... I never got any
+feedback about any of it, but I think I have come up with an
+interesting hack, and am interested whether it introduces unforeseen
+problems:
+
+Say I am parsing and currently use a lexer that has a token FLOAT,
+which is FLOAT_INTEGER DOT FLOAT_FRACTION (assume all protected).  Now
+assume that my parser wants to get the subparts of the token.  (Never
+mind that in this toy example this makes no sense: in real examples,
+where the token is actually recursive, I do want access to subparts of
+a token, for reparsing in the right context.)
+
+I've implemented a trick as follows (relevant excerpt
+follows). Comments?
+
+
+header {
+    import java.util.LinkedList;
+}
+
+class FloatParser extends Parser;
+
+options {
+    buildAST = true;
+}
+
+tokens {
+    NUMBER;
+}
+
+number
+    :
+        i:FLOAT_INTEGER
+        DOT!
+        f:FLOAT_FRACTION
+        {
+          #number = #([NUMBER], #number);
+        }
+    ;
+
+class FloatLexer extends Lexer;
+
+{
+    /** Queue of tokens. */
+    protected LinkedList insertedTokens = new LinkedList();
+}
+
+// Want to push tokens back on the stream in order to treat as
+// &quot;integer&quot; followed by &quot;fraction&quot;.
+FLOAT
+    :
+        i:FLOAT_INTEGER
+        {
+            LinkedList queue = new LinkedList();
+            queue.add(i);
+        }
+        d:DOT
+        {
+            queue.add(d);
+        }
+        f:FLOAT_FRACTION
+        {
+            queue.add(f);
+        }
+
+        {
+            // Have to manually kick off the token stream.
+            Token token = (Token) queue.removeFirst();
+            $setToken(token);
+            System.err.println(&quot;*** inserting tokens: &quot; + queue);
+            insertedTokens.addAll(queue);
+        }
+    ;
+
+protected
+FLOAT_INTEGER
+    :
+        ('0'..'9')+
+    ;
+
+protected
+FLOAT_FRACTION
+    :
+        ('0'..'9')+
+    ;
+
+protected
+DOT
+    :
+        '.'
+    ;
+
+
+import java.io.InputStream;
+import java.io.Reader;
+
+import antlr.Token;
+import antlr.TokenStreamException;
+import antlr.InputBuffer;
+import antlr.LexerSharedInputState;
+
+
+/**
+ * Use queue of tokens before the existing token stream.
+ */
+public class InsertedFloatLexer extends FloatLexer {
+    public InsertedFloatLexer(InputStream in) {
+        super(in);
+    }
+
+    public InsertedFloatLexer(Reader in) {
+        super(in);
+    }
+
+    public InsertedFloatLexer(InputBuffer ib) {
+        super(ib);
+    }
+
+    public InsertedFloatLexer(LexerSharedInputState state) {
+        super(state);
+    }
+
+    public Token nextToken() throws TokenStreamException {
+        if (insertedTokens.size() == 0) {
+            return super.nextToken();
+        }
+        else {
+            return (Token) insertedTokens.removeFirst();
+        }
+    }
+}
+
+
+import antlr.TokenStream;
+import antlr.Token;
+import antlr.TokenStreamException;
+
+public class FloatDriver {
+    public static void main(String[] args) {
+        try {
+            InsertedFloatLexer lexer = new InsertedFloatLexer(System.in);
+            FloatParser parser = new FloatParser(lexer);
+
+            parser.start();
+        }
+        catch (Exception e) {
+            System.err.println(e.getMessage());
+        }
+    }
+}
+
+
+
+-- 
+Franklin
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+     <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+     <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+     <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="007694.html">[antlr-interest] Re: missing class in 2.7.3 - ASTFrame$MyTreeSelectionListener
+</A></li>
+	<LI>Next message: <A HREF="007696.html">[antlr-interest] Embedded token stream technique
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#7695">[ date ]</a>
+              <a href="thread.html#7695">[ thread ]</a>
+              <a href="subject.html#7695">[ subject ]</a>
+              <a href="author.html#7695">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

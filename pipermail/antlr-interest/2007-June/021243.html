@@ -1,0 +1,173 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Patch for filter mode
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Patch%20for%20filter%20mode&In-Reply-To=%3C239FBE3F-9EE1-4AFB-A203-C2085E9A83EB%40wincent.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="021250.html">
+   <LINK REL="Next"  HREF="021246.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Patch for filter mode</H1>
+    <B>Wincent Colaiuta</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Patch%20for%20filter%20mode&In-Reply-To=%3C239FBE3F-9EE1-4AFB-A203-C2085E9A83EB%40wincent.com%3E"
+       TITLE="[antlr-interest] Patch for filter mode">win at wincent.com
+       </A><BR>
+    <I>Sat Jun  9 18:16:31 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="021250.html">[antlr-interest] Possible Antlr defect?
+</A></li>
+        <LI>Next message: <A HREF="021246.html">[antlr-interest] Problem, with minimal problem-causing grammar
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#21243">[ date ]</a>
+              <a href="thread.html#21243">[ thread ]</a>
+              <a href="subject.html#21243">[ subject ]</a>
+              <a href="author.html#21243">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Terence has previously written (&lt;<A HREF="http://www.antlr.org/pipermail/">http://www.antlr.org/pipermail/</A> 
+antlr-interest/2007-May/020942.html&gt;):
+
+&gt;<i> filter=true only works in the lexer. :) You should not really have  
+</I>&gt;<i> a parser in this case because you cannot really apply a grammatical  
+</I>&gt;<i> structure to the incomplete stream of tokens emanating from a lexer  
+</I>&gt;<i> that filters most stuff out.
+</I>
+And indeed the ANTLR book on page 119 documents the filter option as  
+begin &quot;lexer only&quot;... I've found what appear to be two bugs which  
+relate to this:
+
+1. Even though this is documented as a lexer-only option, it has  
+effect in the parser as well; the effects include automatically  
+turning on backtracking in the parser and preventing all parser  
+actions from running (they appear in the generated code but as far as  
+I can tell no codepath ever reaches them)
+
+2. &quot;filter = true&quot; doesn't work for lexer grammars which are declared  
+in a separate file as &quot;lexer grammars&quot;
+
+The following simple patch to src/org/Antlr/codegen/ 
+CodeGenerator.java fixes the first problem. The second one isn't  
+really of concern to me because I haven't yet had a need to use  
+anything other than a combined lexer/parser grammar in a single file:
+
+301c301,302
+&lt;                                                          
+grammar.getOption(&quot;filter&quot;).equals(&quot;true&quot;);
+---
+ &gt;                                                          
+grammar.getOption(&quot;filter&quot;).equals(&quot;true&quot;) &amp;&amp;
+ &gt;                                                          
+( grammar.type==Grammar.LEXER );
+
+(Tabs eaten by my email client when I pasted in the diff, it seems).
+
+Before signing off, some words of explanation as to why I want to be  
+able to use a filtering lexer in combination with a parser:
+
+I'm aware that the filter mode was intended to enable the creation of  
+&quot;fuzzy&quot; lexers but I've also found it very useful for parsing things  
+like wikitext or templating languages (PHP or any like it) where you  
+have a large amount of free-form text (no special markup) studded  
+with meaningful chunks of a more formal language (wikitext  
+directives, PHP code sections etc). In this case you don't want to  
+filter out and throw away the dross; you want to keep it.
+
+Without filtering mode it is very hard to write a lexer for this kind  
+of input, yet with filtering mode as it currently is implemented you  
+can't really use a parser either. For one thing, backtracking gets  
+turned on in the parser whether you want it or not, and much more  
+crucially any actions which you define or @after blocks which you set- 
+up will never be executed (although @init blocks will be); there may  
+be other issues as well but those are the ones I'm aware of.
+
+Conversely, trying to write the lexer without filtering mode turned  
+on is fiendishly difficult. You might have lexer rules like this:
+
+FOO: 'foo';
+BAR: 'bar';
+DEFAULT: .;
+
+The DEFAULT rule is intended to serve as a catch-all for everything  
+which doesn't get tokenized by the other rules, but because ANTLR  
+builds a predictive lexer, input such as &quot;fob&quot; will cause an  
+exception to be thrown even though you might want it to be recognized  
+as run of DEFAULT tokens... syntactic predicates don't help in this  
+situation, as they really only help to select alternatives an in the  
+case of a rule like FOO there are no alternatives and you'll still  
+get messages like &quot;mismatched character 'b' expecting 'o'&quot; emitted  
+during lexing:
+
+FOO: ('foo')=&gt; 'foo' ;
+
+So basically I wanted filter=true in the lexer and the parser to be  
+normal. So I tried working around the problem by splitting my lexer  
+and parser into two separate files, a lexer grammar and a parser  
+grammar, with &quot;filter=true&quot; set only in the lexer grammar. It was in  
+this way that I discovered the second problem mentioned above (that  
+filter=true is broken for lexer grammars and only works in combined  
+grammars).
+
+I also explored trying to mimic the behaviour of filter=true in the  
+lexer without actually turning filtering on, but there are some  
+special things that filter=true does that cannot be emulated just by  
+playing with lexer rules (strict ordering of rules, special  
+backtracking behaviour in which exceptions are never thrown etc).
+
+So anyway, I'm hoping you can see the justification for this usage  
+case, and that you'll accept my small fix.
+
+Cheers,
+Wincent
+
+
+
+
+
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="021250.html">[antlr-interest] Possible Antlr defect?
+</A></li>
+	<LI>Next message: <A HREF="021246.html">[antlr-interest] Problem, with minimal problem-causing grammar
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#21243">[ date ]</a>
+              <a href="thread.html#21243">[ thread ]</a>
+              <a href="subject.html#21243">[ subject ]</a>
+              <a href="author.html#21243">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

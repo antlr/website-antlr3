@@ -1,0 +1,139 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Trouble with nondeterminism
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Trouble%20with%20nondeterminism&In-Reply-To=20060829014628.GA22774%40as.arizona.edu">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="017495.html">
+   <LINK REL="Next"  HREF="017500.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Trouble with nondeterminism</H1>
+    <B>Ric Klaren</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Trouble%20with%20nondeterminism&In-Reply-To=20060829014628.GA22774%40as.arizona.edu"
+       TITLE="[antlr-interest] Trouble with nondeterminism">ric.klaren at gmail.com
+       </A><BR>
+    <I>Tue Aug 29 04:21:08 PDT 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="017495.html">[antlr-interest] Trouble with nondeterminism
+</A></li>
+        <LI>Next message: <A HREF="017500.html">[antlr-interest] Trouble with nondeterminism
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#17497">[ date ]</a>
+              <a href="thread.html#17497">[ thread ]</a>
+              <a href="subject.html#17497">[ subject ]</a>
+              <a href="author.html#17497">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 8/29/06, John Gruenenfelder &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">johng at as.arizona.edu</A>&gt; wrote:
+&gt;<i> Okay, that certainly makes sense.  I guess my question is what is the best way
+</I>&gt;<i> to resolve these problems with common left prefixes, as one gets with
+</I>&gt;<i> different numerical types.
+</I>
+Left factoring is the solution. (or using predicates but that's a only
+if nothing else helps solution)
+
+One thing to keep in mind with lexers is that the lexer is made up of
+a big automatically generated nextToken rule that gives an alternative
+for all the rules in the lexer. (Hence the ambiguity warnings between
+int/double)
+
+&gt;<i> After re-reading the section in the reference manual about predicates, I have
+</I>&gt;<i> to following which generates no warnings from ANTLR:
+</I>&gt;<i>
+</I>&gt;<i> Constant
+</I>&gt;<i>     :   ( ('0'..'9')+ '.') =&gt; ('0'..'9')+ '.' ('0'..'9')* (Exponent)?
+</I>&gt;<i>             { $setType(DOUBLE); }
+</I>&gt;<i>     |   '.' ('0'..'9')+ (Exponent)?
+</I>&gt;<i>             { $setType(DOUBLE); }
+</I>&gt;<i>     |   ( ('0'..'9')+ ('e' | 'E')) =&gt; ('0'..'9')+ Exponent
+</I>&gt;<i>             { $setType(DOUBLE); }
+</I>&gt;<i>     |   ('0' | ( '1'..'9' ('0'..'9')* ))
+</I>&gt;<i>             { $setType(INT); }
+</I>&gt;<i>     ;
+</I>&gt;<i>
+</I>&gt;<i> Is that a &quot;good&quot; method for dealing with this problem?
+</I>
+It works... but for every invocation of the constant rule it will for
+the first alternative read input untill ( ('0'..'9')+ '.') =&gt; .. is
+satisfied or failed. In the succes case it will rollback the input and
+enter the first alternative. In the failed case it will attempt to
+match the '.' for the 2nd alternative if that does not work it will
+try the predicate ( ('0'..'9')+ ('e' | 'E')) =&gt; .. read input untill
+the predicate fails or succeeds. If it succeeds it will roll back the
+input and enter the alternative. If it fails it will rollback the
+input and enter the last alternative.
+
+=&gt; introduces a trial and error run of the input (or backtracking).
+E.g. it's very expensive in terms of efficiency. In terms of
+readability or speed of implementing it's pretty efficient ;)
+
+The other solution to this problem is to left factor the rule:
+
+Constant:
+   { $setType(INT); /* int untill proven otherwise */ }
+   ('0' | ( '1'..'9' ('0'..'9')* ))
+   (
+         (  '.' ('0'..'9')* (Exponent)? )
+         { $setType(DOUBLE); }
+      |  Exponent
+         { $setType(DOUBLE); }
+   )?
+   |   '.' ('0'..'9')+ (Exponent)?
+      { $setType(DOUBLE); }
+   ;
+
+This should do the trick I think (unless I made a type/thinko)
+
+Left factoring usually leads to less readable code. But it's a lot
+faster. In a lexer you'd want to try to have no =&gt; constructs. But
+during prototyping it's quite handy.
+
+&gt;<i> I must also say that
+</I>&gt;<i> even after reading that section and hacking together the above rules, I still
+</I>&gt;<i> don't really understand how these predicate rules help ANTLR do its job.  It
+</I>&gt;<i> still must grab the characters one at a time.  How do the predicates make the
+</I>&gt;<i> task easier or, at the very least, unambiguous?
+</I>
+One thing to understanding antlr is reading the generated code (no
+worries it's quite readable). For kicks safe the code generated for
+the backtracking version then generate the code for the left factored
+version and compare. (or generate code with -traceLexer and then
+compile and run) )
+
+Once you get a feel for it it's really intuitive.
+
+Cheers,
+
+Ric
+</PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="017495.html">[antlr-interest] Trouble with nondeterminism
+</A></li>
+	<LI>Next message: <A HREF="017500.html">[antlr-interest] Trouble with nondeterminism
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#17497">[ date ]</a>
+              <a href="thread.html#17497">[ thread ]</a>
+              <a href="subject.html#17497">[ subject ]</a>
+              <a href="author.html#17497">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

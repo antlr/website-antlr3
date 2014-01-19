@@ -1,0 +1,243 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Embedded Languages
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Embedded%20Languages&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002925.html">
+   <LINK REL="Next"  HREF="002934.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Embedded Languages</H1>
+    <B>craigmain001 &lt;cmain at pps.co.za&gt;</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Embedded%20Languages&In-Reply-To="
+       TITLE="[antlr-interest] Embedded Languages">cmain at pps.co.za
+       </A><BR>
+    <I>Tue Feb  4 07:06:00 PST 2003</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002925.html">[antlr-interest] Re: Problem of building C++ library in VC6
+</A></li>
+        <LI>Next message: <A HREF="002934.html">[antlr-interest] Progess with Embedded Language.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2926">[ date ]</a>
+              <a href="thread.html#2926">[ thread ]</a>
+              <a href="subject.html#2926">[ subject ]</a>
+              <a href="author.html#2926">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+I need to parse an embedded language. I basically wish to reproduce 
+the input to stdout except for delimited sections of the input stream 
+which must be parsed, much like the multiplex javadoc sample.
+
+I have tried to combine the SED sample and the javadoc sample to get 
+what I need, but I am struggling to get it working.
+
+I have pasted in the four files I have used - modified from the 
+javadoc sample.
+
+I am pretty sure that if I just want to reproduce input except for 
+certain delimited sections of the text, that I should be able to use 
+one lexer and one parser.
+
+I don't actually need to parse the complete input text, just the 
+delimited sections.
+
+There must be an easier way to do this. I have attached my attempt in 
+case it is of some use.
+
+
+START OF CODELEX.G
+-------------------------------------------------------------------
+header {
+#include &quot;antlr/TokenStreamSelector.hpp&quot;
+#include &lt;iostream&gt;
+}
+
+options {
+
+	language=&quot;Cpp&quot;;
+}
+
+class CodeLexer extends Lexer;
+options {
+	k=2;
+	filter=IGNORE;
+        importVocab = Common;
+	exportVocab = XGEN;
+}
+
+{
+private:
+	ANTLR_USE_NAMESPACE(antlr)TokenStreamSelector* selector;
+public:
+	void setSelector(ANTLR_USE_NAMESPACE(antlr)
+TokenStreamSelector* selector_) {
+		selector=selector_;
+	}
+}
+
+protected
+IGNORE
+  :  ( &quot;\r\n&quot; /* | '\r' | '\n' */ )
+     {newline(); std::cout &lt;&lt; std::endl;}
+  |  c:. {std::cout &lt;&lt; c;}
+  ;
+
+XGENCODE_OPEN
+	:	&quot;[&quot; {selector-&gt;push(&quot;doclexer&quot;);}
+	;
+-------------------------------------------------------------------
+END OF CODELEX.G
+        
+
+START OF CODEPARSE.G
+-------------------------------------------------------------------
+options {
+	language=&quot;Cpp&quot;;
+}
+
+{
+#include &quot;XGenParser.hpp&quot;
+}
+
+class CodeParser extends Parser;
+options {
+	importVocab=XGEN;
+}
+
+input
+	:	(xgencode)*
+                
+	;
+
+xgencode
+	:	XGENCODE_OPEN
+		{
+		XGenParser xgen(getInputState());
+		xgen.content();
+		}
+		XGENCODE_CLOSE
+	;
+-------------------------------------------------------------------
+END OF CODEPARSE.G
+
+START OF XGENLEX.G
+-------------------------------------------------------------------
+header {
+#include &quot;antlr/TokenStreamSelector.hpp&quot;
+}
+
+options {
+	language=&quot;Cpp&quot;;
+}
+
+class XGenLexer extends Lexer;
+options {
+	k=2;
+	importVocab = Common;
+	exportVocab = XGEN;
+	filter=true;
+}
+
+{
+private:
+	ANTLR_USE_NAMESPACE(antlr)TokenStreamSelector* selector;
+public:
+	void setSelector(ANTLR_USE_NAMESPACE(antlr)
+TokenStreamSelector* selector_) {
+		selector=selector_;
+	}
+}
+
+FOREACH
+	:	&quot;foreach&quot; ' ' ID
+	;
+
+protected
+ID	:	('a'..'z'|'A'..'Z')+
+	;
+
+/** This rule simply prevents XGENCODE_CLOSE from being
+ *  called for every '[' in a comment.  Calling XGENCODE_CLOSE
+ *  will fail for simple '[' and cause an exception, which
+ *  is slow.  In other words, the grammar will work without
+ *  this rule, but is slower.
+ */
+OPEN:	'[' {$setType(ANTLR_USE_NAMESPACE(antlr)Token::SKIP);}
+	;
+
+XGENCODE_CLOSE
+	:	&quot;]&quot; {selector-&gt;pop();}
+	;
+
+/** Ignore whitespace inside xgen code comments */
+NEWLINE
+	:	(	&quot;\r\n&quot;  // Evil DOS
+		|	'\r'    // Macintosh
+		|	'\n'    // Unix (the right way)
+		)
+		{ newline(); $setType(ANTLR_USE_NAMESPACE(antlr)
+Token::SKIP); }
+	;
+-------------------------------------------------------------------
+END OF XGENLEX.G
+
+START OF XGENPARSE.G
+-------------------------------------------------------------------
+options {
+	language=&quot;Cpp&quot;;
+}
+
+{
+#include &lt;iostream&gt;
+}
+
+class XGenParser extends Parser;
+options {
+	importVocab=XGEN;
+}
+
+content
+	:	(	p:FOREACH	// includes ID as part of 
+PARAM
+			{std::cout &lt;&lt; &quot;found: &quot; &lt;&lt; p-&gt;getText() &lt;&lt; 
+std::endl;}
+		)*
+	;
+
+
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002925.html">[antlr-interest] Re: Problem of building C++ library in VC6
+</A></li>
+	<LI>Next message: <A HREF="002934.html">[antlr-interest] Progess with Embedded Language.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2926">[ date ]</a>
+              <a href="thread.html#2926">[ thread ]</a>
+              <a href="subject.html#2926">[ subject ]</a>
+              <a href="author.html#2926">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

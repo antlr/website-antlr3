@@ -1,0 +1,157 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Matching tokens only at certain places
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Matching%20tokens%20only%20at%20certain%20places&In-Reply-To=200606191708.01553.e.papegaaij%40student.utwente.nl">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="016650.html">
+   <LINK REL="Next"  HREF="016661.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Matching tokens only at certain places</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Matching%20tokens%20only%20at%20certain%20places&In-Reply-To=200606191708.01553.e.papegaaij%40student.utwente.nl"
+       TITLE="[antlr-interest] Matching tokens only at certain places">parrt at cs.usfca.edu
+       </A><BR>
+    <I>Mon Jun 19 11:00:22 PDT 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="016650.html">[antlr-interest] Matching tokens only at certain places
+</A></li>
+        <LI>Next message: <A HREF="016661.html">[antlr-interest] Matching tokens only at certain places
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#16658">[ date ]</a>
+              <a href="thread.html#16658">[ thread ]</a>
+              <a href="subject.html#16658">[ subject ]</a>
+              <a href="author.html#16658">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+On Jun 19, 2006, at 8:08 AM, Emond Papegaaij wrote:
+
+&gt;<i> On Monday 19 June 2006 16:13, Emond Papegaaij wrote:
+</I>&gt;&gt;<i> On Monday 19 June 2006 15:32, Emond Papegaaij wrote:
+</I>&gt;&gt;<i> This is what the resulting s0 DFA state in the generated code  
+</I>&gt;&gt;<i> looks like:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> public DFA.State transition(IntStream input) throws  
+</I>&gt;&gt;<i> RecognitionException {
+</I>&gt;&gt;<i>   int LA3_0 = input.LA(1);
+</I>&gt;&gt;<i>   if ( LA3_0=='{' &amp;&amp; (sig)) {return s1;}
+</I>&gt;&gt;<i>   if ( LA3_0=='}' &amp;&amp; (sig)) {return s2;}
+</I>&gt;&gt;<i>   if ( LA3_0=='i' &amp;&amp; (sig)) {return s3;}
+</I>&gt;&gt;<i>   if ( LA3_0==';' ) {return s4;}
+</I>&gt;&gt;<i>   if ( (..)||(..)||(..) &amp;&amp; (sig)) {return s5;}
+</I>&gt;&gt;<i>   if ( (..)||(..)||LA3_0==' ' &amp;&amp; (sig)) {return s6;}
+</I>&gt;&gt;<i>   if ( (..)||..||(..)||(..)||(..)||(..)||..||(..) &amp;&amp; (sig))  
+</I>&gt;&gt;<i> {return s7;}
+</I>&gt;&gt;<i>   NoViableAltException nvae =
+</I>&gt;&gt;<i>     new NoViableAltException(&quot;&quot;, 3, 0, input);
+</I>&gt;&gt;<i>   throw nvae;
+</I>&gt;&gt;<i> }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> It is clear that this disables all paths except &quot;LA3_0==';'&quot; when  
+</I>&gt;&gt;<i> 'sig' is
+</I>&gt;&gt;<i> false. As a result the lexer will only except ';' tokens as long  
+</I>&gt;&gt;<i> as 'sig'
+</I>&gt;&gt;<i> is false. Am I using the {..}?=&gt; predicates incorrectly?
+</I>&gt;<i>
+</I>&gt;<i> Well, replying to myself again.
+</I>&gt;<i>
+</I>&gt;<i> I've managed to get my example to parse correctly, but I had to  
+</I>&gt;<i> perform some
+</I>&gt;<i> weird tricks. First I had to re-enable the DFA paths that would  
+</I>&gt;<i> accept input
+</I>&gt;<i> that could have been lexed as METHOD_SIG_ACTION. That meant I had to
+</I>&gt;<i> put '{!sig}?=&gt;' predicates in all lexical rules.
+</I>
+That makes sense I think.  ANTLR can guess !sig but only if there is  
+1 other unpredicated path.  You must tell antlr how to gate all  
+ambiguous paths if you use a predicate.  Note that ~';' is pretty  
+much anything and will therefore conflict with every other rule.
+
+&gt;<i> However when generating the lexer, it still didn't work. Notice how  
+</I>&gt;<i> ANTLR puts
+</I>&gt;<i> the semantic predicates in the if statements:
+</I>&gt;<i>  if ( compareChar ('||' compareChar)* '&amp;&amp;' predicate)
+</I>&gt;<i> In Java '&amp;&amp;' takes precedence over '||'. This results in the  
+</I>&gt;<i> predicate only
+</I>&gt;<i> effecting the last character comparison. I believe this is a bug in  
+</I>&gt;<i> the
+</I>&gt;<i> generated code. Grouping all character comparisons together in the  
+</I>&gt;<i> generated
+</I>&gt;<i> code made my grammar work.
+</I>
+Doh!  Consider me a moron.  Sorry about that...adding to bug fix list  
+(well, will take 3 seconds to fix).  Go into templates/Java/Java.stg  
+and change
+
+dfaEdge(labelExpr, targetState, predicates) ::= &lt;&lt;
+if ( &lt;labelExpr&gt; &lt;if(predicates)&gt;&amp;&amp; (&lt;predicates&gt;)&lt;endif&gt;) {
+     &lt;targetState&gt;
+}
+ &gt;&gt;
+
+to have (...) around &lt;labelExpr&gt; and same for
+
+cyclicDFAEdge(labelExpr, targetStateNumber, edgeNumber,  
+predicates) ::= &lt;&lt;
+if ( &lt;labelExpr&gt; &lt;if(predicates)&gt;&amp;&amp; (&lt;predicates&gt;)&lt;endif&gt;) {s =  
+&lt;targetStateNumber&gt;;}&lt;\n&gt;
+ &gt;&gt;
+
+Sorry about that.
+
+&gt;<i> To come back to the first problem. Is it really preferable to let  
+</I>&gt;<i> the gated
+</I>&gt;<i> semantic predicates disable all paths that /could/ lead to a certain
+</I>&gt;<i> alternative? To me it seems more logical to let the predicates  
+</I>&gt;<i> remove all
+</I>&gt;<i> paths that /will/ lead to a certain alternative. But I might be  
+</I>&gt;<i> missing
+</I>&gt;<i> something obvious.
+</I>
+The gated predicate gates all sequences associated with that token in/ 
+out.  It dynamically alters the prediction DFA to not see certain  
+paths.  This lets you turn off various tokens when a predicate is  
+false.   By default all tokens are visible with a {true}=&gt; gated  
+predicate.
+
+Ter
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="016650.html">[antlr-interest] Matching tokens only at certain places
+</A></li>
+	<LI>Next message: <A HREF="016661.html">[antlr-interest] Matching tokens only at certain places
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#16658">[ date ]</a>
+              <a href="thread.html#16658">[ thread ]</a>
+              <a href="subject.html#16658">[ subject ]</a>
+              <a href="author.html#16658">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

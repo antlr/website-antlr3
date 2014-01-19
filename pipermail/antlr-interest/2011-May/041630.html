@@ -1,0 +1,257 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Parsing &quot;comment-like&quot; sequences of arbitrary	characters
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Parsing%20%22comment-like%22%20sequences%20of%20arbitrary%0A%09characters&In-Reply-To=%3CBANLkTindFoku-EnthRAj2SKNL3hc2-c5wA%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="041628.html">
+   <LINK REL="Next"  HREF="041629.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Parsing &quot;comment-like&quot; sequences of arbitrary	characters</H1>
+    <B>Bart Kiers</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Parsing%20%22comment-like%22%20sequences%20of%20arbitrary%0A%09characters&In-Reply-To=%3CBANLkTindFoku-EnthRAj2SKNL3hc2-c5wA%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Parsing &quot;comment-like&quot; sequences of arbitrary	characters">bkiers at gmail.com
+       </A><BR>
+    <I>Wed May 18 00:55:34 PDT 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="041628.html">[antlr-interest] Parsing &quot;comment-like&quot; sequences of arbitrary	characters
+</A></li>
+        <LI>Next message: <A HREF="041629.html">[antlr-interest] IntelliSense, Auto suggest
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#41630">[ date ]</a>
+              <a href="thread.html#41630">[ thread ]</a>
+              <a href="subject.html#41630">[ subject ]</a>
+              <a href="author.html#41630">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Rajesh,
+
+Inside a parser rule, the `~` negates tokens, not characters. So if you have
+no lexer rule that tokenizes one of: '%', ''^' or '$', then ~SEMICOLON won't
+match any of such tokens/characters.
+
+Your grammar (with minor modifications):
+
+grammar Test;
+
+options {
+  output=AST;
+}
+
+tokens {
+  OPTION;
+  OPTION_BLOCK;
+}
+
+
+query_options
+ : OPTIONS^ option_block
+ ;
+
+option_block
+ : L_BRACE option_def* R_BRACE -&gt; ^(OPTION_BLOCK option_def*)
+ ;
+
+option_def
+ : option_name option_value -&gt; ^(OPTION option_name option_value)
+ ;
+
+option_name
+ : ID (DOT^ ID)*
+ ;
+
+option_value
+ : COLON^ (~SEMICOLON)* SEMICOLON!
+ | option_block
+ ;
+
+OPTIONS : 'options';
+ID: (LETTER | '_') (LETTER | DIGIT | '_')*;
+DOLLAR: '$';
+PERCENT: '%';
+CARET: '^';
+DOT: '.';
+L_BRACE: '{';
+R_BRACE: '}';
+COLON: ':';
+SEMICOLON: ';';
+DIGIT : '0'..'9';
+SL_COMMENT: '#' ~('\r' | '\n')* { skip(); };
+WS: (' ' | '\f' | '\r' | '\t')+ { skip(); };
+fragment LETTER : 'a'..'z' | 'A'..'Z';
+
+
+parses the input: &quot;options { foo: $ %     1 2 45 ^ $ $$$; }&quot; as follows:
+
+(options (OPTION_BLOCK (OPTION foo (: $ % 1 2 4 5 ^ $ $ $ $))))
+
+
+as you can see after running the test rig:
+
+import org.antlr.runtime.*;
+import org.antlr.runtime.tree.*;
+import org.antlr.stringtemplate.*;
+
+public class Main {
+    public static void main(String[] args) throws Exception {
+        ANTLRStringStream in = new ANTLRStringStream(&quot;options { foo: $ %
+1 2 45 ^ $ $$$; }&quot;);
+        TestLexer lexer = new TestLexer(in);
+        CommonTokenStream tokens = new CommonTokenStream(lexer);
+        TestParser parser = new TestParser(tokens);
+        TestParser.query_options_return returnValue =
+parser.query_options();
+        CommonTree tree = (CommonTree)returnValue.getTree();
+        DOTTreeGenerator gen = new DOTTreeGenerator();
+        StringTemplate st = gen.toDOT(tree);
+        System.out.println(st);
+        System.out.println(&quot;-----------------------\n&quot; +
+tree.toStringTree());
+    }
+}
+
+
+Regards,
+
+Bart.
+
+
+On Wed, May 18, 2011 at 12:55 AM, Rajesh Raman &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">rr at fb.com</A>&gt; wrote:
+
+&gt;<i> Hello ANTLR-ites,
+</I>&gt;<i>
+</I>&gt;<i> I'm trying to parse an &quot;options&quot; structure, like the following:
+</I>&gt;<i>
+</I>&gt;<i> options {
+</I>&gt;<i>   foo {
+</I>&gt;<i>      bar {
+</I>&gt;<i>         ww: $32.50;
+</I>&gt;<i>         xx: Jekyll &amp; Hyde;
+</I>&gt;<i>      }
+</I>&gt;<i>      yy.zz: @15% p/a;
+</I>&gt;<i>   }
+</I>&gt;<i> }
+</I>&gt;<i>
+</I>&gt;<i> (Please ignore the non-sensical values for ww, xx and yy.zz -- I'm just
+</I>&gt;<i> making a point, which will become clearer below).  This options structure
+</I>&gt;<i> will be followed by a query expression whose grammar is more complicated,
+</I>&gt;<i> and includes ints/floats, identifiers, operators, etc. etc.
+</I>&gt;<i>
+</I>&gt;<i> The grammar I have for parsing the options structure looks like the below.
+</I>&gt;<i> (The grammar for the query language is complicated and therefore omitted.)
+</I>&gt;<i>
+</I>&gt;<i> &lt;snip&gt;
+</I>&gt;<i>
+</I>&gt;<i> // ... other stuff here
+</I>&gt;<i> tokens {
+</I>&gt;<i>   // ... other ad hoc token values
+</I>&gt;<i>   OPTION;
+</I>&gt;<i>   OPTION_BLOCK;
+</I>&gt;<i>   OPTION_VALUE;
+</I>&gt;<i> }
+</I>&gt;<i>
+</I>&gt;<i> // ...
+</I>&gt;<i>
+</I>&gt;<i> query_options
+</I>&gt;<i>  : OPTIONS^ option_block
+</I>&gt;<i>  ;
+</I>&gt;<i>
+</I>&gt;<i> option_block
+</I>&gt;<i>  : L_BRACE option_def* R_BRACE -&gt;
+</I>&gt;<i>    ^(OPTION_BLOCK option_def*)
+</I>&gt;<i>  ;
+</I>&gt;<i>
+</I>&gt;<i> option_def
+</I>&gt;<i>  : option_name option_value -&gt;
+</I>&gt;<i>    ^(OPTION option_name option_value)
+</I>&gt;<i>  ;
+</I>&gt;<i>
+</I>&gt;<i> option_name
+</I>&gt;<i>  : ID (DOT^ ID)*
+</I>&gt;<i>  ;
+</I>&gt;<i>
+</I>&gt;<i> option_value
+</I>&gt;<i>  : COLON^ (~SEMICOLON)* SEMICOLON!
+</I>&gt;<i>  | option_block
+</I>&gt;<i>  ;
+</I>&gt;<i>
+</I>&gt;<i> //... other stuff here
+</I>&gt;<i> //...
+</I>&gt;<i>
+</I>&gt;<i> OPTIONS: 'options';
+</I>&gt;<i> ID: (LETTER | '_') (LETTER | DIGIT | '_')*;
+</I>&gt;<i> DOT: '.';
+</I>&gt;<i> L_BRACE: '{';
+</I>&gt;<i> R_BRACE: '}';
+</I>&gt;<i> COLON: ':';
+</I>&gt;<i> SEMICOLON: ';';
+</I>&gt;<i>
+</I>&gt;<i> SL_COMMENT: '#' ~('\r' | '\n')* NEWLINE { skip(); };
+</I>&gt;<i> WS: (' ' | '\f' | '\r' | '\t')+ { skip(); };
+</I>&gt;<i>
+</I>&gt;<i> ...
+</I>&gt;<i>
+</I>&gt;<i> &lt;/snip&gt;
+</I>&gt;<i>
+</I>&gt;<i> As mentioned, the &quot;options&quot; clause is part of a larger grammar for a
+</I>&gt;<i> language that includes operators, identifiers, numbers, etc.,  However,
+</I>&gt;<i> within the options clause, I want the characters between the colon and the
+</I>&gt;<i> semicolon to be treated as a single string, regardless of the fact that it
+</I>&gt;<i> may contain characters that lex into other tokens used by the language.
+</I>&gt;<i>  This feels like I should be able to use the same techniques as used in
+</I>&gt;<i> comment-stripping (i.e,. see the line that has COLON^...).  But this doesn't
+</I>&gt;<i> seem to work:
+</I>&gt;<i> -  The &quot;stray&quot; characters that are not used elsewhere in the grammar are
+</I>&gt;<i> ignored and don't show up in the parse tree (e.g., $, @, %, &amp;, in the
+</I>&gt;<i> example above)
+</I>&gt;<i> -  Character sequences that form valid tokens for the rest of the language
+</I>&gt;<i> (like integers or identifiers) are lexed into those respective tokens
+</I>&gt;<i> instead of being slurped into a single string as intended.
+</I>&gt;<i>
+</I>&gt;<i> E.g., when I input a string like &quot;options { foo: $ %     1 2 45 ^ $ $$$; }&quot;
+</I>&gt;<i> and display the resulting tree.toStringTree(), I get
+</I>&gt;<i> &quot;(options (OPTION_BLOCK (OPTION foo (: 1 2 45))))&quot;
+</I>&gt;<i>
+</I>&gt;<i> Any guidance you have on the above will be greatly appreciated.
+</I>&gt;<i>
+</I>&gt;<i> Thanks in advance.
+</I>&gt;<i>
+</I>&gt;<i> ++Rajesh
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe:
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i>
+</I></PRE>
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="041628.html">[antlr-interest] Parsing &quot;comment-like&quot; sequences of arbitrary	characters
+</A></li>
+	<LI>Next message: <A HREF="041629.html">[antlr-interest] IntelliSense, Auto suggest
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#41630">[ date ]</a>
+              <a href="thread.html#41630">[ thread ]</a>
+              <a href="subject.html#41630">[ subject ]</a>
+              <a href="author.html#41630">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,263 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Token stream filter
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Token%20stream%20filter&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="008171.html">
+   <LINK REL="Next"  HREF="008165.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Token stream filter</H1>
+    <B>Anthony Youngman</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Token%20stream%20filter&In-Reply-To="
+       TITLE="[antlr-interest] Token stream filter">Anthony.Youngman at ECA-International.com
+       </A><BR>
+    <I>Thu Jun  3 05:00:16 PDT 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="008171.html">[antlr-interest] some questions about antlr
+</A></li>
+        <LI>Next message: <A HREF="008165.html">New antlr-interest member
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#8164">[ date ]</a>
+              <a href="thread.html#8164">[ thread ]</a>
+              <a href="subject.html#8164">[ subject ]</a>
+              <a href="author.html#8164">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>The more I read your comments and Monty's article, the clearer it all becomes. But it's a lot to get my brain round. I want to avoid tinkering, for two reasons ... (1) I don't understand Java (or OO programming generally) so the less I need to tackle at once, the easier the learning curve, and (2) I want to convert all this to C++ once I've got a functional grammar that does what I need (I've currently got the tree-parser chucking out an assembler, which I am successfully executing using an interpreter :-)
+
+Seeing as you're heavily involved in all this Antlr stuff :-) would it be possible to add a Filter class to the existing Lexer and Parser classes? There's all this over-riding stuff in what Monty's done and I guess you're into the same sort of thing. And it would be so nice to be able to massage the data stream - for me, for Monty, and maybe for you - as it is passed from the lexer to the parser.
+
+It would be something like
+
+class BASICFilterParser extends FilterParser - taking a token stream from the lexer (or another Filter) and returning a token stream to a parser or filter.
+
+It would then take standard rules, so I would have stuff like
+
+commentst : (SEMI|EOL) (&quot;!&quot;|&quot;*&quot;)! (~(EOL)!*) ;
+remarkst : (SEMI|EOL) id:IDENT! {if id.getText != &quot;REM&quot; throw recognitionexception} ... ;
+
+where as you guessed, I expect &quot;!&quot; to mean &quot;don't pass this token on&quot; (or mark it hidden, or whatever).
+
+And I would have to trap Monty's &quot;(GOTO | GO (TO)?) tok:. {if tok.getType != IDENT then tok.setType)IDENT)&quot; stuff ...
+
+Basically the whole thing is a set of rules that, if a match is found, allows the user to manipulate the token stream. Exactly what TokenFilter does at the moment, but using standard grammar rules without making the user over-ride all the internal functions like NextToken (I'm in this way out of my depth here ...)
+
+I haven't totally sussed things here, but we'd need the filter to simply try each rule in turn until one succeeded, and have a default &quot;match anything&quot; rule (I haven't sussed whether the Antlr parser objects to unrecognised tokens ...). And on matching a rule, it simply queues the lot in a buffer for NextToken, before running the rules again when it runs out of buffered tokens.
+
+A little bit of history about the language me, and Monty, and RobC are all trying to parse ... the original DATABASIC dialect was written in assembler using a (now lost) state transition table. INFOBASIC (the dialect I'm best familiar with) was written by a bunch of people whos' attitude was &quot;if we think it's crap, we'll leave it out. Compatibility is nice but not necessary&quot;. This variant never had the REM keyword! UVBasic (the dialect I now use) was written using yacc/lex, and compatibility was very important, so REM can lex as a label, a comment, a function call, and a variable - except the compiler can get confused resulting in compilation errors :-( I'd like to follow the INFOBASIC line and just drop the &quot;REM&quot; keyword, but I suspect it would break far too much code ... And Monty's dialect, AREV BASIC? very similar to INFOBASIC, I believe, but I don't really know anything about it. RobC - if it compiles anywhere, he wants his compiler to compile it :-)
+
+Actually, while composing the previous paragraph in my head, I just realised something VERY useful! I seem to remember reading somewhere, that Antlr wasn't good at state-table type parsing. This FilterParser class would make an almost perfect state-table parser! The lexer would simply lex into IDENTs and NUMs or whatever, then the FilterParser would have a state variable which would be tested in a rule predicate, and within that you simply check the tokens that come through!
+
+Cheers,
+Wol
+
+-----Original Message-----
+From: Ric Klaren [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">klaren at cs.utwente.nl</A>] 
+Sent: 03 June 2004 11:27
+To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>
+Subject: Re: [antlr-interest] Token stream filter
+
+On Thu, Jun 03, 2004 at 09:58:27AM +0100, Anthony Youngman wrote:
+&gt;<i> &gt; If you write the code in nextToken to do that it will. The ! operator
+</I>&gt;<i> &gt; controls treebuilding it's not the lexer's ! operator. At least I was under
+</I>&gt;<i> &gt; the impression you wanted to use a parser to do the filtering not a lexer
+</I>&gt;<i> &gt; in front of your original lexer.
+</I>&gt;<i>
+</I>&gt;<i> Bugger :-(
+</I>
+Life is never easy ;)
+
+&gt;<i> Yes, I did want to use a parser between my original lexer and parser. Or
+</I>&gt;<i> can I put a lexer there instead? Basically, I don't care whether it's a
+</I>&gt;<i> lexer or parser, I just want to sit it between my primary lexer and
+</I>&gt;<i> parser to strip out stuff I don't want and/or modify stuff I do.
+</I>
+Well technically you could put a lexer there but it would probably teach
+you more about antlr internals than you want to know ;) Seriously though,
+you can probably do everything you want with an extra parser in between
+stuff.
+
+&gt;<i> Can I lex a token stream as well as a character stream? And if so, will
+</I>&gt;<i> the second lexer see hidden tokens (I presume not).
+</I>
+You'll be parsing the token stream and storing tokens in a list/queue while
+you don't know what to do with them yet.
+
+You get a setup where:
+
+1. Your original parser asks the filter parser for a token. (by calling LA(x))
+2. Your filter parser comes into nextToken
+   1. sees wether it has tokens queued to pass on
+   2. if not scarf tokens from the original lexer and see what should be
+      done with them
+   3. pass leftover bits to the calling parser
+
+This is the setup that is explained in Monty's filter example. He's using a
+queue to store tokens that are still considered to be passed on.
+
+Consider the nextToken of his filter:
+
+public Token nextToken() throws TokenStreamException
+{
+   Token ret;
+   if (queue.length()&lt;=0)
+   {
+      try
+      {
+         jumpStatements();
+      }
+      catch ( RecognitionException e) {;}
+      catch ( TokenStreamException e) {;}
+   }
+   if (queue.length()&gt;0)
+   {
+      ret = queue.elementAt(0);
+      queue.removeFirst();
+      return ret;
+   }
+   return new ArevToken(Token.EOF_TYPE,&quot;&quot;);
+}
+
+jumpStatements in the above is a normal parser rule e.g. it get's it's
+tokens from the original lexer. generally this will do a number of LA(x)
+calls to get tokens these are checked with the match methods which again
+call the consume method when the match is succesfull. This is the mechanism
+you want to use.
+
+I'm not 100% sure if it will work but you can probably add a store boolean
+attribute to the filter and then:
+
+Original filter rule:
+
+commentst : (EOL | SEMI) (&quot;*&quot; | &quot;!&quot;)! (~(EOL)*)! ;
+
+New:
+
+commentst : { store = true; } (EOL | SEMI) { store = false; }
+            (&quot;*&quot; | &quot;!&quot;)! (~(EOL)*)! { store = true } ;
+
+Then in consume you'll only append tokens when store is true. You might
+need a 'copy-the-rest' rule as well. Not sure since I'm only just now
+tinkering with this stuff myself as well (which also explains my interest
+in the topic...).
+
+You can also handcode nextToken to parse'n'massage the incoming token
+stream. Considering the complexity of the commentst rule this might be a
+good option. Actually it's hardly worth using a parser for it. This might
+come a long way just implement the tokenstream abstract interface and use
+something like this for filter (this lacks exception handling):
+
+public Token nextToken() throws TokenStreamException
+{
+	if( queue.size() &lt;= 0 )
+	{
+		// look for tokens
+		if ((LA(1) == EOL) ||(LA(1) == SEMI)) {
+			queue.append(LT(1));
+			origlexer.consume();
+
+			if ((LA(1) == STAR) || (LA(1) == BANG)) {
+				// don't queue
+				origlexer.consume();
+				while( LA(1) != EOL )
+				{
+					// don't queue
+					origlexer.consume();
+				}
+			}
+			else
+			{
+				queue.append(LT(1));
+				origlexer.consume();
+			}
+		}
+		else
+		{
+			queue.append(LT(1));
+			origlexer.consume();
+		}
+	}
+	if( queue.size() &gt; 0 )
+		... return front token of the queue ....
+	else
+		... return EOFTOKEN ...
+}
+
+Monty's original probably needs some tinkering with respect to
+EOF/EOL/exception handling for your case.
+
+Cheers,
+
+Ric
+--
+-----+++++*****************************************************+++++++++-------
+    ---- Ric Klaren ----- <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">j.klaren at utwente.nl</A> ----- +31 53 4893755  ----
+-----+++++*****************************************************+++++++++-------
+     Innovation makes enemies of all those who prospered under the old
+   regime, and only lukewarm support is forthcoming from those who would
+               prosper under the new. --- Niccol&#242; Machiavelli
+
+
+
+ 
+Yahoo! Groups Links
+
+
+
+ 
+
+
+
+****************************************************************************
+
+This transmission is intended for the named recipient only. It may contain private and confidential information. If this has come to you in error you must not act on anything disclosed in it, nor must you copy it, modify it, disseminate it in any way, or show it to anyone. Please e-mail the sender to inform us of the transmission error or telephone ECA International immediately and delete the e-mail from your information system.
+
+Telephone numbers for ECA International offices are: Sydney +61 (0)2 8272 5300, Hong Kong + 852 2121 2388, London +44 (0)20 7351 5000 and New York +1 212 582 2333.
+
+****************************************************************************
+
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+     <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+     <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+     <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="008171.html">[antlr-interest] some questions about antlr
+</A></li>
+	<LI>Next message: <A HREF="008165.html">New antlr-interest member
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#8164">[ date ]</a>
+              <a href="thread.html#8164">[ thread ]</a>
+              <a href="subject.html#8164">[ subject ]</a>
+              <a href="author.html#8164">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,331 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] lexer problem (BUG?)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20lexer%20problem%20%28BUG%3F%29&In-Reply-To=%3Cebc876d70707270839p150c9c6bs77d386155c1646cd%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="022848.html">
+   <LINK REL="Next"  HREF="022850.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] lexer problem (BUG?)</H1>
+    <B>Thomas Brandon</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20lexer%20problem%20%28BUG%3F%29&In-Reply-To=%3Cebc876d70707270839p150c9c6bs77d386155c1646cd%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] lexer problem (BUG?)">tbrandonau at gmail.com
+       </A><BR>
+    <I>Fri Jul 27 08:39:44 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="022848.html">[antlr-interest] lexer problem (BUG?)
+</A></li>
+        <LI>Next message: <A HREF="022850.html">[antlr-interest] lexer problem (BUG?)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#22849">[ date ]</a>
+              <a href="thread.html#22849">[ thread ]</a>
+              <a href="subject.html#22849">[ subject ]</a>
+              <a href="author.html#22849">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 7/28/07, Ruth Karl &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">ruth.karl at gmx.de</A>&gt; wrote:
+&gt;<i> Thanks, Thomas.
+</I>&gt;<i> I did try your workaround (with predicate...), but antlr still chokes on
+</I>&gt;<i> an input like &lt;s&gt;....
+</I>&gt;<i> (same problem: it does not see the '&lt;s' anymore and then falls over the
+</I>&gt;<i> sudden closing tag...
+</I>&gt;<i> I guess I will try to treat javascript in another way, then... (a
+</I>&gt;<i> pity... ;-)
+</I>Strange. I am able to correctly parse &quot;&lt;set&gt;&lt;script&gt;test&lt;/script&gt;&lt;s&gt;&quot;
+after making the modifications I gave. Note the interpreter in
+ANTLRWorks doesn't execute actions or predicates so it won't work
+there.
+The full grammar I used was:
+grammar JSP;
+
+options {
+               output=AST;
+backtrack=true;
+               memoize=true;
+}
+
+// Lexer rules
+
+TEXT            :
+((~('&lt;'|'&gt;'|'%'|'/'|'&quot;'|'\''|'('|')'|'['|']'|'{'|'}'|'\n'|'\t'|'\r'))
+|<i> ESCQUOTE)+
+</I>       ;
+WS      :       (' ' | '\t' | '\n' | '\r') { $channel=HIDDEN; }
+       ;
+JAVACOMMENT     :       '/*' ( options {greedy=false;} : . )* '*/'
+{$channel=HIDDEN;}
+       ;
+HTMLCOMMENT     :       '&lt;!--' ( options {greedy=false;} : . )* '--&gt;'
+{$channel=HIDDEN;}
+       ;
+SCRIPTCOMMENT   :       '&lt;%--' ( options {greedy=false;} : . )* '--%&gt;'
+{$channel=HIDDEN;}
+       ;
+
+DOCTYPE :       '&lt;!DOCTYPE' ( options {greedy=false;} : . )* '&gt;'
+       ;
+DIRECTIVE       :       '&lt;%@' ( options {greedy=false;} : . )* '%&gt;'
+       ;
+DECLARATION     :       '&lt;%!' ( options {greedy=false;} : . )* '%&gt;'
+       ;
+
+SCRIPTLETSTART  :       '&lt;%'
+       ;
+SCRIPTLETEND    :       '%&gt;'
+       ;
+EMPTYHTMLEND    :       '/&gt;'
+       ;
+ESCQUOTE        :       '\\' (options {greedy=false;} : ('&quot;' | '\''))
+       ;
+
+fragment
+JAVASCRIPT      :       '&lt;script' ( options {greedy=false;} : . )* '&lt;/script&gt;'
+       ;
+OPENTAG         :       ('&lt;script&gt;')=&gt;JAVASCRIPT {$type=JAVASCRIPT;}
+				|		'&lt;'
+       ;
+CLOSETAG        :       '&gt;'
+               ;
+SLASH           :       '/'
+       ;
+PERCENT :       '%'
+       ;
+LPAR    :       '('
+       ;
+RPAR    :       ')'
+       ;
+LCURL   :       '{'
+       ;
+RCURL   :       '}'
+       ;
+LBRA    :       '['
+       ;
+RBRA    :       ']'
+       ;
+
+// LEXER: imaginary tokens/nodes for AST
+
+SCRIPTLET       :
+       ;
+HTMLTAG :
+       ;
+QUOTED  :
+       ;
+BRACKETEX       :
+       ;
+JS      :
+       ;
+
+
+
+// Parser rules
+
+jsp     :       (content)* EOF
+               ;
+content         :       scriptlet
+       |       htmltag
+       |       quoted
+       |       text
+       |       PERCENT
+       |       bracketexpr
+       |       DOCTYPE
+       |       RPAR
+       |       RCURL
+       |       RBRA
+       |       slashComment
+       |       directive
+       |       declaration
+       |       javascript
+               ;
+scriptlet       :       SCRIPTLETSTART (content)*  SCRIPTLETEND
+-&gt;^(SCRIPTLET content*)
+       ;
+htmltag :       OPENTAG (SLASH)? (htmltagcontent |slashComment)*
+(EMPTYHTMLEND |CLOSETAG) -&gt;^(HTMLTAG htmltagcontent*)
+       ;
+htmltagcontent  :       TEXT (PERCENT | TEXT)*
+       |       bracketexpr
+       |       quoted
+       |       scriptlet
+       ;
+javascript      :       JAVASCRIPT -&gt;^(JS JAVASCRIPT)
+       ;
+bracketexpr     :       LPAR expr* (RPAR)? -&gt;^(BRACKETEX LPAR expr*)
+       |       LCURL expr* (RCURL)? -&gt;^(BRACKETEX LCURL expr*)
+       |       LBRA expr* (RBRA)? -&gt;^(BRACKETEX LBRA expr*)
+       ;
+expr    :       text
+       |       SLASH
+       |       OPENTAG
+       |       CLOSETAG
+       |       PERCENT
+       |       '\\'
+       |       bracketexpr
+       |       quoted
+       ;
+slashComment    :       SLASH SLASH (TEXT)
+       ;
+text    :       TEXT  -&gt; TEXT
+       ;
+quoted  :       dquoted
+       |       squoted
+       ;
+dquoted :       '&quot;' ( options {greedy=false;} : (dquotecontent) )* '&quot;'
+-&gt;^(QUOTED dquotecontent*)
+       ;
+dquotecontent   :       text
+       |       scriptlet
+       |       bracketexpr
+       |       SLASH
+       |       OPENTAG
+       |       CLOSETAG
+       |       PERCENT
+       |       RPAR
+       |       '\\'
+       |       squoted
+       ;
+squoted :       '\'' ( options {greedy=false;} : (squotecontent)  )*
+'\''  -&gt;^(QUOTED squotecontent*)
+       ;
+squotecontent   :       text
+       |       scriptlet
+       |       bracketexpr
+       |       SLASH
+       |       OPENTAG
+       |       CLOSETAG
+       |       PERCENT
+       |       RPAR
+       |       '\\'
+       |       dquoted
+       ;
+directive       :       DIRECTIVE
+       ;
+declaration     :       DECLARATION
+       ;
+
+Tom.
+&gt;<i> Ruth
+</I>&gt;<i>
+</I>&gt;<i> Thomas Brandon schrieb:
+</I>&gt;<i> &gt; On 7/27/07, Ruth Karl &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">ruth.karl at gmx.de</A>&gt; wrote:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;&gt; Hi Andrew,
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; thanks a lot for finding a smaller example to illustrate the problem.
+</I>&gt;<i> &gt;&gt; (Did you do it for java target or for c# - as I did?)
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; Now: what can I do?
+</I>&gt;<i> &gt;&gt; I could (...) try to find a workaround in my grammar, but if it IS a bug
+</I>&gt;<i> &gt;&gt; - than a similar thing might happen in other cases as well....
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt; It's not a bug. Though it may be considered a limitation.
+</I>&gt;<i> &gt; The problem is that ANTLR's prediction algorithm doesn't look past
+</I>&gt;<i> &gt; token boundaries so it makes it's predictions based on only a single
+</I>&gt;<i> &gt; token. As the only possible single token matches for '&lt;' followed by
+</I>&gt;<i> &gt; anything are JAVASCRIPT and OPENTAG (talking about your original
+</I>&gt;<i> &gt; grammar here, not the shorter sample) as soon as ANTLR see's '&lt;s' it
+</I>&gt;<i> &gt; predicts that it must be JAVASCRIPT, then gives an error when that
+</I>&gt;<i> &gt; won't match. Looking at the mTokens method ANTLR generates may help
+</I>&gt;<i> &gt; you see what is going on The problem is discussed in
+</I>&gt;<i> &gt; <A HREF="http://www.antlr.org/pipermail/antlr-interest/2007-July/022349.html">http://www.antlr.org/pipermail/antlr-interest/2007-July/022349.html</A>
+</I>&gt;<i> &gt; .
+</I>&gt;<i> &gt; Unfortunately as ANTLR doesn't consider there to be any ambiguity
+</I>&gt;<i> &gt; backtracking won't help and a predicate in OPENTAG won't be hoisted. A
+</I>&gt;<i> &gt; fix for your original grammar is to replace the previous rules with:
+</I>&gt;<i> &gt; fragment
+</I>&gt;<i> &gt; JAVASCRIPT      :       '&lt;script' ( options {greedy=false;} : . )* '&lt;/script&gt;'
+</I>&gt;<i> &gt;        ;
+</I>&gt;<i> &gt; OPENTAG         :       ('&lt;script&gt;')=&gt;JAVASCRIPT {$type=JAVASCRIPT;}
+</I>&gt;<i> &gt;                               |               '&lt;'
+</I>&gt;<i> &gt;        ;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Ter said he'd investigate the possibility of enhancing the prediction
+</I>&gt;<i> &gt; algorithm to deal with such cases.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Tom.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;&gt; Thanks for any further suggestions,
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; Ruth
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; Andrew Lentvorski schrieb:
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; Ruth Karl wrote:
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt; Thanks, but I looked at it several times (even before I ever wrote to
+</I>&gt;<i> &gt;&gt;&gt;&gt; this list) and still I can not see why when I start an input with
+</I>&gt;<i> &gt;&gt;&gt;&gt; with '&lt;sx' the lexer should loose itself in a rule wanting '&lt;script'
+</I>&gt;<i> &gt;&gt;&gt;&gt; as an input. (given the grammar I attached in my last posting).
+</I>&gt;<i> &gt;&gt;&gt;&gt; Any other suggestions?
+</I>&gt;<i> &gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; Looks like a bug to me:
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; grammar jsp;
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; JAVASCRIPT    :    '&lt;script&gt;' ( options {greedy=false;} : . )*
+</I>&gt;<i> &gt;&gt;&gt; '&lt;/script&gt;' {System.out.print(&quot;J&quot;);};
+</I>&gt;<i> &gt;&gt;&gt; ANY    :    . {System.out.print(&quot;A&quot;);};
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; jsp        :    (ANY | JAVASCRIPT)* EOF;
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; with input:
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; &lt;script&gt;foo&lt;/script&gt;
+</I>&gt;<i> &gt;&gt;&gt; &lt;s&gt;bar&lt;/s&gt;
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; Produces a token stream of:
+</I>&gt;<i> &gt;&gt;&gt; &quot;&lt;script&gt;foo&lt;/script&gt;&quot;, &quot;a&quot;, &quot;r&quot;, &quot;&lt;&quot;, &quot;/&quot;, &quot;s&quot;, &quot;&gt;&quot;
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; aka
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; JAVASCRIPT, ANY, ANY, ANY, ANY, ANY, ANY
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; Something vacuums up the &quot;&lt;s&gt;b&quot;
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; The output is:
+</I>&gt;<i> &gt;&gt;&gt; line 2:2 mismatched character '&gt;' expecting 'c'
+</I>&gt;<i> &gt;&gt;&gt; JAAAAAAAA
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; You might want to file it and see what the response is.
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; -a
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i>
+</I></PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="022848.html">[antlr-interest] lexer problem (BUG?)
+</A></li>
+	<LI>Next message: <A HREF="022850.html">[antlr-interest] lexer problem (BUG?)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#22849">[ date ]</a>
+              <a href="thread.html#22849">[ thread ]</a>
+              <a href="subject.html#22849">[ subject ]</a>
+              <a href="author.html#22849">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

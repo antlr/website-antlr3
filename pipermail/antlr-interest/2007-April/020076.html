@@ -1,0 +1,150 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Manipulating lexer text output
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Manipulating%20lexer%20text%20output&In-Reply-To=%3C20070404084331.76B931907CF%40www.antlr.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="020068.html">
+   <LINK REL="Next"  HREF="020069.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Manipulating lexer text output</H1>
+    <B>Gavin Lambert</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Manipulating%20lexer%20text%20output&In-Reply-To=%3C20070404084331.76B931907CF%40www.antlr.org%3E"
+       TITLE="[antlr-interest] Manipulating lexer text output">antlr at mirality.co.nz
+       </A><BR>
+    <I>Wed Apr  4 01:43:18 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="020068.html">[antlr-interest] Manipulating lexer text output
+</A></li>
+        <LI>Next message: <A HREF="020069.html">[antlr-interest] += Output Option clarification
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#20076">[ date ]</a>
+              <a href="thread.html#20076">[ thread ]</a>
+              <a href="subject.html#20076">[ subject ]</a>
+              <a href="author.html#20076">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>At 09:37 4/04/2007, Jim Idle wrote:
+ &gt;Well, perhaps, but the lexer is just looking at 
+one character at a
+ &gt;time anyway and does not produce a string with that stuff in it
+ &gt;unless you ask for it - if you don't then you 
+just get a token that
+ &gt;says where the start and stop is. So it isn't 
+overly inefficient and
+ &gt;if you set the text explicitly then there is probably little
+ &gt;difference in execution time.
+
+Imagine the following input stream, though:
+
+   &quot;test\tone\u00B2\r\nline \
+      two&quot;
+
+The result, of course, should be:
+   (String test&lt;TAB&gt;one&#178;&lt;CR&gt;&lt;LF&gt;line two)
+
+All the bits starting with a \ are escape 
+sequences and are handled by the EscapeSequence 
+rule -- the String rule itself doesn't know how 
+they are structured.  At present the 
+EscapeSequence rule has no means of communicating 
+the &quot;real&quot; value of the text it has just matched 
+back out to the String rule, however.  It doesn't 
+generate a token, because that's optimised out 
+for subrules (and if it generates one anyway then 
+it replaces the entire String instead of just 
+that subrule's portion of the input); the return 
+type is fixed, so it can't pass additional data 
+back -- there's simply nothing it can do.
+
+What I think should happen is that if the subrule 
+*does* generate a token (which will only be 
+because someone explicitly wrote some code to do 
+so [or put in a rewrite rule or ! operator, if 
+those start working in the lexer] -- it won't be 
+the common case) then the parent rule should 
+detect that and stitch the result into its own customised token.
+
+To explain that a bit more, here's a couple of 
+example cases (for the sake of example though I'm 
+going to assume the top-level rule doesn't want 
+to strip off the surrounding quotes):
+
+1. The simple case, where the input is something 
+like &quot;test&quot; -- ie. no escape sequences.  The 
+String rule calls the Character rule (or just 
+matches characters directly), but either way, 
+nothing actually generates a token, so the String 
+rule doesn't need to do any extra work and 
+behaves exactly as it does now -- returning a 
+token with no explicit text and just start &amp; stop 
+indexes into the input stream.
+
+2. The complex case, with input as above.  In 
+this case, String should start out as before, 
+tracking characters but not doing anything much 
+about it.  When it calls EscapeSequence to match 
+the &quot;\t&quot;, though, that rule generates a token 
+starting at the \ and stopping at the t, but with 
+explicit text set to a tab character.  When 
+control returns to String, it detects that a 
+token was generated and then immediately 
+generates one of its own (starting at the quote 
+and stopping at the 't' of the tab escape in the 
+input), also with explicit text, containing the 
+quote, the word &quot;test&quot;, and the tab character 
+(from the subtoken).  Then it should proceed 
+through the rest of the input it would normally 
+match, either appending directly (and extending 
+the stop point) or appending the text from the 
+subtoken (or the text between the start and stop 
+point for the subrule if it doesn't generate a 
+token of its own).  Alternatively, if it's 
+simpler or more performant, the String rule could 
+just keep track of all the components and stitch 
+everything together only at the end (this might 
+be better if failure and backtracking is fairly 
+common).  Either way, if any subrule generates 
+explicit text then the parent rule will have to 
+do so as well.  And in this example, it should 
+finally generate a single token containing the 
+explicit text shown above (though with the quotes too).
+
+I don't think this would be too hard to 
+implement, and it should still remain performant 
+(because it'd only be used when explicitly 
+requested by the grammar), and it'd allow a lot more flexibility.
+
+</PRE>
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="020068.html">[antlr-interest] Manipulating lexer text output
+</A></li>
+	<LI>Next message: <A HREF="020069.html">[antlr-interest] += Output Option clarification
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#20076">[ date ]</a>
+              <a href="thread.html#20076">[ thread ]</a>
+              <a href="subject.html#20076">[ subject ]</a>
+              <a href="author.html#20076">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

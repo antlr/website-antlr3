@@ -1,0 +1,179 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Error nodes created upon syntax error
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Error%20nodes%20created%20upon%20syntax%20error&In-Reply-To=%3C515552DB-0C5E-45D6-8A05-85332619074C%40antlr.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="025556.html">
+   <LINK REL="Next"  HREF="025676.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Error nodes created upon syntax error</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Error%20nodes%20created%20upon%20syntax%20error&In-Reply-To=%3C515552DB-0C5E-45D6-8A05-85332619074C%40antlr.org%3E"
+       TITLE="[antlr-interest] Error nodes created upon syntax error">parrt at antlr.org
+       </A><BR>
+    <I>Fri Jan 11 11:18:42 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="025556.html">[antlr-interest] Error nodes created upon syntax error
+</A></li>
+        <LI>Next message: <A HREF="025676.html">[antlr-interest] Error nodes created upon syntax error
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25667">[ date ]</a>
+              <a href="thread.html#25667">[ thread ]</a>
+              <a href="subject.html#25667">[ subject ]</a>
+              <a href="author.html#25667">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Alessandro. thanks for the suggestion.  Yes, I've been thinking  
+about this problem and it is even more general.  What do you do about  
+actions that must execute after recovery even though they refer to a  
+token that does not exist?!
+
+The unfortunate truth comes down to the following: single token  
+insertion and deletion recovery with in an alternative is really sexy  
+for journal papers, but I believe I've convinced myself that they are  
+not practical.  Well, at least in the presence of actions.
+
+The  Simple solution is to turn this off, relying on a normal &quot;exit  
+rule upon syntax error&quot; mechanism but leave the insertion and deletion  
+mechanism as an option by overriding methods.
+
+Ter
+On Jan 6, 2008, at 8:48 AM, Alessandro wrote:
+
+&gt;<i> Hello,
+</I>&gt;<i> (sorry for my bad english)
+</I>&gt;<i>
+</I>&gt;<i> I can see that there is a problem with token deletion/insertion if you
+</I>&gt;<i> are also building trees.
+</I>&gt;<i> Take this rule, for exemple :
+</I>&gt;<i>
+</I>&gt;<i> test	:	'var' ID ';'    -&gt; ^('var' ID);
+</I>&gt;<i>
+</I>&gt;<i> If the input if &quot;var ;&quot;, the token insertion system detect that the
+</I>&gt;<i> token &quot;ID&quot; is missing, then report the error, but continue parsing.
+</I>&gt;<i>
+</I>&gt;<i> If you look closer to the generated code, you will see :
+</I>&gt;<i>
+</I>&gt;<i> -----
+</I>&gt;<i> ID2=(Token)input.LT(1); // save ID2
+</I>&gt;<i> match(input,ID,FOLLOW_ID_in_test26);
+</I>&gt;<i> stream_ID.add(ID2); // ID2 have a bad reference
+</I>&gt;<i> ----
+</I>&gt;<i>
+</I>&gt;<i> ID2 contains a reference to the token ';' and not to the token ID. The
+</I>&gt;<i> &quot;match&quot; procedure doesn't thow any exception because of the &quot;token
+</I>&gt;<i> insertion&quot; system.
+</I>&gt;<i>
+</I>&gt;<i> So the resulting tree will be in reality ^( 'var' ';') ....and it is
+</I>&gt;<i> totally incorrect, am I right ?
+</I>&gt;<i>
+</I>&gt;<i> If I want to use the &quot;token deletion/insertion symbol&quot; with tree
+</I>&gt;<i> building, can I modify the &quot;match&quot; procedure in order to modify, for
+</I>&gt;<i> instance, the content of &quot;ID2&quot; ( without altering the reference) ?
+</I>&gt;<i>
+</I>&gt;<i> I imagined a workaround. ( LA(i) is the token at the index
+</I>&gt;<i> current_pos+i in the stream ).
+</I>&gt;<i>
+</I>&gt;<i> if there is a token insertion, do this in the &quot;match&quot; procedure :
+</I>&gt;<i>
+</I>&gt;<i> 1. add the &quot;special&quot; imaginary token (matching the missing token) in
+</I>&gt;<i> the stream at the postion LA(2) (position is wrong now). The stream
+</I>&gt;<i> must allow token insertion.
+</I>&gt;<i> 2. Swap (contents and not references) LA(1) and LA(2). (you have to
+</I>&gt;<i> correct index informations)
+</I>&gt;<i> 3. ID2 still has a reference to LA(1), but the content of the token is
+</I>&gt;<i> now &quot;special imaginary ID token&quot;.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> if there is a token deletion, do this in the &quot;match&quot; procedure :
+</I>&gt;<i>
+</I>&gt;<i> 1. Save LA(1) content to a temporary variable : temp_var
+</I>&gt;<i> 2. Copy the content of LA(2) in LA(1)
+</I>&gt;<i> 3. Copy the content of temp_var in LA(2)
+</I>&gt;<i> 4. Swap (references only) LA(1) AND LA(2)
+</I>&gt;<i> 5. ID2 has reference to **OLD** LA(1), but now it is LA(2).
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> In the commonTreeAdaptator.create procedure :
+</I>&gt;<i>
+</I>&gt;<i> 1. if the token is a &quot;special&quot; imaginary token : return an ERROR node
+</I>&gt;<i> (like Terence proposal)
+</I>&gt;<i> 2. else : create a node like usual.
+</I>&gt;<i>
+</I>&gt;<i> What do you think about this this (non-tested) workaround ?
+</I>&gt;<i>
+</I>&gt;<i> The best solution, I think, is that &quot;match&quot; procedure returns the
+</I>&gt;<i> reference of the real matched token.
+</I>&gt;<i>
+</I>&gt;<i> On Dec 2, 2007 8:24 PM, Terence Parr &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">parrt at antlr.org</A>&gt; wrote:
+</I>&gt;&gt;<i> hi,
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Currently syntax errors cause invalid trees and possibly even runtime
+</I>&gt;&gt;<i> exceptions when building ASTs. What we really need I believe is to
+</I>&gt;&gt;<i> have rules that encounter syntax errors return an ERROR node of some
+</I>&gt;&gt;<i> sort that records where the error occurred and, with luck, the tokens
+</I>&gt;&gt;<i> consumed during recovery. I started an improvement request:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> <A HREF="http://www.antlr.org:8888/browse/ANTLR-193">http://www.antlr.org:8888/browse/ANTLR-193</A>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> The basic idea is that ERROR nodes get used in place of ASTs that
+</I>&gt;&gt;<i> would normally be produced by rule indications.  For example, the
+</I>&gt;&gt;<i> following rule would return a valid AST except for the subtrees
+</I>&gt;&gt;<i> associated with rule refs in encountering syntax errors:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> forDecl : 'for' '(' decl ';' expr ';' expr ')' stat -&gt; ... ;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> If there is an error inside decl, the tree would return
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> ^('for' ERROR subtree-expr subtree-expr)
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> This effectively means that I must turn off the single token
+</I>&gt;&gt;<i> insertion and deletion that occurs automatically within a single
+</I>&gt;&gt;<i> rule.  If a syntax error occurs, the immediately surrounding rule
+</I>&gt;&gt;<i> must terminate in return an error node.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Does this make sense? I would like to stick this into 3.1 release.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Ter
+</I>&gt;&gt;<i>
+</I>
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="025556.html">[antlr-interest] Error nodes created upon syntax error
+</A></li>
+	<LI>Next message: <A HREF="025676.html">[antlr-interest] Error nodes created upon syntax error
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25667">[ date ]</a>
+              <a href="thread.html#25667">[ thread ]</a>
+              <a href="subject.html#25667">[ subject ]</a>
+              <a href="author.html#25667">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

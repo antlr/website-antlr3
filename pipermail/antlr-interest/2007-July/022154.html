@@ -1,0 +1,326 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] 2 or 3 (major?) bugs in ANTLR (C#)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%202%20or%203%20%28major%3F%29%20bugs%20in%20ANTLR%20%28C%23%29&In-Reply-To=%3Cce40b1470707052210q7d8d49fas62553ebbc1c57ede%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="022152.html">
+   <LINK REL="Next"  HREF="022155.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] 2 or 3 (major?) bugs in ANTLR (C#)</H1>
+    <B>David Piepgrass</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%202%20or%203%20%28major%3F%29%20bugs%20in%20ANTLR%20%28C%23%29&In-Reply-To=%3Cce40b1470707052210q7d8d49fas62553ebbc1c57ede%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] 2 or 3 (major?) bugs in ANTLR (C#)">qwertie256 at gmail.com
+       </A><BR>
+    <I>Thu Jul  5 22:10:08 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="022152.html">[antlr-interest] v2 to v3 question
+</A></li>
+        <LI>Next message: <A HREF="022155.html">[antlr-interest] 2 or 3 (major?) bugs in ANTLR (C#)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#22154">[ date ]</a>
+              <a href="thread.html#22154">[ thread ]</a>
+              <a href="subject.html#22154">[ subject ]</a>
+              <a href="author.html#22154">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>No matter what I do I can't seem to make a lexer that works correctly.
+Weird things have been happening constantly, starting with the
+multi-megabyte lexer that I always end up with if I use LL(*). So I've
+been using LL(4) but am still running into a number of problems.
+
+I've been testing with the demo lexer below. Before I show it, I want
+to point out what's going on with the backslash:
+
+- in my language, backslash is an escape for producing identifiers out
+of punctuation, so &quot;\&amp;&quot; is an identifier, as is &quot;\a\b\c&quot; as well as
+ordinary things like &quot;abc&quot;.
+- backslash is punctuation (PUNC) if followed by a space. The space is
+NOT included in the token.
+
+By the way, should these rules be equivalent (behaviorally)? I think
+they should:
+
+BUG: ('_' | {false}? . | {false}? .)+; // Version 1
+BUG: ('_' | {false}? .)+; // Version 2
+BUG: ('_')+; // Version 3
+
+But as you'll see, three different behaviors may result. Another thing
+I've noticed is that ANTLR seems to use more lookahead than necessary
+to do prediction, and because of this is somehow more likely to make
+incorrect predictions.
+
+I've isolated a small set of rules to demonstrate some of the problems
+I've been having. Note that I usually use predicates like
+
+	  {input.LA(2) == ' ' || input.LA(2) == '\t'}? '\\'
+
+instead of
+
+	  ('\\' (' ' | '\t')) =&gt; '\\'
+
+because as discussed recently, the latter does not work. And it seems
+that often the former doesn't work either. I've included examples of
+both apparently failing. Here's the grammar:
+
+/////////////////////////////////////////////////////////////////////////
+lexer grammar Bug1;
+
+options
+{
+	language = 'CSharp';
+	k = 4;
+	TokenLabelType = CommonToken;
+}
+
+@lexer::members {
+	public bool IsWS(int LA)        { int c = input.LA(LA); return c == '
+' || c == '\t'; }
+	public bool IsNewline(int LA)   { int c = input.LA(LA); return c ==
+'\r' || c == '\n'; }
+	public bool IsCtrlChar(int LA)  { int c = input.LA(LA); return c &lt; 32; }
+	public bool IsBackslash(int LA) { int c = input.LA(LA); return c == '\\'; }
+}
+
+WS: WS_CHAR+;
+fragment WS_CHAR: ' ' | '\t';
+
+BUG: ('_' | {false}? . | {false}? .)+; // Version 1
+//BUG: ('_' | {false}? .)+; // Version 2
+//BUG: ('_')+; // Version 3
+
+ID: ID_LETTER+;
+fragment ID_LETTER
+	: ('a'..'z' | 'A'..'Z')
+	| {IsBackslash(1) &amp;&amp; !IsWS(2) &amp;&amp; !IsCtrlChar(2)}?=&gt; '\\' .
+	;
+
+PUNC: PUNC_CHAR+;
+fragment PUNC_CHAR:
+	  {IsWS(2)}? '\\'                     // Version 1
+	//{IsBackslash(1) &amp;&amp; IsWS(2)}?=&gt; '\\' // Version 2
+	//('\\' WS_CHAR)=&gt;'\\'                // Version 3
+	| (':'|'.'|'~'|'!'|'@'|'$'|'%'|'^'|'&amp;'
+	  |'*'|'-'|'+'|'='|'|'|','|'&lt;'|'&gt;'|'?');
+/////////////////////////////////////////////////////////////////////////
+
+Next, here's the testing code:
+
+/////////////////////////////////////////////////////////////////////////
+public static void Main(string[] args)
+{
+	ParseBug(@&quot;ab&quot;);
+	ParseBug(@&quot;ab&amp; &quot;);
+	ParseBug(@&quot;ab&amp;\&quot;);
+	ParseBug(@&quot;ab&amp;\cd&quot;);
+	ParseBug(@&quot;ab\ cd&quot;);
+}
+static void ParseBug(string s)
+{
+	System.Console.WriteLine(s);
+	ANTLRStringStream input = new ANTLRStringStream(s);
+	Lexer lexerBug = new Bug1Lexer(input);
+	IToken t;
+	while ((t = lexerBug.NextToken()).Type != Bug1Lexer.EOF) {
+		System.Console.WriteLine(&quot;{0} &lt;{1}&gt;&quot;,
+			FooParser.tokenNames[t.Type], t.Text);
+	}
+	System.Console.WriteLine(&quot;&quot;);
+}
+/////////////////////////////////////////////////////////////////////////
+
+N.B. All of these test strings should work, but they don't. ANTLR
+gives no warnings. The output is:
+
+ab
+ID &lt;ab&gt;
+
+ab&amp;
+line 1:0 required (...)+ loop did not match anything at character 'a'
+line 1:1 required (...)+ loop did not match anything at character 'b'
+PUNC &lt;&amp;&gt;
+
+ab&amp;\
+line 1:0 required (...)+ loop did not match anything at character 'a'
+line 1:1 required (...)+ loop did not match anything at character 'b'
+line 1:3 rule PUNC_CHAR failed predicate: {input.LA(2) == ' ' ||
+input.LA(2) == '\t'}?
+
+ab&amp;\cd
+line 1:0 required (...)+ loop did not match anything at character 'a'
+line 1:1 required (...)+ loop did not match anything at character 'b'
+line 1:2 required (...)+ loop did not match anything at character '&amp;'
+ID &lt;\cd&gt;
+
+ab\ cd
+ID &lt;ab&gt;
+line 1:2 no viable alternative at character '\'
+line 1:3 required (...)+ loop did not match anything at character ' '
+ID &lt;cd&gt;
+/////////////////////////////////////////////////////////////////////////
+
+Now switch to Version 2 of BUG. The output is:
+
+ab
+ID &lt;ab&gt;
+
+ab&amp;
+line 1:0 rule BUG failed predicate: {false}?
+line 1:1 rule BUG failed predicate: {false}?
+PUNC &lt;&amp;&gt;
+
+ab&amp;\
+line 1:0 rule BUG failed predicate: {false}?
+line 1:1 rule BUG failed predicate: {false}?
+line 1:2 rule BUG failed predicate: {false}?
+line 1:3 no viable alternative at character '\'
+WS &lt; &gt;
+
+ab&amp;\cd
+line 1:0 rule BUG failed predicate: {false}?
+line 1:1 rule BUG failed predicate: {false}?
+line 1:2 rule BUG failed predicate: {false}?
+ID &lt;\cd&gt;
+
+ab\ cd
+ID &lt;ab&gt;
+line 1:2 no viable alternative at character '\'
+line 1:3 rule BUG failed predicate: {false}?
+ID &lt;cd&gt;
+/////////////////////////////////////////////////////////////////////////
+
+It is worth noting that this grammar is LL(1) because all other
+lookahead is done with semantic predicates. However, the above
+symptoms only occur if k&gt;1. If k=2 then two errors remain; if k=1 then
+the result is the same as when using Version 3 of BUG.
+
+Without further ado, here's Version 3 of BUG:
+
+ab
+ID &lt;ab&gt;
+
+ab&amp;
+ID &lt;ab&gt;
+PUNC &lt;&amp;&gt;
+
+ab&amp;\
+ID &lt;ab&gt;
+PUNC &lt;&amp;\&gt;
+WS &lt; &gt;
+
+ab&amp;\cd
+ID &lt;ab&gt;
+line 1:3 rule PUNC_CHAR failed predicate: {IsWS(2)}?
+ID &lt;cd&gt;
+
+ab\ cd
+ID &lt;ab&gt;
+PUNC &lt;\&gt;
+WS &lt; &gt;
+ID &lt;cd&gt;
+/////////////////////////////////////////////////////////////////////////
+
+That's much better! But there's a problem with the predicate because
+it is not getting hoisted for some reason. mPUNC() sees a backslash
+and decides that's all it needs to run mPUNC_CHAR. In fact,
+mPUNC_CHAR() itself doesn't run the predicate until after it's
+predicted the result. It escapes me why it would decide that the
+alternative succeeds, then runs the predicate afterward - which fails,
+of course.
+
+Now let's try Version 3 of PUNC_CHAR - something slightly different happens:
+
+ab
+ID &lt;ab&gt;
+
+ab&amp;
+ID &lt;ab&gt;
+PUNC &lt;&amp;&gt;
+
+ab&amp;\
+ID &lt;ab&gt;
+PUNC &lt;&amp;\&gt;
+WS &lt; &gt;
+
+ab&amp;\cd
+ID &lt;ab&gt;
+line 1:3 no viable alternative at character '\'
+ID &lt;cd&gt;
+
+ab\ cd
+ID &lt;ab&gt;
+PUNC &lt;\&gt;
+WS &lt; &gt;
+ID &lt;cd&gt;
+/////////////////////////////////////////////////////////////////////////
+
+This time, mPUNC decides that a backslash alone is enough to predict a
+backslash, so it calls mPUNC_CHAR. mPUNC_CHAR actually bothers to run
+the predicate and, of course, it fails, causing a no viable alt error.
+Only Version 2 works as it should:
+
+ab
+ID &lt;ab&gt;
+
+ab&amp;
+ID &lt;ab&gt;
+PUNC &lt;&amp;&gt;
+
+ab&amp;\
+ID &lt;ab&gt;
+PUNC &lt;&amp;\&gt;
+WS &lt; &gt;
+
+ab&amp;\cd
+ID &lt;ab&gt;
+PUNC &lt;&amp;&gt;
+ID &lt;\cd&gt;
+
+ab\ cd
+ID &lt;ab&gt;
+PUNC &lt;\&gt;
+WS &lt; &gt;
+ID &lt;cd&gt;
+/////////////////////////////////////////////////////////////////////////
+
+This concludes my little bug report.
+-- 
+- David
+<A HREF="http://qism.blogspot.com">http://qism.blogspot.com</A>
+</PRE>
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="022152.html">[antlr-interest] v2 to v3 question
+</A></li>
+	<LI>Next message: <A HREF="022155.html">[antlr-interest] 2 or 3 (major?) bugs in ANTLR (C#)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#22154">[ date ]</a>
+              <a href="thread.html#22154">[ thread ]</a>
+              <a href="subject.html#22154">[ subject ]</a>
+              <a href="author.html#22154">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

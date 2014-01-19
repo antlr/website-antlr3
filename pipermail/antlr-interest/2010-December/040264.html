@@ -1,0 +1,206 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Problem with EBNF
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Problem%20with%20EBNF&In-Reply-To=%3C1291591048.16102.27.camel%40gecko%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="040262.html">
+   <LINK REL="Next"  HREF="040272.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Problem with EBNF</H1>
+    <B>John B. Brodie</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Problem%20with%20EBNF&In-Reply-To=%3C1291591048.16102.27.camel%40gecko%3E"
+       TITLE="[antlr-interest] Problem with EBNF">jbb at acm.org
+       </A><BR>
+    <I>Sun Dec  5 15:17:28 PST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="040262.html">[antlr-interest] Problem with EBNF
+</A></li>
+        <LI>Next message: <A HREF="040272.html">[antlr-interest] Problem with EBNF
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40264">[ date ]</a>
+              <a href="thread.html#40264">[ thread ]</a>
+              <a href="subject.html#40264">[ subject ]</a>
+              <a href="author.html#40264">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Greetings!
+
+On Sun, 2010-12-05 at 21:44 +0100, Morten Olav Hansen wrote:
+&gt;<i> Hi, thanks for your reply.
+</I>&gt;<i> 
+</I>&gt;<i> Sorry if it wasn't clear, but the ordering does not matter.
+</I>&gt;<i> 
+</I>&gt;<i> The rule you proposed is basically what I had before, and as you say,
+</I>&gt;<i> it allows any number of ps* keywords.
+</I>&gt;<i> 
+</I>&gt;<i> What I meant by &quot;rule combinations&quot; (not sure what else to call them)
+</I>&gt;<i> is writing out all possible combinations.
+</I>&gt;<i> 
+</I>&gt;<i> (... psinitial=psinitialDecl ... finalstate=finalstateDecl? ...)
+</I>&gt;<i> (... finalstate=finalstateDecl ... psinitial=psinitialDecl? ...), etc.
+</I>&gt;<i> 
+</I>&gt;<i> But maybe theres no elegant way of doing this. Maybe adding some
+</I>&gt;<i> region scoped variables would be better, and setting hasInitial, etc,
+</I>&gt;<i> and doing the check in the grammar.
+</I>
+i think you should not try to do this in the parser, but rather keep
+your checking in a separate semantic pass over the AST.
+
+however what you want to do is possible ---- i think, haven't actually
+tried it ---- by using Gated Semantic Predicates. not sure what sort of
+error messages are produced when using them tho --- a reason to keep a
+separate checking pass.
+
+basically use a bunch of flags as you speculate.
+
+something like this (untested):
+
+rule_name_goes_here : 
+@init{
+    boolean initPresent = false;
+    boolean finalPresent = false;
+    boolean histPresent = false;
+    boolean deepPresent = false;
+  }
+  'region' ID=identifier? '{' (
+        ( { !initPresent }?=&gt; i=psinitialDecl { initPresent=true; } )
+      | ( { !finalPresent }?=&gt; f=finalStateDecl { finalPresent=true; } )
+      | ( { !histPresent }?=&gt; h=pshistoryDecl { histPresent=true; } )
+      | ( { !deepPresent )?=&gt; d=dpsdeephistoryDecl {deepPresent=true;} )
+      | s+=stateDecl
+      | t+=transitionDecl
+    )* '}' ';'?
+  ;
+
+notice that there are no ? nor * operators inside the outer ( )* loop. 
+
+the ?'s are unnecessary because the Gated Predicates deal with the zero
+or one semantics.
+
+no *'s because a * loop inside another * loop introduces syntactic
+ambiguity (e.g. (foo*)* is ambiguous).
+
+hope this helps....
+   -jbb
+
+
+&gt;<i> On Sun, Dec 5, 2010 at 9:22 PM, Kevin J. Cummings
+</I>&gt;<i> &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">cummings at kjchome.homeip.net</A>&gt; wrote:
+</I>&gt;<i> &gt; On 12/05/2010 12:09 PM, Morten Olav Hansen wrote:
+</I>&gt;<i> &gt;&gt; Hi!
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; I have a problem with my EBNF I was hoping for a little help with. I
+</I>&gt;<i> &gt;&gt; have a block in my grammar that can contain certain keywords
+</I>&gt;<i> &gt;&gt; zero-or-one times, and other keywords zero-or-many times. My current
+</I>&gt;<i> &gt;&gt; solution is to enable every keyword to be zero-or-many, and then let
+</I>&gt;<i> &gt;&gt; my semantic checker deal with the problem. But I was hoping to solve
+</I>&gt;<i> &gt;&gt; it already on the grammar side, if possible.
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; The basic block looks like this:
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;       :       'region' ID=Identifier? '{'
+</I>&gt;<i> &gt;&gt;                       (
+</I>&gt;<i> &gt;&gt;                               psinitial=psinitialDecl?
+</I>&gt;<i> &gt;&gt;                               finalstate=finalstateDecl?
+</I>&gt;<i> &gt;&gt;                               pshistory=pshistoryDecl?
+</I>&gt;<i> &gt;&gt;                               psdeephistory=psdeephistoryDecl?
+</I>&gt;<i> &gt;&gt;                               states+=stateDecl*
+</I>&gt;<i> &gt;&gt;                               transitions+=transitionDecl*
+</I>&gt;<i> &gt;&gt;                       )
+</I>&gt;<i> &gt;&gt;               '}' ';'?
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Why doesn't this work for you?  There is an implied ordering here as in:
+</I>&gt;<i> &gt; if finalstateDecl appears, it must be after the psinitialDecl, and
+</I>&gt;<i> &gt; likewise for the rest.  All stateDecls must appear after any
+</I>&gt;<i> &gt; psinitialDecl, finalstateDecl, pshistoryDecl, psdeephistoryDecl, and
+</I>&gt;<i> &gt; before any transitionsDecls, and all transitionDecls mus appear at the
+</I>&gt;<i> &gt; end after everything else.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; &gt;From what I can see, the ()'s above are completely optional in your
+</I>&gt;<i> &gt; grammar and only are provided for grouping, which in this case, to me,
+</I>&gt;<i> &gt; seems unnecessary.  Did I miss something?
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;&gt; And the only solution I have come up with, is to generate every
+</I>&gt;<i> &gt;&gt; possible variant of this grammar, which is quite ugly.
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; What would be nice, would be something like this:
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;       :       'region' ID=Identifier? '{'
+</I>&gt;<i> &gt;&gt;                       (
+</I>&gt;<i> &gt;&gt;                               psinitial=psinitialDecl?
+</I>&gt;<i> &gt;&gt;                               finalstate=finalstateDecl?
+</I>&gt;<i> &gt;&gt;                               pshistory=pshistoryDecl?
+</I>&gt;<i> &gt;&gt;                               psdeephistory=psdeephistoryDecl?
+</I>&gt;<i> &gt;&gt;                               states+=stateDecl*
+</I>&gt;<i> &gt;&gt;                               transitions+=transitionDecl*
+</I>&gt;<i> &gt;&gt;                       )*
+</I>&gt;<i> &gt;&gt;               '}' ';'?
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; How about this:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;        :       'region' ID=identifier? '{'
+</I>&gt;<i> &gt;                        (
+</I>&gt;<i> &gt;                                psinitial=psinitalDecl
+</I>&gt;<i> &gt;                        |       finalstate=finalstateDecl
+</I>&gt;<i> &gt;                        |       pshistory-pshistoryDecl
+</I>&gt;<i> &gt;                        |       psdeephistory=psdeephistoryDecl
+</I>&gt;<i> &gt;                        |       states+=stateDecl
+</I>&gt;<i> &gt;                        |       transitions+=transitionDecl
+</I>&gt;<i> &gt;                        )*
+</I>&gt;<i> &gt;                '}' ';'?
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; But this does not enforce the implied ordering of your first example,
+</I>&gt;<i> &gt; and would allow any number of these to appear in any order.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; You would also have to keep track of (deal with) whether
+</I>&gt;<i> &gt; psinitial/finalstate/pshistory/psdeephistory appear more than once, and
+</I>&gt;<i> &gt; make sure that your states and transitions collect properly.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;&gt; (with * at the end). And for every match to one of the zero-or-one
+</I>&gt;<i> &gt;&gt; rule, it would take it &quot;away&quot;, so it can not be matched again. But
+</I>&gt;<i> &gt;&gt; this does not work.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; If you move your ? &amp; * from inside the ()'s to outside, you will want to
+</I>&gt;<i> &gt; remove them from the inside.  You could do this, but it will not enforce
+</I>&gt;<i> &gt; the implied ordering that I see in the first example.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;&gt; Any suggestions on how to solve this? If I have to end up with every
+</I>&gt;<i> &gt;&gt; possible rule combination, then I would probably be better of just
+</I>&gt;<i> &gt;&gt; doing it in the semantic checker as I was doing.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; I don't see any &quot;rule combinations&quot; since the original rule enforces and
+</I>&gt;<i> &gt; ordering to the rules that you probably want to keep....
+</I>&gt;<i> &gt;
+</I>
+
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="040262.html">[antlr-interest] Problem with EBNF
+</A></li>
+	<LI>Next message: <A HREF="040272.html">[antlr-interest] Problem with EBNF
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40264">[ date ]</a>
+              <a href="thread.html#40264">[ thread ]</a>
+              <a href="subject.html#40264">[ subject ]</a>
+              <a href="author.html#40264">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

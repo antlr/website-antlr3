@@ -1,0 +1,204 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Java grammar accepting junk
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Java%20grammar%20accepting%20junk&In-Reply-To=%3C7CBF3D8E-288D-425C-B04F-64D8ED2E9993%40classdump.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="030030.html">
+   <LINK REL="Next"  HREF="030034.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Java grammar accepting junk</H1>
+    <B>Kay R&#246;pke</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Java%20grammar%20accepting%20junk&In-Reply-To=%3C7CBF3D8E-288D-425C-B04F-64D8ED2E9993%40classdump.org%3E"
+       TITLE="[antlr-interest] Java grammar accepting junk">kroepke at classdump.org
+       </A><BR>
+    <I>Fri Aug 15 15:13:03 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="030030.html">[antlr-interest] Java grammar accepting junk
+</A></li>
+        <LI>Next message: <A HREF="030034.html">[antlr-interest] Java grammar accepting junk
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30033">[ date ]</a>
+              <a href="thread.html#30033">[ thread ]</a>
+              <a href="subject.html#30033">[ subject ]</a>
+              <a href="author.html#30033">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+On Aug 15, 2008, at 11:23 PM, Terence Parr wrote:
+
+&gt;<i> Well, take &quot;succeeded&quot; not very seriously...it just prints
+</I>&gt;<i>
+</I>&gt;<i>                        System.out.println(&quot;finished parsing OK&quot;);
+</I>&gt;<i>
+</I>&gt;<i> if there was no exception... all of the recognition exceptions are  
+</I>&gt;<i> caught inside the parser.  You could check the parser for the number  
+</I>&gt;<i> of errors.
+</I>
+FWIW, I'm currently working on a more flexible ErrorListener design.  
+Partly because we discussed it recently, partly because I need it now ;)
+The basic idea is to get passed the internal exceptions (which are  
+caught inside the parser) in a listener so you can more easily do  
+error reporting and checking.
+
+Currently, to see those exceptions, you can either throw exceptions  
+yourself within the @rulecatch action (rethrow if that's what you  
+want) or make a superclass and override the error methods (one or more  
+of them, depending on what you need to do). Since you can't mixin  
+things in Java this gets messy if you want to put other stuff in that  
+superclass, too (like all members as opposed to write them into  
+@members{}).
+In my current approach you can set an error listener (should probably  
+allow more than one, but one step at a time) on the recognizer and  
+then you can intercept the calls. With a little trickery you can also  
+just forward them to BaseRecognizer again, so you can just check for  
+errors. I do that in the default implementation, but I have one that  
+queues everything up to inspect later. I use the latter in my test  
+suite. Nice thing is, you don't need to modify your grammar at all.
+
+If you just need to know if there were any errors, you can add a bit  
+of code to your grammar and call it after parsing:
+
+@parser::members{
+public boolean seenErrors() {
+	return this.state.syntaxErrors &gt; 0;
+}
+}
+
+I think state is protected, so you need to add code to see it.
+
+cheers,
+-k
+
+&gt;<i> On Aug 15, 2008, at 2:04 PM, Ron Hunter-Duvar wrote:
+</I>&gt;<i>
+</I>&gt;&gt;<i> Hi,
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I'm doing some Java parsing with Antlr 3.1 and the Java.g grammar  
+</I>&gt;&gt;<i> from Antlr.org. When I pass it non-Java input (e.g. shell scripts),  
+</I>&gt;&gt;<i> it complains a lot, but still acts as if the parsing succeeded. I  
+</I>&gt;&gt;<i> noticed that the grammar didn't have an EOF token to force it to go  
+</I>&gt;&gt;<i> to end of file, so I added a new top level rule:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> sourceFile
+</I>&gt;&gt;<i> : compilationUnit EOF
+</I>&gt;&gt;<i> ;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> and invoked it with that new target. Seemed simple enough. But it  
+</I>&gt;&gt;<i> didn't help. The parser still happily accepts garbage:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Parsing: test.sh
+</I>&gt;&gt;<i> line 1:0 no viable alternative at character '#'
+</I>&gt;&gt;<i> line 5:0 no viable alternative at character '#'
+</I>&gt;&gt;<i> line 5:1 no viable alternative at character '#'
+</I>&gt;&gt;<i> line 5:2 no viable alternative at character '#'
+</I>&gt;&gt;<i> line 1:1 no viable alternative at input '!'
+</I>&gt;&gt;<i>  Succeeded
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> The first and last line of output are from my driver code.  
+</I>&gt;&gt;<i> Basically I was expecting the parser to throw an exception, which  
+</I>&gt;&gt;<i> would have counted as a failure. Since it didn't, it counts it as a  
+</I>&gt;&gt;<i> success.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Maybe I'm not understanding how error reporting works in Antlr 3.1.  
+</I>&gt;&gt;<i> I've worked quite a bit with Antlr 2.7, but I'm new to Antlr 3. I  
+</I>&gt;&gt;<i> don't have the book, and haven't found anything in the wiki that  
+</I>&gt;&gt;<i> explains this. Perhaps someone can enlighten me?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Thanks,
+</I>&gt;&gt;<i> Ron
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> -- 
+</I>&gt;&gt;<i> Ron Hunter-Duvar | Software Developer V | 403-272-6580
+</I>&gt;&gt;<i> Oracle Service Engineering
+</I>&gt;&gt;<i> Gulf Canada Square 401 - 9th Avenue S.W., Calgary, AB, Canada T2P 3C5
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> All opinions expressed here are mine, and do not necessarily  
+</I>&gt;&gt;<i> represent
+</I>&gt;&gt;<i> those of my employer.
+</I>&gt;&gt;<i>
+</I>&gt;<i>
+</I>
+-- 
+Kay R&#246;pke
+<A HREF="http://classdump.org/">http://classdump.org/</A>
+
+
+
+
+
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="030030.html">[antlr-interest] Java grammar accepting junk
+</A></li>
+	<LI>Next message: <A HREF="030034.html">[antlr-interest] Java grammar accepting junk
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30033">[ date ]</a>
+              <a href="thread.html#30033">[ thread ]</a>
+              <a href="subject.html#30033">[ subject ]</a>
+              <a href="author.html#30033">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

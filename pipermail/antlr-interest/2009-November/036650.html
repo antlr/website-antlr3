@@ -1,0 +1,240 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Define &quot;function&quot; as numerical and alphanumerical expression
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Define%20%22function%22%20as%20numerical%20and%0A%20alphanumerical%20expression&In-Reply-To=%3C4AF23C51.4080301%40jacaranda.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="036667.html">
+   <LINK REL="Next"  HREF="036662.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Define &quot;function&quot; as numerical and alphanumerical expression</H1>
+    <B>David-Sarah Hopwood</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Define%20%22function%22%20as%20numerical%20and%0A%20alphanumerical%20expression&In-Reply-To=%3C4AF23C51.4080301%40jacaranda.org%3E"
+       TITLE="[antlr-interest] Define &quot;function&quot; as numerical and alphanumerical expression">david-sarah at jacaranda.org
+       </A><BR>
+    <I>Wed Nov  4 18:45:37 PST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="036667.html">[antlr-interest] Define &quot;function&quot; as numerical	and	alphanumerical expression
+</A></li>
+        <LI>Next message: <A HREF="036662.html">[antlr-interest] Define &quot;function&quot; as numerical and alphanumerical expression
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36650">[ date ]</a>
+              <a href="thread.html#36650">[ thread ]</a>
+              <a href="subject.html#36650">[ subject ]</a>
+              <a href="author.html#36650">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Thomas Dill wrote:
+&gt;<i> I think the best way to describe it, is to show you what I tried. This
+</I>&gt;<i> produces a bunch of errors. 
+</I>
+This wasn't a very helpful question. See
+&lt;<A HREF="http://catb.org/~esr/faqs/smart-questions.html">http://catb.org/~esr/faqs/smart-questions.html</A>&gt;. In any case,
+
+ - First fix all missing rules (e.g. NOT, FILE, IN, COLON, and COMMA).
+   There's no point trying to debug anything else while you have missing
+   rule references. If you use ANTLRWorks, it will underline these
+   references in red.
+
+ - Parser rule names must start with a lowercase letter, and lexer
+   rules with an uppercase letter. For example, change &lt;Argument&gt; to
+   &lt;argument&gt;.
+
+ - Change *every* quoted token (e.g. 'IF') to a separate lexer rule.
+   This includes each quoted token in lexer rules such as &lt;NRelOp&gt;
+   (which will have to become parser rules), including operators.
+
+   This might seem like a lot of extra rules, but if you don't make this
+   change, it will just cause more obscure errors. Also, typically you
+   want each operator to be treated as a different token in code that
+   uses the parser.
+
+   Note that since the set of tokens matched by OBJNAME overlaps
+   keywords such as 'IF', OBJNAME has to be defined later in the
+   grammar file than the lexer rules for those keywords (assuming that
+   keywords are not context-dependent in the language you're parsing).
+
+ - You have no rule for whitespace or line terminators. Such a rule
+   might look something like
+
+     WS : (' '|'\t'|'\n'|'\r')+ { $channel = HIDDEN; };
+
+   Also, you have tokens that include whitespace such as 'IS MISSING'.
+   Here 'IS' and 'MISSING' should be separate tokens, where &lt;relOp&gt; has
+   (IS MISSING) as an alternative.
+
+ - The definition of &lt;SingleStringLiteral&gt; is strange; it doesn't correspond
+   to its name. You probably want fragment rules &lt;SingleStringLiteral&gt; and
+   &lt;DoubleStringLiteral&gt;, and &lt;StringLiteral&gt; to be a non-fragment rule
+   defined with those as alternatives. Then change uses of
+   &lt;SingleStringLiteral&gt; to &lt;StringLiteral&gt;.
+
+ - You have rules, such as FUNCTION : OBJNAME '('; and
+   PREFIX : OBJNAME '.';, that put what would normally be considered
+   separate tokens into a single token.
+
+   This is *probably* trying to do too much in the lexer. It might be
+   correct if the language does not allow whitespace between OBJNAME and
+   '(' or '.', but if it does allow whitespace there, then you should
+   make these parser rules and treat '(' and '.' as tokens.
+
+ - Your grammar needs a start rule, which should match EOF after whatever
+   else it matches (probably &lt;expression&gt;).
+
+ - Simplify the grammar by factoring common sets of alternatives.
+   For example, the set of alternatives 'numerical_expression |
+   alphanumerical_expression | function | data_field' occurs several
+   times, and can be replaced in each case with 'value'. That will
+   make it easier to see other possible simplifications, for example
+   the expression following 'ELSE' can be written just as 'expression'.
+
+   Avoid parser rules that just repeat a lexer rule (such as
+   'alphanumerical_relational_op : ARelOp'); they're not helpful.
+   Also remove redundant parentheses, for instance '(NOT? value IN)'
+   or '(numExprA)' do not need parentheses.
+
+   [Such simplifications can make it easier to see what is going on in
+   the next steps.]
+
+ - You might want to rename rules that are misleadingly or inconsistently
+   named; for example, &lt;value&gt; is a type of expression, so I would suggest
+   calling it &lt;value_expression&gt;.
+
+ - Before trying to resolve more complicated errors and warnings, make
+   sure that your grammar is showing &quot;green&quot; in ANTLRWorks, i.e. it has
+   no syntax errors, no missing rule references, etc.
+
+ - You have some rules that are not left-factored. For example, consider
+   the rule
+
+     argument : value_expression relational_operator value_expression
+              | NOT? value_expression IN ...;
+
+   When the NOT is absent, the alternatives both start with
+   &lt;value_expression&gt;, so the rule needs to be left-factored as follows:
+
+     argument : value_expression ( relational_operator value_expression
+                                 | IN ... )
+              | NOT value_expression IN ...;
+
+   (Left-factoring sometimes, as in this case, introduces repetition,
+   which is ugly and error-prone. You could reduce the repetition by
+   adding a parser rule for the repeated part, shown as '...' here.)
+
+ - Now there are some ambiguities to be resolved. For example, in
+
+     relational_operator : relOp | aRelOp | numerical_relational_op ;
+
+     numerical_relational_op : nRelOp numerical_expression TO ;
+
+   &lt;nRelOp&gt; is ambiguous with &lt;relOp&gt;, since both include 'ISFROM'.
+   The fix for this depends on how 'ISFROM' should be interpreted when
+   it is not followed by a &lt;numerical_expression&gt; and 'TO' (if I had
+   to guess, I'd say that its inclusion in &lt;relOp&gt; is probably an error).
+
+   There are a couple of more complicated ambiguities in this grammar
+   surrounding argument lists. Consider the input
+
+     ( 1 )
+
+   matched by the &lt;arguments&gt; rule: is it a parenthesized
+   &lt;numerical_expression&gt;, or a parenthesized &lt;arguments&gt;? This
+   appears to be a genuine ambiguity (as opposed to one caused only
+   by the requirement for left-factoring in an LL grammar).
+
+   If you want it to be resolved in favour of parenthesized
+   &lt;arguments&gt;, for example, that would be:
+
+     arguments : { input.LA(1) == LPAREN }? LPAREN arguments RPAREN
+               | argument ((OR | AND) argument)* ;
+
+   [LPAREN is the token for '('. This is another reason why you always
+   want to define lexer rules for each token; &quot;input.LA(1) == '('&quot; would
+   not work.]
+
+   Here's another genuine ambiguity:
+
+     1 AND 2
+
+   Is this an &lt;arguments&gt; list with arguments 1 and 2, or with a
+   single argument that is a &lt;numerical_expression&gt; using the 'AND'
+   operator?
+
+   Removing 'AND' and 'OR' from the numeric operators resolves this
+   ambiguity, although that might not be the correct solution.
+
+   (I think the underlying problem is that the syntax of argument lists
+   in this language is rather poorly thought out, although you might
+   not be able to do anything about that.)
+
+ - Once you have a grammar that compiles without errors or warnings
+   (don't ignore warnings), you can look for possible mistakes that
+   might be causing it to parse the wrong language. In particular,
+   some rules appear suspiciously restrictive. For instance
+
+     numerical_expression : NumericLiteral (numOp NumericLiteral)+
+                          | LPAREN numerical_expression RPAREN ;
+
+   does not allow numeric expressions such as '(1+2)+(3+4)', or
+   even '(1)+1' -- was that intended? The following would be less
+   restrictive and more similar to other languages:
+
+     primary_expression   : NumericLiteral
+                          | LPAREN numerical_expression RPAREN ;
+
+     numerical_expression : primary_expression (numOp primary_expression)*;
+
+   (This follows a pattern called an &quot;operator precedence grammar&quot;,
+   where a parser rule is created for each level of expression
+   precedence. Of course, your language might actually be broken
+   enough not to accept such expressions.)
+
+-- 
+David-Sarah Hopwood  &#9893;  <A HREF="http://davidsarah.livejournal.com">http://davidsarah.livejournal.com</A>
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 292 bytes
+Desc: OpenPGP digital signature
+Url : <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20091105/6665c00f/attachment.bin">http://www.antlr.org/pipermail/antlr-interest/attachments/20091105/6665c00f/attachment.bin</A> 
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="036667.html">[antlr-interest] Define &quot;function&quot; as numerical	and	alphanumerical expression
+</A></li>
+	<LI>Next message: <A HREF="036662.html">[antlr-interest] Define &quot;function&quot; as numerical and alphanumerical expression
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36650">[ date ]</a>
+              <a href="thread.html#36650">[ thread ]</a>
+              <a href="subject.html#36650">[ subject ]</a>
+              <a href="author.html#36650">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

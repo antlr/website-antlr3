@@ -1,0 +1,336 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] ANTLR 2.7.6/C++: parser controlled conditional	lexer whitespace skipping?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20ANTLR%202.7.6/C%2B%2B%3A%20parser%20controlled%20conditional%0A%09lexer%20whitespace%20skipping%3F&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="017629.html">
+   <LINK REL="Next"  HREF="017619.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] ANTLR 2.7.6/C++: parser controlled conditional	lexer whitespace skipping?</H1>
+    <B>Peter Paulus</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20ANTLR%202.7.6/C%2B%2B%3A%20parser%20controlled%20conditional%0A%09lexer%20whitespace%20skipping%3F&In-Reply-To="
+       TITLE="[antlr-interest] ANTLR 2.7.6/C++: parser controlled conditional	lexer whitespace skipping?">peter.paulus at nerocmediaware.nl
+       </A><BR>
+    <I>Fri Sep 15 02:39:04 PDT 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="017629.html">[antlr-interest] &#22238;&#22797;&#65306; Re:  best way do type-checking
+</A></li>
+        <LI>Next message: <A HREF="017619.html">[antlr-interest] TreeParser development: How to build an effective	&quot;dont care&quot; rule?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#17618">[ date ]</a>
+              <a href="thread.html#17618">[ thread ]</a>
+              <a href="subject.html#17618">[ subject ]</a>
+              <a href="author.html#17618">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello all,
+
+Meanwhile I've completed a large part of my first strategy: explicit 
+whitespace in the grammar.
+
+The grammar below does parse successfully. Below the grammar and a 
+(non-coherent) sample input are in included.
+
+On the declarationBlock rule however I keep having difficulties that 
+the last declaration, if specified with the &quot;!important&quot; clause, may 
+not omit the SEMICOLON. Whereas a declaration, without the &quot;!important&quot; 
+clause, may have an optional SEMICOLOM, optional whitespace before the 
+RBRACE.
+
+For instance these are okay:
+{border: green solid 1pt}
+{border: green solid 1pt;}
+{border: green solid 1pt; }
+{border: green solid 1pt !important;}
+
+But this isn't:
+{border: green solid 1pt !important}
+
+I keep getting the non-determenism between 1 alternative of expr and 
+the exit block.
+
+By the way I found that whitespace had a third overloaded meaning: it 
+acts as a list separator in expr.
+
+Could someone help me iron out this last bit?
+
+On the other strategies, did I miss the obvious; Or was I not 
+netiquette enough with my little CSS whitespace observation? I had 
+certainly hoped there would be an alternate approach to landing this. 
+But since no one responded I guess this question stays open.
+
+As far as what I've come up with concerns. I still have to do comments 
+which probably adds an other layer of complexity.
+
+With kind regards,
+Peter Paulus
+
+ANTLR 2.7.6 grammar (on request I can give you the entire grammar, 
+including lexer):
+class CSSParser extends Parser;
+options {
+	k=3;
+	buildAST=true;
+}
+
+tokens {
+FUNCTION;
+DECLARATION;
+}
+
+stylesheet: (WS!)? (charset (WS!)?)? (import (WS!)?)*  ((medium | 
+ruleset | page) (WS!)?)*;
+
+charset: CHARSET_SYMBOL^ WS! string (WS!)? SEMICOLON;
+
+import: IMPORT_SYMBOL^ WS! string (WS!)? (IDENT (COMMA (WS!)? IDENT 
+(WS!)?)*)? SEMICOLON;
+
+medium:	MEDIA_SYMBOL^
+		WS!
+		IDENT
+		(WS!)?
+		(COMMA (WS!)? IDENT (WS!)?)*
+		LBRACE (WS!)?
+		(ruleset (WS!)?)*
+		(RBRACE | EOF)
+		;
+
+ruleset:	compositeselector
+		LBRACE
+		(WS!)?
+		(declarationBlock)?
+		(RBRACE | EOF)
+		;
+
+page: 	PAGE_SYMBOL^
+		(WS!)?
+		(COLON IDENT (WS!)?)?
+		LBRACE
+		(WS!)?
+		(declarationBlock)?
+		(RBRACE | EOF)
+		;
+
+compositeselector: selector
+		(
+			((WS)? COMMA)=&gt; (WS!)? COMMA (WS!)? selector
+			| ((WS)? PLUS)=&gt; (WS!)? PLUS (WS!)?selector
+			| ((WS)? GREATER) =&gt; (WS!)? GREATER (WS!)? selector
+			| (WS LBRACE) =&gt; WS!
+			| WS selector
+		)*
+		;
+
+selector: (typeselector | universalselector) (idselector | 
+classselector | attributeselector)* (pseudo)?
+		| (idselector | classselector | attributeselector)+ (pseudo)?
+		;
+
+typeselector: IDENT;
+
+universalselector: STAR;
+
+idselector: HASH^ IDENT;
+
+classselector: DOT^ IDENT;
+
+attributeselector: LSQUARE^ RSQUARE; // incomplete rule
+
+pseudo: COLON^ IDENT;
+
+declarationBlock:   declaration
+		(
+			 (SEMICOLON (WS)? (RBRACE|EOF))=&gt; SEMICOLON (WS!)?
+  				| SEMICOLON (WS!)? declaration
+		)*
+		;
+
+declaration: 	id:IDENT^
+			(WS!)?
+			COLON
+			(WS!)?
+			expr
+			(IMPORTANT_SYMBOL)?
+			{ #id-&gt;setType(DECLARATION); }
+			;
+
+expr:		term
+			(
+				(WS (SEMICOLON | RBRACE | EOF | IMPORTANT_SYMBOL))=&gt; WS!
+				| (WS term)=&gt; WS term
+  				| (WS COMMA)=&gt; WS! COMMA (WS!)? term
+				| (WS SLASH)=&gt; WS! SLASH (WS!)? term
+				| SLASH (WS!)? term
+  				| COMMA (WS!)? term
+			)*
+			;
+			
+term
+	: ((PLUS|MINUS)? DIGIT)=&gt; length
+	| hexcolor
+	| function // including rgb(), srgb(), url()
+	| string
+	| identifier // including wellknown colors
+	| keyword
+	;
+
+string: STRING;
+
+keyword:	AUTO | INHERIT;
+
+identifier: IDENT;
+
+function: id:IDENT^ LPARENTHESIS arguments RPARENTHESIS { 
+#id-&gt;setType(FUNCTION); };
+
+arguments: (term)? ((COMMA|SLASH) WS term)*;
+
+hexcolor :  hexLiteral;
+
+hexLiteral: HASH (HEX_DIGIT HEX_DIGIT HEX_DIGIT) (HEX_DIGIT HEX_DIGIT 
+HEX_DIGIT)?;
+
+length:  NUM^ (unit)?;
+
+unit: PERCENT | PX | PT | PC |  CM | MM | IN | DEG | RAD | GRAD | MS | 
+S | KHZ | HZ;
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: table.css
+Type: model/vrml
+Size: 527 bytes
+Desc: not available
+Url : <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20060915/9a727744/attachment.vrml">http://www.antlr.org/pipermail/antlr-interest/attachments/20060915/9a727744/attachment.vrml</A> 
+-------------- next part --------------
+
+
+Begin forwarded message:
+
+&gt;<i> From: Peter Paulus &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">peter.paulus at nerocmediaware.nl</A>&gt;
+</I>&gt;<i> Date: Mon Sep 11, 2006  12:01:39 Europe/Amsterdam
+</I>&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> Subject: [antlr-interest] ANTLR 2.7.6/C++: parser controlled 
+</I>&gt;<i> conditional lexer whitespace skipping?
+</I>&gt;<i>
+</I>&gt;<i> Hello all,
+</I>&gt;<i>
+</I>&gt;<i> For a project I'm trying to create a CSS 2.1 parser (I started from 
+</I>&gt;<i> the ccs2.1.g shared grammar on the website).
+</I>&gt;<i>
+</I>&gt;<i> The shared css2.1.g grammar has the following whitespace lexer rule:
+</I>&gt;<i>
+</I>&gt;<i> WS:	( ' '
+</I>&gt;<i> 	| '\t'
+</I>&gt;<i> 	| '\f'
+</I>&gt;<i> 	| ( options { generateAmbigWarnings = false; }
+</I>&gt;<i> 		: &quot;\r\n&quot;
+</I>&gt;<i> 		| '\r'
+</I>&gt;<i> 		| '\n'
+</I>&gt;<i> 		) { newline(); }
+</I>&gt;<i> 	)+ { _ttype = antlr::Token::SKIP; } // C++
+</I>&gt;<i> 	;
+</I>&gt;<i>
+</I>&gt;<i> Now whitespace is both whitespace and a combinator in CSS2.1 (See 
+</I>&gt;<i> section 5.2 paragraph 3 of specification - &quot;Was there no better 
+</I>&gt;<i> alternative for that particular combinator that was both human and 
+</I>&gt;<i> machine-readable? - ).  So skipping whitespace in the lexer doesn't 
+</I>&gt;<i> look like a good idea.
+</I>&gt;<i>
+</I>&gt;<i> I've been looking at some strategies as how to solve this, but got 
+</I>&gt;<i> stuck.
+</I>&gt;<i>
+</I>&gt;<i> 1. Handle whitespace explicitly in the parser. This look like a viable 
+</I>&gt;<i>  strategy, but is probably a lot of (hopefully unneeded?) work.
+</I>&gt;<i>
+</I>&gt;<i> 2. Use the 'ignore=WS' option. For CSS 2.1. you'd have to ignore WS on 
+</I>&gt;<i> the starting rule  of the grammar (it's whitespace most of the time). 
+</I>&gt;<i> As far as I could tell this propagates down into subrules. I could not 
+</I>&gt;<i> find however how to reset this option on a subrule.
+</I>&gt;<i>
+</I>&gt;<i> 3.  A conditional Token::SKIP in the WS lexer rule:
+</I>&gt;<i>
+</I>&gt;<i> WS:	( ' '
+</I>&gt;<i> 	| '\t'
+</I>&gt;<i> 	| '\f'
+</I>&gt;<i> 	| ( options { generateAmbigWarnings = false; }
+</I>&gt;<i> 		: &quot;\r\n&quot;
+</I>&gt;<i> 		| '\r'
+</I>&gt;<i> 		| '\n'
+</I>&gt;<i> 		) { newline(); }
+</I>&gt;<i> 	)+ { if (preserveWS == false) _ttype = antlr::Token::SKIP; } // C++
+</I>&gt;<i> 	;
+</I>&gt;<i>
+</I>&gt;<i> In this case you would want the starting rule of the grammar to set 
+</I>&gt;<i> 'preserveWS' to 'false' and have the 'entry'-action of a subrule (near 
+</I>&gt;<i> where you are parsing the combinator) set 'preserveWS' to 'true'. This 
+</I>&gt;<i> leads to 2 problems:
+</I>&gt;<i>
+</I>&gt;<i> How can parser and lexer interact? As far as I could tell the parser 
+</I>&gt;<i> has no visibility to the lexer, only to the lexer's enclosed 
+</I>&gt;<i> tokenstream. This means I could add a method to the lexer: public: 
+</I>&gt;<i> setPreserveWS(bool mode = true) { this-&gt;preserveWS = mode; }. But I'm 
+</I>&gt;<i> unsure if I could ever call this method from the parser.
+</I>&gt;<i>
+</I>&gt;<i> There does not seem to be an 'exit'-action. How could the 'preserveWS' 
+</I>&gt;<i> be safely reset to 'false' when the combinator subrule has been 
+</I>&gt;<i> recognized/failed. Perhaps I would need to specify the same action in 
+</I>&gt;<i> every branch of the subrule.
+</I>&gt;<i>
+</I>&gt;<i> Looking at the note in the documentation regarding TokenStream 
+</I>&gt;<i> filtering this seems like the best alternative - no costly creation of 
+</I>&gt;<i> WS tokens when there is no need for them.
+</I>&gt;<i>
+</I>&gt;<i> 4. Use a variation on the 'TokenStreamBasicFilter'. This way the lexer 
+</I>&gt;<i> does not skip WS, but puts it in the TokenStream. One could make a 
+</I>&gt;<i> 'CustomTokenStreamFilter', that allows you to toggle preserveWS in the 
+</I>&gt;<i> filter. Except: how do I get to the filter (i.e. tokenstream) from the 
+</I>&gt;<i> parser? I managed to find: this-&gt;getInputState().getInput() to arrive 
+</I>&gt;<i> at the TokenBuffer. The TokenBuffer does not seem to have a (public) 
+</I>&gt;<i> method to produce it's associated TokenStream.
+</I>&gt;<i>
+</I>&gt;<i> Perhaps there are some other strategies that I didn't think of.
+</I>&gt;<i>
+</I>&gt;<i> Could someone help me with this?
+</I>&gt;<i>
+</I>&gt;<i> Thanks in advance.
+</I>&gt;<i>
+</I>&gt;<i> With kind regards,
+</I>&gt;<i> Peter Paulus
+</I>&gt;<i>
+</I></PRE>
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="017629.html">[antlr-interest] &#22238;&#22797;&#65306; Re:  best way do type-checking
+</A></li>
+	<LI>Next message: <A HREF="017619.html">[antlr-interest] TreeParser development: How to build an effective	&quot;dont care&quot; rule?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#17618">[ date ]</a>
+              <a href="thread.html#17618">[ thread ]</a>
+              <a href="subject.html#17618">[ subject ]</a>
+              <a href="author.html#17618">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

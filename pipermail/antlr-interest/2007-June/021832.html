@@ -1,0 +1,205 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Separating multi-token entries in ASTs
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Separating%20multi-token%20entries%20in%20ASTs&In-Reply-To=%3C69fb4b090706280919u139d36as460d8b49a5514f5%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="021823.html">
+   <LINK REL="Next"  HREF="021837.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Separating multi-token entries in ASTs</H1>
+    <B>Ted Villalba</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Separating%20multi-token%20entries%20in%20ASTs&In-Reply-To=%3C69fb4b090706280919u139d36as460d8b49a5514f5%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Separating multi-token entries in ASTs">ted.villalba at gmail.com
+       </A><BR>
+    <I>Thu Jun 28 09:19:29 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="021823.html">[antlr-interest] ambigous lexer tokens
+</A></li>
+        <LI>Next message: <A HREF="021837.html">[antlr-interest] mp4 movie of Ter's Sydney JUG ANTLR talk
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#21832">[ date ]</a>
+              <a href="thread.html#21832">[ thread ]</a>
+              <a href="subject.html#21832">[ subject ]</a>
+              <a href="author.html#21832">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+I'm looking for a little help retrieving string lists from ASTs, and keeping
+them separate. I will try to explain the issue better here.
+I have created a query translator with ANTLR v3.
+A simple example query is TAG=(VALUE), where value is one or more terms. e.g.
+title=(call of the wild)
+The translation of this will be title:&quot;call of the wild&quot;.
+The issue I have is when VALUE contains a boolean which operates on
+multi-term operands.
+e.g. title=(Call of the Wild AND Where the Wild Things are).
+What I want this to tranlsate to is title:AND(&quot;Call of the Wild&quot;, &quot;Where the
+Wild Things are&quot;)
+What happens is, when I traverse the tree, the list builds up so  that my
+translation becomes:
+
+title:AND(&quot;Call of the Wild Where the Wild Things&quot;, &quot;are&quot;) .
+
+Using ANTLRWorks, I can see the nice AST created, but I'm not sure how to
+tell the TreeTraverser to stop acquiring the terms after the first title
+because it's not delineated from the second titles once their tokens are
+added to the tree.
+I realize I am asking a lot by dumping these grammars here and hoping
+someone will be inclined to navigate them, but any help would be greatly
+appreciated.
+
+Here is my parser grammar:
+
+
+grammar QueryParser;
+
+options{
+    k=4;
+    output=AST;
+    ASTLabelType=CommonTree;
+}
+
+
+start   : ( query  {System.out.println(&quot;AST:\n&quot;+$query.tree.toStringTree());}
+)+ ;
+query   : field (WS!)* (BOOL_OP^ (WS!)* query)*  ;
+
+field   : tag '=' value  -&gt; ^('=' tag value)
+        | qid
+        ;
+
+value   : term (WS)* BOOL_OP (WS)* value -&gt; ^(BOOL_OP term value)
+        | term
+        | LPAREN! value RPAREN!
+        ;
+
+tag     : WCHAR;
+
+term    : WCHAR (WS! WCHAR)* ;
+
+qid     : '#'!DIGIT ;
+
+BOOL_OP : 'AND'|'OR'|'NOT';
+DIGIT   : ('0'..'9');
+WS      : (' '|'\t'|'\r'|'\n')+ ;
+LPAREN  : '(' ;
+RPAREN  : ')' ;
+QUOTE   : '&quot;';
+WCHAR   : ~('='|'('| ')'|'&quot;'|' '|'\t'|'\n'|'\r'|'#')+;
+
+Here is my TreeGrammar:
+
+
+tree grammar QueryTree;
+
+options{
+    tokenVocab=QueryParser; //use the vocabulary from the parser
+    ASTLabelType=CommonTree; //The kind of tree we are walking
+    output=template;
+}
+
+
+
+// START:query
+start[]
+@init
+{
+
+}
+        :  (q+=query)+ -&gt; template1(finalQuery={$q});
+
+query   : field -&gt; template2(express={$field.st})
+
+        | ^(BOOL_OP a=query b=query ) -&gt; template3(op={$BOOL_OP.text},
+                                                query1={$a.st},
+                                                query2={$b.st})
+        ;
+
+field : ^('=' tag value) -&gt; template4(tag={$tag.text},value={$value.st})
+        | ^('=' tag (t+=term)+) -&gt; template41(tag={$tag.text},terms={$t})
+        | DIGIT -&gt; storedQuery(qid={$DIGIT.text})
+        ;
+
+value   : WCHAR -&gt; template5(val ={$value.text})
+        | ^(BOOL_OP (a+=term)+ b=value) -&gt;
+valueTemplate(wokOp={$BOOL_OP.text},terms={$a} , values={$b.st})
+        ;
+
+term    : WCHAR -&gt; template6(t ={$term.text});
+
+tag     : WCHAR ;
+
+And for what its worth here are the templates referenced:
+
+template1(finalQuery) ::= &quot;&lt;finalQuery&gt;&quot;
+
+template2(express) ::= &quot;&lt;express&gt;&quot;
+
+template3(op, query1, query2) ::= &quot;&lt;op&gt;(&lt;query1&gt;,&lt;query2&gt;)&quot;
+
+template4(tag, value) ::= &quot;&lt;tag&gt;:&lt;value; separator=\&quot; \&quot;&gt;&quot;
+
+template41(tag, terms) ::= &quot;&lt;tag&gt;:(\&quot;&lt;terms; separator=\&quot; \&quot;&gt;\&quot;)&quot;
+
+template5(val) ::= &quot;&lt;val&gt;&quot;
+
+wokOpTemplate(wokOp) ::= &quot;&lt;wokOp&gt;&quot;
+
+template6(t) ::= &quot;&lt;t&gt;&quot;
+
+valueTemplate(wokOp) ::=&quot;&lt;wokOp&gt;(&lt;terms&gt;,&lt;values&gt;)&quot;
+
+storedQuery(qid) ::= &quot;&lt;qid&gt;&quot;
+
+Thanks again for having a look!
+
+Ted
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20070628/25a12f39/attachment-0001.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20070628/25a12f39/attachment-0001.html</A> 
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="021823.html">[antlr-interest] ambigous lexer tokens
+</A></li>
+	<LI>Next message: <A HREF="021837.html">[antlr-interest] mp4 movie of Ter's Sydney JUG ANTLR talk
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#21832">[ date ]</a>
+              <a href="thread.html#21832">[ thread ]</a>
+              <a href="subject.html#21832">[ subject ]</a>
+              <a href="author.html#21832">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

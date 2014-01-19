@@ -1,0 +1,225 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] [v2 to v3][C++/C] throw C++ exception from parser/tree parser.
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5Bv2%20to%20v3%5D%5BC%2B%2B/C%5D%20throw%20C%2B%2B%20exception%20from%0A%20parser/tree%20parser.&In-Reply-To=%3Cd55e336dc1b5569b02904a12215cb68b%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="042602.html">
+   <LINK REL="Next"  HREF="042604.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] [v2 to v3][C++/C] throw C++ exception from parser/tree parser.</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5Bv2%20to%20v3%5D%5BC%2B%2B/C%5D%20throw%20C%2B%2B%20exception%20from%0A%20parser/tree%20parser.&In-Reply-To=%3Cd55e336dc1b5569b02904a12215cb68b%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] [v2 to v3][C++/C] throw C++ exception from parser/tree parser.">jimi at temporal-wave.com
+       </A><BR>
+    <I>Thu Sep  8 08:24:28 PDT 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="042602.html">[antlr-interest] [v2 to v3][C++/C] throw C++ exception from parser/tree parser.
+</A></li>
+        <LI>Next message: <A HREF="042604.html">[antlr-interest] ANTLRWorks 1.4.3 infinite loop during grammar check
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#42606">[ date ]</a>
+              <a href="thread.html#42606">[ thread ]</a>
+              <a href="subject.html#42606">[ subject ]</a>
+              <a href="author.html#42606">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>That's all you need :) There are lots of examples in the stuff you have
+found on how to override the default one. You can use the @members to
+declare an instance of your error reporting classm then new and install
+this object before parsing. You will want to install it in the lexer, the
+parser and the tree parser.
+
+Note that you should avoid having the lexer issue errors and try to code
+for errors so you can report a good message:
+
+STRING: '&quot;' (~('&quot;'|'\n'|'\r'))* ( '&quot;'| /* call a method on your object to
+issue 'missing quote' */) ;
+
+
+Your error handler should have a number of methods that can handle the
+data passed to displayRecognitionError(), a method that handles simple
+lexer errors, a method that takes a start and end token (which may be
+NULL), a method that takes a start and end (which may be null)
+pCOMMON_TREE and anything else that is useful. Your method can then
+extract text for the message from the input stream.
+
+Also, code your error messages as objects/structs/something in a
+collection and pass the desired error message as a symbol. The error
+handler can then look up whether the message is a warning, error, or
+fatal. A warning or error does not stop the next phase from running, a
+fatal error does. Then a lexing error won't (possibly) stop the parser and
+so on - you get the maximum information from one run by printing all the
+errors at the end.
+
+Note that your tree parser will likely call code (don't embed code in the
+tree parser, just call your C++ objects with the desired information), to
+issue semantic errors as hitting an AST formation error is most likely a
+&quot;Fatal Internal Compiler Error - panic!&quot;. In other words the
+displayRecognitionError() is only part of the story - it only captures
+syntax errors, but in the real world you want way more emphasis on
+semantically detected errors, and you should code your parser to accept
+bad syntax, then reject it as a semantic error.
+
+
+Finally using symbolic representation of the message will allow you to
+switch languages easily of course.
+
+Hope that helps. It is a lot easier than I think you thought it was.
+
+
+Jim
+
+
+&gt;<i> -----Original Message-----
+</I>&gt;<i> From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:antlr-interest-
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">bounces at antlr.org</A>] On Behalf Of Ruslan Zasukhin
+</I>&gt;<i> Sent: Wednesday, September 07, 2011 12:13 PM
+</I>&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> Subject: Re: [antlr-interest] [v2 to v3][C++/C] throw C++ exception
+</I>&gt;<i> from parser/tree parser.
+</I>&gt;<i>
+</I>&gt;<i> On 9/7/11 7:36 PM, &quot;Jim Idle&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">jimi at temporal-wave.com</A>&gt; wrote:
+</I>&gt;<i>
+</I>&gt;<i> Hi Jim,
+</I>&gt;<i>
+</I>&gt;<i> &gt; You remember that this is all open source, freely given right?
+</I>&gt;<i>
+</I>&gt;<i> Of course I do :-)
+</I>&gt;<i>
+</I>&gt;<i> And I have read sources of ANTLR 3.4, be sure.
+</I>&gt;<i> Btw, my congratulations and respect. Very high quality code.
+</I>&gt;<i>
+</I>&gt;<i> &gt; Generally,
+</I>&gt;<i> &gt; don't try and mix C++ things in with the C. Exceptions are almost
+</I>&gt;<i> &gt; certainly not want you want for error reporting while parsing anyway.
+</I>&gt;<i>
+</I>&gt;<i> &gt; As I said earlier, copy the existing routine and adapt it. It does as
+</I>&gt;<i> &gt; many things as it can to show you how to access the information. I
+</I>&gt;<i> &gt; can't provide a universal error message handler as there is no way to
+</I>&gt;<i> &gt; know what information your particular parser will have available or
+</I>&gt;<i> &gt; how you want the messages to look and so on. All your customer error
+</I>&gt;<i> &gt; handler need do is call a C++ object that you provide and that object
+</I>&gt;<i> &gt; can collect the errors so that you can print them out at the end etc.
+</I>&gt;<i> &gt; The source code is right there and well commented :)
+</I>&gt;<i>
+</I>&gt;<i> Ahhaa,  I hope I have to hear you ...
+</I>&gt;<i> I will try say it now by own words to double check.
+</I>&gt;<i>
+</I>&gt;<i> * so we must implement own dsiplayError() -- this is clear.
+</I>&gt;<i>
+</I>&gt;<i> * we must NOT throw here any C++ exception.
+</I>&gt;<i>     Instead, we must just build some Err String and put it
+</I>&gt;<i>     e.g. Into our own Stack of such error strings
+</I>&gt;<i>
+</I>&gt;<i> * then we do
+</I>&gt;<i>
+</I>&gt;<i>    AST         =  parser-&gt;entryRule()
+</I>&gt;<i>    MyNodes = treePareser-&gt;entryRule()
+</I>&gt;<i>
+</I>&gt;<i> Zero exceptions here
+</I>&gt;<i> Then we just do
+</I>&gt;<i>
+</I>&gt;<i>     if( errCount &gt; 0 )
+</I>&gt;<i>     {
+</I>&gt;<i>          stop  job
+</I>&gt;<i>          somehow report errors to user
+</I>&gt;<i>          for example
+</I>&gt;<i>
+</I>&gt;<i>         point ZZZ:
+</I>&gt;<i>          throw  myException(  ErrStack-&gt;getErrors() ;)
+</I>&gt;<i>     }
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Sounds right?
+</I>&gt;<i> Thank you, Jim for points.
+</I>&gt;<i>
+</I>&gt;<i> -----------------
+</I>&gt;<i> Well, only one more question come to mind.  :-)
+</I>&gt;<i>
+</I>&gt;<i> I have read that ANTLR3-C self build LIST OF exception objects.
+</I>&gt;<i> Is this true?
+</I>&gt;<i>
+</I>&gt;<i> If yes, then may be this is not needed? I mean override displayError()
+</I>&gt;<i> method?
+</I>&gt;<i>
+</I>&gt;<i> &gt;&gt; All your customer error handler need do is call a C++ object that
+</I>&gt;<i> you
+</I>&gt;<i> &gt;&gt; provide and that object can collect the errors so that you can print
+</I>&gt;<i> &gt;&gt; them out at the end etc.
+</I>&gt;<i>
+</I>&gt;<i> And we can &quot;convert&quot; that list into exception at point ZZZ in the above
+</I>&gt;<i> example?
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> --
+</I>&gt;<i> Best regards,
+</I>&gt;<i>
+</I>&gt;<i> Ruslan Zasukhin
+</I>&gt;<i> VP Engineering and New Technology
+</I>&gt;<i> Paradigma Software, Inc
+</I>&gt;<i>
+</I>&gt;<i> Valentina - Joining Worlds of Information <A HREF="http://www.paradigmasoft.com">http://www.paradigmasoft.com</A>
+</I>&gt;<i>
+</I>&gt;<i> [I feel the need: the need for speed]
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-">http://www.antlr.org/mailman/options/antlr-interest/your-</A>
+</I>&gt;<i> email-address
+</I></PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="042602.html">[antlr-interest] [v2 to v3][C++/C] throw C++ exception from parser/tree parser.
+</A></li>
+	<LI>Next message: <A HREF="042604.html">[antlr-interest] ANTLRWorks 1.4.3 infinite loop during grammar check
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#42606">[ date ]</a>
+              <a href="thread.html#42606">[ thread ]</a>
+              <a href="subject.html#42606">[ subject ]</a>
+              <a href="author.html#42606">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,122 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] left-recursive expression rule prototype
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20left-recursive%20expression%20rule%20prototype&In-Reply-To=%3C4193142E-1F54-4984-91F9-7DF02B166574%40cs.usfca.edu%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="040829.html">
+   <LINK REL="Next"  HREF="040832.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] left-recursive expression rule prototype</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20left-recursive%20expression%20rule%20prototype&In-Reply-To=%3C4193142E-1F54-4984-91F9-7DF02B166574%40cs.usfca.edu%3E"
+       TITLE="[antlr-interest] left-recursive expression rule prototype">parrt at cs.usfca.edu
+       </A><BR>
+    <I>Sat Feb 19 18:21:31 PST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="040829.html">[antlr-interest] Best way to set up lexer jUnit tests
+</A></li>
+        <LI>Next message: <A HREF="040832.html">[antlr-interest] left-recursive expression rule prototype
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40830">[ date ]</a>
+              <a href="thread.html#40830">[ thread ]</a>
+              <a href="subject.html#40830">[ subject ]</a>
+              <a href="author.html#40830">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>howdy. Finally got around to supporting left-recursion in limited circumstances. I started looking at it 2008:
+
+<A HREF="http://www.antlr.org/wiki/display/~admin/2008/03/23/Faster+expression+parsing+for+ANTLR">http://www.antlr.org/wiki/display/~admin/2008/03/23/Faster+expression+parsing+for+ANTLR</A>
+
+Specifically, the building of perhaps 20 rules to handle the different precedence levels of arithmetic expressions and top-down parsers is heinous. The LR bottom up version is much easier to read but is, of course is ambiguous. I'm working on a little prototype where you specify an LR-like rule for arithmetic expressions and ANTLR can translate it to a &quot;precedence climbing&quot; rule without left recursion. It uses a predicate to simply compare the precedence of the previous operator with the precedence of the next operator coming down the road. The order of the alternatives provides the precedence of operations from loosest to tightest binding.
+
+At least for now, I'm distinguishing rules with left recursion you want removed by using '/' instead of '|' for the alternative operator. In principle, I can simply look for patterns in any rule (works great for declarations too) and avoid the special operator.
+
+Anyway, here is my test cases:
+
+grammar V;
+options {output=AST;}
+    
+e : e ('+'^|'-'^) e
+  / e '*'^ e
+  / '-'^ e
+  / e '.'^ ID
+  / INT
+  / ID
+  ;
+
+ID : 'a'..'z'+ ;
+INT : '0'..'9'+ ;
+WS : (' '|'\t'|'\n')+ {skip();} ;
+
+it gets translated to
+
+start: e : e_[0] ;
+e_[int _p]
+   :   e_primary
+       ( {1 &gt;= _p}?=&gt;  ('+'^|'-'^) e_[2]
+         | {2 &gt;= _p}?=&gt;  '*'^ e_[3]
+         | {4 &gt;= _p}?=&gt; '.'^ ID
+       )*
+   ;
+e_primary
+    :    '-'^ e_[3]
+	| INT
+	| ID
+    ;
+
+here are some sample input-output pairs using my test rig; input text to trees:
+
+3+a.b 		(+ 3 (. a b))
+a.b+3		(+ (. a b) 3)
+a.b+3*4		(+ (. a b) (* 3 4))
+-b * c		(* (- b) c)
+a + -b * c		(+ a (* (- b) c))
+
+I have to  get the  left vs right associativity in still, but I am encouraged by these early results. This translation results in a massive space reduction in the generated parsers over the typical 20-level chain of rules for arithmetic expression parsing. It should also prove incredibly fast in comparison. For example, the standard solution requires 20 method calls to match an integer vs 1 or 2 here.
+
+And, oh yea, it will actually work for C declarators too :)
+
+declarator
+        : '*' declarator
+        / declarator '[' e ']'
+        / declarator '[' ']' 
+        / declarator '(' ')'
+        / '(' declarator ')'
+        / ID
+        ; 
+
+ter
+</PRE>
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="040829.html">[antlr-interest] Best way to set up lexer jUnit tests
+</A></li>
+	<LI>Next message: <A HREF="040832.html">[antlr-interest] left-recursive expression rule prototype
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40830">[ date ]</a>
+              <a href="thread.html#40830">[ thread ]</a>
+              <a href="subject.html#40830">[ subject ]</a>
+              <a href="author.html#40830">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

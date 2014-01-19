@@ -1,0 +1,157 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Revisited: Ending line/column of a token
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Revisited%3A%20Ending%20line/column%20of%20a%20token&In-Reply-To=%3C20121105074643.4b1ba6f3%40philo%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="045613.html">
+   <LINK REL="Next"  HREF="045612.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Revisited: Ending line/column of a token</H1>
+    <B>Peter S. May</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Revisited%3A%20Ending%20line/column%20of%20a%20token&In-Reply-To=%3C20121105074643.4b1ba6f3%40philo%3E"
+       TITLE="[antlr-interest] Revisited: Ending line/column of a token">me at psmay.com
+       </A><BR>
+    <I>Mon Nov  5 04:46:43 PST 2012</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="045613.html">[antlr-interest] Revisited: Ending line/column of a token
+</A></li>
+        <LI>Next message: <A HREF="045612.html">[antlr-interest] grammar of EBNF
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#45614">[ date ]</a>
+              <a href="thread.html#45614">[ thread ]</a>
+              <a href="subject.html#45614">[ subject ]</a>
+              <a href="author.html#45614">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>The offsets table is an interesting idea. Where (in what method) do you
+record the offsets?
+
+(In the case of my project, the token shrinking would be premature
+optimization. But the table part is intriguing.)
+
+On Mon, 5 Nov 2012 03:32:40 +0000
+Sam Harwell &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">sam at tunnelvisionlabs.com</A>&gt; wrote:
+
+&gt;<i> I keep an array (int[]) of line start offsets - offsets[i] is the
+</I>&gt;<i> index in the input stream of the first character on line i. A binary
+</I>&gt;<i> search allows the lookup of line/column information for any index in
+</I>&gt;<i> O(log n) time. If you also remove the line/column numbers stored in
+</I>&gt;<i> the Token implementation, every token shrinks in size too.
+</I>&gt;<i> 
+</I>&gt;<i> --
+</I>&gt;<i> Sam Harwell
+</I>&gt;<i> Owner, Lead Developer
+</I>&gt;<i> <A HREF="http://tunnelvisionlabs.com">http://tunnelvisionlabs.com</A>
+</I>&gt;<i> 
+</I>&gt;<i> -----Original Message-----
+</I>&gt;<i> From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>
+</I>&gt;<i> [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Peter S. May
+</I>&gt;<i> Sent: Sunday, November 04, 2012 8:47 PM To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> Subject: [antlr-interest] Revisited: Ending line/column of a token
+</I>&gt;<i> 
+</I>&gt;<i> Hiya, folks&#8212;
+</I>&gt;<i> 
+</I>&gt;<i> About a year ago a question was brought up regarding recovering the
+</I>&gt;<i> final (as well as the initial) line and column of a token to make it
+</I>&gt;<i> available e.g. to an AST or an action, and that it's undesirable to
+</I>&gt;<i> have to resort to counting characters and newlines:
+</I>&gt;<i> 
+</I>&gt;<i> <A HREF="http://www.antlr.org/pipermail/antlr-interest/2011-October/043116.html">http://www.antlr.org/pipermail/antlr-interest/2011-October/043116.html</A>
+</I>&gt;<i> 
+</I>&gt;<i> It appears as if nobody ever answered.
+</I>&gt;<i> 
+</I>&gt;<i> The workaround I'm currently pursuing is promising but still somewhat
+</I>&gt;<i> heinous: For any lexer rule that might contain newlines (multi-line
+</I>&gt;<i> strings/comments/et c.), instead of completing normally, a token is
+</I>&gt;<i> emitted containing the text proper followed by an artificial,
+</I>&gt;<i> zero-width &quot;EndFinder&quot; token.
+</I>&gt;<i> 
+</I>&gt;<i> The basic mechanism is based on the multi-emit lexer described at
+</I>&gt;<i> <A HREF="http://www.antlr.org/wiki/pages/viewpage.action?pageId=3604497.">http://www.antlr.org/wiki/pages/viewpage.action?pageId=3604497.</A> A
+</I>&gt;<i> zero-width fragment rule is forced into existence as an actual type
+</I>&gt;<i> in a manner similar to this:
+</I>&gt;<i> 
+</I>&gt;<i> 	fragment EndFinder : ; // zero-width
+</I>&gt;<i> 	
+</I>&gt;<i> 	fragment SomeMultiLineThingText :
+</I>&gt;<i> 		'&lt;&lt;'
+</I>&gt;<i> 		( options {greedy=false;} : . )*
+</I>&gt;<i> 		'&gt;&gt;'
+</I>&gt;<i> 		;
+</I>&gt;<i> 	
+</I>&gt;<i> 	SomeMultiLineThing : t=SomeMultiLineThingText z=EndFinder
+</I>&gt;<i> 		{
+</I>&gt;<i> 			// The setType()s are necessary for
+</I>&gt;<i> 			// fragment-originated tokens, so
+</I>&gt;<i> 			// I gather
+</I>&gt;<i> 			$t.setType(SomeMultiLineThing);
+</I>&gt;<i> 			emit($t);
+</I>&gt;<i> 			$z.setType(EndFinder);
+</I>&gt;<i> 			emit($z);
+</I>&gt;<i> 		}
+</I>&gt;<i> 		;
+</I>&gt;<i> 
+</I>&gt;<i> And it actually seems to work, which surprised me. The unfortunate
+</I>&gt;<i> side effect is that each parser rule using one of these has to match
+</I>&gt;<i> two tokens where it would be more obvious to match just one:
+</I>&gt;<i> 
+</I>&gt;<i> 	someMultiLineThing : t=SomeMultiLineThing z=EndFinder
+</I>&gt;<i> 		{
+</I>&gt;<i> 			// ...
+</I>&gt;<i> 			// $t.line and $t.pos are at the start
+</I>&gt;<i> 			// $z.line and $z.pos are at the end
+</I>&gt;<i> 			// ...
+</I>&gt;<i> 		}
+</I>&gt;<i> 		;
+</I>&gt;<i> 
+</I>&gt;<i> So my question now is this: Is there a &quot;right&quot;, or at least less
+</I>&gt;<i> brain-damaged, way to accomplish the same thing?
+</I>&gt;<i> 
+</I>&gt;<i> Thanks, and enjoy
+</I>&gt;<i> PSM
+</I>&gt;<i> 
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe:
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="045613.html">[antlr-interest] Revisited: Ending line/column of a token
+</A></li>
+	<LI>Next message: <A HREF="045612.html">[antlr-interest] grammar of EBNF
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#45614">[ date ]</a>
+              <a href="thread.html#45614">[ thread ]</a>
+              <a href="subject.html#45614">[ subject ]</a>
+              <a href="author.html#45614">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

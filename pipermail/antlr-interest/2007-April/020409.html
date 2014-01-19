@@ -1,0 +1,178 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] how to let parser control lexer state.
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20how%20to%20let%20parser%20control%20lexer%20state.&In-Reply-To=%3C944273.21772.qm%40web55907.mail.re3.yahoo.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="020420.html">
+   <LINK REL="Next"  HREF="020410.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] how to let parser control lexer state.</H1>
+    <B>Loring Craymer</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20how%20to%20let%20parser%20control%20lexer%20state.&In-Reply-To=%3C944273.21772.qm%40web55907.mail.re3.yahoo.com%3E"
+       TITLE="[antlr-interest] how to let parser control lexer state.">lgcraymer at yahoo.com
+       </A><BR>
+    <I>Fri Apr 27 23:31:45 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="020420.html">[antlr-interest] how to let parser control lexer state.
+</A></li>
+        <LI>Next message: <A HREF="020410.html">[antlr-interest] how to let parser control lexer state.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#20409">[ date ]</a>
+              <a href="thread.html#20409">[ thread ]</a>
+              <a href="subject.html#20409">[ subject ]</a>
+              <a href="author.html#20409">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>You are correct; I hadn't been aware of heredoc.  It
+is still not a problem that needs tieing parser and
+lexer together.  Instead, you need a lexer rule that
+either matches a heredoc or returns &quot;&lt;&lt;&quot;.  Something
+like (ANTLR 2 version:  that could be made to work.)
+
+SHIFT
+    :
+    &quot;&lt;&lt;&quot;
+    (  (HEREDOC)=&gt; HEREDOC { _ttype = HEREDOC; }
+    |
+    )
+    ;
+
+protected
+HEREDOC
+    :
+    DOCTEXT
+    { capture doc string here in function returning
+true }?
+    ( ~'\n' )+ '\n'
+    { mark start of string here in function returning
+true }?
+    LINES
+    ;
+
+protected
+LINES
+    :
+    (ENDTEXT)=&gt; DOCTEXT
+    |  (~'\n')+ '\n' LINES
+    ;
+
+ENDTEXT
+    :
+    { mark text start in function returning true}?
+    DOCTEXT
+    { check if text matches text in function }?
+    '\n'
+    ;
+
+protected
+DOCTEXT
+    :
+    ('a' .. 'z' | 'A' .. 'Z')+
+    ;
+
+Very ugly; most of the sempreds are actions which must
+be evaluated, but would not otherwise be inside of a
+synpred.  Alternatively, all of the HEREDOC mechanism
+could be in a handwritten parse routine (returning
+true or false and setting token type if true is
+returned:
+
+SHIFT
+    :
+    &quot;&lt;&lt;&quot;
+    (    { heredoc() }? .
+    |
+    )
+    ;
+
+This second aproach should be workable in ANTLR 3;
+note that heredoc() unwinds one character so that
+antlr can match it as a wildcard--that may be
+necessary.
+
+Nasty problem.  It is amazing how often really bad
+ideas are adopted.
+
+--Loring
+
+
+--- David Holroyd &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">dave at badgers-in-foil.co.uk</A>&gt; wrote:
+
+&gt;<i> On Fri, Apr 27, 2007 at 10:42:24AM -0700, Loring
+</I>&gt;<i> Craymer wrote:
+</I>&gt;<i> &gt; That's what semantic predicates (in the parser)
+</I>&gt;<i> are
+</I>&gt;<i> &gt; for--there are no lexical issues involved in this
+</I>&gt;<i> &gt; case.  You want to do the symbol table lookup and
+</I>&gt;<i> test
+</I>&gt;<i> &gt; in a predicate.
+</I>&gt;<i> 
+</I>&gt;<i> Here-docs are a lexing problem, I think -- content
+</I>&gt;<i> on subsequent lines
+</I>&gt;<i> must not be interpreted with normal lexer rules
+</I>&gt;<i> until the document
+</I>&gt;<i> terminator is seen..?
+</I>&gt;<i> 
+</I>&gt;<i> &gt; --- femtowin1 &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">femtowin1 at gmail.com</A>&gt; wrote:
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; &gt; Hi all, in antlr3, can parser control lexer
+</I>&gt;<i> state
+</I>&gt;<i> &gt; &gt; and decide how lexer lexing? some grammar has
+</I>&gt;<i> &gt; &gt; ambiguity
+</I>&gt;<i> &gt; &gt; decided upon by parser knowledge.
+</I>&gt;<i> &gt; &gt;   for ruby grammar &lt;&lt;
+</I>&gt;<i> &gt; &gt; x &lt;&lt; 1
+</I>&gt;<i> &gt; &gt; test
+</I>&gt;<i> &gt; &gt; 1
+</I>&gt;<i> &gt; &gt; if x is a variable, then &lt;&lt; is shift operator,
+</I>&gt;<i> &gt; &gt; otherwise it is a heredoc. so lexing must know
+</I>&gt;<i> &gt; &gt; from the symbol table whether x has been defined
+</I>&gt;<i> &gt; &gt; beforehand. But current antlrv3 implementation,
+</I>&gt;<i> &gt; &gt; lexer lexing to a constant token stream, and
+</I>&gt;<i> feed
+</I>&gt;<i> &gt; &gt; it into parser, so can't achieve this effect.
+</I>&gt;<i> 
+</I>&gt;<i> -- 
+</I>&gt;<i> <A HREF="http://david.holroyd.me.uk/">http://david.holroyd.me.uk/</A>
+</I>&gt;<i> 
+</I>
+
+__________________________________________________
+Do You Yahoo!?
+Tired of spam?  Yahoo! Mail has the best spam protection around 
+<A HREF="http://mail.yahoo.com">http://mail.yahoo.com</A> 
+</PRE>
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="020420.html">[antlr-interest] how to let parser control lexer state.
+</A></li>
+	<LI>Next message: <A HREF="020410.html">[antlr-interest] how to let parser control lexer state.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#20409">[ date ]</a>
+              <a href="thread.html#20409">[ thread ]</a>
+              <a href="subject.html#20409">[ subject ]</a>
+              <a href="author.html#20409">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

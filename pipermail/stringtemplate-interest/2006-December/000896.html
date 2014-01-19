@@ -1,0 +1,388 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [stringtemplate-interest] Does StringTemplate	support	components?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:stringtemplate-interest%40antlr.org?Subject=%5Bstringtemplate-interest%5D%20Does%20StringTemplate%0A%09support%09components%3F&In-Reply-To=4593F354.6060806%40videx.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000894.html">
+   <LINK REL="Next"  HREF="000885.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[stringtemplate-interest] Does StringTemplate	support	components?</H1>
+    <B>Bill Venners</B> 
+    <A HREF="mailto:stringtemplate-interest%40antlr.org?Subject=%5Bstringtemplate-interest%5D%20Does%20StringTemplate%0A%09support%09components%3F&In-Reply-To=4593F354.6060806%40videx.com"
+       TITLE="[stringtemplate-interest] Does StringTemplate	support	components?">bv-svp at artima.com
+       </A><BR>
+    <I>Thu Dec 28 09:10:44 PST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000894.html">[stringtemplate-interest] Does StringTemplate	support	components?
+</A></li>
+        <LI>Next message: <A HREF="000885.html">[stringtemplate-interest] Generating big documents
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#896">[ date ]</a>
+              <a href="thread.html#896">[ thread ]</a>
+              <a href="subject.html#896">[ subject ]</a>
+              <a href="author.html#896">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Adam,
+
+I think we're on the same wavelength, but let me clarify just to be  
+sure.
+
+On Dec 28, 2006, at 8:39 AM, Adam Bennett wrote:
+
+&gt;<i> So let me see if I understand you.  You would instantiate the root  
+</I>&gt;<i> component object and call render like so:
+</I>&gt;<i>
+</I>&gt;<i> new AccountsPage(...parameters..).render(outputstream);
+</I>&gt;<i>
+</I>The Java programmers would never call render in their code, but I'm  
+not sure if that's what you meant here. The template designers would  
+never call it either, just mention the attribute name of the object  
+that has the render method in their template. The template engine  
+would call render if it discovers the object implements the  
+appropriate interface, else it would call toString.
+
+&gt;<i> And the render would look something like:
+</I>&gt;<i> class AccountsPage implements STRenderable
+</I>&gt;<i> {
+</I>&gt;<i>     private AccountBalanceBox acb = new AccountBalanceBox(...  
+</I>&gt;<i> parameters...);
+</I>&gt;<i> ...
+</I>&gt;<i> public void render(Writer out)
+</I>&gt;<i> {
+</I>&gt;<i>     StringTemplate st = ... acounts template file
+</I>&gt;<i>     st.setAttribute(&quot;balanceBox&quot;, acb);
+</I>&gt;<i>     st.write(out);
+</I>&gt;<i> }
+</I>&gt;<i> ...
+</I>&gt;<i> }
+</I>&gt;<i>
+</I>&gt;<i> Where AccountBalanceBox is a child component that has a similar  
+</I>&gt;<i> render(Writer) method.  And you purpose that ST knows how to render  
+</I>&gt;<i> such &quot;STRenderable&quot; objects using the output stream rather than  
+</I>&gt;<i> toString().  Is that it, Bill?  Sounds like a great efficiency over  
+</I>&gt;<i> toString().
+</I>&gt;<i>
+</I>That's pretty close. What I have is more like this:
+
+public interface View {
+     void render(Writer out);
+}
+
+public class AccountsPage implements View {
+
+      private AccountBalanceBox accountBalanceBox;
+      private Locale locale;
+      ....
+
+     public AccountsPage(Locale locale, ..., AccountBalanceBox  
+accountBalanceBox, ...) {
+
+         ....
+         if (accountBalanceBox == null) {
+             throw new NullPointerException(&quot;accountBalanceBox was  
+null&quot;);
+         }
+         ....
+         this.locale = locale;
+         this.accountBalanceBox = accountBalanceBox;
+         ....
+     }
+
+     public void render(Writer out) {
+
+         StringTemplateGroup group = new StringTemplateGroup(&quot;st&quot;,  
+ST_FILES_ROOT);
+         StringTemplate dialog = group.getInstanceOf(&quot;dialog&quot;);
+         dialog.setAttribute(&quot;headline&quot;, headline);
+         dialog.setAttribute(&quot;logofilename&quot;, logofilename);
+         ...
+         dialog.setAttribute(&quot;accountBalanceBox&quot;, accountBalanceBox);
+         ...
+
+         try {
+
+             dialog.write(new NoIndentWriter(out));
+         }
+         catch (IOException e) {
+             throw new RuntimeException(e);
+         }
+     }
+}
+
+So people have to create an AccountBalanceBox to pass to the  
+constructor of AccountPage. Can't create an AccountPage without one,  
+and that AccountBalanceBox also implements View with a render method  
+that does StringTemplate stuff. I would like to generate these View  
+classes from a more concise DSL, so that render method would always  
+do ST stuff. In practice it seems that it is just as safe to define a  
+View or Renderable interface or something, and if an object passed to  
+setAttribute implements that interface, call its render method rather  
+than toString. Because as Terence points out in some of his papers,  
+you could put anything into toString too, not just String generation.
+
+Anyway, I can see there is some flexibility lost to template  
+designers by pushing them towards a component approach like this, and  
+I'm wondering if in practice that is a bad thing? Terence designed ST  
+from real world experience, so if I went down this path I might just  
+discover the same problems he already discovered.
+
+The other thing I'm wondering, though, is why wouldn't I also want to  
+have the option to suck in the relevant templates at build time and  
+generate print statements in the render method instead of calling ST  
+to do it dynamically (like how JSPs are compiled, but without all of  
+the ST-like restrictions on what the template can do)?  I figured I  
+could take each localized and themed version and make a separate  
+private helper method in the class, and then have render call the  
+appropriate one. Or have both options. If I do that, then I really  
+reduce the flexibility. The template DSL becomes a static language  
+not a dynamic one. But again I'm not sure if in practice that may not  
+be better. I could still interpret it during development, or even  
+during deployment if I want by checking every so often for updated  
+template files. But I would be able to know at build time that every  
+name used in the template is indeed a variable declared in the  
+corresponding View class.
+
+Bill
+
+&gt;<i>
+</I>&gt;<i> Bill Venners wrote:
+</I>&gt;&gt;<i> Hello, One more note on components. I'm aware I can call toString 
+</I>&gt;&gt;<i> () on a component object, and get the behavior I described. But  
+</I>&gt;&gt;<i> that of course means you build Strings in memory first and then  
+</I>&gt;&gt;<i> write them to the output stream. It would be nice if I could write  
+</I>&gt;&gt;<i> it to the output stream to begin with, which is why I want to be  
+</I>&gt;&gt;<i> able to call render (Writer out). (I believe this still holds to  
+</I>&gt;&gt;<i> ST's philosophy of separation of model and view, so long as  
+</I>&gt;&gt;<i> &lt;component&gt;.render(Writer out) only renders another template with  
+</I>&gt;&gt;<i> data already assembled by that component.) I did notice somewhere  
+</I>&gt;&gt;<i> in the ST documentation that this is possible with ST itself, but  
+</I>&gt;&gt;<i> as far as I know, only if you pass a tree of data-holders to an  
+</I>&gt;&gt;<i> outermost ST template that then runs the show, likely by invoking  
+</I>&gt;&gt;<i> templates in a structure similar to the data-holder tree's  
+</I>&gt;&gt;<i> structure. And I meant Terence, not Terrence. Sorry. Bill On Dec  
+</I>&gt;&gt;<i> 27, 2006, at 4:45 PM, Bill Venners wrote:
+</I>&gt;&gt;&gt;<i> Hello, I like the idea of components as well, but not the kind  
+</I>&gt;&gt;&gt;<i> you described originally whereby you call Java code to get  
+</I>&gt;&gt;&gt;<i> attributes. I have a notion of a view is that it is a tree of  
+</I>&gt;&gt;&gt;<i> component objects, each of which encapsulates data and the  
+</I>&gt;&gt;&gt;<i> ability to render that data in various themes and locales. So a  
+</I>&gt;&gt;&gt;<i> component would be a Java class that requires all data needed by  
+</I>&gt;&gt;&gt;<i> its template(s) to be passed to its constructor up front, and it  
+</I>&gt;&gt;&gt;<i> would store that data in instance variables. When someone calls  
+</I>&gt;&gt;&gt;<i> its render(Writer out) method, it would render the appropriate  
+</I>&gt;&gt;&gt;<i> template with that instance data. Each component would do the  
+</I>&gt;&gt;&gt;<i> enforcement of the separation of model and view that I really  
+</I>&gt;&gt;&gt;<i> like about ST. What ST pushed me towards is having those  
+</I>&gt;&gt;&gt;<i> components just be holders of data. So the Java programmer would  
+</I>&gt;&gt;&gt;<i> build up a tree of these data- holding components. The template  
+</I>&gt;&gt;&gt;<i> designers would create a conceptual tree of templates in a way,  
+</I>&gt;&gt;&gt;<i> by having templates refer to templates. Often the template tree  
+</I>&gt;&gt;&gt;<i> will have the same structure as the data- holder objects tree. So  
+</I>&gt;&gt;&gt;<i> why not let each component keep track of its own data and  
+</I>&gt;&gt;&gt;<i> templates, and do the rendering of itself. What I'd need in ST is  
+</I>&gt;&gt;&gt;<i> a way to call render() on components I suppose, and I don't  
+</I>&gt;&gt;&gt;<i> believe I have a way to do that in ST, because it would open up  
+</I>&gt;&gt;&gt;<i> the possibility of calling any arbitrary Java code. The other  
+</I>&gt;&gt;&gt;<i> thing that bugs me a bit is that I can't know at compile time if  
+</I>&gt;&gt;&gt;<i> I'm using a parameter in a template that doesn't exist in the  
+</I>&gt;&gt;&gt;<i> data. I'm tempted towards the JSP approach of taking some  
+</I>&gt;&gt;&gt;<i> template and translating it into print statements that could be  
+</I>&gt;&gt;&gt;<i> called by the render method of component objects. These would not  
+</I>&gt;&gt;&gt;<i> compile if there were naming problems. I know that Terrence came  
+</I>&gt;&gt;&gt;<i> to the design of ST while solving real problems of web pages and  
+</I>&gt;&gt;&gt;<i> code generation. Is there any reason why doing such a component  
+</I>&gt;&gt;&gt;<i> approach might be less useful in practice than the ST approach?  
+</I>&gt;&gt;&gt;<i> Thanks. Bill ---- Bill Venners President Artima, Inc. http:// 
+</I>&gt;&gt;&gt;<i> www.artima.com On Dec 27, 2006, at 10:28 AM, Adam Bennett wrote:
+</I>&gt;&gt;&gt;&gt;<i> Thanks for answering my question, John. Let me summarize what I  
+</I>&gt;&gt;&gt;&gt;<i> heard: --- StringTemplate does not support &quot;componentization&quot; if  
+</I>&gt;&gt;&gt;&gt;<i> we define a single component as a combination of .java code and  
+</I>&gt;&gt;&gt;&gt;<i> a .st template that is independent of the enclosing template  
+</I>&gt;&gt;&gt;&gt;<i> that invoked it. This lack of support is intentional because it  
+</I>&gt;&gt;&gt;&gt;<i> creates a situation where the view is pulling data from the  
+</I>&gt;&gt;&gt;&gt;<i> model which is an anti- pattern that StringTemplate wishes to  
+</I>&gt;&gt;&gt;&gt;<i> prevent. --- Fair enough. Even so I still find the idea of  
+</I>&gt;&gt;&gt;&gt;<i> componentization attractive. I have this dreamy vision of  
+</I>&gt;&gt;&gt;&gt;<i> programmers cranking out reusable components and web designers  
+</I>&gt;&gt;&gt;&gt;<i> mixing and matching them. But perhaps it is not a worthwhile  
+</I>&gt;&gt;&gt;&gt;<i> goal. Although I am not too complelled by the order of  
+</I>&gt;&gt;&gt;&gt;<i> invocation argument, I can now see at least one short coming of  
+</I>&gt;&gt;&gt;&gt;<i> this sort of componentization: exceptions. If the web server  
+</I>&gt;&gt;&gt;&gt;<i> begins to evaluate a template and stream it to the client what  
+</I>&gt;&gt;&gt;&gt;<i> happens if there is an exception while evaluating a sub  
+</I>&gt;&gt;&gt;&gt;<i> component? At this point the response is committed so we can't  
+</I>&gt;&gt;&gt;&gt;<i> redirect them to an error page. If we had gotten all the data up  
+</I>&gt;&gt;&gt;&gt;<i> front as StringTemplate requires this would not be a problem.  
+</I>&gt;&gt;&gt;&gt;<i> Thanks enlightening me. - Adam Bennett From: John Snyders  
+</I>&gt;&gt;&gt;&gt;<i> [mailto:<A HREF="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">jjsnyders at rcn.com</A>] To: Adam Bennett  
+</I>&gt;&gt;&gt;&gt;<i> [mailto:<A HREF="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">adamb at videx.com</A>], stringtemplate- <A HREF="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">interest at antlr.org</A>  
+</I>&gt;&gt;&gt;&gt;<i> Sent: Sat, 23 Dec 2006 20:54:42 -0800 Subject: RE:  
+</I>&gt;&gt;&gt;&gt;<i> [stringtemplate-interest]Does StringTemplate support components?  
+</I>&gt;&gt;&gt;&gt;<i> I'll try to answer. -----Original Message----- From:  
+</I>&gt;&gt;&gt;&gt;<i> <A HREF="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">stringtemplate-interest-bounces at antlr.org</A> [mailto:stringtemplate- 
+</I>&gt;&gt;&gt;&gt;<i> <A HREF="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">interest-bounces at antlr.org</A>]On Behalf Of Adam Bennett Sent:  
+</I>&gt;&gt;&gt;&gt;<i> Saturday, December 23, 2006 2:49 AM To: stringtemplate- 
+</I>&gt;&gt;&gt;&gt;<i> <A HREF="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">interest at antlr.org</A> Subject: Re: [stringtemplate-interest]Does  
+</I>&gt;&gt;&gt;&gt;<i> StringTemplate support components? I really appreciate all the  
+</I>&gt;&gt;&gt;&gt;<i> suggestions but I haven't heard the answer yet. I'll try to  
+</I>&gt;&gt;&gt;&gt;<i> reformulate my the question: Question 1) From my reading, it  
+</I>&gt;&gt;&gt;&gt;<i> appears that StringTempate supports calling other templates as  
+</I>&gt;&gt;&gt;&gt;<i> if it were a subroutine, right? [John Snyders] Correct I infer  
+</I>&gt;&gt;&gt;&gt;<i> this from the &quot;Expressions&quot; document where it is talking about  
+</I>&gt;&gt;&gt;&gt;<i> &quot;Template References&quot;: &quot;the enclosing page template would  
+</I>&gt;&gt;&gt;&gt;<i> automatically create an instance of the referenced template and  
+</I>&gt;&gt;&gt;&gt;<i> insert it&quot; What I am focusing on here is &quot;automatically create  
+</I>&gt;&gt;&gt;&gt;<i> an instance&quot;. Beautiful. Less coding. Question 2) The  
+</I>&gt;&gt;&gt;&gt;<i> documentation goes on to describe 2 ways of getting the  
+</I>&gt;&gt;&gt;&gt;<i> necessary attributes to the subroutine template. 1) &quot;Accessing  
+</I>&gt;&gt;&gt;&gt;<i> Attributes Of Enclosing Template&quot; [John Snyders] In a group file  
+</I>&gt;&gt;&gt;&gt;<i> the templates must declare all the attributes they use so this  
+</I>&gt;&gt;&gt;&gt;<i> really applies to the non-group (do these have a name?) .st  
+</I>&gt;&gt;&gt;&gt;<i> templates. Essentially the attributes defined by the controller  
+</I>&gt;&gt;&gt;&gt;<i> are globally available to all templates (unless hidden by an  
+</I>&gt;&gt;&gt;&gt;<i> argument explicitly passed to the template in the call). 2)  
+</I>&gt;&gt;&gt;&gt;<i> &quot;Passing Parameters To Another Template&quot; [John Snyders] This can  
+</I>&gt;&gt;&gt;&gt;<i> be done with templates in .st or .stg files Are there any other  
+</I>&gt;&gt;&gt;&gt;<i> ways? [John Snyders] Not really You see, what I am looking for  
+</I>&gt;&gt;&gt;&gt;<i> is a way to help the web designers work independently of the  
+</I>&gt;&gt;&gt;&gt;<i> programmers. Here's a scenario to describe what I mean. Let's  
+</I>&gt;&gt;&gt;&gt;<i> say that our web application handles the URL &quot;/OurWebApp/account/ 
+</I>&gt;&gt;&gt;&gt;<i> summary.page&quot; with Java code like this: StringTemplate st =  
+</I>&gt;&gt;&gt;&gt;<i> group.GetInstanceOf(&quot;account/summary.st&quot;); ... do some database  
+</I>&gt;&gt;&gt;&gt;<i> queries st.setAttribute(&quot;foo&quot;, queryResult1); st.setAttribute 
+</I>&gt;&gt;&gt;&gt;<i> (&quot;bar&quot;, queryResult2); ... render the template and send it to  
+</I>&gt;&gt;&gt;&gt;<i> the client browser The above code is maintained by the  
+</I>&gt;&gt;&gt;&gt;<i> programmers. The web designers can tweak the template text to  
+</I>&gt;&gt;&gt;&gt;<i> their hearts content. Initially it looks like: &lt;html&gt; &lt;body&gt; ...  
+</I>&gt;&gt;&gt;&gt;<i> $foo$ $bar$ ... &lt;/body&gt; &lt;/html&gt;  But wait! The web designer is  
+</I>&gt;&gt;&gt;&gt;<i> changes her [artistic] mind and decides to take the summary page  
+</I>&gt;&gt;&gt;&gt;<i> the next level. She wants to show the users account balance so  
+</I>&gt;&gt;&gt;&gt;<i> she makes a call to the accountBalanceBox template. &lt;html&gt;  
+</I>&gt;&gt;&gt;&gt;<i> &lt;body&gt; ... $foo$ $bar$ $accountBalanceBox()$ ... &lt;/body&gt; &lt;/html&gt;  
+</I>&gt;&gt;&gt;&gt;<i> [John Snyders] But this is not a presentation change! The web  
+</I>&gt;&gt;&gt;&gt;<i> designer is responsible for presentation. The content of the  
+</I>&gt;&gt;&gt;&gt;<i> page (the foo and bar and account balance) are the  
+</I>&gt;&gt;&gt;&gt;<i> responsibility of the product owner which may be the customer  
+</I>&gt;&gt;&gt;&gt;<i> and it is up to the web designer and programmer together to  
+</I>&gt;&gt;&gt;&gt;<i> implement. In other words this is a change to the data model  
+</I>&gt;&gt;&gt;&gt;<i> available to the page(s). But accountBalanceBox needs a $dollars 
+</I>&gt;&gt;&gt;&gt;<i> $ attribute. This can only be determined by getting the user ID  
+</I>&gt;&gt;&gt;&gt;<i> from the HttpSession and then querying the database for it. But  
+</I>&gt;&gt;&gt;&gt;<i> that's the job of the programmer. If we have support for true  
+</I>&gt;&gt;&gt;&gt;<i> componentization then the Java code that handles summary.page  
+</I>&gt;&gt;&gt;&gt;<i> should NOT need to set the $dollars$ attribute. The general  
+</I>&gt;&gt;&gt;&gt;<i> principle here is separation of concerns (http:// 
+</I>&gt;&gt;&gt;&gt;<i> en.wikipedia.org/wiki/Separation_of_concerns). If  
+</I>&gt;&gt;&gt;&gt;<i> accountBalanceBox is made to be a logical component, which  
+</I>&gt;&gt;&gt;&gt;<i> includes both a template as well as some Java code, it gives web  
+</I>&gt;&gt;&gt;&gt;<i> designers full freedom to mix and match the components that have  
+</I>&gt;&gt;&gt;&gt;<i> been provided by the programmers. [John Snyders] but from the  
+</I>&gt;&gt;&gt;&gt;<i> HTML/HTTP point of view summary.page is monolithic and this is  
+</I>&gt;&gt;&gt;&gt;<i> what ST must generate. You can have one template for the overall  
+</I>&gt;&gt;&gt;&gt;<i> page and another seperate template for the accountBalanceBox.  
+</I>&gt;&gt;&gt;&gt;<i> You can have component code for getting foo and bar and a  
+</I>&gt;&gt;&gt;&gt;<i> seperate component for getting the account balance but there is  
+</I>&gt;&gt;&gt;&gt;<i> just one HTTP request for the summary page and one HTML reply  
+</I>&gt;&gt;&gt;&gt;<i> that includes both information. I think one of the suggestions  
+</I>&gt;&gt;&gt;&gt;<i> was to have the controller call the account balance component  
+</I>&gt;&gt;&gt;&gt;<i> which would invoke its own ST template with its own model and  
+</I>&gt;&gt;&gt;&gt;<i> return a string. That string would then be passed as an  
+</I>&gt;&gt;&gt;&gt;<i> attribute to the overall page template. I don't like doing it  
+</I>&gt;&gt;&gt;&gt;<i> this way because I think that the page should be generated with  
+</I>&gt;&gt;&gt;&gt;<i> one call to string template. My feeling is that the controller  
+</I>&gt;&gt;&gt;&gt;<i> needs to know about all the model data that a given page needs.  
+</I>&gt;&gt;&gt;&gt;<i> It may not know the details of what is in the model but it knows  
+</I>&gt;&gt;&gt;&gt;<i> which components to call to get it. So it calls one component to  
+</I>&gt;&gt;&gt;&gt;<i> get the foo and bar then calls another to get the account  
+</I>&gt;&gt;&gt;&gt;<i> balance. These components contribute to the model in the form of  
+</I>&gt;&gt;&gt;&gt;<i> attributes. I have been using ST for generating the presentation  
+</I>&gt;&gt;&gt;&gt;<i> of a web app and this is more or less how I do it. I started  
+</I>&gt;&gt;&gt;&gt;<i> with the non-group templates but quickly moved to the group  
+</I>&gt;&gt;&gt;&gt;<i> format. A concern may be a large number of arguments to pass  
+</I>&gt;&gt;&gt;&gt;<i> around. There are 2 things that can help here. One is that when  
+</I>&gt;&gt;&gt;&gt;<i> calling a template you can use ... to have attributes pass  
+</I>&gt;&gt;&gt;&gt;<i> through to called templates. The other is that attributes can  
+</I>&gt;&gt;&gt;&gt;<i> reference arbitrarily deeply nested object structure. So you  
+</I>&gt;&gt;&gt;&gt;<i> could have your top level template with a single argument called  
+</I>&gt;&gt;&gt;&gt;<i> model and have that object (or Map) contain all the different  
+</I>&gt;&gt;&gt;&gt;<i> parts of the model as children Ex: $model.foo$ $model.bar$  
+</I>&gt;&gt;&gt;&gt;<i> $accountBalanceBox(balance=model.balance,...)$ Some other  
+</I>&gt;&gt;&gt;&gt;<i> options (I have not tried these yet) to reduce interaction  
+</I>&gt;&gt;&gt;&gt;<i> between components: If using AJAX the request for the foo and  
+</I>&gt;&gt;&gt;&gt;<i> bar data may be totally different from the accountBalanceBox.  
+</I>&gt;&gt;&gt;&gt;<i> With AJAX much of the controller moves to the client. In the  
+</I>&gt;&gt;&gt;&gt;<i> extreme the dynamic part of the web app is just serving data and  
+</I>&gt;&gt;&gt;&gt;<i> there is no need for ST or any template engine. If you don't  
+</I>&gt;&gt;&gt;&gt;<i> like the controler knowing what parts of the model is needed for  
+</I>&gt;&gt;&gt;&gt;<i> a given page that information could be configured in an external  
+</I>&gt;&gt;&gt;&gt;<i> data file (like a struts tiles def) which the controler reads.  
+</I>&gt;&gt;&gt;&gt;<i> Then if the controler knows what to call to get model parts a,  
+</I>&gt;&gt;&gt;&gt;<i> b, and c the page designer can decide that the account summary  
+</I>&gt;&gt;&gt;&gt;<i> page needs a and b and the orders page needs b and c. So I think  
+</I>&gt;&gt;&gt;&gt;<i> the mechanism I am after is some sort of hook. As StringTemplate  
+</I>&gt;&gt;&gt;&gt;<i> encounters accountBalanceBox it calls my Java function which  
+</I>&gt;&gt;&gt;&gt;<i> gives me a chance to provide the necessary attributes. Such a  
+</I>&gt;&gt;&gt;&gt;<i> hook might look like this: void templatePreprocess 
+</I>&gt;&gt;&gt;&gt;<i> (StringTemplate st, StringTemplateContext context) { if  
+</I>&gt;&gt;&gt;&gt;<i> (st.getName().equals(&quot;accountBalanceBox&quot;)) { HttpSession session  
+</I>&gt;&gt;&gt;&gt;<i> = context.getAttribute(&quot;session&quot;); int userID =  
+</I>&gt;&gt;&gt;&gt;<i> session.getAttirbute(&quot;userID&quot;); st.setAttribute(&quot;dollars&quot;,  
+</I>&gt;&gt;&gt;&gt;<i> database.getBalance(userID)); return; } ... } Does such a  
+</I>&gt;&gt;&gt;&gt;<i> mechanism exist? [John Snyders] No, All model data must be given  
+</I>&gt;&gt;&gt;&gt;<i> to the template before it is invoked with toString (or write)  
+</I>&gt;&gt;&gt;&gt;<i> Section 7.1 of Enforcing Strict ModelView Separation in Template  
+</I>&gt;&gt;&gt;&gt;<i> Engines describes why pulling data from the template breaks  
+</I>&gt;&gt;&gt;&gt;<i> separation. Once you have more than one hook being called there  
+</I>&gt;&gt;&gt;&gt;<i> can be order dependent interactions that can cause problems. For  
+</I>&gt;&gt;&gt;&gt;<i> ages hook1 is called before hook2 and all is well. Then one day  
+</I>&gt;&gt;&gt;&gt;<i> the page designer moves things around and now hook2 is called  
+</I>&gt;&gt;&gt;&gt;<i> before hook1 and the code breaks. Perhaps you are now trying to  
+</I>&gt;&gt;&gt;&gt;<i> get something out of the session before it is there. In many  
+</I>&gt;&gt;&gt;&gt;<i> case there are no order dependencies but in general it is not  
+</I>&gt;&gt;&gt;&gt;<i> possible for the developer to defensively code so that the code  
+</I>&gt;&gt;&gt;&gt;<i> can be called in any order. Thanks much. - Adam I have been  
+</I>&gt;&gt;&gt;&gt;<i> using ST for a few months now for generating HTML. It takes some  
+</I>&gt;&gt;&gt;&gt;<i> getting used to but I like it better than what I had done in the  
+</I>&gt;&gt;&gt;&gt;<i> past which includes JSP and JSP/Struts.  -John  
+</I>&gt;&gt;&gt;&gt;<i> _______________________________________________ stringtemplate- 
+</I>&gt;&gt;&gt;&gt;<i> interest mailing list <A HREF="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">stringtemplate-interest at antlr.org</A> http:// 
+</I>&gt;&gt;&gt;&gt;<i> www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+</I>&gt;&gt;&gt;<i> _______________________________________________ stringtemplate- 
+</I>&gt;&gt;&gt;<i> interest mailing list <A HREF="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">stringtemplate-interest at antlr.org</A> http:// 
+</I>&gt;&gt;&gt;<i> www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+</I>&gt;&gt;<i> _______________________________________________ stringtemplate- 
+</I>&gt;&gt;<i> interest mailing list <A HREF="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">stringtemplate-interest at antlr.org</A> http:// 
+</I>&gt;&gt;<i> www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+</I>&gt;<i>
+</I>
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000894.html">[stringtemplate-interest] Does StringTemplate	support	components?
+</A></li>
+	<LI>Next message: <A HREF="000885.html">[stringtemplate-interest] Generating big documents
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#896">[ date ]</a>
+              <a href="thread.html#896">[ thread ]</a>
+              <a href="subject.html#896">[ subject ]</a>
+              <a href="author.html#896">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">More information about the stringtemplate-interest
+mailing list</a><br>
+</body></html>

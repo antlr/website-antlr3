@@ -1,0 +1,1959 @@
+From parrt at cs.usfca.edu  Tue Jul  5 18:55:54 2005
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Tue Jul  5 18:55:05 2005
+Subject: [stringtemplate-interest] Re: StringTemplate and code generation
+In-Reply-To: <e4015abf04120306185461533a@mail.gmail.com>
+References: <e4015abf04120306185461533a@mail.gmail.com>
+Message-ID: <F98A2F30-3836-4552-93D3-B491ED1920C9@cs.usfca.edu>
+
+On Dec 3, 2004, at 6:18 AM, Andr? N?ss wrote:
+
+Hi Andr?, I'm back to your questions finally.  Who says I forget bug  
+reports ;)  I think you'll like my answers too.
+
+> Looks good. But then I ran into some interesting challenges. Consider
+> the getSetMethod() template:
+>
+> getSetMethod() ::= <<
+>   public <it.javaDatatype> get<it.nameWordCased>() { return  
+> this.<it.name>; }
+>   public void set<it.nameWordCased>(<it.javaDatatype> <it.name>) {
+> this.<it.name> = <it.name>; }
+>
+>>>
+>>>
+>
+> If you look at this template it requests the attributes nameWordCased
+> and javaDatatype. None of these are fields in the Attribute class in
+> the model. I had to add them manually. Attribute.getJavaDatatype()
+> maps the EXPRESS type to it's java equivalent. (for example, LIST OF
+> STRING becomes String[]). The nameWordCased simply returns the name of
+> the attribute with it's first character uppercased, e.g. name -> Name
+> attributes -> Attributes.
+>
+> The problem is that I was hoping to generate code for other languages,
+> not just Java. To do that I was hoping that I could consider the
+> translation to language X as skin, so a new template group for that
+> language would be written, the model would remain the same. This is
+> clearly not possible because I have to add java specific methods such
+> as getJavaDatatype and getNameWordCased to the model. When I need to
+> generate C# code I will have getCSharpDatatype, for C++ I will have
+> getCPPDatatype, and so on. This is unfortunate.
+
+I have run into this myself recently with the ANTLR v3 code  
+generator.  I need to initialize local variables, but I need to know  
+the data type -> init value mapping that must be template specific  
+not part of the code.
+
+> I did find a way to do this in the template. The model representation
+> of String is STRING_TYPE (for reasons not important here). So
+> Attribute.getDatatype().getName() would return "STRING_TYPE" for a
+> string in the database schema. In the Java template I could therefore
+> write:
+>
+> declare() ::= "private <(("type" + <it.type.name>))() <it.name>;"
+>
+> typeSTRING_TYPE() ::= "String"
+
+This is very clever, but as you say unsatisfying.  There is a  
+solution using the new indirect field access operaiton similar to the  
+indirect template ref (name)().
+
+> Have you had similiar experiences when generating code? Have you found
+
+Yep!
+
+> better ways to solve this?
+
+yep!
+
+> The main issue here is the ability to plug
+> in the code generation for a new language fairly easily as the need
+> arises. I would love an approach that would require changes to the
+> template *only*,
+
+Yes!
+
+Ok, here's the answer.  We need a map defined in the template  
+something like this:
+
+returnTypeMap ::= ["int":"0", "float":"0.0", default:"null"]
+
+where I can say things like <returnTypeMap.int> to get "0" just like  
+a map you could pass in.  I sort of prefer the {..} syntax better but  
+I don't want to overload the syntax too much:
+
+returnTypeMap ::= {"int":"0", "float":"0.0", default:"null"}
+
+Actually Maybe {...} is better than [...] as I have a use for [...]  
+indexing perhaps.  Hmm...
+
+Anyway, if you have a type name in an attribute rather than a literal  
+like "int", you need to ask for the value of the attribute so it  
+evaluates right away and you can use it to look up the type name's  
+mapped value:
+
+<returnTypeMap.(typeName)>
+
+Not obvious at first, but makes perfect sense.
+
+Note the default value, if specified, would be the value returned if  
+nothing was found in the table.  THis is like an else clause.
+
+This is a way to do a mapping to a template not just a value.  I've  
+enhanced StringTemplate so that any string literals you have in the  
+template (as template args etc...) are actually templates.  So you  
+could do:
+
+formatter ::= ["user":"Name: <first> <last>",  
+"shortUser":"Name:<first>"]
+
+Then <formatter.user> would actually show the result of formatting a  
+first and last name.  Or the values could be template names  
+themselves.  You could use indirect template invocation (again with  
+the (...) early evaluation operator) to invoke that template:
+
+formatter ::= ["user":"userT", "shortUser":"shortUserT"]
+
+userT(first,last) ::= "Name: <first> <last>"
+shortUserT(first) ::= "Name: <first>"
+
+<(formatter.user)(first="Ter", last="Parr")>
+
+or even
+
+<(formatter.(foo))(first="Ter", last="Parr")>
+
+if foo is an attribute with either user or shortUser in it.
+
+Any comments before I implement?
+
+> A second problem I'm having is with some functions I need to generate.
+> The functions wrap database queries, and a database query can return
+> any datatype allowed by EXPRESS. This includes nested aggregates.
+> Because of this I need to
+>
+> I also found an issue with recursive templates that left me somewhat
+> stumped. Consider:
+> start() ::= <<
+>   <templateA(var="A")>
+>
+>>>
+>>>
+>
+> templateA(var) ::= <<
+>   IN A: <var>
+>   <templateB(var=var)>
+>
+>>>
+>>>
+>
+> templateB(var) ::= <<
+>   IN B:<var>
+>
+>>>
+>>>
+>
+> This outputs:
+> IN A: A
+> IN B:
+>
+> So the value of var is lost somewhere between A and B...
+
+This was a bug I fixed.  The foo(x=y) was not evaluating y in the  
+proper context.  Now it evals y in the context of the surrounding  
+template. :)
+
+> Finally I just have to mention something I'm sure others have
+> mentioned. StringTemplate implicitly calls get*() to retrieve
+> attribute values, but this clearly leaves a hole in the separation
+> enforcement as a get*() method can contain any sort of code. I've
+> personally never really understood the point of the javabean idiom
+> with getters and setters, and so far nobody has been able to convince
+> me that using setField("value") is better than field="value". But
+> that's just me, and I guess you've left this hole in there because it
+> follows the accepted convention.
+
+Correct...well, mostly it's by convention, but also because you need  
+a computation sometimes...a compromise.  I've added direct field  
+access now too :)
+
+> I Hope you found this interesting, and I'm looking forward to your  
+> response.
+
+Indeed. :)
+
+Ter
+--
+CS Professor & Grad Director, University of San Francisco
+Creator, ANTLR Parser Generator, http://www.antlr.org
+Cofounder, http://www.jguru.com
+
+From parrt at cs.usfca.edu  Wed Jul  6 19:55:43 2005
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Wed Jul  6 19:55:01 2005
+Subject: [stringtemplate-interest] added maps to ST :)
+Message-ID: <AAABB1A1-66E7-4191-9E55-B5442182854A@cs.usfca.edu>
+
+Hi,
+
+Getting closer to a 2.2 release (within 2 weeks for sure, which is  
+when I go to Asia).  I added maps:
+
+o Added maps to the group:
+
+<<
+typeInitMap ::= ["int"="0", "float"="0.0", default="null"]
+ >>
+
+then within a template you can refer to them {<typeInitMap.int>},
+which returns "0".  Those strings are actually templates, but I can't
+really think of a use for that just yet. ;) If your type name is an
+attribute not a constant like int, then use
+{<typeInitMap.(typeName)>}.  The maps are defined in the group's scope
+and are visible if no attribute hides them.  For example, if you
+define a formal argument called {typeInitMap} in template {foo} then
+{foo} cannot see the map defined in the group (though you could pass
+it in, which would be the point).  If a name is not an attribute and
+it's not in the group's maps table, then the super group is consulted
+etc...  You may not redefine a map and it may not have the same name
+as a template in that group.  The {default} value is used if you use a
+key as a property that doesn't exist.  For example {<typeInitMap.foo>}
+returns "{null}".
+
+Ter
+--
+CS Professor & Grad Director, University of San Francisco
+Creator, ANTLR Parser Generator, http://www.antlr.org
+Cofounder, http://www.jguru.com
+
+From t.j.bentley at gmail.com  Thu Jul  7 13:52:45 2005
+From: t.j.bentley at gmail.com (Tom Bentley)
+Date: Thu Jul  7 13:52:51 2005
+Subject: [stringtemplate-interest] added maps to ST :)
+In-Reply-To: <AAABB1A1-66E7-4191-9E55-B5442182854A@cs.usfca.edu>
+References: <AAABB1A1-66E7-4191-9E55-B5442182854A@cs.usfca.edu>
+Message-ID: <42CD961D.9060702@gmail.com>
+
+Terence Parr wrote:
+> o Added maps to the group:
+>
+> <<
+> typeInitMap ::= ["int"="0", "float"="0.0", default="null"]
+>>>
+
+So, I guess I have to ask: How does iteration over these maps work? Can
+I iterate over Map.Entrys?
+
+Cheers,
+
+Tom
+From parrt at cs.usfca.edu  Thu Jul  7 14:16:06 2005
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Thu Jul  7 14:15:25 2005
+Subject: [stringtemplate-interest] added maps to ST :)
+In-Reply-To: <42CD961D.9060702@gmail.com>
+References: <AAABB1A1-66E7-4191-9E55-B5442182854A@cs.usfca.edu>
+	<42CD961D.9060702@gmail.com>
+Message-ID: <5928E026-FE98-4854-BAD5-B3B583C74E37@cs.usfca.edu>
+
+
+On Jul 7, 2005, at 1:52 PM, Tom Bentley wrote:
+
+> Terence Parr wrote:
+>
+>> o Added maps to the group:
+>>
+>> <<
+>> typeInitMap ::= ["int"="0", "float"="0.0", default="null"]
+>>
+>>>>
+>>>>
+>
+> So, I guess I have to ask: How does iteration over these maps work?  
+> Can
+> I iterate over Map.Entrys?
+
+Oh, right.  I meant to look at that for regular maps.  It would  
+operate as current maps do, which I think is the values.  Was it you  
+that was suggesting stuff like:
+
+<dl>
+$map:{  <dt>$it.key$</dt>
+    <dd>$it.value$</dd>
+}$</dl>
+
+?  Seems like a reasonable thing except that it would break previous  
+code, which expects "it" to be the values.  I wonder if there is a  
+workaround to get the new functionality?  Well, that said, I still  
+worry about making people have so much type info that it's a map not  
+a list etc...
+
+Ter
+--
+CS Professor & Grad Director, University of San Francisco
+Creator, ANTLR Parser Generator, http://www.antlr.org
+Cofounder, http://www.jguru.com
+
+From t.j.bentley at gmail.com  Thu Jul  7 16:06:08 2005
+From: t.j.bentley at gmail.com (Tom Bentley)
+Date: Thu Jul  7 16:06:14 2005
+Subject: [stringtemplate-interest] added maps to ST :)
+In-Reply-To: <5928E026-FE98-4854-BAD5-B3B583C74E37@cs.usfca.edu>
+References: <AAABB1A1-66E7-4191-9E55-B5442182854A@cs.usfca.edu>	<42CD961D.9060702@gmail.com>
+	<5928E026-FE98-4854-BAD5-B3B583C74E37@cs.usfca.edu>
+Message-ID: <42CDB560.2090706@gmail.com>
+
+> Was it you  that was
+> suggesting stuff like:
+> 
+> <dl>
+> $map:{  <dt>$it.key$</dt>
+>    <dd>$it.value$</dd>
+> }$</dl>
+
+Yes, that was me.
+
+> Seems like a reasonable thing except that it would break previous 
+> code, which expects "it" to be the values. I wonder if there is a
+> workaround to get the new functionality?  
+
+You're right to worry about breakage; If you or anyone else could think
+of a good alternative syntax, that would be cool. One which springs to
+my mind is:
+
+$map::{ $it.key$, $it.value$}$
+
+(note the double colon, which kind-of suggests the pair-ey-ness of
+iterating over entries).
+
+If no one can think of a nice syntax, maybe it can wait till ST 3.0. (In
+other words, it's not an immediate problem for me).
+
+> Well, that said, I still 
+> worry about making people have so much type info that it's a map not  a
+> list etc...
+
+Well, if its their model, they presumably /decided/ some getter should
+return a Map rather than a List, because that was more appropriate to
+their needs. To then treat the map like a list seems a little counter
+productive.
+
+In any case if you can iterate over Map.Entrys, it's trivial enough to
+iterate over that map as if it were a list of the map's keys, so you
+lose nothing.
+
+My point is that maps and sequences are conceptually different, and for
+a good reason; I think ST should accept that.
+
+Keep up the good work!
+
+Tom
+From parrt at cs.usfca.edu  Thu Jul  7 16:12:52 2005
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Thu Jul  7 16:12:12 2005
+Subject: [stringtemplate-interest] added maps to ST :)
+In-Reply-To: <42CDB560.2090706@gmail.com>
+References: <AAABB1A1-66E7-4191-9E55-B5442182854A@cs.usfca.edu>	<42CD961D.9060702@gmail.com>
+	<5928E026-FE98-4854-BAD5-B3B583C74E37@cs.usfca.edu>
+	<42CDB560.2090706@gmail.com>
+Message-ID: <FCA60C3E-6792-4660-A636-F4516D60C1E1@cs.usfca.edu>
+
+
+On Jul 7, 2005, at 4:06 PM, Tom Bentley wrote:
+>> Seems like a reasonable thing except that it would break previous
+>> code, which expects "it" to be the values. I wonder if there is a
+>> workaround to get the new functionality?
+>>
+>
+> You're right to worry about breakage; If you or anyone else could  
+> think
+> of a good alternative syntax, that would be cool. One which springs to
+> my mind is:
+>
+> $map::{ $it.key$, $it.value$}$
+>
+> (note the double colon, which kind-of suggests the pair-ey-ness of
+> iterating over entries).
+
+Interesting...i was thinking of adding name iterator variables like:
+
+$names:{ n | <b>$n$</b>}$
+
+[syntax taken from smalltalk]
+
+Further I was thinking of adding parallel list walking, which would  
+require names to avoid indexing:
+
+$first,last:{ x, y | Name: $x$ $y$}$
+
+perhaps a similar notation for maps:
+
+$map:{key, value | <td>$key$</td><td>$value$</td>}$
+
+or some such.  If it's a map and has two variable names, then it must  
+mean key/value pair.
+
+> If no one can think of a nice syntax, maybe it can wait till ST  
+> 3.0. (In
+> other words, it's not an immediate problem for me).
+
+Got it.
+
+>> Well, that said, I still
+>> worry about making people have so much type info that it's a map  
+>> not  a
+>> list etc...
+>>
+>
+> Well, if its their model, they presumably /decided/ some getter should
+> return a Map rather than a List, because that was more appropriate to
+> their needs. To then treat the map like a list seems a little counter
+> productive.
+
+I think you're right.  I didn't think through the map iteration well  
+enough before I put it in. :(
+
+> In any case if you can iterate over Map.Entrys, it's trivial enough to
+> iterate over that map as if it were a list of the map's keys, so you
+> lose nothing.
+
+True.  You can pass map.keySet in as an attribute.
+
+> My point is that maps and sequences are conceptually different, and  
+> for
+> a good reason; I think ST should accept that.
+
+Yes, you're right.
+
+> Keep up the good work!
+
+Thanks!  I think you'll like 2.2.  Much improved error messages and  
+lots of new features, bug fixes.
+
+Something I read the other day cracked me up on an FreeMarker mailing  
+list; it described ST as just a pet project.  I wanted to write  
+back...just like ANTLR is ;)
+
+Ter
+--
+CS Professor & Grad Director, University of San Francisco
+Creator, ANTLR Parser Generator, http://www.antlr.org
+Cofounder, http://www.jguru.com
+
+From t.j.bentley at gmail.com  Thu Jul  7 16:40:02 2005
+From: t.j.bentley at gmail.com (Tom Bentley)
+Date: Thu Jul  7 16:40:08 2005
+Subject: [stringtemplate-interest] added maps to ST :)
+In-Reply-To: <FCA60C3E-6792-4660-A636-F4516D60C1E1@cs.usfca.edu>
+References: <AAABB1A1-66E7-4191-9E55-B5442182854A@cs.usfca.edu>	<42CD961D.9060702@gmail.com>	<5928E026-FE98-4854-BAD5-B3B583C74E37@cs.usfca.edu>	<42CDB560.2090706@gmail.com>
+	<FCA60C3E-6792-4660-A636-F4516D60C1E1@cs.usfca.edu>
+Message-ID: <42CDBD52.5050301@gmail.com>
+
+> Interesting...i was thinking of adding name iterator variables like:
+> 
+> $names:{ n | <b>$n$</b>}$
+> 
+> [syntax taken from smalltalk]
+> 
+> Further I was thinking of adding parallel list walking, which would 
+> require names to avoid indexing:
+> 
+> $first,last:{ x, y | Name: $x$ $y$}$
+> 
+> perhaps a similar notation for maps:
+> 
+> $map:{key, value | <td>$key$</td><td>$value$</td>}$
+> 
+> or some such.  If it's a map and has two variable names, then it must 
+> mean key/value pair.
+
+Yeah, that works too! It's nicer because you can use your own variable
+names for key and value.
+
+> Thanks!  I think you'll like 2.2.  Much improved error messages and 
+> lots of new features, bug fixes.
+
+I look forward to it! The whole ANTLR3.0 & ANTLRWorks things look
+really, really neat too, btw.
+
+> Something I read the other day cracked me up on an FreeMarker mailing 
+> list; it described ST as just a pet project.  I wanted to write 
+> back...just like ANTLR is ;)
+
+With this list, at least there's somewhere for people who do use it to
+congregate. Afterall, anything looks like a pet project unless (and
+until) it appears to have a reasonable-sized following.
+
+Cheers,
+
+Tom
+From parrt at cs.usfca.edu  Thu Jul  7 17:01:11 2005
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Thu Jul  7 17:00:28 2005
+Subject: [stringtemplate-interest] added maps to ST :)
+In-Reply-To: <42CDBD52.5050301@gmail.com>
+References: <AAABB1A1-66E7-4191-9E55-B5442182854A@cs.usfca.edu>	<42CD961D.9060702@gmail.com>	<5928E026-FE98-4854-BAD5-B3B583C74E37@cs.usfca.edu>	<42CDB560.2090706@gmail.com>
+	<FCA60C3E-6792-4660-A636-F4516D60C1E1@cs.usfca.edu>
+	<42CDBD52.5050301@gmail.com>
+Message-ID: <1C3E9D0A-337E-4D4D-8257-90A1D6B18E26@cs.usfca.edu>
+
+
+On Jul 7, 2005, at 4:40 PM, Tom Bentley wrote:
+>> $map:{key, value | <td>$key$</td><td>$value$</td>}$
+>>
+>> or some such.  If it's a map and has two variable names, then it must
+>> mean key/value pair.
+>>
+>
+> Yeah, that works too! It's nicer because you can use your own variable
+> names for key and value.
+
+Yep, cool syntax.
+
+>> Thanks!  I think you'll like 2.2.  Much improved error messages and
+>> lots of new features, bug fixes.
+>>
+>
+> I look forward to it! The whole ANTLR3.0 & ANTLRWorks things look
+> really, really neat too, btw.
+
+Thanks...integrating ST into ANTLR v3 will also be cool.
+
+grammar T;
+options {
+     output=text;
+}
+
+a : "int" ID ';' -> "var <ID> : integer;" // Java to pascal
+   ;
+
+or even with the maps:
+
+grammar T;
+options {
+     output=text;
+}
+
+javaToPascalType :: ["int":"integer", ...]
+
+a : type="int" ID ';' -> "var <ID> : <javaToPascalType.(type)>;"
+   ;
+
+:)
+
+I need to study the problem a bit more before I can implement the ST  
+stuff though in ANTLR.
+
+>> Something I read the other day cracked me up on an FreeMarker mailing
+>> list; it described ST as just a pet project.  I wanted to write
+>> back...just like ANTLR is ;)
+>>
+>
+> With this list, at least there's somewhere for people who do use it to
+> congregate. Afterall, anything looks like a pet project unless (and
+> until) it appears to have a reasonable-sized following.
+
+Agreed. :)  I know that I'll never win the HTML generation war as  
+anybody can build something that spits that out, but for hardcore  
+structured code generation (read that "highly-nested output"), I  
+think ST will eventually conquer all (um, if I may say so myself).  I  
+just have to start writing papers and books to do the marketing.  I  
+feel like I'm converging on a decent answer for how to translate  
+stuff. :)  The feeling of joy I get when using ST for the new ANTLR  
+code generator is indescribable! :)
+
+Ter
+--
+CS Professor & Grad Director, University of San Francisco
+Creator, ANTLR Parser Generator, http://www.antlr.org
+Cofounder, http://www.jguru.com
+
+From thesmallesthead at yahoo.com  Thu Jul  7 19:10:20 2005
+From: thesmallesthead at yahoo.com (chris lee)
+Date: Thu Jul  7 19:11:19 2005
+Subject: [stringtemplate-interest] object blocked 
+Message-ID: <20050708021020.6959.qmail@web60912.mail.yahoo.com>
+
+I tried to download 
+http://www.antlr.org/download/PyStringTemplate-2.1.tar.gz
+but get "object blocked" from Firefox 5.0 and "You are
+not authorized to view this page" from IE 6.0. 
+I've been successful downloading tar.gz files before
+e.g. Mozilla-source.tar.gz
+can any one give me advice?
+
+
+		
+____________________________________________________
+Sell on Yahoo! Auctions ? no fees. Bid on great items.  
+http://auctions.yahoo.com/
+From parrt at cs.usfca.edu  Thu Jul  7 19:13:05 2005
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Thu Jul  7 19:12:22 2005
+Subject: [stringtemplate-interest] object blocked 
+In-Reply-To: <20050708021020.6959.qmail@web60912.mail.yahoo.com>
+References: <20050708021020.6959.qmail@web60912.mail.yahoo.com>
+Message-ID: <E5B0245E-A49D-4AE3-BE7E-05D1E891CA32@cs.usfca.edu>
+
+
+On Jul 7, 2005, at 7:10 PM, chris lee wrote:
+
+> I tried to download
+> http://www.antlr.org/download/PyStringTemplate-2.1.tar.gz
+> but get "object blocked" from Firefox 5.0 and "You are
+> not authorized to view this page" from IE 6.0.
+> I've been successful downloading tar.gz files before
+> e.g. Mozilla-source.tar.gz
+> can any one give me advice?
+
+Strange...can you try another browser?  Should be ok...it worked for  
+me just now in Safari on os x.
+
+Ter
+--
+CS Professor & Grad Director, University of San Francisco
+Creator, ANTLR Parser Generator, http://www.antlr.org
+Cofounder, http://www.jguru.com
+
+From parrt at cs.usfca.edu  Fri Jul  8 15:48:51 2005
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Fri Jul  8 15:48:07 2005
+Subject: [stringtemplate-interest] fixed bug
+Message-ID: <F828477F-73DD-4AEA-951F-69E1D7C49937@cs.usfca.edu>
+
+Hi David,
+
+I have fixed this situation:
+
+> I used StringTemplate and observed the following which seems like a
+> bug to me.\312 When "a" is calling "c" if both templates have an
+> argument named "x" then the argument value cannot be passed from a to
+> c using the expected syntax.\312 As long as the argument names are
+> different the expected syntax works (see the case where "a" calls
+> "b").
+>
+> -David
+>         String templates =
+>             "group problem; \n" +
+>
+>             "a(x) ::= <<\n" +
+>             "$b(y=x)$$c(x=x)$>>\n" +
+>
+>             "b(y) ::= <<\n" +
+>             "$y$>>\n" +
+>
+>             "c(x) ::= <<\n" +
+>             "$x$>>";
+
+Only took me 1 year ;)  Here is my change note:
+
+o When you invoke foo(x=y), x must be an attribute of foo (well if you
+have formal args defined that is) and y is evaluated within the
+context of the surrounding template; more precisely, it's evaluated in
+the context of the actual template invocation (which can have
+predefined attributes like attr, it, and i).  It's weird, but foo(x=x)
+also makes sense.  See new unit test testArgEvaluationContext().  This
+was not working before, though I thought it was!
+
+Terence
+--
+CS Professor & Grad Director, University of San Francisco
+Creator, ANTLR Parser Generator, http://www.antlr.org
+Cofounder, http://www.jguru.com
+
+From parrt at cs.usfca.edu  Fri Jul  8 19:01:41 2005
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Fri Jul  8 19:00:58 2005
+Subject: [stringtemplate-interest] goodies added today
+Message-ID: <A28C0C27-2C9E-451C-BB20-1732B6714314@cs.usfca.edu>
+
+07-08-2005
+
+o Added attribute functions: first (get first element), last (get last
+element) and tail (get everything but first element).  [backward
+incompatible if you used first,last,tail as an attribute or template
+name]
+Howdy.  A really nice coding session today on ST. :)  Changelog shown  
+here.  i'm hoping to release next week if I can quit adding features  
+and work on the manual before my trip to Asia on 19th of July!
+
+Ter
+---------------
+o Added attribute functions: first (get first element), last (get last
+element) and tail (get everything but first element).  [backward
+incompatible if you used first,last,tail as an attribute or template
+name].  For example, $users:first()$ gets you the first user :)
+
+o if you are applying a template to a list and that template only has
+one formal argument, that arg gets the same value as the iterated
+value, "it".  I.e., previously this didn't work: $list:bold()$ where
+bold was
+<<
+bold(item) ::= "<b>$item$</b>"
+ >>
+
+A template define as
+
+<<
+bold() ::= "<b>$it</b>"
+ >>
+
+will still work though.
+
+o You can define arguments for anonymous templates now, which is much
+nicer that using <it> all the time:
+<<
+$names:{n| $n$}; separator=","$
+ >>
+
+o To define an empty template, you had to write <<>>; "" didn't work.
+
+--
+CS Professor & Grad Director, University of San Francisco
+Creator, ANTLR Parser Generator, http://www.antlr.org
+Cofounder, http://www.jguru.com
+
+From parrt at cs.usfca.edu  Fri Jul  8 19:03:51 2005
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Fri Jul  8 19:03:08 2005
+Subject: [stringtemplate-interest] goodies added today
+In-Reply-To: <A28C0C27-2C9E-451C-BB20-1732B6714314@cs.usfca.edu>
+References: <A28C0C27-2C9E-451C-BB20-1732B6714314@cs.usfca.edu>
+Message-ID: <0B3BBB99-DD92-40BC-8CE6-4F92DC86903A@cs.usfca.edu>
+
+Ok, that was garbled...here it is again:
+
+> Howdy.  A really nice coding session today on ST. :)  Changelog  
+> shown here.  i'm hoping to release next week if I can quit adding  
+> features and work on the manual before my trip to Asia on 19th of  
+> July!
+>
+> Ter
+> ---------------
+> 07-08-2005
+>
+> o Added attribute functions: first (get first element), last (get last
+> element) and tail (get everything but first element).  [backward
+> incompatible if you used first,last,tail as an attribute or template
+> name].  For example, $users:first()$ gets you the first user :)
+>
+> o if you are applying a template to a list and that template only has
+> one formal argument, that arg gets the same value as the iterated
+> value, "it".  I.e., previously this didn't work: $list:bold()$ where
+> bold was
+> <<
+> bold(item) ::= "<b>$item$</b>"
+> >>
+>
+> A template define as
+>
+> <<
+> bold() ::= "<b>$it</b>"
+> >>
+>
+> will still work though.
+>
+> o You can define arguments for anonymous templates now, which is much
+> nicer that using <it> all the time:
+> <<
+> $names:{n| $n$}; separator=","$
+> >>
+>
+> o To define an empty template, you had to write <<>>; "" didn't work.
+>
+> --
+> CS Professor & Grad Director, University of San Francisco
+> Creator, ANTLR Parser Generator, http://www.antlr.org
+> Cofounder, http://www.jguru.com
+>
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest@antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>
+
+--
+CS Professor & Grad Director, University of San Francisco
+Creator, ANTLR Parser Generator, http://www.antlr.org
+Cofounder, http://www.jguru.com
+
+From parrt at cs.usfca.edu  Sat Jul  9 18:22:07 2005
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Sat Jul  9 18:21:29 2005
+Subject: [stringtemplate-interest] final changes for 2.2
+Message-ID: <496EA430-DC0D-4557-A18C-0FE8A3992852@cs.usfca.edu>
+
+Hi,
+
+I believe I have finished StringTemplate 2.2; perhaps next week I can  
+get to the documentation update before I leave for Asia on the 19th.   
+I've added about 50 new unit tests. :)  I try to add a test for each  
+bug I encounter and for new features of course.  Some highly groovy  
+stuff added today.  The main thing I needed for ANTLR code gen was  
+the ability to ask for the first element of group of multi-valued  
+attributes:
+
+<first(tokenRefs+ruleRefs+labelRefs):doSomethingSpecial()>
+
+to treat it differently and then to walk the others normally:
+
+<rest(tokenRefs+ruleRefs+labelRefs):doNormalThing()>
+
+That is pretty sweet!
+
+Regards,
+Ter
+-------------
+CHANGES FOR TODAY:
+
+07-09-2005
+
+o added multiple attributes to left of the apply operator; works for
+anonymous templates only, though. $names,phones:{n,p | $n$: $p$}$.   
+An error
+is generated if you have too many args for the number of parallel
+lists.  Iteration proceeds while at least one of the attributes
+({names} or {phones}, in this case) has values.
+
+o added '+' cat operator for multi-valued attributes, yielding single,
+longer multi-valued attribute.  $mine+yours$ is a new list with both
+elements; all of "mine" first then all of yours.
+
+o allows any template invocation to assume sole argument name if
+just one formal argument.  If you do {$bold(name)$} and {bold} has one
+formal argument, then it gets the value of name.  This works also for
+template application:
+
+<<
+test(names) ::= << <names:bold(),italics(); separator=", "> >>
+bold(x) ::= "*<x>*"
+italics(y) ::= "_<y>_"
+ >>
+
+Note: The binding of a value to the name of a sole formal argument is
+done dynamically so that indirect template invocation and lazy
+evaluation stuff works properly.  For example {(templateName)(value)}
+should work for different templates with differently-name (but sole)
+args.  See unit test testInvokeIndirectTemplateWithSingleFormalArgs().
+
+o I changed the first, rest, tail operators from yesterday.  It was
+weird doing {users:first()}...seems like {first(users)} is better.
+This introduces a function-like syntax, which necessitated the "assign
+to sole formal arg" functionality above that supports things like
+{bold(name)}.  Makes it possible to say {first(rest(names))} to get
+second element now.  Previous syntax made it impossible.
+
+--
+CS Professor & Grad Director, University of San Francisco
+Creator, ANTLR Parser Generator, http://www.antlr.org
+Cofounder, http://www.jguru.com
+
+From parrt at cs.usfca.edu  Sun Jul 10 13:12:13 2005
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Sun Jul 10 13:11:28 2005
+Subject: [stringtemplate-interest] ANTLR lecture and dinner in Mumbai and
+	Bangalore India
+Message-ID: <2F088AC4-82CD-4924-BD7C-87C3540F7A1E@cs.usfca.edu>
+
+Howdy,
+
+I just got word from my contact in India that is managing my  
+itinerary etc... that we have some extra seats left in the lectures  
+I'm doing on ANTLR at the Taj Mahal Hotel in Mumbai July 25th and the  
+Taj Residency in Bangalore July 28th.  Free buffet dinner apparently. :)
+
+Anyway, they were originally restricting it to people that were  
+interested in coming to USF for grad school, but apparently they have  
+made more room or something and so they've opened up the lecture to  
+anybody with an interest in programming.  I'm attaching the text of  
+the "advertisement" on the lecture.
+
+Please feel free to pass this announcement on to your fellow  
+programmers. :)
+
+If you wanna come say hi or see the lecture, please contact Dr.  
+Richard Johnson, rgjohnson at usfca.edu, at USF's Thailand (Bangkok)  
+office.   Dr. Johnson's office phone number is +662-685-3515.
+
+Regards,
+Terence
+-----------------------
+Lecture title
+
+"An introduction to ANTLR and domain-specific languages"
+
+Lecture abstract
+
+Most people think of grammars and parser generators in terms of
+building compilers, yet the number of language recognition and
+translation tasks dwarfs the number of compilers being built.  In this
+lecture, Terence Parr illustrates the wide applicability of parser
+generators to domain specific languages and other recognition and
+translation tasks.
+
+ANTLR codifies what programmers do naturally by hand, thereby placing
+the power of formal languages in the hands of the average programmer.
+This lecture is a practical introduction to ANTLR and uses numerous
+examples to demonstrate the power of simple grammars and their use in
+a variety of common tasks.
+
+Why learn about language tools?
+
+Skill with computer languages is the single most useful programming
+weapon you can acquire because it covers just about every application
+of computing. As the primary developer of ANTLR, I receive questions
+from an amazingly broad group of users: biologists doing DNA pattern
+recognition, NASA scientists automatically building communication
+libraries from deep space probe specification RTF documents, people
+building configuration files for every conceivable kind of program,
+and so on. BEA Systems' WebLogic server uses ANTLR for many parsing
+and translation tasks such as JSP translation and SQL expression
+parsing.  The jGuru.com Java developer's site incorporates many
+languages from object-schema specifications to HTML sanitizers.  The
+point is that computer language skills enable you to produce extremely
+flexible and powerful software, not just compilers for new programming
+languages.  Being proficient with languages and grammars identifies
+you immediately as a sophisticated developer, on a tier above most
+other programmers.
+
+Why come to hear Terence Parr?
+
+Terence has been building and studying languages and language tools
+for 20 years.  He is the creator of the popular parser generator,
+ANTLR (there are over 5000 downloads a month) that has almost
+single-handely diverted attention from LR-based tools such as yacc.
+Because of his dual academic background and substantial industrial
+experience, Terence brings an unusual perspective to the world of
+parsing and translation.  Furthermore, he is an engaging and
+entertaining speaker.
+
+Brief Biography
+
+Terence Parr is a professor of computer science and graduate program
+director at the University of San Francisco where he continues to work
+on his ANTLR parser generator, http://www.antlr.org. Terence recently
+returned from years in industry where he co-founded jGuru.com. He
+herded programmers and implemented the large jGuru developers web
+site, during which time he developed and refined the StringTemplate
+engine. Terence has consulted for and held various technical positions
+at companies such as IBM, Lockheed Missiles and Space, NeXT, and
+Renault Automation.  Terence holds a Ph.D. in Computer Engineering
+from Purdue University and was a postdoctoral fellow at the Army
+High-Performance Computing Research Center at the University of
+Minnesota where he built parallelizing FORTRAN source-to-source
+translators.
+
+--
+CS Professor & Grad Director, University of San Francisco
+Creator, ANTLR Parser Generator, http://www.antlr.org
+Cofounder, http://www.jguru.com
+
+From parrt at cs.usfca.edu  Mon Jul 11 15:01:42 2005
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Mon Jul 11 15:01:01 2005
+Subject: [stringtemplate-interest] StringTemplate 2.2b4 release (release
+	candidate)
+Message-ID: <8623BCF6-C928-47A9-9427-829E716997B7@cs.usfca.edu>
+
+Howdy,
+
+I have what I think is 2.2 ST release, but it would be great if  
+people could test it out:
+
+http://www.antlr.org/download/stringtemplate-2.2b4.tar.gz
+
+You'll note some seriously great new features:
+
+http://www.stringtemplate.org/doc/release-2.2.tml
+
+I've not had time to update the manual yet, just the release notes.
+
+Please let me know about any incompatibilities, though I don't expect  
+any.  Should be ok.
+
+I am not sure I can get the doc done before I leave next week for  
+Asia, in which case the formal release will be pushed back until  
+August sometime.
+
+Terence
+--
+CS Professor & Grad Director, University of San Francisco
+Creator, ANTLR Parser Generator, http://www.antlr.org
+Cofounder, http://www.jguru.com
+
+From rhill03 at eds.com  Mon Jul 11 23:16:08 2005
+From: rhill03 at eds.com (Hill, Robert)
+Date: Mon Jul 11 23:20:05 2005
+Subject: [stringtemplate-interest] StringTemplate 2.2b4 release
+	(releasecandidate)
+Message-ID: <2E909902FD3A03419E3A905908AE3DD4EC2ECB@UKNSM201.emea.corp.eds.com>
+
+"Added renderers per template and group." 
+
+* OMG I want your babies. *
+
+That's absolutely fantastic :)
+
+Cheers Ter you're a star!
+
+
+/2ob
+
+
+Rob Hill
+EDS UKNMSC			44 (0) 114 291 1928
+Innovation Centre		44 (0) 114 291 2000
+217 Portobello		44 (0) 791 732 1227
+Sheffield			rhill03@eds.com
+S1 4DP
+
+
+
+-----Original Message-----
+From: stringtemplate-interest-bounces@antlr.org
+[mailto:stringtemplate-interest-bounces@antlr.org] On Behalf Of Terence
+Parr
+Sent: 11 July 2005 23:02
+To: stringtemplate-interest@antlr.org
+Cc: ANTLR Interest
+Subject: [stringtemplate-interest] StringTemplate 2.2b4 release
+(releasecandidate)
+
+Howdy,
+
+I have what I think is 2.2 ST release, but it would be great if people
+could test it out:
+
+http://www.antlr.org/download/stringtemplate-2.2b4.tar.gz
+
+You'll note some seriously great new features:
+
+http://www.stringtemplate.org/doc/release-2.2.tml
+
+I've not had time to update the manual yet, just the release notes.
+
+Please let me know about any incompatibilities, though I don't expect
+any.  Should be ok.
+
+I am not sure I can get the doc done before I leave next week for Asia,
+in which case the formal release will be pushed back until August
+sometime.
+
+Terence
+--
+CS Professor & Grad Director, University of San Francisco Creator, ANTLR
+Parser Generator, http://www.antlr.org Cofounder, http://www.jguru.com
+
+_______________________________________________
+stringtemplate-interest mailing list
+stringtemplate-interest@antlr.org
+http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+From parrt at cs.usfca.edu  Tue Jul 12 14:12:25 2005
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Tue Jul 12 14:11:41 2005
+Subject: [stringtemplate-interest] StringTemplate 2.2b4 release
+	(releasecandidate)
+In-Reply-To: <2E909902FD3A03419E3A905908AE3DD4EC2ECB@UKNSM201.emea.corp.eds.com>
+References: <2E909902FD3A03419E3A905908AE3DD4EC2ECB@UKNSM201.emea.corp.eds.com>
+Message-ID: <450A2846-E8A4-4927-86DD-9B59E92B1185@cs.usfca.edu>
+
+
+On Jul 11, 2005, at 11:16 PM, Hill, Robert wrote:
+
+> "Added renderers per template and group."
+>
+> * OMG I want your babies. *
+>
+> That's absolutely fantastic :)
+>
+> Cheers Ter you're a star!
+
+Now *that* is an endorsement ;)  I hope you enjoy the new  
+features...I think they're great!
+
+Thanks!
+
+Ter
+--
+CS Professor & Grad Director, University of San Francisco
+Creator, ANTLR Parser Generator, http://www.antlr.org
+Cofounder, http://www.jguru.com
+
+From parrt at cs.usfca.edu  Tue Jul 12 16:06:42 2005
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Tue Jul 12 16:05:58 2005
+Subject: [stringtemplate-interest] how many people use the + operator?
+Message-ID: <D1EE4F54-D25D-4ACA-B9E9-6D9DFF0286AA@cs.usfca.edu>
+
+Hi,
+
+Looks like I created an ambiguity with the + operator. It was only  
+for strings so you could do this:
+
+$link(url="/home/"+user)$
+
+however now you can say:
+
+$link(url="/home/$user$")$
+
+since all strings are templates now.  I really need + to mean create  
+a multi-element attribute from one or more single or multi-valued  
+elements.  So if you have
+
+$firstname+lastname$
+
+you get a new attribute with two elements.  Hmm...not many people  
+probably know about the + operator and fewer probably use it.  I'm  
+thinking I may change the semantics.
+
+At first glance, the comma is better:
+
+$firstname,lastname$
+
+but unfortunately the comma is heavily overloaded to mean argument  
+separated and now parallel attribute iteration.
+
+Anybody care if I get rid of '+' for string cat?
+
+Ter
+--
+CS Professor & Grad Director, University of San Francisco
+Creator, ANTLR Parser Generator, http://www.antlr.org
+Cofounder, http://www.jguru.com
+
+From rhill03 at eds.com  Tue Jul 12 23:09:49 2005
+From: rhill03 at eds.com (Hill, Robert)
+Date: Tue Jul 12 23:14:03 2005
+Subject: [stringtemplate-interest] how many people use the + operator?
+Message-ID: <2E909902FD3A03419E3A905908AE3DD4EC2F8D@UKNSM201.emea.corp.eds.com>
+
+Nope.
+:) 
+
+
+Rob Hill
+EDS UKNMSC		'	+44 (0) 114 291 1928
+Innovation Centre		6	+44 (0) 114 291 2000
+217 Portobello		*	+44 (0) 791 732 1227
+Sheffield			*	rhill03@eds.com
+S1 4DP
+
+
+
+-----Original Message-----
+From: stringtemplate-interest-bounces@antlr.org
+[mailto:stringtemplate-interest-bounces@antlr.org] On Behalf Of Terence
+Parr
+Sent: 13 July 2005 00:07
+To: stringtemplate-interest@antlr.org
+Subject: [stringtemplate-interest] how many people use the + operator?
+
+Hi,
+
+Looks like I created an ambiguity with the + operator. It was only for
+strings so you could do this:
+
+$link(url="/home/"+user)$
+
+however now you can say:
+
+$link(url="/home/$user$")$
+
+since all strings are templates now.  I really need + to mean create a
+multi-element attribute from one or more single or multi-valued
+elements.  So if you have
+
+$firstname+lastname$
+
+you get a new attribute with two elements.  Hmm...not many people
+probably know about the + operator and fewer probably use it.  I'm
+thinking I may change the semantics.
+
+At first glance, the comma is better:
+
+$firstname,lastname$
+
+but unfortunately the comma is heavily overloaded to mean argument
+separated and now parallel attribute iteration.
+
+Anybody care if I get rid of '+' for string cat?
+
+Ter
+--
+CS Professor & Grad Director, University of San Francisco Creator, ANTLR
+Parser Generator, http://www.antlr.org Cofounder, http://www.jguru.com
+
+_______________________________________________
+stringtemplate-interest mailing list
+stringtemplate-interest@antlr.org
+http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+From stefan at amiq.ro  Wed Jul 13 00:38:09 2005
+From: stefan at amiq.ro (stefan)
+Date: Wed Jul 13 00:36:46 2005
+Subject: [stringtemplate-interest] how many people use the + operator?
+In-Reply-To: <D1EE4F54-D25D-4ACA-B9E9-6D9DFF0286AA@cs.usfca.edu>
+References: <D1EE4F54-D25D-4ACA-B9E9-6D9DFF0286AA@cs.usfca.edu>
+Message-ID: <200507131038.09139.stefan@amiq.ro>
+
+  No.
+
+On Wednesday 13 July 2005 02:06, Terence Parr wrote:
+> Hi,
+>
+> Looks like I created an ambiguity with the + operator. It was only
+> for strings so you could do this:
+>
+> $link(url="/home/"+user)$
+>
+> however now you can say:
+>
+> $link(url="/home/$user$")$
+>
+> since all strings are templates now.  I really need + to mean create
+> a multi-element attribute from one or more single or multi-valued
+> elements.  So if you have
+>
+> $firstname+lastname$
+>
+> you get a new attribute with two elements.  Hmm...not many people
+> probably know about the + operator and fewer probably use it.  I'm
+> thinking I may change the semantics.
+>
+> At first glance, the comma is better:
+>
+> $firstname,lastname$
+>
+> but unfortunately the comma is heavily overloaded to mean argument
+> separated and now parallel attribute iteration.
+>
+> Anybody care if I get rid of '+' for string cat?
+>
+> Ter
+> --
+> CS Professor & Grad Director, University of San Francisco
+> Creator, ANTLR Parser Generator, http://www.antlr.org
+> Cofounder, http://www.jguru.com
+>
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest@antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+From parrt at cs.usfca.edu  Wed Jul 13 13:50:55 2005
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Wed Jul 13 13:50:10 2005
+Subject: [stringtemplate-interest] how many people use the + operator?
+In-Reply-To: <200507131038.09139.stefan@amiq.ro>
+References: <D1EE4F54-D25D-4ACA-B9E9-6D9DFF0286AA@cs.usfca.edu>
+	<200507131038.09139.stefan@amiq.ro>
+Message-ID: <AA55E5D5-D50A-45EC-8857-82DBAAA3F368@cs.usfca.edu>
+
+Hi gang,
+
+I think I changed my mind again... THe + operator is valuable to  
+waste on combining attributes.  I may need it to allow expressions on  
+non-attribute-values like the length of an attribute.  Hmm...I need  
+to think about this.  I would use cat(firstname,lastname), but there  
+is no syntax for that yet; you need argname=val assignments...hmm...
+
+Ter
+
+On Jul 13, 2005, at 12:38 AM, stefan wrote:
+
+>   No.
+>
+> On Wednesday 13 July 2005 02:06, Terence Parr wrote:
+>
+>> Hi,
+>>
+>> Looks like I created an ambiguity with the + operator. It was only
+>> for strings so you could do this:
+>>
+>> $link(url="/home/"+user)$
+>>
+>> however now you can say:
+>>
+>> $link(url="/home/$user$")$
+>>
+>> since all strings are templates now.  I really need + to mean create
+>> a multi-element attribute from one or more single or multi-valued
+>> elements.  So if you have
+>>
+>> $firstname+lastname$
+>>
+>> you get a new attribute with two elements.  Hmm...not many people
+>> probably know about the + operator and fewer probably use it.  I'm
+>> thinking I may change the semantics.
+>>
+>> At first glance, the comma is better:
+>>
+>> $firstname,lastname$
+>>
+>> but unfortunately the comma is heavily overloaded to mean argument
+>> separated and now parallel attribute iteration.
+>>
+>> Anybody care if I get rid of '+' for string cat?
+>>
+>> Ter
+>> --
+>> CS Professor & Grad Director, University of San Francisco
+>> Creator, ANTLR Parser Generator, http://www.antlr.org
+>> Cofounder, http://www.jguru.com
+>>
+>> _______________________________________________
+>> stringtemplate-interest mailing list
+>> stringtemplate-interest@antlr.org
+>> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>>
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest@antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>
+
+--
+CS Professor & Grad Director, University of San Francisco
+Creator, ANTLR Parser Generator, http://www.antlr.org
+Cofounder, http://www.jguru.com
+
+From parrt at cs.usfca.edu  Wed Jul 13 15:30:13 2005
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Wed Jul 13 15:29:29 2005
+Subject: [stringtemplate-interest] I'll use [...] :)
+In-Reply-To: <AA55E5D5-D50A-45EC-8857-82DBAAA3F368@cs.usfca.edu>
+References: <D1EE4F54-D25D-4ACA-B9E9-6D9DFF0286AA@cs.usfca.edu>
+	<200507131038.09139.stefan@amiq.ro>
+	<AA55E5D5-D50A-45EC-8857-82DBAAA3F368@cs.usfca.edu>
+Message-ID: <2EA71E7E-4B52-4610-BBA1-D8EE94406D13@cs.usfca.edu>
+
+
+On Jul 13, 2005, at 1:50 PM, Terence Parr wrote:
+
+> Hi gang,
+>
+> I think I changed my mind again... THe + operator is valuable to  
+> waste on combining attributes.  I may need it to allow expressions  
+> on non-attribute-values like the length of an attribute.  Hmm...I  
+> need to think about this.  I would use cat(firstname,lastname), but  
+> there is no syntax for that yet; you need argname=val  
+> assignments...hmm...
+
+I got it!  Use [firstname, lastname] as it is the "data structure"  
+syntax used for maps:
+
+init ::= ["int":"0", "float":"0.0"]
+
+:)
+
+I'll try to get that in...
+
+Ter
+--
+CS Professor & Grad Director, University of San Francisco
+Creator, ANTLR Parser Generator, http://www.antlr.org
+Cofounder, http://www.jguru.com
+
+From Robert.Whitener at gxs.com  Thu Jul 14 14:33:32 2005
+From: Robert.Whitener at gxs.com (Robert.Whitener@gxs.com)
+Date: Thu Jul 14 14:33:36 2005
+Subject: [stringtemplate-interest] Stringtemplate unable to access a field
+Message-ID: <6EE295F4F386AC48B4FF6EB0CDBABD7408719453@roc04bxgeisge.internal.gxs.com>
+
+Hello,
+
+I apologize for the length of this post, the examples made it longer than
+expected
+
+ 
+
+I have decided to use Stringtemplate to help me with a project that requires
+the generation of XML.  I have run into a bit of a roadblock that involves
+accessing a field of an object that is in a list/array.
+
+ 
+
+Here is the situation:  I would like to generate XML in the following
+format:
+
+ 
+
+<keyword>
+
+                  <parameter>
+
+                        <field>Screen</field>
+
+                        <value>Main Menu</value>
+
+                  </parameter>
+
+                  <script-name>Set_Window</script-name>
+
+      </keyword>
+
+ 
+
+In the XML document there are 1 or more keyword elements, and each keyword
+element can contain one or more parameter elements.  The parameter element
+only contains one field and one value.  In my java code, I am using a list
+of lists structure to represent this.  Each node of the main list is a
+keyword and contains a list of parameters.  In order to accomplish this, I
+have two classes, Keyword and Parameter
+
+ 
+
+Parameter is a very simple class, it only has two fields, "field" and
+"value", both strings, and the cooresponding getter and setters for each
+field.
+
+ 
+
+Keyword has three fields:
+
+ 
+
+public class Keyword {
+
+      private String scriptname = null;
+
+      private LinkedList parameterList = null;
+
+      private Parameter[] parameters = null;
+
+ 
+
+with the corresponding getter and setter methods.  I thought that maybe
+Stringtemplate didn't like the linkedlist in Keyword for some reason so I
+added the Parameter[] array, and this is its getter method:
+
+ 
+
+public Parameter[] getParameters() {
+
+            int size = parameterList.size();
+
+            parameters = new Parameter[size];
+
+            for(int i=0; i < size; i++){
+
+                  parameters[i] = (Parameter)parameterList.get(i);
+
+            }
+
+            return parameters;
+
+      }
+
+ 
+
+Below is the template I am using:
+
+group XML;
+
+ 
+
+ 
+
+testcase(apptype,objmap,appname,scriptbody) ::= <<
+
+<?xml version="1.0" encoding="UTF-8" ?> 
+
+<test-case>
+
+      <app-type>$apptype$</app-type>
+
+      <obj-map>$objmap$</obj-map>
+
+      <script>
+
+            <keyword>
+
+                  <parameter>
+
+                        <field>Window</field>
+
+                        <value>$appname$</value>
+
+                  </parameter>
+
+                  <script-name>Win_Activate</script-name>   
+
+            </keyword>
+
+            $scriptbody:script()$
+
+      </script>   
+
+</test-case>
+
+>> 
+
+ 
+
+ 
+
+script() ::= <<
+
+<keyword>
+
+      $parameter(p=it.parameters)$
+
+      <script-name>$it.scriptname$</script-name>
+
+</keyword>        
+
+>> 
+
+ 
+
+parameter(p) ::= <<
+
+<parameter>
+
+      <field>$p.field$</field>
+
+      <value>$p.value$</field>
+
+</parameter>            
+
+>> 
+
+ 
+
+And this is the code that creates the template:
+
+ 
+
+strtplGroup = new StringTemplateGroup(new FileReader("testcse.stg"));
+
+xml = strtplGroup.getInstanceOf("testcase");
+
+xml.setAttribute("apptype",apptype);
+
+xml.setAttribute("objmap",mapfile);
+
+xml.setAttribute("appname","Session A");
+
+LinkedList keywords = constructKeywords((LinkedList)path);
+
+xml.setAttribute("scriptbody",keywords);
+
+ 
+
+When I execute the code, I get errors telling me that, "Can't get property
+value using method get/isValue from java.util.Arrays$ArrayList instance" (i
+get it for both "field" and "value") 
+
+ 
+
+And it throws nullpointerexceptions and NoSuchFieldException
+
+ 
+
+Any ideas?
+
+ 
+
+Thank you,
+
+ 
+
+Rob Whitener
+
+ 
+
+Engineer, Test Automation Specialist
+GXS, Tampa
+813-496-3513
+ <mailto:robert.whitener@gxs.com> robert.whitener@gxs.com
+
+ 
+
+"Buy the ticket, take the ride" -- HST
+
+ 
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20050714/d483a4c5/attachment.html
+From parrt at cs.usfca.edu  Thu Jul 14 14:58:04 2005
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Thu Jul 14 14:57:19 2005
+Subject: [stringtemplate-interest] Stringtemplate unable to access a field
+In-Reply-To: <6EE295F4F386AC48B4FF6EB0CDBABD7408719453@roc04bxgeisge.internal.gxs.com>
+References: <6EE295F4F386AC48B4FF6EB0CDBABD7408719453@roc04bxgeisge.internal.gxs.com>
+Message-ID: <C7FBA591-0014-477B-BD1D-41E59D3CECDD@cs.usfca.edu>
+
+Hi, It's possible that StringTemplate is not properly seeing the  
+ArrayList as an iteratable element; it may try to get value on the  
+list object itself.  Hmm...can you try 2.2b4 for me?
+
+Ter
+
+On Jul 14, 2005, at 2:33 PM, Robert.Whitener@gxs.com wrote:
+
+> Hello,
+>
+> I apologize for the length of this post, the examples made it  
+> longer than expected
+>
+>
+> I have decided to use Stringtemplate to help me with a project that  
+> requires the generation of XML.  I have run into a bit of a  
+> roadblock that involves accessing a field of an object that is in a  
+> list/array.
+>
+>
+> Here is the situation:  I would like to generate XML in the  
+> following format:
+>
+>
+> <keyword>
+>
+>                   <parameter>
+>
+>                         <field>Screen</field>
+>
+>                         <value>Main Menu</value>
+>
+>                   </parameter>
+>
+>                   <script-name>Set_Window</script-name>
+>
+>       </keyword>
+>
+>
+> In the XML document there are 1 or more keyword elements, and each  
+> keyword element can contain one or more parameter elements.  The  
+> parameter element only contains one field and one value.  In my  
+> java code, I am using a list of lists structure to represent this.   
+> Each node of the main list is a keyword and contains a list of  
+> parameters.  In order to accomplish this, I have two classes,  
+> Keyword and Parameter
+>
+>
+> Parameter is a very simple class, it only has two fields, "field"  
+> and "value", both strings, and the cooresponding getter and setters  
+> for each field.
+>
+>
+> Keyword has three fields:
+>
+>
+> public class Keyword {
+>
+>       private String scriptname = null;
+>
+>       private LinkedList parameterList = null;
+>
+>       private Parameter[] parameters = null;
+>
+>
+> with the corresponding getter and setter methods.  I thought that  
+> maybe Stringtemplate didn't like the linkedlist in Keyword for some  
+> reason so I added the Parameter[] array, and this is its getter  
+> method:
+>
+>
+> public Parameter[] getParameters() {
+>
+>             int size = parameterList.size();
+>
+>             parameters = new Parameter[size];
+>
+>             for(int i=0; i < size; i++){
+>
+>                   parameters[i] = (Parameter)parameterList.get(i);
+>
+>             }
+>
+>             return parameters;
+>
+>       }
+>
+>
+> Below is the template I am using:
+>
+> group XML;
+>
+>
+>
+> testcase(apptype,objmap,appname,scriptbody) ::= <<
+>
+> <?xml version="1.0" encoding="UTF-8" ?>
+>
+> <test-case>
+>
+>       <app-type>$apptype$</app-type>
+>
+>       <obj-map>$objmap$</obj-map>
+>
+>       <script>
+>
+>             <keyword>
+>
+>                   <parameter>
+>
+>                         <field>Window</field>
+>
+>                         <value>$appname$</value>
+>
+>                   </parameter>
+>
+>                   <script-name>Win_Activate</script-name>
+>
+>             </keyword>
+>
+>             $scriptbody:script()$
+>
+>       </script>
+>
+> </test-case>
+>
+> >>
+>
+>
+>
+> script() ::= <<
+>
+> <keyword>
+>
+>       $parameter(p=it.parameters)$
+>
+>       <script-name>$it.scriptname$</script-name>
+>
+> </keyword>
+>
+> >>
+>
+>
+> parameter(p) ::= <<
+>
+> <parameter>
+>
+>       <field>$p.field$</field>
+>
+>       <value>$p.value$</field>
+>
+> </parameter>
+>
+> >>
+>
+>
+> And this is the code that creates the template:
+>
+>
+> strtplGroup = new StringTemplateGroup(new FileReader("testcse.stg"));
+>
+> xml = strtplGroup.getInstanceOf("testcase");
+>
+> xml.setAttribute("apptype",apptype);
+>
+> xml.setAttribute("objmap",mapfile);
+>
+> xml.setAttribute("appname","Session A");
+>
+> LinkedList keywords = constructKeywords((LinkedList)path);
+>
+> xml.setAttribute("scriptbody",keywords);
+>
+>
+> When I execute the code, I get errors telling me that, "Can't get  
+> property value using method get/isValue from java.util.Arrays 
+> $ArrayList instance" (i get it for both "field" and "value")
+>
+>
+> And it throws nullpointerexceptions and NoSuchFieldException
+>
+>
+> Any ideas?
+>
+>
+> Thank you,
+>
+>
+> Rob Whitener
+>
+>
+> Engineer, Test Automation Specialist
+> GXS, Tampa
+> 813-496-3513
+> robert.whitener@gxs.com
+>
+>
+> "Buy the ticket, take the ride" -- HST
+>
+>
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest@antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>
+
+--
+CS Professor & Grad Director, University of San Francisco
+Creator, ANTLR Parser Generator, http://www.antlr.org
+Cofounder, http://www.jguru.com
+
+From parrt at cs.usfca.edu  Thu Jul 14 15:45:42 2005
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Thu Jul 14 15:44:58 2005
+Subject: [stringtemplate-interest] Stringtemplate unable to access a field
+In-Reply-To: <6EE295F4F386AC48B4FF6EB0CDBABD7408719453@roc04bxgeisge.internal.gxs.com>
+References: <6EE295F4F386AC48B4FF6EB0CDBABD7408719453@roc04bxgeisge.internal.gxs.com>
+Message-ID: <1B540D40-3D0D-4958-872D-270A1E5A9AC1@cs.usfca.edu>
+
+On Jul 14, 2005, at 2:33 PM, Robert.Whitener@gxs.com wrote:
+> When I execute the code, I get errors telling me that, "Can't get  
+> property value using method get/isValue from java.util.Arrays 
+> $ArrayList instance" (i get it for both "field" and "value")
+
+I just looked and there was an error in 2.2b4 that it didn't convert  
+arrays to lists for direct field access, but it looked correct for  
+getParameters vs the field.
+
+Hmm....
+
+Ter
+--
+CS Professor & Grad Director, University of San Francisco
+Creator, ANTLR Parser Generator, http://www.antlr.org
+Cofounder, http://www.jguru.com
+
+From parrt at cs.usfca.edu  Thu Jul 14 19:19:48 2005
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Thu Jul 14 19:19:04 2005
+Subject: [stringtemplate-interest] stringtemplate-2.2b5 release
+Message-ID: <1E7B9D8C-B7A0-4F52-BBB6-FC2FED371FC0@cs.usfca.edu>
+
+Howdy,
+
+Fixed a bug and cleaned up some issues with the new features.   
+[a,b,c] is now the "create list of attributes" operator versus +,  
+which goes back to cat'ing strings.
+
+http://www.stringtemplate.org/doc/release-2.2.tml
+http://www.antlr.org/download/stringtemplate-2.2b5.tar.gz
+
+Ter
+--
+CS Professor & Grad Director, University of San Francisco
+Creator, ANTLR Parser Generator, http://www.antlr.org
+Cofounder, http://www.jguru.com
+
+From Robert.Whitener at gxs.com  Fri Jul 15 11:14:05 2005
+From: Robert.Whitener at gxs.com (Robert.Whitener@gxs.com)
+Date: Fri Jul 15 11:14:08 2005
+Subject: [stringtemplate-interest] Stringtemplate unable to access a f ield
+Message-ID: <6EE295F4F386AC48B4FF6EB0CDBABD740871945E@roc04bxgeisge.internal.gxs.com>
+
+Hello,
+
+I installed the 2.2b5 version, and got the same errors as before.  I am not
+sure if it is a problem with Stringtemplate or if I am just doing something
+wrong.
+
+Thanks, 
+
+Rob Whitener
+
+ Global Exchange Services
+Engineer, Test Automation Specialist
+GXS, Tampa
+813-496-3513
+robert.whitener@gxs.com
+ 
+"Buy the ticket, take the ride" -- HST
+-----Original Message-----
+From: Terence Parr [mailto:parrt@cs.usfca.edu] 
+Sent: Thursday, July 14, 2005 7:47 PM
+To: Robert.Whitener@gxs.com
+Subject: Re: [stringtemplate-interest] Stringtemplate unable to access a f
+ield
+
+Hi.  I only put the announcement onto the interest list.  Try http:// 
+www.antlr.org/download
+and look for the 2.2b4.  Then let's see what happens. :)  I'll fix if  
+still broken :)
+
+Ter
+On Jul 14, 2005, at 4:28 PM, Robert.Whitener@gxs.com wrote:
+
+> I am using 2.1, I could give 2.2b4 a shot if you can tell me where  
+> to get it from.  I can't find a link on the website.
+>
+> I also tried to do the same thing using a linkedlist, with similar  
+> results so I don't think the problem is limited to only arrays.   
+> The document produced from the template has the correct number of  
+> Keyword elements in it, so the main list is getting processed  
+> properly, the nested lists are not.
+>
+> I can send you more of what I have if you would like to take a look  
+> at it.
+>
+> Thanks again for your time,
+>
+> Rob Whitener.
+>
+>  Global Exchange Services
+> Engineer, Test Automation Specialist
+> GXS, Tampa
+> 813-496-3513
+> robert.whitener@gxs.com
+>
+> "Buy the ticket, take the ride" -- HST
+>
+> -----Original Message-----
+> From: Terence Parr [mailto:parrt@cs.usfca.edu]
+> Sent: Thursday, July 14, 2005 6:46 PM
+> To: stringtemplate-interest@antlr.org
+> Subject: Re: [stringtemplate-interest] Stringtemplate unable to  
+> access a field
+>
+> On Jul 14, 2005, at 2:33 PM, Robert.Whitener@gxs.com wrote:
+> > When I execute the code, I get errors telling me that, "Can't get
+> > property value using method get/isValue from java.util.Arrays
+> > $ArrayList instance" (i get it for both "field" and "value")
+>
+> I just looked and there was an error in 2.2b4 that it didn't convert
+> arrays to lists for direct field access, but it looked correct for
+> getParameters vs the field.
+>
+> Hmm....
+>
+> Ter
+> -- 
+> CS Professor & Grad Director, University of San Francisco
+> Creator, ANTLR Parser Generator, http://www.antlr.org
+> Cofounder, http://www.jguru.com
+>
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest@antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>
+
+--
+CS Professor & Grad Director, University of San Francisco
+Creator, ANTLR Parser Generator, http://www.antlr.org
+Cofounder, http://www.jguru.com
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20050715/febd6c7b/attachment.html
+From parrt at cs.usfca.edu  Thu Jul 21 19:04:40 2005
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Thu Jul 21 19:03:52 2005
+Subject: [stringtemplate-interest] any reports of incompatibilities for
+	2.2b5?
+Message-ID: <6254C93C-1FDA-4B51-8461-BDCC5F299B72@cs.usfca.edu>
+
+Hi. :)  Anybody see any problems dropping 2.2b5 ST into their  
+applications?
+
+Thanks,
+Terence
+--
+CS Professor & Grad Director, University of San Francisco
+Creator, ANTLR Parser Generator, http://www.antlr.org
+Cofounder, http://www.jguru.com
+

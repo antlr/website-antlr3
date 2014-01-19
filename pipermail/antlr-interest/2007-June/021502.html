@@ -1,0 +1,189 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Implementing &quot;include&quot; functionality with C runtime
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Implementing%20%22include%22%20functionality%20with%20C%20runtime&In-Reply-To=%3C0C3F32D9-FC7E-425F-B1FF-F648D3013DC5%40apple.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="021501.html">
+   <LINK REL="Next"  HREF="021503.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Implementing &quot;include&quot; functionality with C runtime</H1>
+    <B>Cameron Esfahani</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Implementing%20%22include%22%20functionality%20with%20C%20runtime&In-Reply-To=%3C0C3F32D9-FC7E-425F-B1FF-F648D3013DC5%40apple.com%3E"
+       TITLE="[antlr-interest] Implementing &quot;include&quot; functionality with C runtime">dirty at apple.com
+       </A><BR>
+    <I>Mon Jun 18 18:54:46 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="021501.html">[antlr-interest] Lexer syntactic predicates
+</A></li>
+        <LI>Next message: <A HREF="021503.html">[antlr-interest] Implementing &quot;include&quot; functionality with C	runtime
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#21502">[ date ]</a>
+              <a href="thread.html#21502">[ thread ]</a>
+              <a href="subject.html#21502">[ subject ]</a>
+              <a href="author.html#21502">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>When I was prototyping with the Java runtime, I had implemented the  
+&quot;include&quot; functionality based on code from the wiki:
+
+<A HREF="http://www.antlr.org/wiki/pages/viewpage.action?pageId=557057">http://www.antlr.org/wiki/pages/viewpage.action?pageId=557057</A>
+
+And this worked great.
+
+Now that I've switched over to the C runtime, I'm having some trouble  
+porting the above solution over.
+
+I've hooked into the nextToken() vector of the lexer's token source,  
+and I set up a simple stack to save and restore the pLexer-&gt;input  
+ANTLR3_INPUT_STREAM.
+
+I make sure to call mark() on the current ANTLR3_INPUT_STREAM so when  
+it gets switched back in by the nextToken() override, I can just call  
+rewindLast() on it.
+
+The problem is at the end of the parsing, when I'm dumping out the  
+AST.  The text from included file isn't there.  In fact, the original  
+&quot;include&quot; string is there.  It seems to me that the C runtime doesn't  
+like how I've swapped out one stream for another.
+
+Is there some cached state I need to reset?
+
+There are two files: test.txt and test2.txt
+
+include &quot;test2.txt&quot;
+
+best =	{
+			&quot;funky&quot; : [ &quot;list&quot; ]
+		}
+
+and here is test2.txt
+
+test-stream = &lt;123ABC&gt;
+
+test-tree3 = &quot;hello&quot;
+
+Here is the output:
+
+(T_ASSIGN include &quot;te (T_HEXSTREAM .txt&quot;
+
+b)) es (T_ASSIGN t =    {
+                         &quot; (T_STR ky&quot; : [))  &quot;
+
+(T_ASSIGN best (T_OBJ (T_DEF &quot;funky&quot; (T_ARRAY (T_STR &quot;list&quot;)))))
+
+&lt;EOF&gt;
+
+
+Here is the relevant code from the lexer and nextToken hooks:
+
+	: 'include' WS? f = STRING {
+		ANTLR3_INPUT_STREAM*				Input;
+		ANTLR3_UINT8*						FileName;
+		int									Length;
+
+		// Extract out the file name from within the quotes.
+		Length = strlen( f-&gt;getText( f )-&gt;chars + 1 );
+		FileName = malloc( Length );
+		strcpy( FileName, f-&gt;getText( f )-&gt;chars + 1 );
+		FileName[ Length - 1 ] = 0;
+
+		Input = antlr3AsciiFileStreamNew( FileName );
+
+		// Remember where we are in this stream, and save it.
+
+		gLexer-&gt;pLexer-&gt;input-&gt;istream-&gt;mark( gLexer-&gt;pLexer-&gt;input- 
+ &gt;istream );
+		gIncludeStack-&gt;push( gIncludeStack, gLexer-&gt;pLexer-&gt;input, NULL );
+
+		gLexer-&gt;pLexer-&gt;setCharStream( gLexer-&gt;pLexer, Input );
+
+		free( FileName );
+		}
+
+ANTLR3_COMMON_TOKEN*
+NextToken( ANTLR3_TOKEN_SOURCE* TokenSource )
+{
+	ANTLR3_COMMON_TOKEN*				Token;
+	ANTLR3_INPUT_STREAM*				SavedStream;
+
+	Token = gOriginalNextToken( TokenSource );
+
+	if ( Token == &amp;TokenSource-&gt;eofToken )
+	{
+		// We've reached the end of this file.  Pop anything off the include
+		// stack and continue.
+
+		if ( gIncludeStack-&gt;size( gIncludeStack ) &gt; 0 )
+		{
+			SavedStream = gIncludeStack-&gt;top;
+
+			gLexer-&gt;pLexer-&gt;setCharStream( gLexer-&gt;pLexer, SavedStream );
+			SavedStream-&gt;istream-&gt;rewindLast( SavedStream-&gt;istream );
+
+			Token = gOriginalNextToken( TokenSource );
+
+			gIncludeStack-&gt;pop( gIncludeStack );
+		}
+	}
+
+	if ( ( ( ANTLR3_INT64 ) Token-&gt;getStartIndex( Token ) ) &lt; 0 )
+	{
+		Token = gOriginalNextToken( TokenSource );
+	}
+
+	return( Token );
+}
+
+Cameron Esfahani
+<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">dirty at apple.com</A>
+
+&quot;I cannot for the life of me understand why, while people without  
+driver's licenses are not allowed on public roads, in bookstores one  
+can find any number of books by persons without decency - let alone  
+knowledge.&quot;
+
+&quot;His Master's Voice&quot;, Stanislaw Lem
+
+
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20070618/db4e011d/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20070618/db4e011d/attachment.html</A> 
+</PRE>
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="021501.html">[antlr-interest] Lexer syntactic predicates
+</A></li>
+	<LI>Next message: <A HREF="021503.html">[antlr-interest] Implementing &quot;include&quot; functionality with C	runtime
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#21502">[ date ]</a>
+              <a href="thread.html#21502">[ thread ]</a>
+              <a href="subject.html#21502">[ subject ]</a>
+              <a href="author.html#21502">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

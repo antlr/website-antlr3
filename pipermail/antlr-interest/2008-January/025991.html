@@ -1,0 +1,200 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Problems with syntactic predicates(?)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Problems%20with%20syntactic%20predicates%28%3F%29&In-Reply-To=%3C20080127223008.00006ff7%40goanna%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="025999.html">
+   <LINK REL="Next"  HREF="025993.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Problems with syntactic predicates(?)</H1>
+    <B>Mark Wright</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Problems%20with%20syntactic%20predicates%28%3F%29&In-Reply-To=%3C20080127223008.00006ff7%40goanna%3E"
+       TITLE="[antlr-interest] Problems with syntactic predicates(?)">markwright at internode.on.net
+       </A><BR>
+    <I>Sun Jan 27 03:30:08 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="025999.html">[antlr-interest] Problems with syntactic predicates(?)
+</A></li>
+        <LI>Next message: <A HREF="025993.html">[antlr-interest] Problems with syntactic predicates(?)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25991">[ date ]</a>
+              <a href="thread.html#25991">[ thread ]</a>
+              <a href="subject.html#25991">[ subject ]</a>
+              <a href="author.html#25991">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Sat, 26 Jan 2008 17:06:21 -0800
+&quot;Jim Idle&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">jimi at temporal-wave.com</A>&gt; wrote:
+
+&gt;<i> Look at the example grammars for how to set up for parsing
+</I>&gt;<i> expressions with precedence, you don't need those predicates but you
+</I>&gt;<i> do need to chain your rules correctly. Start by coding the primitives
+</I>&gt;<i> (the thigns that cannot break down further). You want something like
+</I>&gt;<i> 
+</I>&gt;<i> equations
+</I>&gt;<i> 	: equation* EOF
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> equation
+</I>&gt;<i>   : primary ('=' primary)?
+</I>&gt;<i>   ;
+</I>&gt;<i> 
+</I>&gt;<i> primary
+</I>&gt;<i>   : IDENT ('(' expression (',' expression)* ')')?
+</I>&gt;<i>   | INT
+</I>&gt;<i>   ;
+</I>&gt;<i> 
+</I>&gt;<i> INT	:	( '0'..'9' )+ ;
+</I>&gt;<i> IDENT	:	( 'a'..'z' )+ ;
+</I>&gt;<i> WS	:	(' ' | '\t' )+ { $channel = HIDDEN; } ;
+</I>&gt;<i> NL	:	'\r'? '\n'	{ $channel = HIDDEN; } ;
+</I>
+Hello Jim,
+
+I agree with Jim's approach here.
+ 
+&gt;<i> You are trying to construct context/semantics in the parser, but it's 
+</I>&gt;<i> job is to parse correct syntactical constructs only. After the parser 
+</I>&gt;<i> you can apply context and semantics.
+</I>
+You can construct context/semantics in the parser with the
+left factoring you are suggesting:
+
+grammar test;
+
+options {
+        output=AST;
+        TokenLabelType=CommonToken;
+        ASTLabelType=CommonTree;
+}
+
+tokens {
+  FUNCTION_CALL;
+}
+
+equations
+        :   equation* EOF
+        ;
+
+equation
+        :   (left=expression -&gt; expression) ('=' right=expression -&gt; ^('=' $left $right))?
+        ;
+
+expression
+        :   (t=IDENT -&gt; IDENT) (function_call[$t] -&gt; function_call)?
+        |   INT
+        ;
+
+function_call[CommonToken t]
+        : '(' expression (',' expression)* ')'
+                -&gt; ^(FUNCTION_CALL {$t} expression+)
+        ;
+
+INT 	:	( '0'..'9' )+ ;
+IDENT	:	( 'a'..'z' )+ ;
+WS	    :	(' ' | '\t' )+ { $channel = HIDDEN; } ;
+NL	    :	'\r'? '\n'	{ $channel = HIDDEN; } ;
+
+Thanks, Mark
+
+&gt;<i> For your grammar then you want
+</I>&gt;<i> to combine everything with common roots into one rule/alt and branch
+</I>&gt;<i> when tokens tell you that you must.
+</I>&gt;<i> 
+</I>&gt;<i> Jim
+</I>&gt;<i> 
+</I>&gt;<i> &gt; -----Original Message-----
+</I>&gt;<i> &gt; From: Christian Gudrian [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">gn at fluidon.dyndns.info</A>]
+</I>&gt;<i> &gt; Sent: Saturday, January 26, 2008 12:24 PM
+</I>&gt;<i> &gt; To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> &gt; Subject: [antlr-interest] Problems with syntactic predicates(?)
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Hello!
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; I want to write a grammar that matches equations like:
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; a=1
+</I>&gt;<i> &gt; 2=b
+</I>&gt;<i> &gt; f_a(3)=4
+</I>&gt;<i> &gt; 5=f_b(6,7)
+</I>&gt;<i> &gt; f_c(8,9)
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; This is my approach so far:
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; // -------------------------- 8&lt; --------------------------
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; grammar test;
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; INT	:	( '0'..'9' )+ ;
+</I>&gt;<i> &gt; IDENT	:	( 'a'..'z' )+ ;
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; equation
+</I>&gt;<i> &gt; 	:	( expression '=' ) =&gt; expression '=' expression
+</I>&gt;<i> &gt; 	|	function_call
+</I>&gt;<i> &gt; 	;
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; expression
+</I>&gt;<i> &gt; 	:	( IDENT '(' ) =&gt; function_call
+</I>&gt;<i> &gt; 	|	INT
+</I>&gt;<i> &gt; 	|	IDENT
+</I>&gt;<i> &gt; 	;
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; function_call
+</I>&gt;<i> &gt; 	:	IDENT '(' args? ')' ;
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; args	:	expression ( ',' expression )* ;
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; // ------------------------- &gt;8 --------------------------
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; The ANTLRWorks debugger shows me, that the equation rule matches
+</I>&gt;<i> &gt; input of the form &quot;a=1&quot;.  Everything involving function calls
+</I>&gt;<i> &gt; doesn't match, however; I get a NoViableAltException(0!=[null])
+</I>&gt;<i> &gt; error in these cases.  I suspect it's my use of syntactic
+</I>&gt;<i> &gt; predicates which causes this behaviour, isn't it?  What's wrong?
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Christian
+</I>&gt;<i> &gt; 
+</I>&gt;<i> 
+</I>
+
+-- 
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="025999.html">[antlr-interest] Problems with syntactic predicates(?)
+</A></li>
+	<LI>Next message: <A HREF="025993.html">[antlr-interest] Problems with syntactic predicates(?)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25991">[ date ]</a>
+              <a href="thread.html#25991">[ thread ]</a>
+              <a href="subject.html#25991">[ subject ]</a>
+              <a href="author.html#25991">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

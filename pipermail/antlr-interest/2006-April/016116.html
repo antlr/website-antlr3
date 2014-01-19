@@ -1,0 +1,355 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Grammar nondeterminism on recursion beginner's
+	question
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Grammar%20nondeterminism%20on%20recursion%20beginner%27s%0A%09question&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="016114.html">
+   <LINK REL="Next"  HREF="016117.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Grammar nondeterminism on recursion beginner's
+	question</H1>
+    <B>Stritzel.Nils at infineon.com</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Grammar%20nondeterminism%20on%20recursion%20beginner%27s%0A%09question&In-Reply-To="
+       TITLE="[antlr-interest] Grammar nondeterminism on recursion beginner's
+	question">Stritzel.Nils at infineon.com
+       </A><BR>
+    <I>Fri Apr 28 00:37:42 PDT 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="016114.html">[antlr-interest] StringTemplate: Infinite Recursion in
+	anonymousconditional template.
+</A></li>
+        <LI>Next message: <A HREF="016117.html">[antlr-interest] Grammar nondeterminism on recursion
+	beginner'squestion
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#16116">[ date ]</a>
+              <a href="thread.html#16116">[ thread ]</a>
+              <a href="subject.html#16116">[ subject ]</a>
+              <a href="author.html#16116">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi all,
+
+I am still working my fomrula parser and after solving an earlier issue
+(thanks to Martin Probst).
+But now I have got a new problem.
+
+My grammar includes a list that contains to different types of elements
+runExpr and batchExpr. This is supposed to contains and list one runExpr
+and one batchExpr.
+
+runBatchExprList
+	:
+	(runExpr SEP!) =&gt;
+			runExpr SEP! runBatchExprList 
+			| 
+			runExpr SEP! batchExpr
+	|
+	(batchExpr SEP!) =&gt;
+		batchExpr SEP! runBatchExprList
+		|
+		batchExpr SEP! runExpr
+	;
+
+But the matter is that runExpr and batchExpr can start with the same
+Tokens so this seemingly causes some problem.
+Is there a way to make the parser know which is the right alternative?
+Can I get this to work without rewriting everything?
+Below is my (for this posting somewhat simplified) grammar.
+Maybe the question boils down to the question, how to choose correctly
+from a a rule like this:
+Rule1 : batchExpr | runExpr ;
+
+
+Thanks,
+
+Nils
+
+
+
+
+class ExpressionParser extends Parser;
+options {
+	buildAST = true;	// uses CommonAST by default
+	k = 1;
+}
+
+imaginaryTokenDefinitions
+	:
+	SIGN_MINUS
+	SIGN_PLUS
+	;
+
+expr	:
+	(formula)* EOF!
+	;
+	
+formula
+	:
+	BATCHCSID ASSIGN^ batchExpr
+	| 
+	RUNCSID ASSIGN^ runExpr
+	;
+
+batchExpr 
+	:
+	sumExpr 
+	;
+
+sumExpr : 
+	baseExpr ((PLUS^|MINUS^) baseExpr)* 
+	; 
+
+baseExpr 
+	: 
+	primaryExpr 
+	| 
+	signedExpr
+	;
+	
+signedExpr
+	:
+	(m: MINUS^ {#m.setType(SIGN_MINUS);} | p: PLUS^
+{#p.setType(SIGN_PLUS);})         
+	baseExpr
+	;
+	
+primaryExpr
+  	: 
+  	DOUBLE
+  	| 
+  	BATCHVARIABLE
+  	| 
+  	(LPAREN^ batchExpr RPAREN! )
+  	| 
+  	functionCall
+  	;
+  
+  
+functionCall 
+	: 
+	(CABS^ | CSIGN^) LPAREN! batchExpr RPAREN!      
+  	| 
+  	((CAVG LPAREN^) =&gt; CAVG LPAREN! batchExprList RPAREN!
+  			| CAVG LPAREN! batchExpr RPAREN!) 
+	| 
+	(CMAX^ | CMIN^) LPAREN! batchExprList RPAREN!
+  	;
+  
+
+batchExprList 
+  	:
+	batchExpr (SEP! batchExpr)+ {## = #(#[SEP], ##); }
+	;
+
+runExpr : 
+	runSumExpr
+	;
+
+runSumExpr 
+	: 
+	runBaseExpr ((PLUS^|MINUS^) runBaseExpr)*
+	;
+	
+	
+runBaseExpr 
+	: 
+	runPrimaryExpr 
+	| 
+	runSignedExpr
+	;
+
+
+runSignedExpr
+	: 
+        (m: MINUS^ {#m.setType(SIGN_MINUS);} | p: PLUS^
+{#p.setType(SIGN_PLUS);})         
+	runBaseExpr
+	;
+	
+runPrimaryExpr	
+	: 
+  	RUNVARIABLE
+  	| 
+  	(LPAREN^ runExpr RPAREN! )
+  	| 
+  	runFunctionCall
+  	;
+  
+
+runFunctionCall 
+	:
+       	(CABS^ | CSIGN^) LPAREN! runExprList RPAREN! 
+       	|
+       	(CMAX^) =&gt; (CMAX^  LPAREN! runBatchExprList RPAREN!)
+       		| 
+       		(CMAX^  LPAREN! runExprList RPAREN!) 	
+       		|
+       	(CMIN^) =&gt; (CMIN^  LPAREN! runBatchExprList RPAREN!)
+       		| (CMIN^  LPAREN! runExprList RPAREN!) 
+       	|
+       	(CAVG^) =&gt; (CAVG^  LPAREN! runExprList RPAREN!)
+       		| 
+       		(CAVG^  LPAREN! runExpr RPAREN!) 
+	;
+	
+runExprList 
+  	:
+	runExpr (SEP! runExpr)+ {## = #(#[SEP], ##); }
+	;
+	
+
+
+runBatchExprList
+	:
+	(runExpr SEP!) =&gt;
+			runExpr SEP! runBatchExprList 
+			| 
+			runExpr SEP! batchExpr
+	|
+	(batchExpr SEP!) =&gt;
+		batchExpr SEP! runBatchExprList
+		|
+		batchExpr SEP! runExpr
+	;
+
+
+
+
+class ExpressionLexer extends Lexer;
+
+options {
+	caseSensitive = false;
+	k = 8;
+}
+
+PLUS	: 
+	'+' 
+	;
+
+MINUS	: 
+	'-' 
+	;
+
+MULT	: 
+	'*' 
+	;
+
+DIV	: 
+	'/'  
+	; 
+
+LPAREN	: 
+	'(' 
+	;
+
+RPAREN	: 
+	')' 
+	;
+
+protected DIGIT 
+	: 
+	'0'..'9' 
+	;
+
+WS 	:
+	(' '
+	| 
+	'\t'
+	|
+	'\r' '\n' {newline(); }
+	| 
+	'\n'	{newline(); }
+	)
+	{ $setType(Token.SKIP); }
+	;	
+	
+DOUBLE 	:	
+	(DIGIT)+ ('.' (DIGIT)+)? ('e' (MINUS|PLUS)? (DIGIT)+ )? 
+	;	
+
+ASSIGN	:       
+	'=' 
+	;
+
+SEP	:
+	'\\' 
+	;
+
+
+RUNCSID		
+	:	
+	&quot;rsc.&quot;
+	; 
+
+RUNVARIABLE 	
+	:
+	&quot;r.&quot;
+	;
+	
+BATCHCSID	
+	:	
+	&quot;bsc.&quot;
+	;
+	
+BATCHVARIABLE      
+	:	
+	&quot;b.&quot;
+	;
+	
+CMAX	: 
+	&quot;c_max&quot;
+	;
+	
+CMIN	:
+	&quot;c_min&quot;
+	;
+	
+CABS	:
+	&quot;c_abs&quot;
+	;
+	
+CAVG	:			
+	&quot;c_avg&quot;
+	;
+
+CSIGN	: 
+	&quot;c_sign&quot; 
+	;
+</PRE>
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="016114.html">[antlr-interest] StringTemplate: Infinite Recursion in
+	anonymousconditional template.
+</A></li>
+	<LI>Next message: <A HREF="016117.html">[antlr-interest] Grammar nondeterminism on recursion
+	beginner'squestion
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#16116">[ date ]</a>
+              <a href="thread.html#16116">[ thread ]</a>
+              <a href="subject.html#16116">[ subject ]</a>
+              <a href="author.html#16116">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

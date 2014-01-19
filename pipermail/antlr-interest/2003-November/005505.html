@@ -1,0 +1,224 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] how to force unexpected token error
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20how%20to%20force%20unexpected%20token%20error&In-Reply-To=bokamd%2Bij10%40eGroups.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005429.html">
+   <LINK REL="Next"  HREF="005508.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] how to force unexpected token error</H1>
+    <B>Ric Klaren</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20how%20to%20force%20unexpected%20token%20error&In-Reply-To=bokamd%2Bij10%40eGroups.com"
+       TITLE="[antlr-interest] how to force unexpected token error">klaren at cs.utwente.nl
+       </A><BR>
+    <I>Thu Nov 13 05:04:18 PST 2003</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005429.html">[antlr-interest] how to force unexpected token error
+</A></li>
+        <LI>Next message: <A HREF="005508.html">[antlr-interest] Re: how to force unexpected token error
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5505">[ date ]</a>
+              <a href="thread.html#5505">[ thread ]</a>
+              <a href="subject.html#5505">[ subject ]</a>
+              <a href="author.html#5505">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+On Sun, Nov 09, 2003 at 03:01:33AM -0000, hawkwall wrote:
+&gt;<i> Input:
+</I>&gt;<i> THREAT.CLASSES.110
+</I>&gt;<i> NUMBER.OF.SURFACE.TO.AIR.THREAT.CLASSES:  3
+</I>&gt;<i> end of Input:
+</I>&gt;<i>
+</I>&gt;<i> Parser:
+</I>&gt;<i> startSACLASS : (rules)+ ;
+</I>&gt;<i>
+</I>&gt;<i> rules : threatclass
+</I>&gt;<i>         | sathreatclass
+</I>&gt;<i>         ;
+</I>&gt;<i>
+</I>&gt;<i> threatclass: THREAT_CLASSES ONETEN;
+</I>
+Better use NUMBER in stead of ONETEN and then check here if it's &quot;110&quot;. If
+not so throw a SemanticException or whatever Exception you deem more
+apropriate (RecognitionException?).
+
+&gt;<i> sathreatclass: SURFACE_TO_AIR COLON  NUMBER
+</I>&gt;<i> 	{System.out.println(&quot;Got Here&quot;);}
+</I>&gt;<i> 	;
+</I>&gt;<i> end of Parser:
+</I>&gt;<i>
+</I>&gt;<i> Lexer:
+</I>&gt;<i> options {
+</I>&gt;<i> 	k=5; // character lookahead
+</I>
+Not really necessary to have this much lookahead. (Ok antlr optimizes
+excess checks away but with bigger stuff it makes running antlr slower)
+
+&gt;<i> 	testLiterals=false;
+</I>&gt;<i> }
+</I>&gt;<i>
+</I>&gt;<i> tokens
+</I>&gt;<i> {
+</I>&gt;<i> 	THREAT_CLASSES=&quot;THREAT.CLASSES.&quot;;
+</I>&gt;<i> 	SURFACE_TO_AIR=&quot;NUMBER.OF.SURFACE.TO.AIR.THREAT.CLASSES&quot;;
+</I>&gt;<i> }
+</I>&gt;<i>
+</I>&gt;<i> IDENTIFIER options { testLiterals=true;} : (LETTER | '.')+;
+</I>&gt;<i> NUMBER : (DIGIT)+;
+</I>&gt;<i> DOT : '.' ;
+</I>&gt;<i> COLON : ':';
+</I>&gt;<i> ONETEN : (&quot;110&quot;) =&gt; &quot;110&quot; ; //predicate is an attempt to remove
+</I>&gt;<i> nondetermism with NUMBER, but didn't work
+</I>
+I'd remove the ONETEN rule better deal with it in the parser... At least
+it's kinda ugly like this ;) Also the rule might interfere with other valid
+uses of 110 as a number. E.g. like this you have to deal in the parser in
+all spots where you have a NUMBER token with an extra alternative ONETEN.
+
+e.g. the choice between one NUMBER rule (and no ONETEN) and in the parser
+in a few spots a check on 110. Or a NUMBER and a ONETEN rule and in the
+parser for all NUMBER occurences (NUMBER|ONETEN) if NUMBER is common in the
+rest of the grammar the choice is obvious.
+
+&gt;<i> private DIGIT : ('0'..'9') ;
+</I>&gt;<i> private LETTER : ('A'..'Z');
+</I>&gt;<i>
+</I>...
+&gt;<i> end of Lexer:
+</I>&gt;<i>
+</I>&gt;<i> I need the parser to catch it if the input is mispelled.
+</I>&gt;<i> The parser complains if I change the first line to
+</I>&gt;<i> THREAT.CASSES.110 or THREAT.CLASSES.112
+</I>&gt;<i>
+</I>&gt;<i> It doesn't fail when I correct the first line and change the second
+</I>&gt;<i> line to something like
+</I>&gt;<i> NUMBER.OF.USRFACE.TO.AIR.THREAT.CLASSES: 3
+</I>&gt;<i>
+</I>&gt;<i> I turned on the trace, and with the incorrect input on the second
+</I>&gt;<i> line, it matches IDENTIFIER and
+</I>&gt;<i> then finished normally.  The action is never executed.  What is the
+</I>&gt;<i> difference?
+</I>
+Because there's no EOF check it just came to the conclusion that the input
+upto now was valid and it could exit (at least that's my guess). IDENTIFIER
+is a valid token in your lexer but your parser does not process it as a
+result it matches any misspelled keyword and the parser does not require
+any more tokens so it just stops if it received some valid input. Having
+EOF at the end of the start rule is very good practice in general (although
+in some rarer cases you don't want it)
+
+&gt;<i> Why is unexpected token given
+</I>&gt;<i> in the first case but not the other.  I tried setting
+</I>&gt;<i> defaultErrorHandler=false, but it didn't fix my problem.
+</I>
+defaultErrorhandler only controls wether a exception falls through to the
+caller of the parser or if it gets caught in the rule throwing it. Just
+look at the differences in generated code.
+
+&gt;<i> I tried
+</I>&gt;<i> putting EOF at the end of my start rule, but to no avail.  I tried to
+</I>&gt;<i> factor
+</I>&gt;<i> out the THREAT.CLASSES from the end of SURFACE_TO_AIR, also removing
+</I>&gt;<i> the final dot from the THREAT_CLASSES token.
+</I>&gt;<i> I changed the threatclass rule to :
+</I>&gt;<i> THREAT_CLASSES DOT ONETEN
+</I>&gt;<i> and then got a
+</I>&gt;<i> line 1:1: unexpected token: THREAT.CLASSES.
+</I>&gt;<i> error.
+</I>&gt;<i>
+</I>&gt;<i> I see why it is happening in the parser.  Here is the relevent java:
+</I>&gt;<i> public final void startSACLASS() throws RecognitionException,
+</I>&gt;<i> TokenStreamException {
+</I>&gt;<i>
+</I>&gt;<i> 		try {      // for error handling
+</I>....
+&gt;<i> The problem is the if ( _cnt1421&gt;=1).  If I remove that and make the
+</I>&gt;<i> code look like this:
+</I>
+The &gt;= 1 is from the ()+ in the rule.
+
+&gt;<i> 				if ((LA(1)==THREAT_CLASSES||LA(1)==SURFACE_TO_AIR)) {
+</I>&gt;<i> 					rules();
+</I>&gt;<i> 				}
+</I>&gt;<i> 				else {
+</I>&gt;<i> 					throw new NoViableAltException(LT(1), getFilename());
+</I>&gt;<i> 				}
+</I>
+What happens if you change the start rule to:
+
+startSACLASS : (rules)* EOF ;
+
+Or maybe even better remove these from the tokens section:
+
+&gt;<i> 	THREAT_CLASSES=&quot;THREAT.CLASSES.&quot;;
+</I>&gt;<i> 	SURFACE_TO_AIR=&quot;NUMBER.OF.SURFACE.TO.AIR.THREAT.CLASSES&quot;;
+</I>
+And delete the IDENTIFIER rule. This is the one that makes all tokens with
+letters and dots in them valid. Unless you catch invalid identifiers in the
+parser (depends on the rest of your grammar looking at the _cnt1421 I
+suspect your grammar is bigger in reality than this snippet)
+
+and add rules:
+
+THREAT_CLASSES : &quot;THREAT.CLASSES.&quot;;
+SURFACE_TO_AIR : &quot;NUMBER.OF.SURFACE.TO.AIR.THREAT.CLASSES&quot;;
+
+Then anything not matching these and the other lexer rules will bomb out.
+Another option is to have the IDENTIFIER rule and use some extra checks on
+invalid IDENTIFIER checks in the parser or maybe overload the literals
+testing method of the lexer and have it bomb out (throw an exception) if no
+literal is matched. Again this depends on your complete grammar either
+solution has its advantages and its drawbacks.
+
+Just for kicks make little executable around the lexer that calls nextToken
+on it and dumps it to stdout. Then look at the tokens returned by the lexer
+it should give you more of a feel what your parser sees and which errors
+are generated by the parser and which ones by the lexer.
+
+Hope this helps,
+
+Ric
+--
+-----+++++*****************************************************+++++++++-------
+    ---- Ric Klaren ----- <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">j.klaren at utwente.nl</A> ----- +31 53 4893722  ----
+-----+++++*****************************************************+++++++++-------
+  Quidquid latine dictum sit, altum viditur.
+                 (Whatever is said in Latin sounds profound.)
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005429.html">[antlr-interest] how to force unexpected token error
+</A></li>
+	<LI>Next message: <A HREF="005508.html">[antlr-interest] Re: how to force unexpected token error
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5505">[ date ]</a>
+              <a href="thread.html#5505">[ thread ]</a>
+              <a href="subject.html#5505">[ subject ]</a>
+              <a href="author.html#5505">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,241 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Article against TreeWalkers
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Article%20against%20TreeWalkers&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="015621.html">
+   <LINK REL="Next"  HREF="015637.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Article against TreeWalkers</H1>
+    <B>Jeff Barnes</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Article%20against%20TreeWalkers&In-Reply-To="
+       TITLE="[antlr-interest] Article against TreeWalkers">Jeff.Barnes at codesic.com
+       </A><BR>
+    <I>Wed Mar  8 12:59:02 PST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="015621.html">[antlr-interest] Article against TreeWalkers
+</A></li>
+        <LI>Next message: <A HREF="015637.html">[antlr-interest] Article against TreeWalkers
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#15622">[ date ]</a>
+              <a href="thread.html#15622">[ thread ]</a>
+              <a href="subject.html#15622">[ subject ]</a>
+              <a href="author.html#15622">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Jeff sez:
+ 
+&gt;<i>Would it be fair to say that one big switch statement is not as good as an interface?
+</I>&gt;<i> 
+</I>&gt;<i>
+</I>Andy sez:
+I don't think so. I'm not sure how an interface could even replace a big
+switch statement in the case I show there, where we're
+saying &quot;I'm processing a particular AST node, and here's a huge switch
+statement on the node type&quot;. I suppose we could
+have a bunch interfaces (e.g. &quot;ImABinaryOperatorNode&quot;), and have the AST
+node implement one of them, but that
+doesn't seem to make things any cleaner to me.
+
+Jeff sez:
+
+If using an interface doesn't seem cleaner, then you probably are better off with a big switch statement. Me? I groan whenever I have to look at a big switch statement. But my primary reason for using an interface is by extension; I want to give the metatype as much responsibility as I can. I can see similarity between the tree metalanguage and metamodel. I just wish there were a mechanism for explicit constraints in the tree grammar without going to code.
+
+My lexers get &quot;primitive&quot; values. For example:
+
+COMMA:
+    &quot;,&quot;
+;
+    
+protected
+DIGIT:
+    '0'..'9'
+;
+
+protected
+DOUBLE:
+    INT '.' INT
+;
+    
+protected
+ID:
+    (LETTER | '_') (DIGIT | LETTER | '_')*
+    ;
+    
+
+...
+
+
+My parsers make sure the words form structurally valid sentences:
+
+model 
+{
+}
+:<i>
+</I>    object object
+;
+
+object
+{
+}
+:<i>
+</I>    LPAREN! OBJECT^
+    typeid:ID 
+    (
+        param
+    )*
+    (
+        attribute
+    )* 
+    RPAREN!
+;
+
+attribute
+{
+}
+:<i>
+</I>    ID^
+    value 
+;
+
+...
+
+And my trees make sure the parser doesn't return nonsense as well as check other &quot;paragraph&quot; structure:
+
+pkg
+{
+        String component = null;
+}
+:<i>!
+</I>    #(
+        OBJECT
+        pkgid:ID {pkgid.getText().equals(&quot;Class_Category&quot;)}? {## = #pkgid;}
+        name:STRING {#pkgid.addChild(#name);}
+            (
+                {_t.getText().equals(&quot;logical_models&quot;)}? 
+                    #(ID 
+                        #(LIST ID {component = _t.getFirstChild().getText(); }
+                            (   {(_t.getFirstChild() != null) &amp;&amp; {(_t.getFirstChild().getText().equals(&quot;Class_Category&quot;))}? p:pkg {#name.addChild(#p);}
+                            |   {(_t.getFirstChild() != null) &amp;&amp; {(_t.getFirstChild().getText().equals(&quot;Class&quot;))}? c:clazz {#name.addChild(#c);}
+
+...
+                            )*
+                        )
+                    )
+            |   {_t.getText().equals(&quot;statemachine&quot;)}? #(smid:ID sm:state_machine {#name.addChild(#smid); #smid.addChild(#sm);})
+            |!  attr:attribute
+            )+
+        
+    )
+;
+
+clazz
+{
+    int irCt = 0;
+}
+:<i>!
+</I>    #(
+        OBJECT
+        clid:ID {## = #(#clid,#[ID,&quot;Name&quot;]);}
+        name:STRING {#clid.getFirstChild().addChild(#name);}
+        (   {_t.getText().equals(&quot;class_attributes&quot;)}?  
+                #(atts:ID {#clid.addChild(#atts);}
+                    #(LIST ID 
+                        (
+                            ca:class_attribute {#atts.addChild(#ca);}
+                        )*
+                    )
+                )
+        |   {_t.getText().equals(&quot;nestedClasses&quot;)}? 
+                #(nc:ID {#clid.addChild(#nc);}
+                    #(LIST ID 
+                        (
+                            c:clazz {#nc.addChild(#c);}
+                        )*
+                    )
+                )
+        |   {_t.getText().equals(&quot;superclasses&quot;)}? 
+                #(sups:ID {#clid.addChild(#sups);}
+                    #(LIST ID 
+                        (
+                            ir:inheritance_relationship {#sups.addChild(#ir);}
+                        )*
+                    )
+                )
+        |   {_t.getText().equals(&quot;statemachine&quot;)}? #(smid:ID sm:state_machine {#clid.addChild(#smid); #smid.addChild(#sm);})
+        |!  attr:attribute! 
+        )*
+    )
+;
+
+class_attribute
+{}
+:<i>!
+</I>    #(
+        OBJECT
+        attid:ID {attid.getText().equals(&quot;ClassAttribute&quot;)}? {## = #(#attid,#[ID,&quot;Name&quot;]);}
+        name:STRING {#attid.getFirstChild().addChild(#name);}
+        (
+            {_t.getText().equals(&quot;type&quot;)}?
+                #(id1:ID sv:STRING) {#attid.addChild(#id1); #id1.addChild(#sv);}
+        |
+            {_t.getText().equals(&quot;static&quot;)}?
+                #(id2:ID bv1:BOOLEAN) {#attid.addChild(#id2); #id2.addChild(#bv1);}
+        |
+            {_t.getText().equals(&quot;derived&quot;)}?
+                #(id3:ID bv2:BOOLEAN) {#attid.addChild(#id3); #id3.addChild(#bv2);}
+        |! attribute
+        )+
+    )
+;
+
+ 
+
+Now I just gotta figure out a way to get the state of the tree without going to code (_t, etc.).
+
+Jeff
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="015621.html">[antlr-interest] Article against TreeWalkers
+</A></li>
+	<LI>Next message: <A HREF="015637.html">[antlr-interest] Article against TreeWalkers
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#15622">[ date ]</a>
+              <a href="thread.html#15622">[ thread ]</a>
+              <a href="subject.html#15622">[ subject ]</a>
+              <a href="author.html#15622">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

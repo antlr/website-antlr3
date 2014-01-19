@@ -1,0 +1,192 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Solving non determinism
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Solving%20non%20determinism&In-Reply-To=cep0u7%2Bcflr%40eGroups.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="008940.html">
+   <LINK REL="Next"  HREF="008942.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Solving non determinism</H1>
+    <B>jbb at acm.org</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Solving%20non%20determinism&In-Reply-To=cep0u7%2Bcflr%40eGroups.com"
+       TITLE="[antlr-interest] Solving non determinism">jbb at acm.org
+       </A><BR>
+    <I>Wed Aug  4 07:49:09 PDT 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="008940.html">[antlr-interest] Solving non determinism
+</A></li>
+        <LI>Next message: <A HREF="008942.html">[antlr-interest] trying to understand greedy option
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#8959">[ date ]</a>
+              <a href="thread.html#8959">[ thread ]</a>
+              <a href="subject.html#8959">[ subject ]</a>
+              <a href="author.html#8959">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Greetings!
+
+On Tue, 03 Aug 2004 21:43:35 +0000, xdecoret wrote:
+&gt;<i>I cannot solve a non determinism problem with my grammar:
+</I>&gt;<i>
+</I>&gt;<i>ANTLR Parser Generator   Version 2.7.3   1989-2004 jGuru.com
+</I>&gt;<i>foo.g:72: warning:nondeterminism upon
+</I>&gt;<i>foo.g:72:     k==1:NAME
+</I>&gt;<i>foo.g:72:     k==2:EQUAL
+</I>&gt;<i>foo.g:72:     k==3:NAME,STRING,VALUE
+</I>&gt;<i>foo.g:72:     k==4:COMA,POUND
+</I>&gt;<i>foo.g:72:     k==5:NAME,STRING,VALUE
+</I>&gt;<i>foo.g:72:     between alt 1 and exit branch of block
+</I>&gt;<i>
+</I>&gt;<i>I do not understand why antlr 2.7.3 complains.
+</I>&gt;<i>
+</I>&gt;<i>I copy the .g file below (this is a parser for bibtex format). Note
+</I>&gt;<i>that if I use the commented line for fieldValue productions rule, the
+</I>&gt;<i>problem does not show up. 
+</I>&gt;<i>
+</I>...grammar snipped...
+
+I have four suggested changes for your BibTex grammar. They all relate
+to transforming the grammar into LL form, e.g left factoring and
+eliminating left recursion.
+
+1) change your fields rule (line 71) from:
+
+fields
+    : (field COMA)* field (COMA)?
+    ;
+
+to be:
+
+fields
+    : field ( COMA ( fields )? )?
+    ;
+
+[Note: this change directly addresses the nondeterminism you asked about.
+       with this change your nondeterminism is solved, you won't need
+       my other suggested changes. but I hope they will be of use to
+       you anyway...]
+
+2) change your fieldValue rule (line 81) from:
+
+
+fieldValue returns [std::string v]
+{
+    string p;
+    string q;
+}
+    : (p=fieldValuePart POUND {v += p;})* q=fieldValuePart {v += q; }
+//     : q=fieldValuePart {v += q; }
+    ;
+
+to be:
+
+fieldValue returns [std::string v]
+{
+    string p;
+}
+    : p=fieldValuePart {v += p;} (POUND q=fieldValuePart {v += p;})*
+    ;
+
+3) left factor your stringdef rule (line 35) by changing it from:
+
+stringdef
+{
+    string i;
+    string s;
+}
+    : STRINGDEF LPARENTHESIS i=id EQUAL
+        {
+            braceStartsValue_ = true;
+        }
+        s=fieldValue RPARENTHESIS
+        {
+            braceStartsValue_ = false;
+        }
+    | STRINGDEF LBRACE i=id EQUAL
+        {
+            braceStartsValue_ = true;
+        }
+        s=fieldValue RBRACE
+        {
+            braceStartsValue_ = false;
+        }        
+    ;
+
+to be:
+
+stringdef
+{
+    string i;
+    string s;
+}
+    : STRINGDEF
+	( LPARENTHESIS i=id EQUAL
+	    {
+		braceStartsValue_ = true;
+	    }
+	    s=fieldValue RPARENTHESIS
+	    {
+		braceStartsValue_ = false;
+	    }
+	| LBRACE i=id EQUAL
+	    {
+		braceStartsValue_ = true;
+	    }
+	    s=fieldValue RBRACE
+	    {
+		braceStartsValue_ = false;
+	    }
+	)
+    ;
+
+4) lastly remove the &quot;k = 5;&quot; from the parser options, no lookahead is
+   needed any more.
+
+
+Hope this helps...
+	John B. Brodie (<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">jbb at acm.org</A>)
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+    <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+    <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+    <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="008940.html">[antlr-interest] Solving non determinism
+</A></li>
+	<LI>Next message: <A HREF="008942.html">[antlr-interest] trying to understand greedy option
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#8959">[ date ]</a>
+              <a href="thread.html#8959">[ thread ]</a>
+              <a href="subject.html#8959">[ subject ]</a>
+              <a href="author.html#8959">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

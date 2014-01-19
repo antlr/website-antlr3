@@ -1,0 +1,303 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] NullPointerException in TreeRewriter
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20NullPointerException%20in%20TreeRewriter&In-Reply-To=%3C01EBE25E-6C41-423C-9C9D-D2917DE8240C%40cs.usfca.edu%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="033710.html">
+   <LINK REL="Next"  HREF="033730.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] NullPointerException in TreeRewriter</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20NullPointerException%20in%20TreeRewriter&In-Reply-To=%3C01EBE25E-6C41-423C-9C9D-D2917DE8240C%40cs.usfca.edu%3E"
+       TITLE="[antlr-interest] NullPointerException in TreeRewriter">parrt at cs.usfca.edu
+       </A><BR>
+    <I>Thu Mar 26 13:40:56 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="033710.html">[antlr-interest] NullPointerException in TreeRewriter
+</A></li>
+        <LI>Next message: <A HREF="033730.html">[antlr-interest] NullPointerException in TreeRewriter
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#33722">[ date ]</a>
+              <a href="thread.html#33722">[ thread ]</a>
+              <a href="subject.html#33722">[ subject ]</a>
+              <a href="author.html#33722">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Doh!  HMm...not sure it should create new state. here is super(input)  
+ctor:
+
+	public TreeParser(TreeNodeStream input) {
+		super(); // highlight that we go to super to set state object
+		setTreeNodeStream(input);
+	}
+
+that super() calls
+
+	public BaseRecognizer() {
+		state = new RecognizerSharedState();
+	}
+
+So I think state is set.  We need the adaptor ....
+
+Ok, TreeFilter/Rewriter need:
+
+     public TreeFilter(TreeNodeStream input) {
+         this(input, new RecognizerSharedState());
+     }
+
+to call other ctor :)  Try that.
+
+Ter
+On Mar 26, 2009, at 6:57 AM, Anders Hessellund wrote:
+
+&gt;<i> Hi,
+</I>&gt;<i>
+</I>&gt;<i> I found the cause. When you call the 1-arg constructor in the  
+</I>&gt;<i> TreeRewriter class, it does not set the TreeAdaptor:
+</I>&gt;<i>
+</I>&gt;<i>     public TreeRewriter(TreeNodeStream input) {
+</I>&gt;<i>         super(input);
+</I>&gt;<i>     }
+</I>&gt;<i>     public TreeRewriter(TreeNodeStream input, RecognizerSharedState  
+</I>&gt;<i> state) {
+</I>&gt;<i>         super(input, state);
+</I>&gt;<i>         originalAdaptor = input.getTreeAdaptor();
+</I>&gt;<i>         originalTokenStream = input.getTokenStream();
+</I>&gt;<i>     }
+</I>&gt;<i>
+</I>&gt;<i> Shouldn't the 1-arg constructor rather be?
+</I>&gt;<i>
+</I>&gt;<i>     public TreeRewriter(TreeNodeStream input) {
+</I>&gt;<i>         super(input,new RecognizerSharedState());
+</I>&gt;<i>     }
+</I>&gt;<i>     public TreeRewriter(TreeNodeStream input, RecognizerSharedState  
+</I>&gt;<i> state) {
+</I>&gt;<i>         super(input, state);
+</I>&gt;<i>         originalAdaptor = input.getTreeAdaptor();
+</I>&gt;<i>         originalTokenStream = input.getTokenStream();
+</I>&gt;<i>     }
+</I>&gt;<i>
+</I>&gt;<i> Cheers,
+</I>&gt;<i>
+</I>&gt;<i> Anders
+</I>&gt;<i>
+</I>&gt;<i> On Thu, Mar 26, 2009 at 9:39 AM, Anders Hessellund &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">anders.hessellund at gmail.com</A> 
+</I>&gt;<i> &gt; wrote:
+</I>&gt;<i> Hi,
+</I>&gt;<i>
+</I>&gt;<i> You're right I did not set a tree adaptor. I was actually trying the  
+</I>&gt;<i> example from the wiki but there is no mention of a tree adaptor there?
+</I>&gt;<i>
+</I>&gt;<i>   <A HREF="http://www.antlr.org/wiki/display/~admin/2008/11/30/Example+tree">http://www.antlr.org/wiki/display/~admin/2008/11/30/Example+tree</A> 
+</I>&gt;<i> +rewriting+with+patterns
+</I>&gt;<i>
+</I>&gt;<i> Any ideas?
+</I>&gt;<i>
+</I>&gt;<i> -- Anders
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> On Wed, Mar 25, 2009 at 9:20 PM, Terence Parr &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">parrt at cs.usfca.edu</A>&gt;  
+</I>&gt;<i> wrote:
+</I>&gt;<i> weird. oh, if you look at code it thinks the adaptor is null...maybe  
+</I>&gt;<i> you set it incorrectly or don't have one on the nodestream or reducer?
+</I>&gt;<i> Ter
+</I>&gt;<i>
+</I>&gt;<i> On Mar 25, 2009, at 12:10 PM, Anders Hessellund wrote:
+</I>&gt;<i>
+</I>&gt;<i> Hi,
+</I>&gt;<i>
+</I>&gt;<i> I just updated to 3.1.3 to try TreeRewriter but I get a strange  
+</I>&gt;<i> NullPointerException?
+</I>&gt;<i>
+</I>&gt;<i> This is my tree grammar:
+</I>&gt;<i>
+</I>&gt;<i> tree grammar Reducer;
+</I>&gt;<i> options {
+</I>&gt;<i>    tokenVocab=Expression;
+</I>&gt;<i>    ASTLabelType=CommonTree;
+</I>&gt;<i>    output=AST;
+</I>&gt;<i>    filter=true;
+</I>&gt;<i> }
+</I>&gt;<i> topdown
+</I>&gt;<i>    :    ^(MULT a=. b=INT {$b.int==0}?) -&gt; $b // x*0 -&gt; 0
+</I>&gt;<i>    ;
+</I>&gt;<i> bottomup
+</I>&gt;<i>    :    ^(DIV a=. b=INT {$b.int==0}?) -&gt; $b // x*0 -&gt; 0
+</I>&gt;<i>    ;
+</I>&gt;<i>
+</I>&gt;<i> I use the following code to invoke the Reducer. (tree is the  
+</I>&gt;<i> CommonTree object from my parse)
+</I>&gt;<i>
+</I>&gt;<i>    final CommonTreeNodeStream nodes = new CommonTreeNodeStream(tree);
+</I>&gt;<i>    final McAntlrExpressionReducer reducer = new  
+</I>&gt;<i> McAntlrExpressionReducer(nodes,env);
+</I>&gt;<i>    tree = (CommonTree) reducer.downup(tree);
+</I>&gt;<i>
+</I>&gt;<i> When I run this on the following expression &quot;3*0&quot; I get the  
+</I>&gt;<i> following error:
+</I>&gt;<i>
+</I>&gt;<i> 20:09:08.226 [main] DEBUG expression.Expression - parsing '3*0'  
+</I>&gt;<i> results in this AST: (* 3 0)
+</I>&gt;<i> 20:09:08.226 [main] DEBUG expression.Expression - before reduction:  
+</I>&gt;<i> (* 3 0)
+</I>&gt;<i> java.lang.NullPointerException
+</I>&gt;<i>    at  
+</I>&gt;<i> org 
+</I>&gt;<i> .antlr 
+</I>&gt;<i> .runtime.tree.CommonTreeNodeStream.&lt;init&gt;(CommonTreeNodeStream.java: 
+</I>&gt;<i> 67)
+</I>&gt;<i>    at  
+</I>&gt;<i> org.antlr.runtime.tree.TreeRewriter.applyOnce(TreeRewriter.java:56)
+</I>&gt;<i>    at org.antlr.runtime.tree.TreeRewriter$1.pre(TreeRewriter.java:86)
+</I>&gt;<i>    at org.antlr.runtime.tree.TreeVisitor.visit(TreeVisitor.java:28)
+</I>&gt;<i>    at org.antlr.runtime.tree.TreeRewriter.downup(TreeRewriter.java:89)
+</I>&gt;<i>    at  
+</I>&gt;<i> com 
+</I>&gt;<i> .maconomy 
+</I>&gt;<i> .expression.McAbstractExpression.reduce(McAbstractExpression.java:58)
+</I>&gt;<i>    at  
+</I>&gt;<i> com.maconomy.expression.test.MtReducerTest.add(MtReducerTest.java:27)
+</I>&gt;<i>    at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+</I>&gt;<i>    at  
+</I>&gt;<i> sun 
+</I>&gt;<i> .reflect 
+</I>&gt;<i> .NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:39)
+</I>&gt;<i>    at  
+</I>&gt;<i> sun 
+</I>&gt;<i> .reflect 
+</I>&gt;<i> .DelegatingMethodAccessorImpl 
+</I>&gt;<i> .invoke(DelegatingMethodAccessorImpl.java:25)
+</I>&gt;<i>    at java.lang.reflect.Method.invoke(Method.java:597)
+</I>&gt;<i>    at  
+</I>&gt;<i> org 
+</I>&gt;<i> .junit 
+</I>&gt;<i> .internal 
+</I>&gt;<i> .runners.TestMethodRunner.executeMethodBody(TestMethodRunner.java:99)
+</I>&gt;<i>    at  
+</I>&gt;<i> org 
+</I>&gt;<i> .junit 
+</I>&gt;<i> .internal 
+</I>&gt;<i> .runners.TestMethodRunner.runUnprotected(TestMethodRunner.java:81)
+</I>&gt;<i>    at  
+</I>&gt;<i> org 
+</I>&gt;<i> .junit 
+</I>&gt;<i> .internal 
+</I>&gt;<i> .runners.BeforeAndAfterRunner.runProtected(BeforeAndAfterRunner.java: 
+</I>&gt;<i> 34)
+</I>&gt;<i>    at  
+</I>&gt;<i> org 
+</I>&gt;<i> .junit 
+</I>&gt;<i> .internal.runners.TestMethodRunner.runMethod(TestMethodRunner.java:75)
+</I>&gt;<i>    at  
+</I>&gt;<i> org 
+</I>&gt;<i> .junit.internal.runners.TestMethodRunner.run(TestMethodRunner.java:45)
+</I>&gt;<i>    at  
+</I>&gt;<i> org 
+</I>&gt;<i> .junit 
+</I>&gt;<i> .internal 
+</I>&gt;<i> .runners 
+</I>&gt;<i> .TestClassMethodsRunner.invokeTestMethod(TestClassMethodsRunner.java: 
+</I>&gt;<i> 66)
+</I>&gt;<i>    at  
+</I>&gt;<i> org 
+</I>&gt;<i> .junit 
+</I>&gt;<i> .internal 
+</I>&gt;<i> .runners.TestClassMethodsRunner.run(TestClassMethodsRunner.java:35)
+</I>&gt;<i>    at org.junit.internal.runners.TestClassRunner 
+</I>&gt;<i> $1.runUnprotected(TestClassRunner.java:42)
+</I>&gt;<i>    at  
+</I>&gt;<i> org 
+</I>&gt;<i> .junit 
+</I>&gt;<i> .internal 
+</I>&gt;<i> .runners.BeforeAndAfterRunner.runProtected(BeforeAndAfterRunner.java: 
+</I>&gt;<i> 34)
+</I>&gt;<i>    at  
+</I>&gt;<i> org.junit.internal.runners.TestClassRunner.run(TestClassRunner.java: 
+</I>&gt;<i> 52)
+</I>&gt;<i>    at  
+</I>&gt;<i> org 
+</I>&gt;<i> .eclipse 
+</I>&gt;<i> .jdt 
+</I>&gt;<i> .internal 
+</I>&gt;<i> .junit4.runner.JUnit4TestReference.run(JUnit4TestReference.java:45)
+</I>&gt;<i>    at  
+</I>&gt;<i> org 
+</I>&gt;<i> .eclipse 
+</I>&gt;<i> .jdt.internal.junit.runner.TestExecution.run(TestExecution.java:38)
+</I>&gt;<i>    at  
+</I>&gt;<i> org 
+</I>&gt;<i> .eclipse 
+</I>&gt;<i> .jdt 
+</I>&gt;<i> .internal 
+</I>&gt;<i> .junit.runner.RemoteTestRunner.runTests(RemoteTestRunner.java:460)
+</I>&gt;<i>    at  
+</I>&gt;<i> org 
+</I>&gt;<i> .eclipse 
+</I>&gt;<i> .jdt 
+</I>&gt;<i> .internal 
+</I>&gt;<i> .junit.runner.RemoteTestRunner.runTests(RemoteTestRunner.java:673)
+</I>&gt;<i>    at  
+</I>&gt;<i> org 
+</I>&gt;<i> .eclipse 
+</I>&gt;<i> .jdt 
+</I>&gt;<i> .internal.junit.runner.RemoteTestRunner.run(RemoteTestRunner.java:386)
+</I>&gt;<i>    at  
+</I>&gt;<i> org 
+</I>&gt;<i> .eclipse 
+</I>&gt;<i> .jdt 
+</I>&gt;<i> .internal.junit.runner.RemoteTestRunner.main(RemoteTestRunner.java: 
+</I>&gt;<i> 196)
+</I>&gt;<i>
+</I>&gt;<i> Can anyone help me with this?
+</I>&gt;<i>
+</I>&gt;<i> -- Anders
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> -- 
+</I>&gt;<i> Anders Hessellund
+</I>&gt;<i> www.itu.dk/people/hessellund/
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> -- 
+</I>&gt;<i> Anders Hessellund
+</I>&gt;<i> www.itu.dk/people/hessellund/
+</I>
+</PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="033710.html">[antlr-interest] NullPointerException in TreeRewriter
+</A></li>
+	<LI>Next message: <A HREF="033730.html">[antlr-interest] NullPointerException in TreeRewriter
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#33722">[ date ]</a>
+              <a href="thread.html#33722">[ thread ]</a>
+              <a href="subject.html#33722">[ subject ]</a>
+              <a href="author.html#33722">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

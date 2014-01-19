@@ -1,0 +1,182 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Logical Expression parser
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Logical%20Expression%20parser&In-Reply-To=%3C1266289006.16254.17.camel%40gecko.home.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="037652.html">
+   <LINK REL="Next"  HREF="037649.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Logical Expression parser</H1>
+    <B>John B. Brodie</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Logical%20Expression%20parser&In-Reply-To=%3C1266289006.16254.17.camel%40gecko.home.org%3E"
+       TITLE="[antlr-interest] Logical Expression parser">jbb at acm.org
+       </A><BR>
+    <I>Mon Feb 15 18:56:46 PST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="037652.html">[antlr-interest] Logical Expression parser
+</A></li>
+        <LI>Next message: <A HREF="037649.html">[antlr-interest] ANTLR Error Messages and getErrorMessage --- not	being routed
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37654">[ date ]</a>
+              <a href="thread.html#37654">[ thread ]</a>
+              <a href="subject.html#37654">[ subject ]</a>
+              <a href="author.html#37654">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Greetings!
+
+On Mon, 2010-02-15 at 22:57 +0000, Nazim Oztahtaci wrote:
+&gt;<i> Hi,
+</I>&gt;<i> I want to write a parser using ANTLR grammar. I would like to translate the logical expression to Sum of Product form. I give you the example below.
+</I>&gt;<i> 
+</I>
+I am not sure that the following will be of any help.
+
+Having the negation as a post-fix modifier, is rather ... unusual to me.
+I have never seen that. Is that common practice for you? Can you provide
+a reference to any Common Practice using this Form?
+
+So anyway, attached please find a .g file that attempts to construct an
+AST for an input in the form that you specify:
+
+&gt;<i> Steps for expression: ((a AND b)
+</I>&gt;<i> OR (c AND d))' -&gt;de morgan: (a' OR b') AND (c' OR
+</I>&gt;<i> d')-&gt;distribution: (a' AND c') OR (a' AND d'.....). So I will have
+</I>&gt;<i> DNF form in the result. I plan to use Antlr. I will write the grammar
+</I>&gt;<i> and then create the necessary files on the C#. First it would be great
+</I>&gt;<i> if you confirm me about it. I will just have AND OR operators and NOT.
+</I>&gt;<i> For instance (a OR NOT b) means actually (a or b)not. Also (a NOT OR b
+</I>&gt;<i> NOT) means a' OR b'. Do you have any example grammar for this task? I
+</I>&gt;<i> found one in codeproject but doesnt explain in bried detailly. Or at least someone can guide me little bit.
+</I>
+As stated above, I have no experience with negation as a post-fix
+modifier; which means I have no intuition for how an AST might be best
+formulated under this system.
+
+I tried.
+
+I hope it helps.
+
+See attached.
+
+You will need to add tree manipulation pass(s) to this in order to
+transform the input AST into your requisite DNF AST.
+
+This is just the first step.
+
+Hope this helps...
+   -jbb
+
+-------------- next part --------------
+grammar Boolean;
+
+options {
+   output = AST;
+   ASTLabelType = CommonTree;
+}
+
+@members {
+   private static final String [] x = new String[]{
+      &quot;(a &amp; b) | (c &amp; d)&quot;,
+      &quot;a &amp; b | c &amp; d&quot;,
+      &quot;a~ &amp; b | c &amp; d&quot;,
+      &quot;a~|b~&quot;,
+      &quot;a |~ b&quot;,
+      &quot;a | b | c | d&quot;,
+      &quot;a | b |~ c |~ d&quot;,
+      &quot;a |~ b~ |~ c | d~ &amp;~ e &amp; f~ | g&quot;
+   };
+
+   public static void main(String [] args) {
+      for( int i = 0; i &lt; x.length; ++i ) {
+         try {
+            System.out.println(&quot;about to parse:`&quot;+x[i]+&quot;`&quot;);
+            BooleanLexer lexer = new BooleanLexer(new ANTLRStringStream(x[i]));
+            CommonTokenStream tokens = new CommonTokenStream(lexer);
+
+            BooleanParser parser = new BooleanParser(tokens);
+            BooleanParser.start_return p_result = parser.start();
+
+            CommonTree ast = p_result.tree;
+            if( ast == null ) {
+               System.out.println(&quot;resultant tree: is NULL&quot;);
+            } else {
+               System.out.println(&quot;resultant tree: &quot; + ast.toStringTree());
+            }
+            System.out.println();
+         } catch(Exception e) {
+            e.printStackTrace();
+         }
+      }
+   }
+}
+
+start : expression EOF!;
+
+expression : ior ;
+
+ior : (a=and -&gt; $a)
+      ( ( x='|' i=ior -&gt; ^($x $a $i) )
+      | ( x='|' y='~' i=ior -&gt; ^($y ^($x $a $i)) )
+      )? ;
+
+and : (n=neg -&gt; $n)
+      ( ( x='&amp;' a=and -&gt; ^($x $n $a) )
+      | ( x='&amp;' y='~' a=and -&gt; ^($y ^($x $n $a)) )
+      )? ;
+
+neg : primary '~'^? ;
+
+primary : VAR | '(' expression ')' ; 
+
+VAR : ('a'..'z'|'A'..'Z'|'0'..'9'|'_')+ ;
+
+// Whitespace -- ignored
+WS : ( ' ' | '\t' | '\f' | '\r' | '\n' )+ { $channel=HIDDEN; } ;
+
+// single-line comments
+SL_COMMENT :
+      '//' ( options { greedy=false; } : . )* ( '\r' | '\r\n' | '\n' )
+      { $channel=HIDDEN; }
+   ;
+
+// multiple-line comments
+ML_COMMENT : NESTED_COMMENTARY { $channel=HIDDEN; } ;
+
+fragment NESTED_COMMENTARY :
+      '/*'
+      ( options {greedy=false;} : . )*
+      ( NESTED_COMMENTARY ( options {greedy=false;} : . )* )*
+      '*/'
+   ;
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="037652.html">[antlr-interest] Logical Expression parser
+</A></li>
+	<LI>Next message: <A HREF="037649.html">[antlr-interest] ANTLR Error Messages and getErrorMessage --- not	being routed
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37654">[ date ]</a>
+              <a href="thread.html#37654">[ thread ]</a>
+              <a href="subject.html#37654">[ subject ]</a>
+              <a href="author.html#37654">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

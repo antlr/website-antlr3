@@ -1,0 +1,308 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Greedy Issues
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Greedy%20Issues&In-Reply-To=%3C007301c8d4bd%24c223c250%246401a8c0%40isis%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="028786.html">
+   <LINK REL="Next"  HREF="028789.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Greedy Issues</H1>
+    <B>Ted Young</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Greedy%20Issues&In-Reply-To=%3C007301c8d4bd%24c223c250%246401a8c0%40isis%3E"
+       TITLE="[antlr-interest] Greedy Issues">tyoung1 at tx.rr.com
+       </A><BR>
+    <I>Sun Jun 22 16:14:44 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="028786.html">[antlr-interest] C codegen change request: Expose	TokenNames	array
+</A></li>
+        <LI>Next message: <A HREF="028789.html">[antlr-interest] C# target build warnings in generated files:	solution
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#28787">[ date ]</a>
+              <a href="thread.html#28787">[ thread ]</a>
+              <a href="subject.html#28787">[ subject ]</a>
+              <a href="author.html#28787">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Good day everyone,
+
+ 
+
+I am having issues with the greedy option (I think).
+
+ 
+
+My input is:
+
+ 
+
++t pt +t foo !
+
+ 
+
+ 
+
+The +t indicates the writing system (in this case transliteration).  An
+alternative is +s which is Hieroglyphic.  I would like to group together all
+characters within each writing system.  So my preferred output is:
+
+ 
+
+(SEQUENCE (LINE (PHRASE TRANSLITERATION p t) (PHRASE TRANSLITERATION f o
+o)))
+
+ 
+
+ 
+
+If I use the following code I get the results as expected:
+
+ 
+
+options {
+
+  language = Java;
+
+  output = AST;
+
+  ASTLabelType = CommonTree;
+
+  backtrack = true;
+
+  memoize = true;
+
+}
+
+ 
+
+mdc
+
+  : line* EOF
+
+    -&gt; ^(SEQUENCE line*)
+
+  ;
+
+ 
+
+line
+
+  : languageMarker seperator* endOfLine
+
+    -&gt; ^(LINE)
+
+  | languageMarker span (languageMarker span)* endOfLine
+
+    -&gt; ^(LINE span+)
+
+  ;
+
+  
+
+languageMarker
+
+  : '+' 's' seperator { writingSystem = WritingSystem.HIEROGLYPHS; }
+
+  | '+' 't' seperator { writingSystem = WritingSystem.TRANSLITERATION; }
+
+  ;
+
+ 
+
+endOfLine
+
+  : '!' (seperator+ | EOF)
+
+  | seperator* EOF
+
+  ;
+
+ 
+
+span
+
+  : { writingSystem.isAlphabetic() }?=&gt; text* seperator
+
+    -&gt; ^(PHRASE PHRASE[writingSystem.name()] text*)
+
+  | { !writingSystem.isAlphabetic() }?=&gt; //word //(seperator! word)*
+seperator!
+
+  ;
+
+ 
+
+text options { greedy=false; }
+
+  : (SPACE '+')=&gt;{false}?=&gt;.
+
+  | .
+
+  ;
+
+ 
+
+seperator
+
+  : SPACE
+
+  | UNDERSCORE
+
+  ;
+
+  
+
+affixSeperator
+
+  : EQUAL 
+
+  //| DASH
+
+  ;
+
+ 
+
+UNDERSCORE: '_';
+
+EQUAL: '=';
+
+DASH: '@';
+
+ 
+
+SPACE: (' ' | '\t' | '\r'? '\n');
+
+CHAR: 'A'..'Z' | 'a'..'z';
+
+DIGIT: '0'..'9';
+
+ 
+
+ 
+
+If I restore the line:
+
+ 
+
+//| DASH
+
+ 
+
+Then my output gets turned into:
+
+ 
+
+(SEQUENCE (LINE (PHRASE TRANSLITERATION p t   + t   f o o)))
+
+ 
+
+It seems as if the greedy modifier no longer operates when this completely
+unrelated (and currently unused) alternation is enabled.
+
+ 
+
+I am using ANTLR 3.1b1.  I cannot use ANTLR3.0 because use of the greedy
+option causes sporadic null pointer exceptions during generation.
+
+ 
+
+ 
+
+ 
+
+To give you some perspective this is a transcription language called MdC
+used to transcribe ancient Egyptian texts.  I have actually spent all day
+(approximately 6 hours) trying for the life of me to figure out how to parse
+a sequence of characters without actually consuming the end tokens.
+Effectively, what I want is a negative lookahead expression which is what I
+am trying to do in &quot;text&quot;.
+
+ 
+
+For example:
+
+ 
+
++s dwa r:a-ra:Z1 +t dwa ra +s nfr !
+
+ 
+
+ 
+
+Needs to be groups such as:
+
+ 
+
+(SEQUENCE (LINE (WORD dwa r:a-ra:Z1) (PHRASE TRANSLITERATION dwa ra) (WORD
+nfr)))
+
+ 
+
+ 
+
+As you can see, I have disabled all of the WORD parsing in order to simplify
+the example.  That I have no trouble with the WORDs since it is very clear
+what composes a word.  In the case of transliteration I ultimately need to
+suck up all characters until I reach 
+
+ 
+
+' !' | ' +'
+
+ 
+
+(each preceded with a space) Without actually consuming those tokens (they
+need to be handled higher up the parse tree).
+
+ 
+
+Thank you for your help,
+
+ 
+
+Ted
+
+ 
+
+ 
+
+ 
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20080622/2bb048fb/attachment-0001.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20080622/2bb048fb/attachment-0001.html</A> 
+</PRE>
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="028786.html">[antlr-interest] C codegen change request: Expose	TokenNames	array
+</A></li>
+	<LI>Next message: <A HREF="028789.html">[antlr-interest] C# target build warnings in generated files:	solution
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#28787">[ date ]</a>
+              <a href="thread.html#28787">[ thread ]</a>
+              <a href="subject.html#28787">[ subject ]</a>
+              <a href="author.html#28787">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

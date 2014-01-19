@@ -1,0 +1,175 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Bug in C output (may after other targets as well)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Bug%20in%20C%20output%20%28may%20after%20other%20targets%20as%20well%29&In-Reply-To=%3C39FB4984-B500-4B9C-A096-5D328E1C1A85%40wincent.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="022021.html">
+   <LINK REL="Next"  HREF="022045.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Bug in C output (may after other targets as well)</H1>
+    <B>Wincent Colaiuta</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Bug%20in%20C%20output%20%28may%20after%20other%20targets%20as%20well%29&In-Reply-To=%3C39FB4984-B500-4B9C-A096-5D328E1C1A85%40wincent.com%3E"
+       TITLE="[antlr-interest] Bug in C output (may after other targets as well)">win at wincent.com
+       </A><BR>
+    <I>Tue Jul  3 02:52:59 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="022021.html">[antlr-interest] Rule-local variables?
+</A></li>
+        <LI>Next message: <A HREF="022045.html">[antlr-interest] Bug in C output (may after other targets as	well)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#22025">[ date ]</a>
+              <a href="thread.html#22025">[ thread ]</a>
+              <a href="subject.html#22025">[ subject ]</a>
+              <a href="author.html#22025">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I think I've just discovered a bug in the C output; nothing major,  
+just some missing parentheses. A quick glance reveals that they are  
+also missing from the Java output templates, which means they are  
+probably missing from the others as well...
+
+Given a rule like this:
+
+   BLOCKQUOTE : { COLUMN == 0 || LAST_TOKEN == BLOCKQUOTE }?=&gt; '&gt;' '  
+'? ;
+
+ANTLR generates a prediction condition like this:
+
+   if ( (( synpred13(ctx) &amp;&amp;  COLUMN == 0 || LAST_TOKEN ==  
+BLOCKQUOTE  )) )
+
+Here the purpose of synpred13() is to check if the blockquote rule  
+would succeed at this point.
+
+Due to C operator precedence, there is a chance that this prediction  
+could incorrectly evaluate to true. To make it totally clear:
+
+   if (synpred &amp;&amp; A || B)
+
+Can evaluate to true even if synpred is false; this will happen  
+whenever B is true. This is because &amp;&amp; has a higher precendence than  
+||<i> in C. The above is really equivalent to:
+</I>
+   if ((synpred &amp;&amp; A) || B)
+
+But to match the clear intent of the rule in the grammar we would need:
+
+   if (synpred &amp;&amp; (A || B))
+
+So it seems that the C output template needs additional brackets  
+around semantic predicates to guarantee that whatever is in the  
+predicate will be evaluated as a single logical unit, regardless of  
+the precedence of whatever operators may be inside it.
+
+As a workaround, I can rewrite my predicates as follows:
+
+   FOO: { (A || B) }?=&gt; 'bar' ;
+
+As I said above, I'm not sure if the right place to fix this is in  
+the C output template. I've looked in there and I can't really see  
+where this construct is defined (don't really know enough about  
+StringTemplate)... I can see the following:
+
+   // D F A  E X P R E S S I O N S
+
+   andPredicates(left,right) ::= &quot;( &lt;left&gt; &amp;&amp; &lt;right&gt; )&quot;
+
+   orPredicates(operands) ::= &quot;(&lt;first(operands)&gt;&lt;rest(operands):{o |  
+||<i>&lt;o&gt;}&gt;)&quot;
+</I>
+   notPredicate(pred) ::= &quot;!( &lt;evalPredicate(...)&gt; )&quot;
+
+   evalPredicate(pred,description) ::= &quot;&lt;pred&gt;&quot;
+
+   evalSynPredicate(pred,description) ::= &quot;&lt;pred&gt;(ctx)&quot;
+
+Perhaps the extra parentheses need to be added there?
+
+   andPredicates(left,right) ::= &quot;( (&lt;left&gt;) &amp;&amp; (&lt;right&gt;) )&quot;
+
+I tried making this change to a copy of C.stg and sticking that at  
+the front of my CLASSPATH but it isn't picked up by ANTLR... (I know  
+Ter has said this is possible... why wouldn't it work?)... In any  
+case, I rebuilt ANTLR with the above change and it does indeed insert  
+parentheses where they are needed:
+
+   if ( (( (synpred13(ctx)) &amp;&amp; ( COLUMN == 0 || LAST_TOKEN ==  
+BLOCKQUOTE ) )) )
+
+The Java templates also seem to be missing the parentheses:
+
+   andPredicates(left,right) ::= &quot;(&lt;left&gt;&amp;&amp;&lt;right&gt;)&quot;
+
+Seems like it would be a good idea to add parentheses there as well  
+seeing as ANTLR can't make any assumptions about what will be in the  
+predicates and what the precedence might be. I don't know enough  
+StringTemplate syntax to understand the all the other snippets... the  
+&quot;orPredicates&quot; one might need parentheses as well.
+
+Cheers,
+Wincent
+
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="022021.html">[antlr-interest] Rule-local variables?
+</A></li>
+	<LI>Next message: <A HREF="022045.html">[antlr-interest] Bug in C output (may after other targets as	well)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#22025">[ date ]</a>
+              <a href="thread.html#22025">[ thread ]</a>
+              <a href="subject.html#22025">[ subject ]</a>
+              <a href="author.html#22025">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

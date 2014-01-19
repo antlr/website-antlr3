@@ -1,0 +1,183 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Right recursive rule and creating the AST in reverse order
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Right%20recursive%20rule%20and%20creating%20the%20AST%20in%0A%20reverse%20order&In-Reply-To=%3C1281293997.24223.6.camel%40gecko.home.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="039365.html">
+   <LINK REL="Next"  HREF="039368.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Right recursive rule and creating the AST in reverse order</H1>
+    <B>John B. Brodie</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Right%20recursive%20rule%20and%20creating%20the%20AST%20in%0A%20reverse%20order&In-Reply-To=%3C1281293997.24223.6.camel%40gecko.home.org%3E"
+       TITLE="[antlr-interest] Right recursive rule and creating the AST in reverse order">jbb at acm.org
+       </A><BR>
+    <I>Sun Aug  8 11:59:57 PDT 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="039365.html">[antlr-interest] Right recursive rule and creating the AST in	reverse order
+</A></li>
+        <LI>Next message: <A HREF="039368.html">[antlr-interest] How does INTEGER+ '.' INTEGER+ match &quot;2.&quot;?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#39367">[ date ]</a>
+              <a href="thread.html#39367">[ thread ]</a>
+              <a href="subject.html#39367">[ subject ]</a>
+              <a href="author.html#39367">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Greetings!
+
+passing the FROM tree down the rule set doesn't seem too bad to me.
+
+DISCLAIMER: i can barely spell C# and certainly know nothing whatsoever
+about LINQ --- so i probably have mis-understood something crucial.
+
+On Sun, 2010-08-08 at 19:10 +0100, Luis Pureza wrote:
+&gt;<i> Hi,
+</I>&gt;<i> 
+</I>&gt;<i> I'm writing a grammar to parse a language similar to C#'s LINQ*. For example:
+</I>&gt;<i> 
+</I>&gt;<i> from obj in list
+</I>&gt;<i> where obj.attribute &gt; 200
+</I>&gt;<i> select obj.attribute * 100
+</I>&gt;<i> 
+</I>&gt;<i> Notice that, unlike regular SQL, the FROM clause appears before the
+</I>&gt;<i> SELECT and WHERE clauses.
+</I>&gt;<i> 
+</I>&gt;<i> To parse this I've written the following rules:
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> query: FROM ID IN expr queryRest
+</I>&gt;<i>         ;
+</I>&gt;<i> 
+</I>&gt;<i> queryRest: SELECT expr queryRest
+</I>&gt;<i>               | WHERE expr queryRest
+</I>&gt;<i>               |
+</I>&gt;<i>               ;
+</I>&gt;<i> 
+</I>&gt;<i> Note that queryRest is right-recursive because I allow an arbitrary
+</I>&gt;<i> number of WHERE and SELECT clauses.
+</I>&gt;<i> 
+</I>&gt;<i> My main issue is that I want the AST to have the form (SELECT ...
+</I>&gt;<i> (WHERE (FROM ...))) and not (FROM ... (WHERE (SELECT ...))). That is,
+</I>&gt;<i> I want the last operation (select in this case) to be the root node.
+</I>&gt;<i> I've found a way to do this by creating the (FROM ID) subtree and
+</I>&gt;<i> passing it down to queryRest, which will then complete it. However, as
+</I>&gt;<i> you may imagine, the code gets horrible pretty quickly.
+</I>&gt;<i> 
+</I>
+i guess complexity is all in the eyes of the beholder, but this:
+
+query : fromPart queryRest[$fromPart.tree] -&gt; queryRest ;
+fromPart : FROM^ ID IN! expr ;
+
+queryRest[CommonTree f] : queryOperator^ expr queryRest[$f] | (-&gt;{$f}) ;
+queryOperator : SELECT | WHERE ;
+
+doesn't really seem so bad to me....
+
+hope this helps (i have attached a complete example grammar with test
+rig -- in Java, sorry -- so you can see the full story of my
+suggestion).
+
+   -jbb
+
+-------------- next part --------------
+grammar Test;
+
+options {
+   output = AST;
+   ASTLabelType = CommonTree;
+}
+
+@members {
+   private static final String [] x = new String[] {
+      &quot;from obj in list\n&quot;+
+      &quot;where obj.attribute &gt; 200\n&quot;+
+      &quot;select obj.attribute * 100&quot;
+   };
+
+   public static void main(String [] args) {
+      for( int i = 0; i &lt; x.length; ++i ) {
+         try {
+            System.out.println(&quot;about to parse:`&quot;+x[i]+&quot;`&quot;);
+            TestLexer lexer = new TestLexer(new ANTLRStringStream(x[i]));
+            CommonTokenStream tokens = new CommonTokenStream(lexer);
+
+            TestParser parser = new TestParser(tokens);
+            TestParser.start_return p_result = parser.start();
+
+            CommonTree ast = p_result.tree;
+            if( ast == null ) {
+               System.out.println(&quot;resultant tree: is NULL&quot;);
+            } else {
+               System.out.println(&quot;resultant tree: &quot; + ast.toStringTree());
+            }
+            System.out.println();
+         } catch(Exception e) {
+            e.printStackTrace();
+         }
+      }
+   }
+}
+
+start : query EOF!;
+
+query : fromPart queryRest[$fromPart.tree] -&gt; queryRest ;
+fromPart : FROM^ ID IN! expr ;
+
+queryRest[CommonTree f] : queryOperator^ expr queryRest[$f] | (-&gt; {$f}) ;
+queryOperator : SELECT | WHERE ;
+
+expr : primary (operator^ expr)? ;
+operator : '&gt;' | '=' | '*' ;
+
+primary : ID | NUMBER ;
+
+FROM : 'from' ;
+IN : 'in' ;
+SELECT : 'select' ;
+WHERE : 'where' ;
+
+NUMBER : DIGIT+ ;
+ID : IDENTIFIER ('.' IDENTIFIER)*;
+
+fragment IDENTIFIER : LETTER (LETTER|DIGIT)+ ;
+
+fragment LETTER : 'a'..'z' | 'A'..'Z' ;
+fragment DIGIT : '0' .. '9' ;
+
+WS : (' '|'\t'|'\n'|'\r')+ { $channel = HIDDEN; } ;
+</PRE>
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="039365.html">[antlr-interest] Right recursive rule and creating the AST in	reverse order
+</A></li>
+	<LI>Next message: <A HREF="039368.html">[antlr-interest] How does INTEGER+ '.' INTEGER+ match &quot;2.&quot;?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#39367">[ date ]</a>
+              <a href="thread.html#39367">[ thread ]</a>
+              <a href="subject.html#39367">[ subject ]</a>
+              <a href="author.html#39367">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

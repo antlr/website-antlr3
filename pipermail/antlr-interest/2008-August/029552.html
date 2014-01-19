@@ -1,0 +1,273 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Lexer Predicates?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Lexer%20Predicates%3F&In-Reply-To=%3C002601c8f5b8%24527b0280%24f7710780%24%40com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="029550.html">
+   <LINK REL="Next"  HREF="029566.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Lexer Predicates?</H1>
+    <B>Foust</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Lexer%20Predicates%3F&In-Reply-To=%3C002601c8f5b8%24527b0280%24f7710780%24%40com%3E"
+       TITLE="[antlr-interest] Lexer Predicates?">javafoust at gmail.com
+       </A><BR>
+    <I>Sun Aug  3 15:28:56 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="029550.html">[antlr-interest] Lexing problem I cannot resolve
+</A></li>
+        <LI>Next message: <A HREF="029566.html">[antlr-interest] Lexer Predicates?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#29552">[ date ]</a>
+              <a href="thread.html#29552">[ thread ]</a>
+              <a href="subject.html#29552">[ subject ]</a>
+              <a href="author.html#29552">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On August 03, 2008 1:46 PM, Gavin Lambert wrote:
+
+&gt;<i> 
+</I>
+&gt;<i> At 06:34 4/08/2008, Foust wrote:
+</I>
+&gt;<i>  &gt;Yes... it started out that way. But to allow spaces to be part
+</I>
+&gt;<i>  &gt;of a config value (read up to EOL), the Lexer needs to honor
+</I>
+&gt;<i>  &gt;state. (Place spaces in the HIDDEN channel for all other cases
+</I>
+&gt;<i>  &gt;- outside of a special config/preprocessor rule).
+</I>
+&gt;<i> 
+</I>
+&gt;<i> Are you hiding the EOLs as well?  (Usually they're lumped in with
+</I>
+&gt;<i> whitespace.)
+</I>
+&gt;<i> 
+</I>
+&gt;<i> If so, then you'll have to match everything in the lexer anyway,
+</I>
+&gt;<i> since the parser won't be able to see the EOL.
+</I>
+ 
+
+Good point. I had to change the syntax to read up to a parser-visible
+terminator to get it to even partially work (but the whitespace was still
+missing). Gathering up the tokens with += and calling toString(from, to)
+returned a single value, including the original whitespace, but mysteriously
+stopped the lexer from returning any more input (the rest of the file seemed
+to be discarded), so I abandoned that method altogether:
+
+       /**
+
+        * restores stripped whitespace to a range of tokens 
+
+ * (Only the first and last entries of the input are used).
+
+        * @return String representing given range of tokens with
+reconstituted whitespace in between.
+
+        */
+
+       private String concatTokens (List matchedTokens)
+
+       {
+
+              int from = ((CommonToken)
+matchedTokens.get(0)).getTokenIndex();
+
+              int to   = ((CommonToken) matchedTokens.get(
+matchedTokens.size() - 1)).getTokenIndex();
+
+                     
+
+              return ((CommonTokenStream) input).toString(from, to);
+
+       }
+
+ 
+
+ 
+
+&gt;<i> As long as you
+</I>
+&gt;<i> have something fairly distinctive to start matching on, this
+</I>
+&gt;<i> shouldn't be hard, and you shouldn't need to do any parser-&gt;lexer
+</I>
+&gt;<i> contortions.  See how line and block comments are implemented in
+</I>
+&gt;<i> the examples.
+</I>
+ 
+
+Yes, I use something similar, if not identical, to the demos to parse
+comments that works quite well:
+
+ 
+
+LINE_COMMENT                              : '//' ~('\r' | '\n')* NEWLINE+ {
+skip(); };
+
+BLOCK_COMMENT options { greedy = false; } : '/*' .* '*/'                  {
+skip(); };
+
+ 
+
+&gt;<i> 
+</I>
+&gt;<i> (And if you can modify the language you're parsing, now would be a
+</I>
+&gt;<i> good time to make it use a quoted string or similar instead of
+</I>
+&gt;<i> simply reading to EOL.)
+</I>
+ 
+
+Yes, thank you for the suggestion. I did have to resort to changing the
+terminator, but even that didn't solve the whitespace problem.
+
+ 
+
+I thought the whole point of a Domain Specific Language was to make the task
+easy on the user - not on the parser-generator. It seems that the issue is
+that what is intuitive to a human may in fact be some chimera of two or more
+formal syntaxes. Antlr does not handle this very well, forcing tokens to be
+interpreted the same in every context. But since it allows interaction with
+the target language, there are likely several ways to solve the problem. 
+
+ 
+
+I thought that the cleanest way to read in a free-form config {.} block (not
+requiring quotes, or other syntax that might, in fact be intended to be part
+of the config setting) is to treat it as a separate language. I want to keep
+the syntax as simple as possible and have no possibility of conflicting with
+any other part of the language. So I solved this particular problem by:
+
+-    using parser states
+
+-    a predicate on the 'config' rule to only recognize it if in the correct
+state
+
+-    Implement a simple parser for just the block in question using regex in
+the target language:
+
+ 
+
+@members {
+
+/** get any config values specified in the config {} block */
+
+            HashMap&lt;String, String&gt; config = new HashMap&lt;String, String&gt;();
+
+ 
+
+            private void parseConfig (String configDefs)
+
+            {
+
+                  String[] lines = configDefs.split(&quot;[\\r\\n]+\\s+&quot;);
+
+                  for (String line : lines)
+
+                  {
+
+                        String[] part = line.split(&quot;\\s*:\\s*&quot;);  // split
+on colon
+
+                        String name = (part.length &gt; 0) ? part[0] : &quot;&quot;;
+
+                        String value = (part.length &gt; 1) ? part[1] : &quot;&quot;;
+
+                        config.put(name, value);
+
+                  }
+
+            }
+
+      }
+
+ 
+
+The grammar rules to 1) recognize the &quot;config&quot; block first, and 2) make sure
+&quot;config&quot; is not a keyword and can be used elsewhere in the grammar, looks
+like this:
+
+ 
+
+  start     @init {allowConfig = true;}
+
+:<i> config? objectDefinitions EOF ;
+</I>
+ 
+
+// only recognize config block before Object Definitions
+
+  config    : {allowConfig &amp;&amp;
+input.LT(1).getText().equalsIgnoreCase(&quot;config&quot;)}?=&gt;   
+
+            NAME '{' configBlockText '}'        // block of config settings
+(possibly empty)
+
+            { parseConfig($configBlockText.text); }
+
+            ;
+
+  configBlockText : ~'}'* ;
+
+ 
+
+  objectDefinitions @init {allowConfig = false;} // config block (and
+keyword) no longer recognized
+
+                .
+
+ 
+
+That was a lot simpler than struggling with the Antlr lexer.
+
+ 
+
+Brent
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20080803/22c6bfb4/attachment-0001.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20080803/22c6bfb4/attachment-0001.html</A> 
+</PRE>
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="029550.html">[antlr-interest] Lexing problem I cannot resolve
+</A></li>
+	<LI>Next message: <A HREF="029566.html">[antlr-interest] Lexer Predicates?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#29552">[ date ]</a>
+              <a href="thread.html#29552">[ thread ]</a>
+              <a href="subject.html#29552">[ subject ]</a>
+              <a href="author.html#29552">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

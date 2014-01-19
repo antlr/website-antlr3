@@ -1,0 +1,250 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] newbie: how to use parse rule and nested curly
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20newbie%3A%20how%20to%20use%20parse%20rule%20and%20nested%20curly&In-Reply-To=20050613073703.53106.qmail%40web31004.mail.mud.yahoo.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="012675.html">
+   <LINK REL="Next"  HREF="012678.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] newbie: how to use parse rule and nested curly</H1>
+    <B>Geir Ove Skjaervik</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20newbie%3A%20how%20to%20use%20parse%20rule%20and%20nested%20curly&In-Reply-To=20050613073703.53106.qmail%40web31004.mail.mud.yahoo.com"
+       TITLE="[antlr-interest] newbie: how to use parse rule and nested curly">geiroves at online.no
+       </A><BR>
+    <I>Mon Jun 13 03:35:27 PDT 2005</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="012675.html">[antlr-interest] newbie: how to use parse rule and nested curly
+</A></li>
+        <LI>Next message: <A HREF="012678.html">[antlr-interest] Using ANTLR with manually-built ASTs
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#12679">[ date ]</a>
+              <a href="thread.html#12679">[ thread ]</a>
+              <a href="subject.html#12679">[ subject ]</a>
+              <a href="author.html#12679">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello,
+
+Hard to answer your question in a few words. I am somewhat short of time
+right now, but let me try to answer you:
+
+I assume you have your lexer configured: It gives you a stream of Tokens
+to process in the Parser.
+
+The parser is built up from rules: Each rule translates into a method in
+the underlying language (Java or C#). Rules refers to other rules. Each
+rule processes the structure of your grammar until the final rule
+processes the very atoms (leaves) for your grammar: 
+
+A rule has the form:
+
+start
+	: PROGRAM^ statementList END
+	;
+
+
+I will assume a trivial grammar of expressions to try to give you an
+idea of how nested paranthesis &quot;(&quot; and &quot;)&quot; are handled for you: The same
+of course applies to nested curlys.
+
+The clue below is that makes this parser accept expressions with nested
+paranthesis, is tha that ultimately, the rule factor has a subrule that
+accepts LPAREN expression RPAREN. The parser will recursievly call your
+factor and expression rules until all nested paranthesis has been
+parsed.
+
+NOTE: LPAREN PLUS and so on are defined in your lexer:
+
+LPAREN : '(' ;
+
+
+
+
+Start
+	// NOTE: Importan to have a Start Rule that creates a Tree Root
+(the ^ after PROGRM creates a Tree Node: )
+	// in this case the Root where the complete parse tree will be
+built under.
+
+	: PROGRAM^ statementList END
+	;
+
+statmentList
+	: (expression SEMI!)*
+	;
+
+expression
+	: simpleExpression ((GT^ | LT^ | EQUALS^) expression)?  
+	;	
+
+simpleExpression throws GeosCalculatorParsingException
+	:  term ((PLUS^ | MINUS^) simpleExpression)?
+	;
+
+term
+	: power ((MUL^ | DIV^) term)?
+	;
+
+
+power
+	: factor (POW^ power)? 
+	;
+
+
+factor 
+	: NUMBER
+		{
+			// Insert some action to interpret the number
+		}
+	| LPAREN^ expression RPAREN! 
+	;
+
+
+
+Hope there aren't to many errors in the above. And hope it helps,
+allthough I feel with you: The ANTLR docs are not for beginners ....
+
+
+Geir Ove
+
+-----Original Message-----
+From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>
+[mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Ramon V. del
+Rosario
+Sent: 13. juni 2005 09:37
+To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: [antlr-interest] newbie: how to use parse rule and nested curly
+
+
+Hi, am trying to parse bind config file but is
+struggling to understand how antlr parse rule work.
+right now i'm just using antlr to tokenise the
+file....
+using a counter to parse nested { {}; }; sort of
+structure but has been reading the ref manual and it 
+seen the parse rule should be able to parse such a
+thing easily. but can't find much notes on how to
+create
+the parser except the calculator.
+
+can we create a our own object when a parse rule is
+confirm? eg when acl block is found then i can
+
+ACL a = new ACL($getText());
+while ($hasNext()
+	a.addElement($getText());
+
+thanks for reading
+
+----- sample bind config ------
+acl xyz-slaves {
+160.9.201.3;
+};
+
+options {
+directory &quot;/etc&quot;;
+allow-transfer { xyz-slaves; localhost; };
+};
+
+--------- t.g ------------
+class P extends Parser;
+
+// how do we use the parse rule ???
+document : (acl | WORDSTRING) + EOF;
+
+acl : ACL named_block ;
+opt : OPT named_block ;
+
+named_block : WORDSTRING LPAREN (named_block |
+WORDSTRING)* RPAREN SEMICOLON ;
+	
+class L extends Lexer;
+
+options {
+caseSensitive=false;
+caseSensitiveLiterals=false;
+k=7;
+}
+
+LPAREN : '{' ;
+
+RPAREN : '}' ;
+
+SEMICOLON : ';' ;
+
+ACL : &quot;acl&quot;;
+
+OPT : &quot;options&quot;;
+
+WORDSTRING : (WORD | STRING)+ ;
+						
+protected	
+STRING : '&quot;'! (~'&quot;')+ '&quot;'! 	
+		| '\''! (~'\'')+ '\''! ;
+		
+protected
+WORD : ( ALPHA | INT | SYM )+ ;
+
+protected
+ALPHA : ('a'..'z')+ ;
+
+protected
+INT : ('0'..'9')+;
+
+protected
+SYM : ('.' | '!' | '=' | '_' | '/')+;
+
+WS	:	(	' '
+		|	'\t'
+		|	'\r' '\n' { newline(); }
+		|	'\n' { newline(); }
+		)
+		{$setType(Token.SKIP);}	
+	;
+
+
+		
+__________________________________ 
+Discover Yahoo! 
+Find restaurants, movies, travel and more fun for the weekend. Check it
+out! 
+<A HREF="http://discover.yahoo.com/weekend.html">http://discover.yahoo.com/weekend.html</A> 
+
+
+
+
+</PRE>
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="012675.html">[antlr-interest] newbie: how to use parse rule and nested curly
+</A></li>
+	<LI>Next message: <A HREF="012678.html">[antlr-interest] Using ANTLR with manually-built ASTs
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#12679">[ date ]</a>
+              <a href="thread.html#12679">[ thread ]</a>
+              <a href="subject.html#12679">[ subject ]</a>
+              <a href="author.html#12679">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

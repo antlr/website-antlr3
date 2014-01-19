@@ -1,0 +1,315 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] First post, possible ANTLR 2.7.6 bug
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20First%20post%2C%20possible%20ANTLR%202.7.6%20bug&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="018017.html">
+   <LINK REL="Next"  HREF="018021.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] First post, possible ANTLR 2.7.6 bug</H1>
+    <B>Foolish Ewe</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20First%20post%2C%20possible%20ANTLR%202.7.6%20bug&In-Reply-To="
+       TITLE="[antlr-interest] First post, possible ANTLR 2.7.6 bug">foolishewe at hotmail.com
+       </A><BR>
+    <I>Thu Oct 19 15:00:57 PDT 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="018017.html">[antlr-interest] [stringtemplate-interest] File based templates	and maps.
+</A></li>
+        <LI>Next message: <A HREF="018021.html">[antlr-interest] Tree grammars &amp; optional AST nodes
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#18019">[ date ]</a>
+              <a href="thread.html#18019">[ thread ]</a>
+              <a href="subject.html#18019">[ subject ]</a>
+              <a href="author.html#18019">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello All:
+
+I've just done the Antlr mailing list registration, I hope the moderator 
+will contact me
+if for some reason this message is not approved.
+
+Tihs message seeks to address a few questions about a project I'm working 
+on.
+
+1)  I think I may have encountered a bug in Antlr 2.7.6 (same version as in 
+the original posting)
+    (it may be just be that there is some code generation setting or lexer 
+option settting
+     that I'm overlooking, that would be a great help).  Please consider the 
+following example
+*******************BEGIN example.g********************************
+//My play area for diagnosing strange ANTLR symptoms
+//Version History: 1.0 WAM created
+
+
+// WAM - Need to add some boilerplate to let Antlr generated files know that 
+they are part of the ZTestParser package
+header{
+package testing;
+}
+
+class P extends Parser;
+
+// Parser options
+options{
+k = 2; // Token stream lookahead, remember ANTLR uses LL(k) parsing
+}
+
+// Antlr requires Terminals have names beginning with uppercase letters, 
+Nonterminals should use lowercase I guess
+startRule
+:<i>
+</I>strval:NONEMPTYALPHASTRING nl:NEWLINE // breaks if the user types in &quot;dun\n&quot; 
+where \n is newline
+;
+/*
+optionala1:optA b:B
+|<i>
+</I>optionala2:optA c:C
+;
+*/
+
+optA
+:<i>
+</I>A
+|<i>
+</I>//empty
+;
+
+class L extends Lexer;
+
+// Lexer options
+options{
+k=7; // lookahead (need 2 for new line)
+charVocabulary='\u0000'..'\u007F'; // Only support printable ASCII 
+characters, don't try fancy unicode stuff
+// case sensitivitity turned off
+caseSensitiveLiterals=false;
+caseSensitive=false;
+}
+
+
+NEWLINE
+   :   '\r' '\n'    {newline();}        // DOS
+   |   '\r'         {newline();}        // Macintosh
+   |   '\n'         {newline();}        // UNIX
+   ;
+
+
+WHITESPACE :   ' '  {$setType(Token.SKIP);} // space character
+            | '\t' {System.out.println(&quot;Found a tab&quot;); tab(); 
+$setType(Token.SKIP);};
+
+
+MONTH: (&quot;jan&quot; | &quot;feb&quot; | &quot;mar&quot; | &quot;apr&quot; | &quot;may&quot; | &quot;jun&quot; | // MMM (month)
+&quot;jul&quot; | &quot;aug&quot; | &quot;sep&quot; | &quot;oct&quot; | &quot;nov&quot; | &quot;dec&quot;);
+
+NONEMPTYALPHASTRING: ('a'..'z')+; // Probably needs testliteral check
+********************END example.g********************************
+For ease of replication, I have attached a Java source driver:
+*******************Begin Main.java*********************************
+package testing;
+import java.io.*;
+
+public class Main {
+
+/**
+* @param args
+*/
+public static void main(String[] args) {
+try{
+System.out.println(&quot;Enter a string for the test parser (note this is for 
+simple ANTLR test cases)&quot;);
+
+L lexer = new L(new DataInputStream(System.in));
+
+
+System.out.println(&quot;After lexer instantiated before Parser instantiation&quot;);
+P parser = new P(lexer);
+System.out.println(&quot;After Parser instantiation before StartRule&quot;);
+parser.startRule();
+System.out.println(&quot;After startRule: Done?&quot;);
+} catch(Exception e) {
+System.err.println(&quot;exception: &quot;+e);
+}
+}
+
+}
+************************end 
+Main.java******************************************
+Running the example gives the following trace (all tracing was enabled):
+************************begin 
+trace*******************************************
+Enter a string for the test parser (note this is for simple ANTLR test 
+cases)
+After lexer instantiated before Parser instantiation
+After Parser instantiation before StartRule
+&gt;<i>startRule; dun
+</I>&gt;<i>lexer mMONTH; c==d
+</I>&lt; lexer mMONTH; c==u
+exception: line 1:2: expecting 'e', found 'u'
+**********************end 
+trace**********************************************
+I think this happens because of the code generation, which appears (on the 
+surface) to
+check to see if LA(i) matches the ith letter of any MONTH alternative, 1 &lt;= 
+i &lt;= 3 via bitmaps.
+However, this is just a heuristic, and not a sure test that the lexeme is 
+indeed a MONTH
+alternative, so &quot;d&quot; matches the prefix of dec, while &quot;un&quot; matches the suffix 
+of &quot;jun&quot;.
+
+Please correct me if I'm wrong here, are there any suggested work arounds?
+I'm reluctant to make separate rules for each alternative, because I've seen 
+the lexer
+follow wrong alternatives in grammars when I've tried adding &quot;helper&quot; rules, 
+so I try
+to stick to literals on the RHS of lexer grammars.  If there is someway to 
+tell the lexer
+that a  lexer rule is not associated with a legitimate terminal, but just a 
+subrule to make
+writing the scanner easier, I'd like to hear it.
+
+2) On a side note a colleague and I discovered (over a nice cup of coffiee) 
+that left factoring
+  does solve a problem I unsuccessfully tried to submit to the list 
+ie--mail, so using a rule like:
+
+  startRule: opta:optA ( b:B {System.out.println(&quot;Got optA B&quot;);} | c:C  
+{System.out.println(&quot;Got optA C&quot;);});
+  gets around this (I'm still not clear on why a larger lookahead didn't 
+allow recognition of the
+  original grammar, is it inherent in LL(k) parsing theory or is it an 
+implementation limitation?).
+  If anyone could point me to a reference or give a quick explanation, I'd 
+appreciate it.
+
+
+Regards:
+
+Bill M. (Sorry but my last name is too unique and generates a lot of spam)
+
+These opinions are my own and do not reflect in any way on my employer
+
+	 	From: &quot;Foolish Ewe&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">foolishewe at hotmail.com</A>&gt;
+To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+CC: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">FoolishEwe at hotmail.com</A>
+Subject: Handling optional tokens as prefixes in productions
+Date: Mon, 16 Oct 2006 21:31:19 +0000
+
+Hello All:
+
+I've tried Antlr for a small project over the last few days, and so far it 
+has been good.
+However, I'm having a problem with an optional prefix that is specified in 
+the language
+I'm parsing, and I don't know whether:
+1) LL(k) parsers can handle such a construct (although I hope so, so that I 
+can use ANTLR)
+2) If they can handle such a construct, what is the right way to pose the 
+grammar for them
+
+Consider the following (simple) example using ANTLR pseudocode, if you need 
+the
+complete ANTLR source for the example let me know and I'll try to post it.
+
+.// Lexer rules,  use case insensitive lexemes
+A: 'A' | 'a';
+B: 'B' | 'b';
+C: 'C' | 'c';
+// Usual White space and new line stuff were in the code but are omitted 
+here
+
+Now my parser has the rules:
+// Uses the optional prefix of A or nothing
+startRule // Gets nondeterminism warning from ANTLR, even with k=7 parser 
+look ahead
+  :
+     opta1:optA b:B
+  |
+     opta2:optA c:C
+;
+
+// This is the parser's rule for the optional prefix
+optA
+   :
+       a:A
+   |
+      .// empty
+   ;
+
+I'm using the windows version from the Source Forge Eclipse plugin at
+<A HREF="http://sourceforge.net/project/showfiles.php?group_id=55477">http://sourceforge.net/project/showfiles.php?group_id=55477</A> (Antlr 2.5.76).
+Is there a way to refactor the grammar to fix this?
+
+Thanks for your help:
+
+Bill M. (sorry my last name is unusual and generates a lot of spam)
+
+Disclaimer:  These opinions and questions are my own and are not those of my 
+employer.
+
+__
+
+_________________________________________________________________
+Stay in touch with old friends and meet new ones with Windows Live Spaces 
+<A HREF="http://clk.atdmt.com/MSN/go/msnnkwsp0070000001msn/direct/01/?href=http://spaces.live.com/spacesapi.aspx?wx_action=create&amp;wx_url=/friends.aspx&amp;mkt=en-us">http://clk.atdmt.com/MSN/go/msnnkwsp0070000001msn/direct/01/?href=http://spaces.live.com/spacesapi.aspx?wx_action=create&amp;wx_url=/friends.aspx&amp;mkt=en-us</A>
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="018017.html">[antlr-interest] [stringtemplate-interest] File based templates	and maps.
+</A></li>
+	<LI>Next message: <A HREF="018021.html">[antlr-interest] Tree grammars &amp; optional AST nodes
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#18019">[ date ]</a>
+              <a href="thread.html#18019">[ thread ]</a>
+              <a href="subject.html#18019">[ subject ]</a>
+              <a href="author.html#18019">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

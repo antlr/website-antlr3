@@ -1,0 +1,202 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Fwd:  Does lexer EVER use longest match?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Fwd%3A%20%20Does%20lexer%20EVER%20use%20longest%20match%3F&In-Reply-To=%3C3cac8fdf0910130249o213cd904w763ab5b74bddff8b%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="036416.html">
+   <LINK REL="Next"  HREF="036308.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Fwd:  Does lexer EVER use longest match?</H1>
+    <B>Kirby Bohling</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Fwd%3A%20%20Does%20lexer%20EVER%20use%20longest%20match%3F&In-Reply-To=%3C3cac8fdf0910130249o213cd904w763ab5b74bddff8b%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Fwd:  Does lexer EVER use longest match?">kirby.bohling at gmail.com
+       </A><BR>
+    <I>Tue Oct 13 02:49:06 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="036416.html">[antlr-interest] ANTLR C: Question regarding the portability of	generated lexer C code
+</A></li>
+        <LI>Next message: <A HREF="036308.html">[antlr-interest] caseSensitive = false in C taget ??
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36307">[ date ]</a>
+              <a href="thread.html#36307">[ thread ]</a>
+              <a href="subject.html#36307">[ subject ]</a>
+              <a href="author.html#36307">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Oops!  I meant to reply to the list, thanks for pointing out I failed
+to do that.
+
+On Mon, Oct 12, 2009 at 9:45 PM, Graham Wideman
+&lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">gwlist at grahamwideman.com</A>&gt; wrote:
+&gt;<i> Hi folks:
+</I>&gt;<i>
+</I>&gt;<i> I've been scouring the list archives trying to scrape together a better understanding of what variants of lexer code ANTLR might generate.
+</I>&gt;<i>
+</I>&gt;<i> I keep seeing assertions that ANTLR lexers use longest match to select between otherwise ambiguous alternatives, and other assertions that it doesn't.
+</I>&gt;<i>
+</I>&gt;<i> In the code I see generated, I don't see any longest match logic, but maybe it only appears under particluar grammar arrangements or options?
+</I>&gt;<i>
+</I>&gt;<i> Or are people using &quot;longest match&quot; when they really mean &quot;once mToken has chosen a rule, then that rule will act greedy&quot; (unless greedy=false)?
+</I>&gt;<i>
+</I>&gt;<i> I'd appreciate if someone could clarify with an example that shows where longest match comes into play. &#160;Or confirm that ANTLR actually doesn't use that strategy?
+</I>&gt;<i>
+</I>
+I believe it does use longest match, it can easily handle:
+
+OPEN_TABLE: '{|';
+OPEN_TEMPLATE: '{{';
+OPEN_FUNC: '{{{';
+OPEN_CURLY: '{';
+
+It'll handle all of those without issue and '{{{' will generate
+OPEN_FUNC not OPEN_TEMPLATE followed by OPEN_CURLY, or 3 OPEN_CURLY's.
+&#160;In fact, I don't think you even have to put them in the &quot;proper&quot;
+order. &#160;The big difference here is that there is no series of
+characters where in the middle, it is invalid. &#160;That is the problem
+with most of these. &#160;Folks expect that the lexer will backout to the
+last valid point if there is a point where it could have previously
+exited cleanly. &#160;That just isn't the case. &#160;The lexer finishes what it
+starts, or errors out. &#160;So don't let it start something unless you
+know it can successfully finish it.
+
+As to another threads assertion that the lexer is LL(1), that is not
+the case. &#160;If two lexer rules match for 20 characters, the lexer will
+look ahead 21 character to identify which rule it is. &#160;As long as it
+is not LL ambiguous, I believe it's no big deal. &#160;To prove that try
+doing:
+
+FA: .. 'a';
+FB: .. 'b';
+F_OTHER: .. ~('a'|'b');
+start: (FA|FB|F_OTHER)+ EOF;
+
+Put in 'ffa', 'ffb' 'ffc' and that should return FA, FB, F_OTHER
+respectively, and in this case, it had to look ahead at least 3
+characters to determine which rule it is. &#160;It'll blow up if you don't
+have a multiple of 3 characters, but that is a different problem
+(starting something it can't finish).
+
+So if you have rules like:
+
+TILDA: '~'
+T3: '~~~';
+T4: '~~~~';
+T5: '~~~~~';
+
+If you give it input of '~', '~~~', '~~~~', '~~~~~', and '~~~~~~', it
+will do what you expect (TILDA, T3, T4, T5, and T5 followed by TILDA
+respectively). &#160;However, the input of '~~' will screw up the lexer and
+cause an exception.
+
+I believe this is because each rule is thrown out once it no longer
+matches. &#160;So on the first '~', the DFA knows that all 4 rules are
+potential outcomes. &#160;Once it sees the second '~', it knows that only
+T3, T4, or T5 are valid inputs. &#160;The next input is EOF, which isn't a
+valid option for any of the existing live rules, so the lexer punts an
+error/exception.
+
+You can easily use lookahead to make T3, T4, T5 invalid rules if there
+aren't enough TILDA's prior to matching the first character, options
+T3, T4, T5 are eliminated by the lookahead, TILDA is the only valid
+option. &#160;Upon the second '~', it doesn't match TILDA any longer and
+TILDA was the last valid rule, so emit TILDA (had there been multiple
+valid rules, it would have emitted the first one listed). &#160;So emit one
+TILDA and start lexing with the second '~' character.
+
+The problem is when the lexer is &quot;mid-rule&quot;, and then has a mismatch.
+It does not go back to the last valid match at a boundary (in this
+case above with no look ahead predicates, it would not fall back to a
+single '~' and emit TILDA). &#160;It is not at the end of *ANY* rule when
+the EOF is the next character from the Lexer. &#160;So you aren't at a
+valid boundary case of any lexer rule, and the next character makes
+all of the currently valid alternatives fail the lexer errors out.
+This is also why Joan Pujol's lexer is having issues, in the other
+thread. &#160;The '$' character matches but the following '{' can't be
+matched, and is not at a valid boundary condition. &#160;Thus an exception
+(the OTHER rule can only match one character, so by the second
+character it is no longer a valid option, so TEXT was the only option,
+it started the second alternative, and couldn't finish it).
+
+I think if you generate the NFA/DFA's for the lexer, a lot of this
+becomes more apparent, but I've always had problems. &#160;Until sitting
+down and thinking clearly about this and the problems I've had, the
+lexer was mostly black magic.
+
+Now if you enable backtracking on the lexer, it'll help with some of
+these problems. &#160;I can't say for sure what backtracking will do in the
+lexer, but I know it does change behavior.
+
+Hopefully somebody will correct me if I'm wrong, but with the problems
+I've seen, and the solutions I've cooked up to work around them, I
+believe this to be a mostly accurate description.
+
+None of this is because I understand LL(*) parsing, it is mostly
+empirically gained knowledge by screwing with a lexer that has lots of
+these types of problems. &#160;In the end, it's almost always easier to lex
+single characters if it is ambiguous and you need context to figure it
+out. &#160;Deal with it in the parser, where backtracking works just like
+you think it does. &#160;I ended up throwing away all of the &quot;{{{&quot;, &quot;{{&quot;,
+&quot;{&quot;, and &quot;{|&quot; in the grammar I was working on and just lexed each &quot;{&quot;
+and &quot;|&quot; separately, and then parsed them and created imaginary tokens.
+
+Cheers,
+&#160; Kirby
+
+&gt;<i> Thanks,
+</I>&gt;<i>
+</I>&gt;<i> Graham
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i>
+</I></PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="036416.html">[antlr-interest] ANTLR C: Question regarding the portability of	generated lexer C code
+</A></li>
+	<LI>Next message: <A HREF="036308.html">[antlr-interest] caseSensitive = false in C taget ??
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36307">[ date ]</a>
+              <a href="thread.html#36307">[ thread ]</a>
+              <a href="subject.html#36307">[ subject ]</a>
+              <a href="author.html#36307">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

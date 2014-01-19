@@ -1,0 +1,267 @@
+Debugging and Testing Grammars With Parse Trees and Derivations
+
+_Terence Parr_ \
+University of San Francisco  \
+{parrt@cs.usfca.edu}
+
+November 30, 2003 
+
+_ANTLR 2.7.3 now includes the classes described here_
+
+o {antlr.ParseTree.java}
+o {antlr.ParseTreeRule.java}
+o {antlr.ParseTreeToken.java}
+o {antlr.debug.ParseTreeDebugParser.java}
+
+#### Introduction and problem definition
+
+Debugging big grammars is very difficult because the Human mind cannot
+easily trace the highly nested and recursive nature of parsing.  When
+the wrong thing happens during translation, you first have to figure
+out what actions are being executed in the grammar.  To figure that
+out, you have to know what rules are being executed.  Large grammars
+with large input can make this pretty difficult without a lot of
+experience.
+
+ANTLR provides a simple {traceIn}/{traceOut} facility so that you can
+watch the rule method entry/exit events, but there is so much output
+and it is so deeply nested that it's hard to figure out what's going
+on; particularly when the parser is guessing.
+
+You can use a debugger to step through the parser, but you have a
+similar Human brain limitation problem.
+
+Let's look at a real problem.  Consider some simple input:
+
+<<
+int i;
+>>
+
+for a @(tinyc.g, tiny C grammar) like this:
+
+<<
+program	:	( declaration )* EOF
+	;
+
+declaration
+	:	(variable) => variable
+	|	function
+	;
+
+declarator
+	:	id:ID
+	|	STAR id2:ID
+	;
+...
+>>
+
+When you turn on trace option
+
+<<
+$ java antlr.Tool -traceParser tinyc.g
+>>
+
+You see this:
+
+<<
+ > program; LA(1)==int
+  > declaration; LA(1)==int
+   > variable; [guessing]LA(1)==int
+    > type; [guessing]LA(1)==int
+    < type; [guessing]LA(1)==i
+    > declarator; [guessing]LA(1)==i
+    < declarator; [guessing]LA(1)==;
+   < variable; [guessing]LA(1)==null
+   > variable; LA(1)==int
+    > type; LA(1)==int
+    < type; LA(1)==i
+    > declarator; LA(1)==i
+    < declarator; LA(1)==;
+   < variable; LA(1)==null
+  < declaration; LA(1)==null
+ < program; LA(1)==null
+>>
+
+Not particularly useful.  This purpose of this article is to describe
+a new trivial mechanism that will build parse trees and most
+importantly derivation sequences; all without modifying ANTLR!  For
+input "{int i;}", you want:
+
+<<
+    <program>
+ => <declaration> EOF
+ => <variable> EOF
+ => <type> <declarator> ; EOF
+ => int <declarator> ; EOF
+ => int i ; EOF
+>>
+
+which is very useful.  For each rule invocation, you can see how the
+input is gradually matched in a leftmost rule-replacement fashion.
+
+#### Automatically generating parse trees
+
+In ANTLR 2.7.2 I noticed, to my embarrassment, that the superclass
+feature was broken, which I've fixed for 2.7.3.  You will be able to
+simply change your parser spec to include the
+@(ParseTreeDebugParser.java, ParseTreeDebugParser) class as the
+immediate superclass:
+
+<<
+class TinyCParser extends Parser(ParseTreeDebugParser);
+>>
+
+For now, you'll have to cut/paste the definitions of the {match()}
+method variants and {traceIn()}/{traceOut()} into a grammar action to
+override the defaults inherited from {antlr.LLkParser} as I've done in
+the example grammar.
+
+Either way, when you use the {-traceParser} command-line option, the
+parser will build parse trees with nodes of type {ParseTreeToken} and
+{ParseTreeRule}.  You can access the parse tree as follows:
+
+<<
+ParseTree tree = parser.getParseTree();
+System.out.println("parse tree:"+tree.toStringTree());
+>>
+
+Running the main program with input "{int i;}" will yield:
+
+<<
+$ java Test < decl.c 
+parse tree:  ( <program> ( <declaration> ( <variable> ( <type> int )
+ ( <declarator> i ) ; ) ) EOF )
+>>
+
+To get the full leftmost (that is, replacing the leftmost rule at each
+step) derivation, add the following:
+
+<<
+System.out.println("derivation:\n"+
+   tree.getLeftmostDerivation(parser.getNumberOfDerivationSteps()));
+>>
+
+For input:
+
+<<
+int i;
+int *i;
+
+int f(char c, char *d)
+{
+	int f;
+	c = 'c';
+	d = "foo";
+	i = c+3*f;
+	if ( i ) {
+		f = c;
+	}
+	else {
+		f = 1;
+	}
+}
+>>
+
+you'll see a derivation sequence like this:
+
+<<
+    <program>
+ => <declaration> <declaration> <declaration> EOF
+ => <variable> <declaration> <declaration> EOF
+ => <type> <declarator> ; <declaration> <declaration> EOF
+ => int <declarator> ; <declaration> <declaration> EOF
+ => int i ; <declaration> <declaration> EOF
+ => int i ; <variable> <declaration> EOF
+ => int i ; <type> <declarator> ; <declaration> EOF
+ => int i ; int <declarator> ; <declaration> EOF
+ => int i ; int * i ; <declaration> EOF
+ => int i ; int * i ; <function> EOF
+ => int i ; int * i ; <type> f ( <formalParameter> , <formalParameter>
+) <block> EOF
+ => int i ; int * i ; int f ( <formalParameter> , <formalParameter> )
+<block> EOF
+ => int i ; int * i ; int f ( <type> <declarator> , <formalParameter>
+) <block> EOF
+ => int i ; int * i ; int f ( char <declarator> , <formalParameter> )
+<block> EOF
+ => int i ; int * i ; int f ( char c , <formalParameter> ) <block> EOF
+ => int i ; int * i ; int f ( char c , <type> <declarator> ) <block>
+EOF
+ => int i ; int * i ; int f ( char c , char <declarator> ) <block> EOF
+ => int i ; int * i ; int f ( char c , char * d ) <block> EOF
+ => int i ; int * i ; int f ( char c , char * d ) { <statement>
+<statement> <statement> <statement> <statement> } EOF
+ => int i ; int * i ; int f ( char c , char * d ) { <declaration>
+<statement> <statement> <statement> <statement> } EOF
+ => int i ; int * i ; int f ( char c , char * d ) { <variable>
+<statement> <statement> <statement> <statement> } EOF
+...
+>>
+
+If you only want the ith derivation step (counting from 0), use
+
+<<
+tree.getLeftmostDerivation(i);
+>>
+
+The creation of these parse trees does not affect normal AST tree
+building routines.  This mechanism is a strict augmentation of current
+functionality.
+
+#### Derivations as testing harness
+
+Making changes to a big grammar is pretty scary as you can't always
+predict the affect you'll have.  Changing one rule can break a lot of
+test cases.  Nomrally, a parser returns a yes or no answer as to whether the
+input was matched successfully, which is not a very good testing
+mechanism since an empty main program always returns true.
+
+Loring Craymer pointed out that once you have the derivation steps (or
+parse tree since they are equivalent), you can easily build unit tests
+that exercise your grammar providing an excellent means of detecting
+changes in the way input is matched.  More importantly, it will tell
+you *how* the input is matched differently.  You can go into the
+grammar and then see the new path implied by the new derivation.
+
+So, to build unit tests, run your grammar on several input sequences
+and record the derivations it spits out.  Future runs of the same
+input sequence should give you an exact (to the character) replica of
+the derivation.  If {String.equals()} fails, you know you've screwed
+up the grammar and where.
+
+By saving every modification to a grammar (as Monty Zukowski does) in
+a revision control system (like Perforce), you can easily back up to
+previous version to determine how you've changed/broken the grammar.
+
+#### Implementation
+
+By overriding parser matching infrastructure like {match(token-type)}
+and tracking rule method entry and exit events, you are able to build
+parse trees without modifying ANTLR itself.  The parse tree
+construction is turned on and off at the ANTLR command line via the
+{-traceParser} option.
+
+Parse trees record the sequence of rules used to match a particular
+input sequence.  They differ from ASTs in that parse trees are
+sensitive to grammar changes because they are a trace of the rule
+method call stack.  Further, ASTs consist entirely of token nodes
+whereas parse trees have token nodes at the leaves and all internal
+nonleaf nodes are rule nodes.
+
+o @(tinyc.g, tinyc.g): Test grammar with actions pasted in.
+
+o @(ParseTree.java, ParseTree.java): An abstract parse tree node.
+
+o @(ParseTreeDebugParser.java, ParseTreeDebugParser.java): A copy of
+the required parser modifications factored out nicely into a class you
+can derive from in 2.7.3.
+
+o @(ParseTreeRule.java, ParseTreeRule.java): A subtree root.
+
+o @(ParseTreeToken.java, ParseTreeToken.java): A leaf node.
+
+o @(Test.java, Test.java): Shows how to use the new stuff.
+
+As a final note, technically you could employ this exact
+implementation trick to build parse trees for lexers as well.  The
+leaf nodes would be characters instead of tokens, that's all.

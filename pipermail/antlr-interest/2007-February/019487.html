@@ -1,0 +1,195 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] ANTLR 3 output=AST for tree parser?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20ANTLR%203%20output%3DAST%20for%20tree%20parser%3F&In-Reply-To=%3C200702261124.l1QBO4J24427%40snvca-bs1-5-e0.astragate.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="019485.html">
+   <LINK REL="Next"  HREF="019488.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] ANTLR 3 output=AST for tree parser?</H1>
+    <B>Mark Bednarczyk</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20ANTLR%203%20output%3DAST%20for%20tree%20parser%3F&In-Reply-To=%3C200702261124.l1QBO4J24427%40snvca-bs1-5-e0.astragate.net%3E"
+       TITLE="[antlr-interest] ANTLR 3 output=AST for tree parser?">mark at slytechs.com
+       </A><BR>
+    <I>Mon Feb 26 03:27:14 PST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="019485.html">[antlr-interest] ANTLR 3 output=AST for tree parser?
+</A></li>
+        <LI>Next message: <A HREF="019488.html">[antlr-interest] ANTLR 3 output=AST for tree parser?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#19487">[ date ]</a>
+              <a href="thread.html#19487">[ thread ]</a>
+              <a href="subject.html#19487">[ subject ]</a>
+              <a href="author.html#19487">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Kay,
+	I'm jumping in here a bit late, but tree rewritting is implemented
+in b6. I'm using it in my grammar heavily.
+
+I also have the 1.5 grammar compiled and working as well. 
+
+I'm building my own grammar based on 1.5 and using lots of rewrites in the
+parser, then in the tree walkers. The output out of normal grammar &quot;grammar
+MyGrammar&quot; can be &quot;output=AST&quot; or &quot;output=&quot;template&quot;. In a Tree walker (i.e.
+&quot;tree grammar MyGrammar&quot;) can only be &quot;output=template&quot;.
+
+Here is proof. First rule rewrites the &quot;typeParameters&quot; production to
+produce a new type of tree. It inserts a new type of virtual token,
+GENERIC_TYPE as a root to be for all the typeParameters which could be
+primitives or an identifier. Then the tableDeclaration rewrites the rule to
+another TABLE_DEF rooted tree where the &quot;modifiers&quot; are optionally included,
+id and table body which produces a SLIST rooted tree of statements allowed
+within my special type of a table I'm writing here. Both GENERIC_TYPE and
+TABLE_DEF tokens are only defined in &quot;tokens&quot; section and are not produced
+by the lexer. I use them for my own AST so that later compilation stages
+using tree walkers can easily match on those roots and virtual tokens to
+perform further processing.
+
+grammar Npl;
+options {
+	k=2;
+	backtrack=true;
+	memoize=true;
+	output=AST;
+}
+
+typeParameters
+	:	'&lt;' typeParameter (',' typeParameter)* '&gt;'
+		-&gt; ^(GENERIC_TYPE typeParameter*)
+	;
+
+tableDeclaration
+	:	modifiers 'table' id typeParameters? tableBody  
+		-&gt; ^(	TABLE_DEF id 
+				modifiers 
+				typeParameters?
+				tableBody)
+	;
+
+
+Here is a dump of the AST it produces based on this input:
+	public table abc {
+		Option1(1),
+		Option2(2) = &quot;option2&quot;
+	}
+
+AST:
+(TABLE_DEF 
+	(ID abc) 
+	(MODIFIERS public) 
+	(GENERIC_TYPE int)
+	(SLIST 
+		(TABLE_CONST 
+			(ID Option1	( 1 ))
+			(TABLE_CONST_DESC)) 
+		(TABLE_CONST 
+			(ID Option2 ( 2 )) 
+			(TABLE_CONST_DESC &quot;option2&quot;))))
+Hope this helps,
+
+Cheers,
+mark....
+
+&gt;<i> -----Original Message-----
+</I>&gt;<i> From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> 
+</I>&gt;<i> [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Kay Roepke
+</I>&gt;<i> Sent: Sunday, February 25, 2007 8:09 PM
+</I>&gt;<i> To: Werner Lehmann
+</I>&gt;<i> Cc: ANTLR Interest; <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">FranklinChen at cmu.edu</A>
+</I>&gt;<i> Subject: Re: [antlr-interest] ANTLR 3 output=AST for tree parser?
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> On Feb 26, 2007, at 1:52 AM, Werner Lehmann wrote:
+</I>&gt;<i> 
+</I>&gt;<i> &gt; for a few hours now I have been trying to get a tree parser out of 
+</I>&gt;<i> &gt; Terence's Java 1.5 grammar. I thought I was doing something wrong 
+</I>&gt;<i> &gt; being not very experienced with ANTLR. Is it true that ASTs are not 
+</I>&gt;<i> &gt; yet supported?
+</I>&gt;<i> 
+</I>&gt;<i> ASTs are supported, the thing that doesn't work is tree 
+</I>&gt;<i> rewriting (i.e. having a tree parser output another tree by 
+</I>&gt;<i> using rewrite rules in the tree grammar). There are a couple 
+</I>&gt;<i> of examples in the examples- v3.tar.gz as well as in the Wiki 
+</I>&gt;<i> on how to use tree output.
+</I>&gt;<i> 
+</I>&gt;<i> &gt; I need to update my Java 1.4 parser (based on ANTLR 2.7.6) to Java
+</I>&gt;<i> &gt; 1.5 and it seemed to be a good idea to use ANTLR3 and this 
+</I>&gt;<i> new grammar 
+</I>&gt;<i> &gt; but maybe not so. By the way, the separate examples download has a 
+</I>&gt;<i> &gt; more recent version of Java.g. The version available from 
+</I>&gt;<i> the grammars 
+</I>&gt;<i> &gt; list on the site is older and produces uncompilable code 
+</I>&gt;<i> which pushed 
+</I>&gt;<i> &gt; me off track for some time.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; If ANTLR3 would not yet provide an AST should I then use the Java
+</I>&gt;<i> &gt; 1.5 grammar created by Michael Studman or Michael Stahl (any 
+</I>&gt;<i> &gt; experience with either)?
+</I>&gt;<i> 
+</I>&gt;<i> I haven't used any of the Java grammars, but looking at Ter's 
+</I>&gt;<i> it shows that that grammar simply isn't building trees. You 
+</I>&gt;<i> could add the tree operators and/or rewrite rules yourself, 
+</I>&gt;<i> and then write tree grammars to work with your tree. As tree 
+</I>&gt;<i> building often depends on the thing you want to accomplish, 
+</I>&gt;<i> that's probably the best way of doing it anyway.
+</I>&gt;<i> 
+</I>&gt;<i> &gt; <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">FranklinChen at cmu.edu</A> wrote:
+</I>&gt;<i> &gt;&gt; I noticed that output=AST for tree parsers in 3.0b6 isn't working 
+</I>&gt;<i> &gt;&gt; yet.  When will this be available?  I have large ANTLR 2 projects 
+</I>&gt;<i> &gt;&gt; that make extensive use of multiple passes gradually 
+</I>&gt;<i> transforming an 
+</I>&gt;<i> &gt;&gt; AST until the final pass generates output, and I would like to 
+</I>&gt;<i> &gt;&gt; convert them to ANTLR 3.
+</I>&gt;<i> 
+</I>&gt;<i> As mentioned above, this isn't scheduled for 3.0 final, 
+</I>&gt;<i> AFAIK. Ter wanted to finalize the stuff there is right now 
+</I>&gt;<i> before adding new features.
+</I>&gt;<i> I'd think that tree rewriting would come in 3.1 if there is a 
+</I>&gt;<i> good way of unambiguously defining the process. I vividly 
+</I>&gt;<i> remember going through the template output stuff with Ter a 
+</I>&gt;<i> while ago, and that was hard enough to give right semantics to...
+</I>&gt;<i> 
+</I>&gt;<i> HTH,
+</I>&gt;<i> -k
+</I>&gt;<i> --
+</I>&gt;<i> Kay R&#246;pke
+</I>&gt;<i> <A HREF="http://classdump.org/">http://classdump.org/</A>
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>
+
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="019485.html">[antlr-interest] ANTLR 3 output=AST for tree parser?
+</A></li>
+	<LI>Next message: <A HREF="019488.html">[antlr-interest] ANTLR 3 output=AST for tree parser?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#19487">[ date ]</a>
+              <a href="thread.html#19487">[ thread ]</a>
+              <a href="subject.html#19487">[ subject ]</a>
+              <a href="author.html#19487">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

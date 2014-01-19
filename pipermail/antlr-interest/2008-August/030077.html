@@ -1,0 +1,271 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] ANTLR 3.1 - Serious performance downgrade
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20ANTLR%203.1%20-%20Serious%20performance%20downgrade&In-Reply-To=%3C48A8817D.5050702%40teststep.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="030126.html">
+   <LINK REL="Next"  HREF="030080.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] ANTLR 3.1 - Serious performance downgrade</H1>
+    <B>Dr. Michael Gerz</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20ANTLR%203.1%20-%20Serious%20performance%20downgrade&In-Reply-To=%3C48A8817D.5050702%40teststep.org%3E"
+       TITLE="[antlr-interest] ANTLR 3.1 - Serious performance downgrade">michael.gerz at teststep.org
+       </A><BR>
+    <I>Sun Aug 17 12:52:29 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="030126.html">[antlr-interest] Lazy load of CommonTokenStream??
+</A></li>
+        <LI>Next message: <A HREF="030080.html">[antlr-interest] ANTLR 3.1 - Serious performance downgrade
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30077">[ date ]</a>
+              <a href="thread.html#30077">[ thread ]</a>
+              <a href="subject.html#30077">[ subject ]</a>
+              <a href="author.html#30077">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Dear ANTLR developers, hi Terence,
+
+when upgrading to the latest and greatest ANTLR 3.1, we noticed a 
+significant performance downgrade that makes it almost unuseable for our 
+purposes.
+
+In our system, we use a grammar that is a modified version of the 'Java' 
+grammar given on the ANTLR web page, with some minor test-specific 
+extensions and a few simplifications. By means of a ANTLR tree grammar 
+(using StringTemplate), we transform these extensions to plain Java.
+
+In the past, the transformation times were neglectable (within the range 
+of a few seconds). However, with ANTLR 3.1 final, converting a 679KB 
+input file into a 735KB Java file takes about 10 minutes!
+
+I tried to identify the problem and came up with the following conclusions:
+
+ * The performance slowdown happens in our tree grammar. The ANTLR
+   parser and lexer are pretty fast.
+ * The showstopper was introduced sometime between intermediate release
+   antlr-2008-05-25.11.tar.gz (fast) and antlr-2008-08-03.16.tar.gz (slow).
+ * The performance seems to decrease exponentially with the input size.
+
+Below please find the header of our tree grammar and the method that 
+invokes it.
+
+Does anybody have any idea why ANTLR has become so extremely slow just 
+before its final release? I am sure that this must be a general problem 
+that also affects other people. Is there anything else that you need to 
+analyse the problem?
+
+Thanks in advance!
+
+Michael
+
+
+
+++++++ Snippet from JavaCodeGenerator.g ++++++
+
+tree grammar JavaCodeGenerator;
+
+options {
+        k = 1;
+        ASTLabelType = CommonTree;
+        tokenVocab = TestLang;
+        output = template;
+        rewrite = true;
+    }
+
+... some scope definitions ...
+
+@members {
+
+    ... some member definitions ...
+}
+
+@header {
+    package de.fgan.fkie.sylt.testsystem.testlang;
+
+    ... some import declarations ...
+}
+
+... the start rule ... where needed, string templates are used ...
+
+compilationUnit
+    :    idecls+=importDeclaration*
+        (    tsd=testsuiteDeclaration
+            -&gt; template(ids={$idecls}, tsd={$tsd.text})
+&lt;&lt;
+package de.fgan.fkie.sylt.test;
+
+import de.fgan.fkie.sylt.testsystem.server.testrunner.TestRunner;
+
+&lt;ids&gt;
+&lt;tsd&gt;
+ &gt;&gt;
+        |    tgd=testgroupDeclaration
+            -&gt; template(ids={$idecls}, imp={getImportStatements()}, 
+tgd={$tgd.text})
+&lt;&lt;
+package de.fgan.fkie.sylt.test;
+
+&lt;imp&gt;
+
+&lt;ids&gt;
+&lt;tgd&gt;
+ &gt;&gt;
+        )
+    ;
+
+... and so on ...
+
+
+++++++ Invocation of JavaCodeGenerator ++++++
+
+
+    private static void saveAsJava(String testGroupName, String script) {
+        ANTLRInputStream input;
+        try {
+            input = new ANTLRInputStream(new 
+ByteArrayInputStream(script.getBytes()));
+            TestLangLexer lexer = new TestLangLexer(input);
+            TokenRewriteStream tokens = new TokenRewriteStream(lexer);
+            TestLangParser parser = new TestLangParser(tokens);
+            TestLangParser.compilationUnit_return r;
+            try {
+                r = parser.compilationUnit();
+            } catch (RecognitionException e) {
+                throw new RuntimeException(&quot;Error while parsing &quot; + 
+testGroupName + &quot;:&quot;
+                        + parser.getErrorMessage(e, 
+TestLangParser.tokenNames));
+            }
+            CommonTree t = (CommonTree) r.getTree();
+            CommonTreeNodeStream nodes = new CommonTreeNodeStream(t);
+            nodes.setTokenStream(tokens);
+            JavaCodeGenerator codeGen = new JavaCodeGenerator(nodes);
+
+            JavaCodeGenerator.compilationUnit_return r2;
+            try {
+                r2 = codeGen.compilationUnit();  /// SLOOOOOW, SOOO SLOOOOOW
+            } catch (RecognitionException e) {
+                throw new RuntimeException(&quot;Error while parsing &quot; + 
+testGroupName + &quot;:&quot;
+                        + codeGen.getErrorMessage(e, 
+JavaCodeGenerator.tokenNames));
+            }
+
+            File f = new 
+File(ServerProperties.SERVER_TEST_CLASS_DIRECTORY + File.separator
+                    + testGroupName + &quot;.java&quot;);
+            FileWriter out = new FileWriter(f);
+            out.write(r2.st.toString());
+            out.close();
+
+        } catch (IOException e) {
+            throw new RuntimeException(&quot;Error while reading/writing &quot; + 
+testGroupName + &quot;:&quot;
+                    + e.getMessage(), e);
+        }
+    }
+
+
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="030126.html">[antlr-interest] Lazy load of CommonTokenStream??
+</A></li>
+	<LI>Next message: <A HREF="030080.html">[antlr-interest] ANTLR 3.1 - Serious performance downgrade
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30077">[ date ]</a>
+              <a href="thread.html#30077">[ thread ]</a>
+              <a href="subject.html#30077">[ subject ]</a>
+              <a href="author.html#30077">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

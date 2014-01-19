@@ -1,0 +1,154 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] philosophy about translation
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20philosophy%20about%20translation&In-Reply-To=2791821A-D56E-4361-8A55-A4F4C4C311F8%40cs.usfca.edu">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="017803.html">
+   <LINK REL="Next"  HREF="017818.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] philosophy about translation</H1>
+    <B>Andy Tripp</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20philosophy%20about%20translation&In-Reply-To=2791821A-D56E-4361-8A55-A4F4C4C311F8%40cs.usfca.edu"
+       TITLE="[antlr-interest] philosophy about translation">antlr at jazillian.com
+       </A><BR>
+    <I>Fri Oct  6 07:29:23 PDT 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="017803.html">[antlr-interest] philosophy about translation
+</A></li>
+        <LI>Next message: <A HREF="017818.html">[antlr-interest] philosophy about translation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#17806">[ date ]</a>
+              <a href="thread.html#17806">[ thread ]</a>
+              <a href="subject.html#17806">[ subject ]</a>
+              <a href="author.html#17806">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+&gt;<i>
+</I>&gt;<i> An interesting and difficult problem..thanks for bringing this up.   
+</I>&gt;<i> I'd have to think more.  Clearly some kind of non-text data structure  
+</I>&gt;<i> is needed for this.  I guess you'd build the Java template or AST and  
+</I>&gt;<i> then add the bits as you find them while traversing the COBOL.
+</I>
+This is the key to the difference in the two approaches. Using an AST, I 
+kept finding myself gathering bits of information from
+around the AST. For example, say we're doing C to Java and I see &quot;if 
+(a)&quot;. We first look for the declaration of a to see whether
+it's an int or not (it may not be because our &quot;goto removal&quot; phase 
+already ran, and it injects booleans). Next, we look at
+all references to &quot;a&quot;, to see if it will be possible to change all of 
+them from &quot;int&quot; usages to &quot;boolean&quot; usages. If not, just change it
+to &quot;if (a != 0)&quot;, but if so, go ahead and change the type to boolean, 
+and make whatever changes are needed at each reference.
+
+If you try to do that sort of thing in a tree-walking way, it will be a 
+mess, I think.
+
+&gt;<i>
+</I>&gt;<i> My main point is that it's ok to have multiple tree structures, L and  
+</I>&gt;<i> L', but the union and/or slow morphing of one to the other is a total  
+</I>&gt;<i> pain I've found.
+</I>
+Yes, it's a royal pain, but if you start with the requirement that you 
+will produce &quot;natural&quot; code, there's no choice.
+
+&gt;<i>
+</I>&gt;&gt;<i> You might think &quot;well, I can use multiple AST structures through
+</I>&gt;&gt;<i> inheritence or heterogeneous trees&quot;, but that
+</I>&gt;&gt;<i> just seems messy to me. I prefer an approach where you have, say, 100
+</I>&gt;&gt;<i> phases. Each phase translates a small piece
+</I>&gt;&gt;<i> (e.g. a single phase might handle the file-example above). So the code
+</I>&gt;&gt;<i> gradually transforms from COBOL to Java,
+</I>&gt;&gt;<i> one small step at a time.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Yep, I just prefer collecting the info and sticking somewhere that  
+</I>&gt;<i> doesn't force me to have different tree structures.  A change in one  
+</I>&gt;<i> phase has so many ripple-effect changes that can't be propagated  
+</I>&gt;<i> manually.  If grammar is the same throughout then you can auto-ripple  
+</I>&gt;<i> changes to structure.
+</I>
+I think just this simple example that I brought up before actually 
+brings the problem to the surface:
+
+String hello = &quot;hello&quot;;
+String world = &quot;world&quot;;
+printf(&quot;%s %s\n&quot;, hello, world);
+
+...becomes...
+
+System.out.println(&quot;Hello World&quot;);
+
+I can't see how that can be done by treewalking. By the time the code is 
+actually written to implement &quot;printf to System.out.println&quot;,
+there will be almost no &quot;tree-transformation&quot; or even &quot;tree walking&quot; logic.
+
+&gt;<i>
+</I>&gt;<i> What if we have COBOL AST to read from and Java AST to write to and  
+</I>&gt;<i> update.  THen we walk Java AST at end to find try/catch and import  
+</I>&gt;<i> needs?
+</I>
+Yea, now that I think harder about it, I guess try/catch and import 
+aren't good examples. By the time you've got a Java AST,
+everything's pretty easy.
+
+But look at it this way: on the &quot;import&quot;, all the work is in knowing all 
+the built-in Java classes and
+where they go (I created a doclet to gather that info), and combining 
+&quot;java.io.IOException&quot; and &quot;java.io.InputStream&quot;
+into &quot;java.io.*&quot;, and leaving out &quot;java.lang&quot;, and stuff like that. 
+Whether the Java is in an AST or a sequence of Tokens
+really doesn't matter one way or the other.
+
+As for the try/catch, all the work is in finding a good &quot;level&quot; to 
+insert the try/catch. For example, if we have three consecutive
+read() calls, best to put them into a single try/catch. If we need to 
+catch both FileNotFoundException and IOException
+for one statement, and just IOException for the following statement, 
+what do we do?
+
+My point being that almost all the logic (in my translator, maybe not 
+others')  is non-tree-related, where it doesn't matter
+much whether it's in an AST or a sequence of tokens.
+
+&gt;<i>
+</I>&gt;<i> Thanks for your excellent problem statement!
+</I>&gt;<i>
+</I>&gt;<i> Ter
+</I>
+Thanks for your patience - guess I'm a natural contrarian :)
+&quot;Better to be provocative than agreeable&quot; is my new motto :)
+Andy
+
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="017803.html">[antlr-interest] philosophy about translation
+</A></li>
+	<LI>Next message: <A HREF="017818.html">[antlr-interest] philosophy about translation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#17806">[ date ]</a>
+              <a href="thread.html#17806">[ thread ]</a>
+              <a href="subject.html#17806">[ subject ]</a>
+              <a href="author.html#17806">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

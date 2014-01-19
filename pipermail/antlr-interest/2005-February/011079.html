@@ -1,0 +1,190 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Issue with antlr 2.7.5rc2
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Issue%20with%20antlr%202.7.5rc2&In-Reply-To=41da8b4c0502022203232e1c56%40mail.gmail.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="011078.html">
+   <LINK REL="Next"  HREF="011080.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Issue with antlr 2.7.5rc2</H1>
+    <B>Ric Klaren</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Issue%20with%20antlr%202.7.5rc2&In-Reply-To=41da8b4c0502022203232e1c56%40mail.gmail.com"
+       TITLE="[antlr-interest] Issue with antlr 2.7.5rc2">ric.klaren at gmail.com
+       </A><BR>
+    <I>Thu Feb  3 05:24:01 PST 2005</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="011078.html">[antlr-interest] Issue with antlr 2.7.5rc2
+</A></li>
+        <LI>Next message: <A HREF="011080.html">[antlr-interest] More than five properties in StringTemplate
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#11079">[ date ]</a>
+              <a href="thread.html#11079">[ thread ]</a>
+              <a href="subject.html#11079">[ subject ]</a>
+              <a href="author.html#11079">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Thu, 3 Feb 2005 00:03:52 -0600, Tushar Jog &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">tusharjog at gmail.com</A>&gt; wrote:
+&gt;<i> attached you can find the tinyc cpp antlr example, modified by
+</I>&gt;<i> me to illustrate the bug I saw.
+</I>
+It looks like you expect a bit too much of the inheritance system of
+antlr. The changes you want to make require a change to the lexer (for
+the new &quot;for&quot; token) and a change to the parser for the for rule. As
+far as I can see you never derive from the original lexer so the for
+token gets 'lost', (the parser adds a value to the enum silently :(
+but the literals table is never updated).
+
+So to get things to work you can use a cclexer.g like this:
+
+---snip----
+options {  language=&quot;Cpp&quot;; mangleLiteralPrefix = &quot;TK_&quot;; }
+
+class TinyCCLexer extends TinyCLexer;
+options {
+        k=2;
+        charVocabulary = '\3'..'\377';
+        importVocab = TinyC;
+        exportVocab = TinyCC;   // the lexer is now the 'boss' of the vocab
+}
+
+tokens {
+        &quot;for&quot;;
+}
+// include one rule else antlr will barf... :/
+STAR:   '*'    ;
+---snip----
+
+This will get you a lexer that will recognize the &quot;for&quot; token as you
+can see from the generated initLiterals:
+
+void TinyCCLexer::initLiterals()
+{
+        literals[&quot;else&quot;] = 7;
+        literals[&quot;if&quot;] = 6;
+        literals[&quot;int&quot;] = 4;
+        literals[&quot;for&quot;] = 27;
+        literals[&quot;char&quot;] = 5;
+        literals[&quot;while&quot;] = 8;
+}
+
+The parser should work then like this:
+
+options { mangleLiteralPrefix = &quot;TK_&quot;; language=&quot;Cpp&quot;; }
+
+class TinyCCParser extends TinyCParser;
+options {
+    importVocab = TinyCC;  // import from the modified lexer
+}
+
+statement
+	:	(declaration) =&gt; declaration
+	|	expr SEMI
+	|	TK_if LPAREN expr RPAREN statement
+		( TK_else statement )?
+	|	&quot;while&quot; LPAREN expr RPAREN statement
+    | &quot;for&quot; LPAREN RPAREN statement
+	|	block
+	;
+
+&gt;<i> Do you think that this is a bug, or am I doing something wrong in
+</I>&gt;<i> my grammar ?
+</I>
+So in the end you made a slight mistake. Although it's more or less
+due to some antlr problems as well. Antlr accepts silently any new
+tokens referenced in the parser, this is really annoying behaviour at
+times (this would probably have resulted in a warning that would have
+hinted at the problem). Another issue is that antlr is not very
+consistent in behaviour when you combine lexer and parser in one file
+it kinda obfuscates how the token definitions flow, things are more
+consistent if you have lexer/parser/treeparser in separate files but
+you have to have import/exportVocabs right and build in the right
+order. And the inheritance system blows, for 3.0 some tool support is
+planned/was talked about.
+
+I built the stuff using:
+
+java -cp antlr.jar antlr.Tool lexer.g
+java -cp antlr.jar antlr.Tool -glib lexer.g cclexer.g
+java -cp antlr.jar antlr.Tool -glib tinyc.g tinycc.g
+
+Then glue the modified lexer/parser together.
+
+Cheers,
+
+Ric
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="011078.html">[antlr-interest] Issue with antlr 2.7.5rc2
+</A></li>
+	<LI>Next message: <A HREF="011080.html">[antlr-interest] More than five properties in StringTemplate
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#11079">[ date ]</a>
+              <a href="thread.html#11079">[ thread ]</a>
+              <a href="subject.html#11079">[ subject ]</a>
+              <a href="author.html#11079">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

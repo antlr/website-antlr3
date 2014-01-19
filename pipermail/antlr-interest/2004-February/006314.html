@@ -1,0 +1,316 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] TokenStreamRewriteEngine: possible to use non-terminals instead of tokens?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20TokenStreamRewriteEngine%3A%20possible%20to%20use%20non-terminals%20instead%20of%20tokens%3F&In-Reply-To=579CD9E6-5754-11D8-BCB7-000A95891192%40cs.usfca.edu">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="006313.html">
+   <LINK REL="Next"  HREF="006315.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] TokenStreamRewriteEngine: possible to use non-terminals instead of tokens?</H1>
+    <B>SainTiss</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20TokenStreamRewriteEngine%3A%20possible%20to%20use%20non-terminals%20instead%20of%20tokens%3F&In-Reply-To=579CD9E6-5754-11D8-BCB7-000A95891192%40cs.usfca.edu"
+       TITLE="[antlr-interest] TokenStreamRewriteEngine: possible to use non-terminals instead of tokens?">saintiss at arklinux.org
+       </A><BR>
+    <I>Wed Feb  4 13:31:05 PST 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="006313.html">[antlr-interest] TokenStreamRewriteEngine: possible to use non-terminals instead of tokens?
+</A></li>
+        <LI>Next message: <A HREF="006315.html">[antlr-interest] TokenStreamRewriteEngine: possible to use non-terminals instead of tokens?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6314">[ date ]</a>
+              <a href="thread.html#6314">[ thread ]</a>
+              <a href="subject.html#6314">[ subject ]</a>
+              <a href="author.html#6314">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA1
+
+I must be misunderstanding this, because as far as I can see, this won't work 
+in general...
+Having a stack will work if there's a rule which calls itself directly or 
+indirectly.
+But rules called by this rule might also be calling themselves, which would 
+reintroduce the problem that the top of stack is being overwritten.
+Additionally (supposing I'm trying to delete an identifier), there may be 
+subsequent identifiers, which are at the same nesting level, and so the top 
+of stack will again be overwritten...
+Trivial case:
+myRule: identifier identifier otherRule;
+Suppose I'm trying to get the index of the first identifier, that won't work, 
+because the second will already have overwritten it... I know I could check 
+the top of stack before the second identifier is parsed, but of course this 
+is a trivial case, and in more complex cases it won't be so clear which parts 
+of the rule will potentially overwrite the top of stack.
+
+But I guess I'm missing something here?
+
+Thanks,
+
+Hans
+
+On Wednesday 04 February 2004 21:54, Terence Parr wrote:
+&gt;<i> Yeah, instance variables are not so good, but much easier that passing
+</I>&gt;<i> something back a million times.  The new attribute mechanism for ANTLR
+</I>&gt;<i> will solve this.  To simulate, just created a stack for for every
+</I>&gt;<i> attribute you want.  Every time you enter a rule where you want to
+</I>&gt;<i> define an attribute, push a new value and then pop at end of rule.
+</I>&gt;<i> Here you'd do
+</I>&gt;<i>
+</I>&gt;<i> IntAttributeStack typeIndexAttr = ... ;
+</I>&gt;<i>
+</I>&gt;<i> Then in the rule you want to delete the type, do this:
+</I>&gt;<i>
+</I>&gt;<i> {
+</I>&gt;<i> typeIndexAttr.push(null);
+</I>&gt;<i> }
+</I>&gt;<i>
+</I>&gt;<i> then
+</I>&gt;<i>
+</I>&gt;<i> {
+</I>&gt;<i> typeIndexAttr.pop();
+</I>&gt;<i> }
+</I>&gt;<i>
+</I>&gt;<i> at the end.
+</I>&gt;<i>
+</I>&gt;<i> In the typeSpec rule then, you'll set the top of stack to be a value.
+</I>&gt;<i> Back in the defining rule, you can peek at the top of stack and ask for
+</I>&gt;<i> the index. :)
+</I>&gt;<i>
+</I>&gt;<i> This ensures that nested constructs work properly.
+</I>&gt;<i>
+</I>&gt;<i> Ter
+</I>&gt;<i>
+</I>&gt;<i> On Feb 4, 2004, at 12:19 PM, SainTiss wrote:
+</I>&gt;<i> &gt; -----BEGIN PGP SIGNED MESSAGE-----
+</I>&gt;<i> &gt; Hash: SHA1
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; On Wednesday 04 February 2004 20:08, Terence Parr wrote:
+</I>&gt;<i> &gt;&gt; There is no typeSpec.  Remember that antlr generates a method for each
+</I>&gt;<i> &gt;&gt; rule not a class, which is really icky...
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; just define an instance variable and set it with an action.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Hrmm, I'm wondering if that's a safe way to go about?
+</I>&gt;<i> &gt; Suppose you've got the following statement:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; MyType myVar = new MyInterface {
+</I>&gt;<i> &gt; 		public myMethod() {
+</I>&gt;<i> &gt; 			int c = 5;
+</I>&gt;<i> &gt; 		}
+</I>&gt;<i> &gt; 	};
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; And suppose I'd like to get rid of &quot;MyType&quot;, but not &quot;int&quot;.
+</I>&gt;<i> &gt; Working with one instance variable, it would probably work in this
+</I>&gt;<i> &gt; case, as
+</I>&gt;<i> &gt; &quot;MyType&quot; will be parsed before &quot;int&quot;. But suppose I'd like to get rid
+</I>&gt;<i> &gt; of the
+</I>&gt;<i> &gt; initializer instead... Then &quot;5&quot; will be parsed before &quot;new
+</I>&gt;<i> &gt; MyInterface....&quot;,
+</I>&gt;<i> &gt; so &quot;5&quot; will be deleted instead of &quot;new MyInterface....&quot;, right?
+</I>&gt;<i> &gt; If this is all true, then I guess a more intelligent mechanism will be
+</I>&gt;<i> &gt; needed,
+</I>&gt;<i> &gt; agree?
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Thanks,
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Hans
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;&gt; Ter
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; Thanks,
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; Hans
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; - --
+</I>&gt;<i> &gt;&gt;&gt; Ark Linux - Linux for the Masses (<A HREF="http://arklinux.org">http://arklinux.org</A>)
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; Capitalism:
+</I>&gt;<i> &gt;&gt;&gt; You don't have any cows. The bank will not lend you money to buy
+</I>&gt;<i> &gt;&gt;&gt; cows,
+</I>&gt;<i> &gt;&gt;&gt; because you don't have any cows to put up as collateral.
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; Representative Democracy:
+</I>&gt;<i> &gt;&gt;&gt; You have two cows. Your neighbors pick someone to tell you who gets
+</I>&gt;<i> &gt;&gt;&gt; the milk.
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; In a world without walls and fences, who needs windows and gates?
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; Hans Schippers
+</I>&gt;<i> &gt;&gt;&gt; 2LIC INF
+</I>&gt;<i> &gt;&gt;&gt; UA 2003-2004
+</I>&gt;<i> &gt;&gt;&gt; -----BEGIN PGP SIGNATURE-----
+</I>&gt;<i> &gt;&gt;&gt; Version: GnuPG v1.2.3 (GNU/Linux)
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; iD8DBQFAIUGjXlnUYIbmLOQRAh3yAJ9mvkG9Vb/WD0j75gz509+EoiFNAQCffpL4
+</I>&gt;<i> &gt;&gt;&gt; AKza8UQe1wOT0oSXtZIal18=
+</I>&gt;<i> &gt;&gt;&gt; =mWv8
+</I>&gt;<i> &gt;&gt;&gt; -----END PGP SIGNATURE-----
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; Yahoo! Groups Links
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; To visit your group on the web, go to:
+</I>&gt;<i> &gt;&gt;&gt;  <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; To unsubscribe from this group, send an email to:
+</I>&gt;<i> &gt;&gt;&gt;  <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; Your use of Yahoo! Groups is subject to:
+</I>&gt;<i> &gt;&gt;&gt;  <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; --
+</I>&gt;<i> &gt;&gt; Professor Comp. Sci., University of San Francisco
+</I>&gt;<i> &gt;&gt; Creator, ANTLR Parser Generator, <A HREF="http://www.antlr.org">http://www.antlr.org</A>
+</I>&gt;<i> &gt;&gt; Co-founder, <A HREF="http://www.jguru.com">http://www.jguru.com</A>
+</I>&gt;<i> &gt;&gt; Co-founder, <A HREF="http://www.knowspam.net">http://www.knowspam.net</A> enjoy email again!
+</I>&gt;<i> &gt;&gt; Co-founder, <A HREF="http://www.peerscope.com">http://www.peerscope.com</A> pure link sharing
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; Yahoo! Groups Links
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; To visit your group on the web, go to:
+</I>&gt;<i> &gt;&gt;  <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; To unsubscribe from this group, send an email to:
+</I>&gt;<i> &gt;&gt;  <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; Your use of Yahoo! Groups is subject to:
+</I>&gt;<i> &gt;&gt;  <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; - --
+</I>&gt;<i> &gt; Ark Linux - Linux for the Masses (<A HREF="http://arklinux.org">http://arklinux.org</A>)
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Capitalism:
+</I>&gt;<i> &gt; You don't have any cows. The bank will not lend you money to buy cows,
+</I>&gt;<i> &gt; because you don't have any cows to put up as collateral.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Representative Democracy:
+</I>&gt;<i> &gt; You have two cows. Your neighbors pick someone to tell you who gets
+</I>&gt;<i> &gt; the milk.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; In a world without walls and fences, who needs windows and gates?
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Hans Schippers
+</I>&gt;<i> &gt; 2LIC INF
+</I>&gt;<i> &gt; UA 2003-2004
+</I>&gt;<i> &gt; -----BEGIN PGP SIGNATURE-----
+</I>&gt;<i> &gt; Version: GnuPG v1.2.3 (GNU/Linux)
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; iD8DBQFAIVO0XlnUYIbmLOQRAtgPAKCl8kHB+5Pho0q9XU0kDEkzuqFbJgCfdSnu
+</I>&gt;<i> &gt; wGz+p2dCzATm66gORsZyN6M=
+</I>&gt;<i> &gt; =ne/t
+</I>&gt;<i> &gt; -----END PGP SIGNATURE-----
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Yahoo! Groups Links
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; To visit your group on the web, go to:
+</I>&gt;<i> &gt;  <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; To unsubscribe from this group, send an email to:
+</I>&gt;<i> &gt;  <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Your use of Yahoo! Groups is subject to:
+</I>&gt;<i> &gt;  <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+</I>&gt;<i>
+</I>&gt;<i> --
+</I>&gt;<i> Professor Comp. Sci., University of San Francisco
+</I>&gt;<i> Creator, ANTLR Parser Generator, <A HREF="http://www.antlr.org">http://www.antlr.org</A>
+</I>&gt;<i> Co-founder, <A HREF="http://www.jguru.com">http://www.jguru.com</A>
+</I>&gt;<i> Co-founder, <A HREF="http://www.knowspam.net">http://www.knowspam.net</A> enjoy email again!
+</I>&gt;<i> Co-founder, <A HREF="http://www.peerscope.com">http://www.peerscope.com</A> pure link sharing
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Yahoo! Groups Links
+</I>&gt;<i>
+</I>&gt;<i> To visit your group on the web, go to:
+</I>&gt;<i>  <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+</I>&gt;<i>
+</I>&gt;<i> To unsubscribe from this group, send an email to:
+</I>&gt;<i>  <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+</I>&gt;<i>
+</I>&gt;<i> Your use of Yahoo! Groups is subject to:
+</I>&gt;<i>  <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+</I>
+- -- 
+Ark Linux - Linux for the Masses (<A HREF="http://arklinux.org">http://arklinux.org</A>)
+
+Capitalism: 
+You don't have any cows. The bank will not lend you money to buy cows, 
+because you don't have any cows to put up as collateral.
+
+Representative Democracy:
+You have two cows. Your neighbors pick someone to tell you who gets the milk. 
+
+In a world without walls and fences, who needs windows and gates?
+
+Hans Schippers
+2LIC INF
+UA 2003-2004
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v1.2.3 (GNU/Linux)
+
+iD8DBQFAIWSZXlnUYIbmLOQRAqSdAJ9pJ+BPrDaXYNxzzDmP24+sv6rZIACggaS2
+JDenhdgqSUbr8Ucrn9dFnGI=
+=tv2r
+-----END PGP SIGNATURE-----
+
+
+ 
+
+Yahoo! Groups Links
+
+To visit your group on the web, go to:
+ <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+To unsubscribe from this group, send an email to:
+ <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+Your use of Yahoo! Groups is subject to:
+ <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="006313.html">[antlr-interest] TokenStreamRewriteEngine: possible to use non-terminals instead of tokens?
+</A></li>
+	<LI>Next message: <A HREF="006315.html">[antlr-interest] TokenStreamRewriteEngine: possible to use non-terminals instead of tokens?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6314">[ date ]</a>
+              <a href="thread.html#6314">[ thread ]</a>
+              <a href="subject.html#6314">[ subject ]</a>
+              <a href="author.html#6314">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

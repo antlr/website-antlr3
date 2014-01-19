@@ -1,0 +1,254 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Refactor grammar without semantic predicates
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Refactor%20grammar%20without%20semantic%20predicates&In-Reply-To=%3CCACB17E1.2303%25bgeffon%40linkedin.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="043027.html">
+   <LINK REL="Next"  HREF="043028.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Refactor grammar without semantic predicates</H1>
+    <B>Brian Geffon</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Refactor%20grammar%20without%20semantic%20predicates&In-Reply-To=%3CCACB17E1.2303%25bgeffon%40linkedin.com%3E"
+       TITLE="[antlr-interest] Refactor grammar without semantic predicates">bgeffon at linkedin.com
+       </A><BR>
+    <I>Mon Oct 24 13:25:51 PDT 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="043027.html">[antlr-interest] ANTLR v3.4 generates compiler errors (that v3.3 doesn't generate)
+</A></li>
+        <LI>Next message: <A HREF="043028.html">[antlr-interest] Resolving Member-References
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#43025">[ date ]</a>
+              <a href="thread.html#43025">[ thread ]</a>
+              <a href="subject.html#43025">[ subject ]</a>
+              <a href="author.html#43025">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+I'm working on a grammar and I can't figure out how to refactor it without using semantic predicates. Essentially, what I'm trying to do with RAW_TEXT is a catch all if none of the tags match, the only way I could make it work was by using Semantic Predicates, does anyone have ideas? Thanks in advance. The problem is that I need { tokens to be parsed as RAW_TEXT if they do not match the other tag types.
+
+Brian
+PS. I apologize for hitting the antlr-dev mailing list by accident with this question
+
+
+
+grammar Dust;
+
+options {
+  language=Java;
+  output=AST;
+  ASTLabelType=CommonTree;
+}
+
+/* LEXER RULES */
+tokens {
+        TAG;
+        SPECIAL_TAG;
+        LOOP_SECTION;
+        EXISTS_SECTION;
+        NOT_EXISTS_SECTION;
+        CONTEXT_HELPER_SECTION;
+        INLINE_PARTIAL_SECTION;
+        PRAGMA_SECTION;
+        CUSTOM_SECTION;
+        BLOCK_SECTION;
+        END_SECTION;
+        PARTIAL;
+        BUFFER;
+        COMMENT;
+        QUOTED_PARAM;
+        IDENT_PARAM;
+        CONTEXT;
+        SEC_START_TAG;
+        SEC_END_TAG;
+        BODY;
+        IDENT;
+        FILTER;
+        ELSE_BODY;
+        CUSTOM_BLK;
+        SELF_CLOSE;
+}
+
+@lexer::members{
+  boolean inTag = false;
+
+}
+
+
+/* LEXER RULES */
+COMMENT_T : '{!' .* '!}';
+ID : { inTag }? =&gt; (LETTER | '_' | '$') (LETTER | '_' | DIGIT | '$')*;
+IDENTIFIER :     (('.'? ID ('.' ID)*));
+RAW_TEXT : { !inTag }? =&gt;  ~('{'|'}')+;
+fragment DIGIT  : '0'..'9';
+fragment LETTER : ('a'..'z' | 'A'..'Z');
+LD  @init { inTag = true; }     : '{' ;
+RD  @init { inTag = false; }    :       '}' ;
+QUOTED_STR : { inTag }? =&gt; '&quot;' ~('\n' | '\r' | '&quot;')* '&quot;';
+
+/* DUST PARSER RULES */
+start : body? EOF
+            ;
+
+body    : (  tag
+         | special_tag
+         | section
+         | partial
+         | comment
+         | buffer )+
+            ;
+
+buffer
+      : RAW_TEXT -&gt; ^(BUFFER RAW_TEXT)
+      ;
+
+ident   :       IDENTIFIER -&gt; ^(IDENT IDENTIFIER)
+      | ID -&gt; ^(IDENT ID)
+      | '.' -&gt; ^(IDENT '.')
+                        ;
+
+special_tag
+      : LD '~' ID RD -&gt; ^(SPECIAL_TAG ID)
+            ;
+
+filter
+      : '|' ID -&gt; ^(FILTER ID)
+      ;
+
+tag
+      : LD ident filter* RD -&gt; ^(TAG ident filter*)
+      ;
+
+parameter
+      : ' ' i1=ident '=' ( QUOTED_STR -&gt; ^(QUOTED_PARAM $i1 QUOTED_STR)                         | i2=ident -&gt; ^(IDENT_PARAM $i1 $i2) )
+                        ;
+
+context
+      : ':' ident -&gt; ^(CONTEXT ident)
+      ;
+
+partial
+      : LD '&gt;' ident context? '/' RD -&gt; ^(PARTIAL ident context?)
+      ;
+
+section_start_tag
+            : ident context? parameter* -&gt; ^(SEC_START_TAG ident context? parameter*)
+            ;
+
+section_end_tag
+            : LD '/' ident RD -&gt; ^(SEC_END_TAG ident)
+            ;
+
+else_section
+            : ( LD ':else' RD body? ) -&gt; ^(ELSE_BODY body?)
+            ;
+
+loop_section
+            : LD '#' section_start_tag RD
+              body?
+              else_section?
+              section_end_tag -&gt; ^(LOOP_SECTION section_start_tag ^(BODY body?) else_section? section_end_tag)
+            | LD '#' section_start_tag '/' RD -&gt; ^(LOOP_SECTION section_start_tag SELF_CLOSE)
+            ;
+
+exists_section
+            : LD '?' section_start_tag RD
+              body?
+              else_section?
+              section_end_tag -&gt; ^(EXISTS_SECTION section_start_tag ^(BODY body?) else_section? section_end_tag)
+            | LD '?' section_start_tag '/' RD -&gt; ^(EXISTS_SECTION section_start_tag SELF_CLOSE)
+            ;
+
+not_exists_section
+            : LD '^' section_start_tag RD
+              body?
+              else_section?
+              section_end_tag -&gt; ^(NOT_EXISTS_SECTION section_start_tag ^(BODY body?) else_section? section_end_tag)
+            | LD '^' section_start_tag '/' RD -&gt; ^(NOT_EXISTS_SECTION section_start_tag SELF_CLOSE)
+            ;
+
+context_helper_section
+            : LD '@' section_start_tag RD
+              body?
+              section_end_tag -&gt; ^(CONTEXT_HELPER_SECTION section_start_tag ^(BODY body?) section_end_tag)
+            | LD '@' section_start_tag '/' RD -&gt; ^(CONTEXT_HELPER_SECTION section_start_tag SELF_CLOSE)
+            ;
+
+pragma_section
+            : LD '%' section_start_tag RD
+              body?
+              section_end_tag -&gt; ^(PRAGMA_SECTION section_start_tag ^(BODY body?) section_end_tag)
+            | LD '%' section_start_tag '/' RD -&gt; ^(PRAGMA_SECTION section_start_tag SELF_CLOSE)
+            ;
+
+block_section
+            : LD '+' section_start_tag RD
+              body?
+              section_end_tag -&gt; ^(BLOCK_SECTION section_start_tag ^(BODY body?) section_end_tag)
+            | LD '+' section_start_tag '/' RD -&gt; ^(BLOCK_SECTION section_start_tag SELF_CLOSE)
+            ;
+
+inline_partial_section
+            : LD '&lt;' section_start_tag RD
+              body?
+              section_end_tag -&gt; ^(INLINE_PARTIAL_SECTION section_start_tag ^(BODY body?) section_end_tag)
+            | LD '&lt;' section_start_tag '/' RD -&gt; ^(INLINE_PARTIAL_SECTION section_start_tag SELF_CLOSE)
+            ;
+
+custom_section
+                : LD '*' section_start_tag '/' RD -&gt; ^(CUSTOM_SECTION section_start_tag SELF_CLOSE)
+                ;
+section
+      : loop_section
+      | exists_section
+      | not_exists_section
+      | context_helper_section
+      | pragma_section
+      | block_section
+      | inline_partial_section
+      | custom_section
+      ;
+
+comment
+      :  COMMENT_T -&gt; ^(COMMENT COMMENT_T)
+      ;
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="043027.html">[antlr-interest] ANTLR v3.4 generates compiler errors (that v3.3 doesn't generate)
+</A></li>
+	<LI>Next message: <A HREF="043028.html">[antlr-interest] Resolving Member-References
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#43025">[ date ]</a>
+              <a href="thread.html#43025">[ thread ]</a>
+              <a href="subject.html#43025">[ subject ]</a>
+              <a href="author.html#43025">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

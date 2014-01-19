@@ -1,0 +1,415 @@
+<html>
+<head><title>Why I Don't Use StringTemplate For Language Translation</title></head>
+<body>
+<center><font size=+4>Why I Don't Use StringTemplate For Language Translation</font></center>
+<h1>Introduction</h1>
+In <a href="http://www.codegeneration.net/tiki-read_article.php?articleId=77">
+ Language Translation Using ANTLR and StringTemplate</a>, Terence Parr describes
+ how the StringTemplate mechanism works by describing how it can be used to
+ translate from one simple high-level language to three others. He calls the
+ input language "C-", a simplified version of C, and there are actually three output languages:
+Java, Python, and a simplified bytecode language.
+
+ <p>
+My  <a href="http://www.jazillian.com">Jazillian</a> C-to-Java translator takes
+a different, rule-based approach. In this article, I'll attempt to justify my
+approach by explaining why I think StringTemplate, and the AST-walking approach to
+language translation in general, fall short.
+     <p>
+The StringTemplate article ends with this:
+<p>
+<i>While a real translator is much more complicated, it is only in the details.
+The strategy described in this article will scale easily.</i>
+<p>
+I don't believe the StringTemplate approach scales well to the C-to-Java
+case, and in fact a rule-based pattern-matching approach is a better approach
+than the traditional "walk an AST" approach for C-to-Java.
+
+<h1>Full Language Translation: Language and Libraries</h1>
+Today, when we say that a program is "written in the high-level programming language X", we're
+referring to more than just the language
+syntax. We also mean that it uses the standard libraries that come with the language. Older languages
+such as FORTRAN came with a very small set of libraries, languages like C came with medium sized
+libraries, and newer languages such as Java and C# come with huge libraries.
+<p>
+So to really produce reasonable target code when translating from one high-level language to another,
+we need to do not only transformations based on language syntax, but also the much
+larger task of mapping library calls in the source language to equivalent library calls in the
+target language. And, of course, there are many cases where we can translate core language code
+into library call code (picture replacing various patterns of C code with a single call to
+Java's String.indexOf(), for example).For the Jazillian C-to-Java translator, the vast majority of the work is in
+converting the library calls, not the core language syntax.
+I refer to this as producing "natural" Java code - code that looks hand-written.
+Everything I say
+here assumes that the goal really is to produce "natural" code.
+
+
+<h1>The StringTemplate "Multiple Views" Advantage</h1>
+The StringTemplate approach is to generate an intermediate data structure (the StringTemplate)
+while walking the AST, and then potentially having multiple outputs for different languages,
+and having those output formats clearly separated from the parsing and building of
+the data structure. So we have a single C parser, and we add instructions for how
+to build a StringTemplate within that parser spec (i.e. the C grammar). We then
+have three separate "output specifications": one for Java, another for Python, and a third for bytecode.
+<p>
+This "separate the view in the MVC architecture" feature
+is widely known. In fact, much of the Java (and SmallTalk and others) architecture is based on this design.
+And the whole reason for the existence of CSS is to separate the "view" (the CSS)
+from the "data" (the HTML).
+But the main rationale for separating the "view" from the "controller" and "model" is so that
+we can have multiple "views", and that we can easily change the "view" without having to touch
+the "model" or the "controller.  Certain applications may have multiple "views"
+(ANTLR, for example, which takes a single input in ANTLR-language,
+but generates Java code for Java programmers, C code for
+C programmers, etc). But for other applications, such as a "Any-dialect-of-C to Java" or
+"C or C++ to Java", the mapping is many-to-one, not one-to-many.
+<p>
+    Having the "view" be clearly separated from the "model" and "controller" is nice, but only
+    if you really can typically change the one without changing the other. I don't think that's
+    the case when translating one high-level programming language to another. Is it really possible
+    to capture the essence of a chunk of code (where "chunk" could be, for example, 5 lines of
+    C code to be replaced by one indexOf() call), and store that essence in a data structure, and
+    then convert that data structure to some output language?
+    If we have a data structure that indicates "the C input was a pattern of code that can be
+    replaced by a Java indexOf() call", then the design of that data structure is closely tied
+    to Java. Having different "views" to display that data structure in various languages may not work.
+</p>
+<p>
+Most importantly, any "separated view" design advantage must not be offset by a bigger disadvantage that
+it may cause. The approach must really scale well to real
+languages, as we'll discuss throughout this document. If everything becomes a mess in our
+valiant attempts to completely separate the "view" from the "controller", then our gains may be offset
+    by loses.
+</p>
+
+<h1>AST Structures</h1>
+When looking at the advantages of StringTemplate, one assumption is that the structure of the
+input and output language ASTs are similar. At first glance (and 2nd and 3rd, for that matter),
+it seems like a C AST structure would be very similar to the equivalent Java AST structure. The python and bytecode
+AST structures are surely less similar. But if we really want to generate "natural" Java
+code, the AST will often be quite different from the C input. Let's take a simple example,
+the classic C program:
+<pre>
+main(int argc, char *argv[]) {
+    printf("Hello, World!\n");
+}
+</pre>
+...and the equivalent Java program:
+<pre>
+public class MyClass {
+    public static void main(String[] args) {
+        System.out.println("Hello, World!");
+    }
+}
+</pre>
+The ASTs for these two are in fact dramatically different. The
+Java one has an extra "class" level, has extra "public", "static", and "void" keywords, only one argument, and a
+different function call with a different argument. But beyond these differences, we can easily imagine
+all sorts of other complications that will arise when we attempt to tackle just the C "main" function:
+<ol>
+<li>What are all the valid C "main()" function signatures that distinguish it from other "normal"
+    functions that happened to be called "main"?
+<li>What if the printf() had had a format string with lots of arguments of various types?
+<li>How did we decide on "MyClass" for a class name? Did it match the file name, as required by Java?
+<li>If the last thing that printf printed was something other than '\n', we'd use print() instead of println().
+<li>How do we handle the C pointer syntax in general?
+</ol>
+<p>
+If the goal really is to produce "natural" Java code and actually have the translator produce what's shown above,
+then the "walk the AST and produce some simple output from each AST node" approach simply
+does not work. We need for more processing logic and varied output than can be specified with simple
+rules that fire at various AST nodes. That approach doesn't even scale up to the handling of the C main() function,
+let alone all the vast complexities of real-world C programs.
+
+<p>
+If you're familiar with StringTemplate, you're probably thinking "Objection, your honor! I can do all those things
+with StringTemplate!" But the issue is not whether it <b>can be done</b> or not (ignore my "does not work" wording above).
+After all, you <b>could</b> do it
+by hand-writing a lexer, parser, and translator in assembly language too. The issue is when you finish,
+is what you've got using StringTemplates and AST walking better than what you'd have with some (unspecified here)
+pattern-matching approach? Using StringTemplates, you'd have to do things like:
+<ol>
+<li>At any "main function" node, search below you in the AST for various patterns to see if this is
+a "special main function" or just some function that happens to be called "main".
+<li>At any "printf function" node, loop through the format string and arguments, and do lots of
+processing to replace them with Java using the "+" operator.
+<li>Look  for '\n' at the end of the format string to choose between println() and print().
+<li>Use the current file name to produce the Java class name.
+<li>Handle C pointers (left as an exercise for the reader who's looking for a PhD thesis topic).
+</ol>
+<p>
+Now, obviously, you'd have to do all this processing with a pattern-matching" approach too, or any other approach
+for that matter.
+But the point here is that by the time you've written all that code to do all that processing, the advantages
+of using a StringTemplate have become "lost". All the examples in the StringTemplate paper show
+about 10 lines of parser-and-StringTemplate-builder code, and then a few lines of output code. But once you
+scale it up from C- to C, you'd now have more like 10 lines of parser-and-StringTemplate-builder code,
+ wrapping 1000 lines of code that's doing all this work. And the few lines of output code simply
+ cannot be replaced. There is no way to say in just a few lines what a C printf() call looks like
+ in Java. Only code that handles all the issues listed here (and more) will do.
+ <p>
+At the point where you've written all that code just to handle printf(),
+you have to question whether the use of StringTemplate is really buying you anything. Since you're
+going to be spending 98% of your time writing all that code that does all the "real work", is it really
+worth the bother of having to learn yet another language (the "StringTemplate" language) to call your code?
+Normally, it might not bother you to have to learn another programming language, but keep in mind that as you're
+    developing a translator, you've got to keep both the source and target languages in your head at once.
+    to also keep the ANTLR syntax, StringTemplate syntax, and AST tree structure in your head at the same time
+    would become a huge burden. You want your focus to be on what needs to be done, not how to do it. You want
+    to be spending your time determining what are all the C patterns that can be replaced with Java's indexOf(), not
+    worrying about AST structures, ANTLR syntax, and StringTemplate usage.
+    <p>
+    Once the translator has grown past the "simple AST node replacements" stage, StringTemplate
+is no longer doing what it was designed to do: have a simple specification of how to build something from an AST
+that can easily be displayed in various ways. Most of that work is now being done by actual code written
+in Java or some other language.
+<p>StringTemplate may be fine when your translator mainly consists of dozens of small
+"output this simple thing when you
+encounter this type of node in the AST" rules. But when converting from C to ("natural") Java, what needs to be done is
+not like that. It's more like hundreds of rules, each of which needs to
+do some nontrivial processing, and has non-trivial output. We just saw how even
+the processing for the simple printf() call is nontrivial, and we'll hit
+similar complexity for many C library calls and
+language constructs. At the high end of complexity, we have issues such as removing C pointers and removing
+goto statements, in which StringTemplate is no help at all.</p>
+
+
+<h1>Walking the AST</h1>
+As mentioned earlier, the whole approach with StringTemplate and any other traditional translator is
+to walk the AST and produce various output at various nodes. Indeed, the StringTemplate article says
+<i>Usually there will be both a rule and template associated with each abstract language construct like
+program, function, etc.</i> I have found In my experience in trying to produce "natural" Java
+from C, that this is not true at all. You don't often find yourself in a situation where you say "I'm now at a node of
+type <b>function</b> within the AST, so I need to output XYZ."
+Some examples:
+<ol>
+    <li>When you encounter a "0" in C code, what's the Java equivalent? A
+        "0", "null", "false", or something else? It all depends!
+
+    <li>An "=" is just an assignment, right? What about if it's actually copying an entire C struct?
+    What if it's assigning multiple fields of data to a C struct (which of course can't be done to a Java class)</li>
+    <li>How do you replace the C "comma operator"? You may need to add braces.</li>
+    <li>How do you replace the C "int" type "x" with a Java boolean type in "if (x)",
+        keeping in mind that "x" may be any expression?</li>
+</ol>
+<p>
+Just look at the "Hello, World" example again. What do we do when we encounter a node of type
+<b>function</b>? Well, we'll do one thing with a printf() call, something else with a
+read() call, a third thing for a call to getc(), and in fact, we'll end up with hundreds of
+different things that we want to do for all the various calls to all the built-in libraries.
+    <p>
+And there are many cases where you want to look for <b>multiple</b> C tokens. For example, we may
+want to replace a C strcasecmp() call with a Java equalsIgnoreCase() call, based on how it's used.
+Here are some the Jazillian rules (on the left of "-->" is the C code pattern to match, on the
+right is the Java replacement):
+<pre>
+strcasecmp(v1, v2) != 0 --> !v1.equalsIgnoreCase(v2)
+strcasecmp(v1, v2) == 0 --> v1.equalsIgnoreCase(v2)
+strcasecmp(v1, v2) --> v1.compareToIgnoreCase(v2)
+</pre>
+<p>
+What about the function parameters? Doesn't most of the processing that we'll do
+ on function parameters also apply to local and global variables? Yes, we could write all that
+ code once and call it from multiple places in the grammar: formalParameters,
+ globalVariables, and localVariables. But the question then becomes "what is StringTemplate buying you"?
+ You'd end up with thousands of lines of code that build up some complex data structure, and your
+ output specification would then be a mess to try to print that out. Or, you could have your
+ code output the final code itself, in which case you no longer have the "separate View"
+ advantage of StringTemplate. Either way, the advantage of StringTemplate has been lost.
+<p>
+    There are certainly many cases where AST-walking approach and StringTemplate would work well.
+    Keywords that can simply be deleted, for example, or replacing "fprintf(stdout, ..." with
+    just "printf(...", but these cases are actually the minority. And these cases can also be quite
+    simply specified in whatever alternative approach is used. In Jazillian's pattern-matching
+    system, for example, we simply say:
+    <pre>
+        const -->   // delete keyword const
+        fprintf(stdout --> printf(
+    </pre>
+</p>
+
+ <h1>HTML and CSS Analogy</h1>
+ The situation here is analogous to that with HTML and CSS, and I don't just mean in the way CSS separates
+the "view" from the "data". CSS is great because instead of embedding, say,
+ "bold" tags inside every "code" tag, you can simply say "everything inside a "code" tag should be in bold",
+and you say that in just one place.
+ But if you're generating the HTML pages, and you have a 10,000 line program that generates all the
+ HTML, you're surely going to have some sort of START_CODE_STRING constant anyway, and you can easily
+ change that from "&lt;code&gt;" to "&lt;code&gt;&lt;b&gt;". The only advantage that staying with CSS gives you is that
+ the CSS could be changed later, after compile time, perhaps even by the person reading the page.
+  <p>
+ But there
+ is no equivalent advantage (that I can see) in the StringTemplate case. Using StringTemplate to translate
+      C to Java, you'd end up with a simple
+ call to doEverythingRelatedToFunctionDeclarations() inside your parser, and a simple
+ call to showWhateverWasProducedByThatOtherCall() as your output specification.
+ <p>
+ Another way to look at it is this. Suppose your generated HTML page is extremely dynamic - its look can vary
+ completely based on the input. So you have a huge program that generates the HTML. Does it really matter whether
+ the program generates the entire HTML page vs. having an HTML page that has one huge JSP tag? If you really can
+    specify "the look" all in HTML, and "the data" is all generated, that's one thing. But when you're doing
+    high-level language translation and your output is, say, Java code,
+    there is no clear distinction between "a look" and "data". It's all just "code"! In the HTML-generating situation,
+    by the
+ time you're generating almost the whole page anyway, there's no advantage to even having a little bit of static
+ HTML wrapping all that generated code. And if you're going to have 10,000 lines of code that handles
+    converting any C function call to some equivalent
+ Java code, then does it even make sense to have a "process
+ all function calls here" architecture? It would make more sense to have hundreds of pattern-matching
+ rules: one that replaces printf() calls, another that replaces read() calls, etc.
+
+<h1>When Treewalking Doesn't Apply</h1>
+Another problem with the AST treewalking approach is that many times, there is processing to be done that does
+not correspond to a particular tree node. For example, a C function may have an "int" type and no return
+statement, but the same Java function does need a return statement. At what node do we check for whether a function is
+missing a return statement? We could put this check at the function declaration node, but then the code
+is just going to have to search the children nodes for return statements anyway. You might think that we could
+pass some data structure around that indicates whether we've seen a return statement or not. But that doesn't work, because it may
+have one, but it's not at the end of the function. You need some nontrivial static control flow analysis to do it
+right, but even to make any half-hearted attempt, you'll need far more than the simple
+"at a node of type X, output Y" approach.
+<p>
+Here's another problem. Suppose we want to remove any function definitions
+    for functions that are never called, and assume that we have
+multiple input files. Yes, we could build an AST which contains multiple C source files ("translation units"),
+and just do this sort of thing after all the treewalking is done. In a real C-to-Java translator, there will be many of these sorts of things. And
+simply running all these checks at "the end" - after walking the whole tree - leaves you with a mixed
+architecture; part of your work is being done with treewalking, and part is done at the end.
+<p>
+To give you a feel for the magnitude of the problem, here are some things that do not apply to any specific
+AST node type that need to be done before treewalking(when translating C to Java):
+<ol>
+<li>Look for id's that are not C keywords but are Java keywords
+<li>Handle all C preprocessor constructs (#define, #include, etc)
+<li>Rename files
+<li>Build up symbol tables
+</ol>
+And here are some that need to be done after treewalking:
+<ol>
+<li>Add needed "import" statements
+<li>Add any required exception handling
+<li>Remove unreachable code, unused variables and functions
+</ol>
+
+<h1>Scaling from C- to C</h1>
+In this StringTemplate article, a hypothetical subset of C called "C-" is used to show examples. This makes
+for nice, clean examples, and is great for giving an overview of how StringTemplate works. But it's not at all
+clear that these examples would stay readable as we start adding the complexity of C. For example, in the
+"Variable Declaration Translation" section, we see that a C- variable declaration has a simple, one-line
+Java equivalent, a <b>very</b> simple zero-line Python equivalent, and even a simple two-line
+bytecode equivalent. But what about when we start considering all the complexity of a real C declaration?
+We hit all sorts of problems:
+<ol>
+<li>How do we convert C types to Java? The replacement for most C primitives depend on the hardware and/or
+compiler. Does a "char *" become a Java String, or an array of chars? If it's an array of some non-primitive,
+won't we have to add Java code to initialize it?
+<li>Whenever we encounter a C variable declaration, don't we need to search for all references
+ to it in other files, and prepend the class name to them, and change the declaration to make it public and
+ static?
+ <li>Shouldn't we check for variable shadowing, where one declaration of "i" is inside another? Because that's
+ allowed in C, but not Java.
+ <li>Can't the variable declaration also be an assignment, and we have to do all kinds of processing for that?
+ <li>Don't we need to do some static code analysis to see if we need to turn the declaration into an assignment
+ to avoid the Java "possible uninitialized variable" compiler warning?
+ </ol>
+ These are just problems related to variable declarations off the top of my head, there are probably others.
+And, of course, variable declarations is just one tiny aspect of the whole language.
+ <p>
+ The point here is that by the time you add code to do all these checks, we no longer have a simple
+ 20-line spec for creating a StringTemplate and a one-line spec for producing an output. Instead, you'll
+ have hundreds if not thousands of lines of code just to handle variable declarations!
+     And even if you can manage to
+ invoke that code with a few lines of code at the "variable declaration" point of the parser, you've replaced
+ the "small bits of processing at each AST node" architecture with a "small bits of code that does all
+ the work at each AST node" architecture. And the output specification is just no longer simple. There's
+ just no getting around that. A simple variable declaration may end up with no changes, may end up with
+ a different type, may end up having non-trivial initialization code added
+     (possibly off in some static block), may even end up being deleted, all based on complex
+ logic and many factors.
+
+ <h1>Mixing languages is bad</h1>
+ For me, the fundamental drawback to using StringTemplate is that I really don't want to have to learn yet
+ another language beyond Java and ANTLR. It wouldn't be too bad, but the fact is that with StringTemplate,
+ all three languages are mixed together. Here is a section of code from this StringTemplate article:
+ <pre>
+ function returns [StringTemplate code=template("function")]
+ {StringTemplate t=null, f=null;}
+    :   t=type id:ID {currentFunctionName=id.getText();} LPAREN
+        (   f=formalParameter
+            {code.setAttribute("args", f);}
+            (   COMMA f=formalParameter
+                {code.setAttribute("args", f);}
+            )*
+        )?
+
+        RPAREN
+        block[code]
+        {
+        code.setAttribute("type", t);
+        code.setAttribute("name", id.getText());
+        currentFunctionName=null;
+        }
+    ;
+</pre>
+This is a mix of Java, ANTLR, and StringTemplate syntax. This code is probably very
+readable to ANTLR experts, but not me. I use ANTLR regularly and I would say I
+"know ANTLR syntax pretty well", but I'm no expert, and I find the code above
+to be quite difficult to read. I suppose it's not really fair for me to
+say that this includes a "StringTemplate language",
+as it's really just Java code that happens to use a Java class called StringTemplate. But you do
+need to know how StringTemplate works in order to make sense of this code. I won't go into more detail
+here about why I'm having so much trouble understanding the above code, other than to compare it
+to the ANTLR parser rule without the StringTemplate stuff:
+<pre>
+parameterDeclaration
+                            { String declName; }
+        :       ds:declSpecifiers
+                ( ( declarator[false] )=> declName = d:declarator[false]
+                | nonemptyAbstractDeclarator
+                )?
+                {
+                ## = #( #[NParameterDeclaration], ## );
+                }
+        ;
+</pre>
+If you're at the point (as I am) where you can barely understand this ANTLR syntax, throwing in the StringTemplate
+ stuff just pushes you past your limit. It's not as if I didn't even try. Yes, I see how arguments
+ are being passed and returned, I know how "id:ID" will create an "id" Token variable
+ and where that is in the AST. I know LPAREN, COMMA, and RPAREN are lexer tokens. I can grasp
+ that we'll declare a "code" variable of type StringTemplate, which seems to have a setAttribute
+ method. I can even start to grasp that the "args" attribute must be some kind of list that's
+ getting all the formal parameters. But in the end, my eyes gloss over and I just don't feel like
+ I fully grok this code. I was teetering on the edge with the mix of ANTLR and Java syntax,
+ and StringTemplate knocked me over the edge, and now I just feel stupid.
+
+ <h1>Conclusion</h1>
+ StringTemplates seem great for certain problem domains, but I don't think those domains are
+ as large as this <a href="http://www.codegeneration.net/tiki-read_article.php?articleId=77">
+ Language Translation Using ANTLR and StringTemplate</a> article makes them out to be. In fact, I don't think StringTemplates would
+ scale well to the problem of translating from one high-level language (such as C) to
+ another (such as Java) when the translation includes producing "natural" code that uses
+library calls. What's more, I don't think the whole AST-walking approach scales well
+ to that domain. The AST-walking approach works great for high-level to low-level translation
+ (such as compilers). And StringTemplate seems great for simpler languages (such as this "C-" one and
+maybe even ANTLR syntax),
+ especially where the output AST structure will be similar to the input one. And by "similar" here,
+ I'd even consider bytecode "similar". In that domain, StringTemplate seems like a reasonable tool,
+and having multiple "views" that are distinct from the parser and translation logic is a nice bonus.
+ <p>
+ But there is now at least one tool (<a href="http://www.jazillian.com">Jazillian</a>) that translates
+     from one high-level language (C) to another
+ (Java) in which library calls are also translated and the output is "natural" code that looks hand-written. With that
+ problem domain, the AST-walking architecture just doesn't work for much (maybe even most)
+  of what needs to be done. The StringTemplate approach of having a simple specification for how to convert
+  input to output for each type of AST node becomes a huge impediment, not an advantage. And the
+  advantages that StringTemplates bring: separate "views" and a simple input-to-output
+  specification language, get lost in a sea of code that implements all the functionality
+  of translating C code to their "natural" Java equivalents.
+ <p>
+
+Andy Tripp<br>
+January 10, 2006.
+
+
+</body>
+</html>

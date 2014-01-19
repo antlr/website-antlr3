@@ -1,0 +1,241 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Matching multiple occurrences of quoted text joined by 'and' (i.e. &quot;a&quot; and &quot;b&quot; and &quot;c&quot;)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Matching%20multiple%20occurrences%20of%20quoted%20text%0A%20joined%20by%20%27and%27%20%28i.e.%20%22a%22%20and%20%22b%22%20and%20%22c%22%29&In-Reply-To=%3C1288834189.19303.41.camel%40gecko.home.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="039965.html">
+   <LINK REL="Next"  HREF="039962.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Matching multiple occurrences of quoted text joined by 'and' (i.e. &quot;a&quot; and &quot;b&quot; and &quot;c&quot;)</H1>
+    <B>John B. Brodie</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Matching%20multiple%20occurrences%20of%20quoted%20text%0A%20joined%20by%20%27and%27%20%28i.e.%20%22a%22%20and%20%22b%22%20and%20%22c%22%29&In-Reply-To=%3C1288834189.19303.41.camel%40gecko.home.org%3E"
+       TITLE="[antlr-interest] Matching multiple occurrences of quoted text joined by 'and' (i.e. &quot;a&quot; and &quot;b&quot; and &quot;c&quot;)">jbb at acm.org
+       </A><BR>
+    <I>Wed Nov  3 18:29:49 PDT 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="039965.html">[antlr-interest] Matching multiple occurrences of quoted text joined by 'and' (i.e. &quot;a&quot; and &quot;b&quot; and &quot;c&quot;)
+</A></li>
+        <LI>Next message: <A HREF="039962.html">[antlr-interest] Commented-Out references to missing rule return	values cause syntax errors
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#39966">[ date ]</a>
+              <a href="thread.html#39966">[ thread ]</a>
+              <a href="subject.html#39966">[ subject ]</a>
+              <a href="author.html#39966">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Greetings!
+
+On Wed, 2010-11-03 at 22:40 +0000, Colin Yates wrote:
+&gt;<i> Hmmm - I think I might be running into a bug - either in the code or my
+</I>&gt;<i> understanding (almost certainly my understanding!).
+</I>
+unfortunately i do believe you have mis-understood ANTLR Lexers...
+
+&gt;<i> I have created a simple grammar which demonstrates the problem (I am testing
+</I>&gt;<i> the first parser rule called 'rule1') :
+</I>&gt;<i> 
+</I>&gt;<i> --- start
+</I>&gt;<i> grammar QuotedText;
+</I>&gt;<i> 
+</I>&gt;<i> @parser::header {
+</I>&gt;<i> package examples.aandb;
+</I>&gt;<i> }
+</I>&gt;<i> 
+</I>&gt;<i> @lexer::header {
+</I>&gt;<i> package examples.aandb;
+</I>&gt;<i> }
+</I>&gt;<i> 
+</I>&gt;<i> rule1
+</I>&gt;<i> : a=QUOTED_TEXT 'and' b=QUOTED_TEXT 'and' c=QUOTED_TEXT
+</I>&gt;<i> { System.out.println(&quot;rule1: &quot; + a.getText() + &quot;, &quot; + b.getText() + &quot;,&quot; +
+</I>&gt;<i> c.getText());}
+</I>&gt;<i> ;
+</I>&gt;<i> ruleThatShouldBeIgnored
+</I>&gt;<i> : 'and whose' 'external'? 'resource is' theResource=('this' | QUOTED_TEXT)
+</I>&gt;<i> { System.out.println(&quot;taskResource: &quot; + $theResource);}
+</I>&gt;<i> ;
+</I>&gt;<i> 
+</I>
+please recall that ANTLR Lexers are greedy *and* Lexers do *not*
+back-track.
+
+so when the input string of 'and ' in your input '&quot;a&quot; and &quot;b&quot;'
+sub-phrase, the lexer commits itself to recognizing the 'and whose' and
+only the 'and whose' keyword. of course this particular input string
+does not contain the 'and where' keyword so the lexer generates the
+error you are observing (e.g. we are at the opening &quot; of the &quot;b&quot;
+sub-phrase and not a 'w' that must follow any instance of 'and ' in
+order to recognize the 'and where' keyword.
+
+as an aside, you will have similar problems with your 'resource is'
+keyword.
+
+you can fix this particular problem by splitting the 'and where' (and
+'resource is') keyword into 2 keywords: 'and' 'where'.  this also has
+the benefit of recognizing more than 1 blank (or tab) between the two
+words --- 'and     where' != 'and where' 
+but 'and'       'where' == 'and' 'where'
+
+as a larger suggestion, you should avoid any 'quoted' keyword in your
+parser rules. rather you should specify explicit lexer rules for them.
+by following this suggestion you will be more aware of your lexer's
+activities and can deal with common left prefix issues such as the above
+problem.
+
+if you really want to have an 'and where' token in addition to a 'and'
+token you can do something like the following by using explicit lexer
+rules:
+
+tokens { AND_WHERE; } // at top of the .g file, after options{}
+
+AND : 'and' ( WS 'where' { $type = AND_WHERE; } )? ;
+
+and use AND everywhere in the parser instead of 'and' and use AND_WHERE
+everywhere in the parser instead of 'and where'.
+
+note: the use of WS above isn't really quite the best. better would be
+to rework your WS rule as something like these:
+
+fragment WS : (' '|'\t'|'\n'|'\r')+ ;
+WHITESPACE : WS {skip();} ;
+
+this latter alternative avoids token creation overhead in usage of the
+WS rule (because it is now a fragment).
+
+
+&gt;<i> QUOTED_TEXT : '&quot;' (~'&quot;')* '&quot;';
+</I>&gt;<i> WS
+</I>&gt;<i>     : (' '|'\t'|'\n'|'\r')+ {skip();}
+</I>&gt;<i>     ;
+</I>&gt;<i> --- end
+</I>&gt;<i> 
+</I>&gt;<i> My test case is as follows:
+</I>&gt;<i> 
+</I>&gt;<i> --- start
+</I>&gt;<i> package examples.aandb;
+</I>&gt;<i> 
+</I>&gt;<i> import org.junit.Test;
+</I>&gt;<i> import org.antlr.runtime.CommonTokenStream;
+</I>&gt;<i> import org.antlr.runtime.CharStream;
+</I>&gt;<i> import org.antlr.runtime.ANTLRStringStream;
+</I>&gt;<i> import org.antlr.runtime.RecognitionException;
+</I>&gt;<i> 
+</I>&gt;<i> import java.io.IOException;
+</I>&gt;<i> 
+</I>&gt;<i> public class TestCase {
+</I>&gt;<i> 
+</I>&gt;<i>     @Test
+</I>&gt;<i>     public void happyPath() throws IOException, RecognitionException {
+</I>&gt;<i>         String dsl = &quot;\&quot;a\&quot; and \&quot;b\&quot; and \&quot;c\&quot;&quot;;
+</I>&gt;<i>         createParser(dsl).rule1();
+</I>&gt;<i>     }
+</I>&gt;<i> 
+</I>&gt;<i>     private QuotedTextParser createParser(String testString) throws
+</I>&gt;<i> IOException {
+</I>&gt;<i>         QuotedTextLexer lexer = createLexer(testString);
+</I>&gt;<i>         CommonTokenStream tokens = new CommonTokenStream(lexer);
+</I>&gt;<i>         return new QuotedTextParser(tokens);
+</I>&gt;<i>     }
+</I>&gt;<i> 
+</I>&gt;<i>     private QuotedTextLexer createLexer(String testString) throws
+</I>&gt;<i> IOException {
+</I>&gt;<i>         CharStream stream = new ANTLRStringStream(testString);
+</I>&gt;<i>         return new QuotedTextLexer(stream);
+</I>&gt;<i>     }
+</I>&gt;<i> }
+</I>&gt;<i> 
+</I>&gt;<i> --- end
+</I>&gt;<i> 
+</I>&gt;<i> If I run that (in IDEA 8 using latest antlrworks and antlr 3.2 then I get
+</I>&gt;<i> the following output:
+</I>&gt;<i> 
+</I>&gt;<i> --- start
+</I>&gt;<i> lline 1:8 mismatched character '&quot;' expecting 'w'
+</I>&gt;<i> line 1:9 no viable alternative at character 'b'
+</I>&gt;<i> line 1:17 no viable alternative at character 'c'
+</I>&gt;<i> line 1:19 mismatched character '&lt;EOF&gt;' expecting '&quot;'
+</I>&gt;<i> line 1:10 missing 'and' at '&quot; and &quot;'
+</I>&gt;<i> line 0:-1 mismatched input '&lt;EOF&gt;' expecting 'and'
+</I>&gt;<i> --- end
+</I>&gt;<i> 
+</I>&gt;<i> if however, I comment out the second rule ('ruleThatShouldBeIgnored') then
+</I>&gt;<i> everything works as expected.  The output is:
+</I>&gt;<i> 
+</I>&gt;<i> --- start
+</I>&gt;<i> rule1: &quot;a&quot;, &quot;b&quot;,&quot;c&quot;
+</I>&gt;<i> --- end
+</I>&gt;<i> 
+</I>&gt;<i> I don't understand this behaviour - I don't see why
+</I>&gt;<i> 'ruleThatShouldBeIgnored' is having any influence.
+</I>&gt;<i> 
+</I>&gt;<i> Any ideas?
+</I>&gt;<i> 
+</I>&gt;<i> Thanks,
+</I>&gt;<i> 
+</I>&gt;<i> Col
+</I>&gt;<i> 
+</I>&gt;<i> On 3 November 2010 19:37, Colin Yates &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">colin.yates at gmail.com</A>&gt; wrote:
+</I>&gt;<i> 
+</I>&gt;<i> &gt; Thanks Gordon,
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; That doesn't work either.  I think I need to separate out just this
+</I>&gt;<i> &gt; fragment into its own grammar to ensure that the rest of the grammar
+</I>&gt;<i> &gt; isn't having any unexpected side effects.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; I will report back once I have isolated these two rules... Thanks!
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Sent from my iPad
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; On 3 Nov 2010, at 19:25, Gordon Tyler &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">Gordon.Tyler at quest.com</A>&gt; wrote:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; &gt;&gt; QUOTED_TEXT : '\&quot;' ( options {greedy=false;} : .)* '\&quot;'
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; Try this:
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; QUOTED_TEXT : '&quot;' (~'&quot;')* '&quot;'
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; In English: Match '&quot;', then match zero or more characters which are not
+</I>&gt;<i> &gt; '&quot;', then match '&quot;'.
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; Ciao,
+</I>&gt;<i> &gt; &gt; Gordon
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt;
+</I>
+Hope this helps.....
+   -jbb
+
+
+</PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="039965.html">[antlr-interest] Matching multiple occurrences of quoted text joined by 'and' (i.e. &quot;a&quot; and &quot;b&quot; and &quot;c&quot;)
+</A></li>
+	<LI>Next message: <A HREF="039962.html">[antlr-interest] Commented-Out references to missing rule return	values cause syntax errors
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#39966">[ date ]</a>
+              <a href="thread.html#39966">[ thread ]</a>
+              <a href="subject.html#39966">[ subject ]</a>
+              <a href="author.html#39966">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,181 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] lexer or parser for comments and remarks?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20lexer%20or%20parser%20for%20comments%20and%20remarks%3F&In-Reply-To=%3C4623C79C.6000004%40ferventsoftware.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="020205.html">
+   <LINK REL="Next"  HREF="020084.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] lexer or parser for comments and remarks?</H1>
+    <B>Richard Bown</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20lexer%20or%20parser%20for%20comments%20and%20remarks%3F&In-Reply-To=%3C4623C79C.6000004%40ferventsoftware.com%3E"
+       TITLE="[antlr-interest] lexer or parser for comments and remarks?">richard.bown at ferventsoftware.com
+       </A><BR>
+    <I>Mon Apr 16 11:59:40 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="020205.html">[antlr-interest] lexer or parser for comments and remarks?
+</A></li>
+        <LI>Next message: <A HREF="020084.html">[antlr-interest] Tree output syntax
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#20231">[ date ]</a>
+              <a href="thread.html#20231">[ thread ]</a>
+              <a href="subject.html#20231">[ subject ]</a>
+              <a href="author.html#20231">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I've defined the &quot;rem&quot; as a token but I still get non-determinisms in
+the lexer between this and the REGULAR_ID.   I'm not sure this is a red
+herring but the REGULAR_ID is declaring testLiteralsTable as follows
+(based on Lubos Vnuk's SqlSQL2/DmlSQL2 grammar):
+
+REGULAR_ID :
+	( ( NATIONAL_CHAR_STRING_LIT 		{$setType(NATIONAL_CHAR_STRING_LIT);}
+	  | BIT_STRING_LIT {$setType(BIT_STRING_LIT);}
+	  | HEX_STRING_LIT {$setType(HEX_STRING_LIT);} 	)
+	| (SIMPLE_LETTER) (SIMPLE_ID)* {$setType(testLiteralsTable(REGULAR_ID));} )
+;
+
+If I add the following rule:
+
+REMARK :
+	&quot;rem&quot; ( ~( '\r' | '\n' ) ) * NEWLINE { $setType(Token.SKIP); }
+;
+
+then I get non-determinisms between the two even if &quot;rem&quot; is in the
+imported token table (or even explicitly defined in tokens {} ).
+
+Conversely if I put the &quot;rem&quot; statement in the parser then I can't
+define a stream of catch-all-until-the-end-of-the-line token.
+
+Of course my fundamental problem is I'm hacking grammars without
+actually learning what's going on under the covers too much (very
+naughty) - treating it as regexps etc.  So forgive my laziness but still 
+happy to take pointers to RTFMs etc.
+
+I might in fact use this as an excuse to download Ter's book.   I 
+presume that Antlr 3.0 and 2.7.5 have enough similarities to make it 
+worth my while at this time.
+
+Rgds,
+Richard
+
+
+
+Johannes Luber wrote:
+&gt;<i> Richard Bown wrote:
+</I>&gt;&gt;<i> Maybe I was blathering a bit too much there - is this so simple and
+</I>&gt;&gt;<i> stoopid it's in a FAQ or an example that I've missed?  Anyone got any
+</I>&gt;&gt;<i> recommendations or pointers?   Even a RTFM would do.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Richard
+</I>&gt;<i> 
+</I>&gt;<i> How about using the tokens command to define a REM token like so?
+</I>&gt;<i> 
+</I>&gt;<i> tokens {
+</I>&gt;<i>    REM=&quot;rem&quot;;
+</I>&gt;<i> }
+</I>&gt;<i> 
+</I>&gt;<i> And using
+</I>&gt;<i> 
+</I>&gt;<i> REMARK :
+</I>&gt;<i>    REM ( ~( '\r' | '\n' ) ) * NEWLINE
+</I>&gt;<i>    { setType(Token.SKIP); }
+</I>&gt;<i>    ;
+</I>&gt;<i> 
+</I>&gt;<i> should favor &quot;rem&quot; for REMARK instead to recognize an ID token. At least
+</I>&gt;<i> that should work for ANTLR 3 - I don't know much about the difference to
+</I>&gt;<i> ANTLR 2.7.7.
+</I>&gt;<i> 
+</I>&gt;<i> Best regards,
+</I>&gt;<i> Johannes Luber
+</I>&gt;<i> 
+</I>&gt;&gt;<i> Richard Bown wrote:
+</I>&gt;&gt;&gt;<i> Hi,
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> I've got a lexer non-determinism which is making me go back and
+</I>&gt;&gt;&gt;<i> forward between trying to fix the lexer or trying to write a good
+</I>&gt;&gt;&gt;<i> parser rule for the problem - neither of which I can seem to get
+</I>&gt;&gt;&gt;<i> right.  This is with Antlr 2.7.5 producing C#.  Apologies for the
+</I>&gt;&gt;&gt;<i> lengthy explanation.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> The rules are for handling SQL comments and similar one liners (I'm
+</I>&gt;&gt;&gt;<i> treating these all as single line statements).   Whilst this is
+</I>&gt;&gt;&gt;<i> relatively simple for non-alphabetic characters - you can write a
+</I>&gt;&gt;&gt;<i> lexer rule such as this:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> COMMENT :
+</I>&gt;&gt;&gt;<i>     '-' '-' ( ~('\r' | '\n') )* NEWLINE { setType(Token.SKIP); }
+</I>&gt;&gt;&gt;<i> ;
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> If you then define say a similar line for &quot;rem&quot; statements:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> REMARK :
+</I>&gt;&gt;&gt;<i>     'r' 'e' 'm' ( ~( '\r' | '\n' ) ) * NEWLINE
+</I>&gt;&gt;&gt;<i> { setType(Token.SKIP); }
+</I>&gt;&gt;&gt;<i> ;
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> This is fine - but if you also have a lexer rule for matching
+</I>&gt;&gt;&gt;<i> identifiers i.e. (slightly simplified):
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> ID :
+</I>&gt;&gt;&gt;<i>     'A-Z' | 'a-z' | '_' | '0'..'9'
+</I>&gt;&gt;&gt;<i> ;
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> You get non-determinisms of course with the &quot;rem&quot; rule and any other
+</I>&gt;&gt;&gt;<i> rules that use alphanumerics.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> The other way I've attempted to solve this is to just catch the 'rem'
+</I>&gt;&gt;&gt;<i> elements in the parser.   This is fine (and it would be a more useful
+</I>&gt;&gt;&gt;<i> solution if I wanted to do some simple processing of the comment
+</I>&gt;&gt;&gt;<i> lines) but then if there are any interesting and unusual characters in
+</I>&gt;&gt;&gt;<i> the remainder of the &quot;rem&quot; line then the parser doesn't match on these
+</I>&gt;&gt;&gt;<i> elements.  I've tried to be exhaustive about the type of 'words' that
+</I>&gt;&gt;&gt;<i> the remainder of the comment lines can contain but then I start to
+</I>&gt;&gt;&gt;<i> trip over lexer rules again and we go around in circles.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> So I've been going back to the lexer to solve this - and whilst with
+</I>&gt;&gt;&gt;<i> the non-determinisms things almost work, the lexer rules also greedily
+</I>&gt;&gt;&gt;<i> slurp  up parts of legitimate ids.   One thing to fix that is to force
+</I>&gt;&gt;&gt;<i> the lexer to match from the start of the line only I s'pose... but it
+</I>&gt;&gt;&gt;<i> all seems like putting one hack on top of another.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> Any clues how to handle this elegantly in the parser?   To me it would
+</I>&gt;&gt;&gt;<i> make sense to dump these lexer rules and handle all of these types in
+</I>&gt;&gt;&gt;<i> the parser - I just need an equivalent to &quot;match from here to end of
+</I>&gt;&gt;&gt;<i> line&quot; for the parser perhaps?
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> Rgds,
+</I>&gt;&gt;&gt;<i> Richard Bown
+</I>&gt;&gt;&gt;<i>
+</I>&gt;<i> 
+</I>
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="020205.html">[antlr-interest] lexer or parser for comments and remarks?
+</A></li>
+	<LI>Next message: <A HREF="020084.html">[antlr-interest] Tree output syntax
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#20231">[ date ]</a>
+              <a href="thread.html#20231">[ thread ]</a>
+              <a href="subject.html#20231">[ subject ]</a>
+              <a href="author.html#20231">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

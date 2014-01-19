@@ -1,0 +1,183 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [stringtemplate-interest] Grid Problems
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20Grid%20Problems&In-Reply-To=%3C1209841451.11032.19.camel%40localhost.localdomain%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001463.html">
+   <LINK REL="Next"  HREF="001467.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[stringtemplate-interest] Grid Problems</H1>
+    <B>Bob</B> 
+    <A HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20Grid%20Problems&In-Reply-To=%3C1209841451.11032.19.camel%40localhost.localdomain%3E"
+       TITLE="[stringtemplate-interest] Grid Problems">citibob at comcast.net
+       </A><BR>
+    <I>Sat May  3 12:04:11 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001463.html">[stringtemplate-interest] Problem with .stg files
+</A></li>
+        <LI>Next message: <A HREF="001467.html">[stringtemplate-interest] Grid Problems
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1464">[ date ]</a>
+              <a href="thread.html#1464">[ thread ]</a>
+              <a href="subject.html#1464">[ subject ]</a>
+              <a href="author.html#1464">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I have a system that produces data in 2-D grids (rows-and-columns).
+Each column has a name.  This seemed like a perfect match for
+StringTemplate.
+
+I've included at the end of this email a template that I wish to use to
+generate a report from my 2-D grids.  In particular, I wish to:
+
+1. Create a 1-row grid (person) containing one person record.
+2. Create a multi-row grid (phones) containing phone numbers for the
+person.
+3. Format it all together as shown in the template at the end of this
+message.
+
+The basic operation here is to set a StringTemplate attribute to one of
+my grids (StringTableModel).  I want to make a function like:
+
+public static void setAttribute(StringTemplate st, String var,
+StringTableModel val)
+	{ ... }
+
+Then I use code as follows to generate my report:
+
+	StringTemplate st = ....;
+
+	StringTableModel sperson = new StringTableModel(dmod.getPersonSb(), sfmap);
+	setAttribute(st, &quot;person&quot;, sperson);
+	
+	StringTableModel sphones = new StringTableModel(dmod.getPhonesSb(), sfmap);
+	setAttribute(st, &quot;phones&quot;, sphones);
+
+	return st.toString();
+
+Unfortunately, I came up against several difficulties in figuring out
+what to place in the body of the setAttribute(StringTemplate, String,
+StringTableModel) function:
+
+1. I first tried setting multi-valued attributes as follows.  The parser
+complained that I couldn't have &quot;.&quot; in an attribute name:
+	for (int col=0; col&lt;val.getColumnCount(); ++col) {
+		String colName = var + &quot;.&quot; + val.getColumnName(col) + &quot;&quot;;
+		for (int row=0; row&lt;val.getRowCount(); ++row) {
+			st.setAttribute(colName, val.getValueAt(row, col));
+		}
+	}
+
+2. Then I tried the syntax shown in the docs for 2-5 column multi-valued
+attributes, as follows.  The parser also did not understand this, since
+I'm only setting one column at a time:
+	for (int col=0; col&lt;val.getColumnCount(); ++col) {
+		String colName = var + &quot;.{&quot; + val.getColumnName(col) + &quot;}&quot;;
+		for (int row=0; row&lt;val.getRowCount(); ++row) {
+			st.setAttribute(colName, val.getValueAt(row, col));
+		}
+	}
+
+
+3. Then I tried creating a HashMap for each row, and setting the value
+once per row.  This ALMOST worked.  It worked as long as you have 2 or
+more phone numbers.  But if you had just one phone number (and in my
+case 2 columns), the system interpreted the data as two single-valued
+attributes, as opposed to one aggregate attribute.  Thus, it worked if I
+had 2 phone numbers, but threw an exception if I had just one.  Is this
+a bug, or is that the intended behavior?
+	for (int row=0; row&lt;val.getRowCount(); ++row) {
+		HashMap map = new HashMap();
+		for (int col=0; col&lt;val.getColumnCount(); ++col) {
+			map.put(val.getColumnName(col), val.getValueAt(row, col));
+		}
+		st.setAttribute(var, map);
+	}
+
+4. I figured maybe if I make each column as a list of attributes, this
+would work.  No such luck...
+	HashMap map = new HashMap();
+	for (int col=0; col&lt;val.getColumnCount(); ++col) {
+		List list = new ArrayList(val.getRowCount());
+		for (int row=0; row&lt;val.getRowCount(); ++row) {
+			list.add(val.getValueAt(row, col));
+		}
+		map.put(val.getColumnName(col), list);
+	}
+	st.setAttribute(var, map);
+
+5. Finally, I hacked the source code, making StringTemplate.Aggregate
+public, to allow the following.  Since StringTemplate.Aggregate is
+basically a wrapper around HashMap, I'm surprised that behaved
+differently from the HashMap example above.  But it did: this worked,
+whereas the example above did not:
+
+	
+	for (int row=0; row&lt;val.getRowCount(); ++row) {
+		StringTemplate.Aggregate map = new StringTemplate.Aggregate();
+		for (int col=0; col&lt;val.getColumnCount(); ++col) {
+			map.put(val.getColumnName(col), val.getValueAt(row, col));
+		}
+		st.setAttribute(var, map);
+	}
+	
+---------------------
+Current status: at this point, I know of no way to do what I want
+without hacking the source code.  Any suggestions on a solution to this
+problem?
+
+Thanks,
+-- Bob
+
+
+// ===================================================
+// summary.st
+
+&lt;ul&gt;
+&lt;li&gt;Name: $person.firstname$ $person.lastname$&lt;/li&gt;
+&lt;li&gt;Email: $person.email$&lt;/li&gt;
+&lt;/ul&gt;
+
+
+&lt;h3&gt;Phones&lt;/h3&gt;
+&lt;table border=1&gt;
+$phones:{it |
+  &lt;tr&gt;
+    &lt;td&gt;$it.groupid$&lt;/td&gt;&lt;td&gt;$it.phone$&lt;/td&gt;
+  &lt;/tr&gt;
+}$
+&lt;/table&gt;
+
+
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001463.html">[stringtemplate-interest] Problem with .stg files
+</A></li>
+	<LI>Next message: <A HREF="001467.html">[stringtemplate-interest] Grid Problems
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1464">[ date ]</a>
+              <a href="thread.html#1464">[ thread ]</a>
+              <a href="subject.html#1464">[ subject ]</a>
+              <a href="author.html#1464">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">More information about the stringtemplate-interest
+mailing list</a><br>
+</body></html>

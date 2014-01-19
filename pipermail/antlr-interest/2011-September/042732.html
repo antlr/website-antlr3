@@ -1,0 +1,350 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Recognizing syntax errors with C#
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Recognizing%20syntax%20errors%20with%20C%23&In-Reply-To=%3C1317027725027-6831210.post%40n2.nabble.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="042741.html">
+   <LINK REL="Next"  HREF="042733.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Recognizing syntax errors with C#</H1>
+    <B>pragmaik</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Recognizing%20syntax%20errors%20with%20C%23&In-Reply-To=%3C1317027725027-6831210.post%40n2.nabble.com%3E"
+       TITLE="[antlr-interest] Recognizing syntax errors with C#">contact at maik-schmidt.de
+       </A><BR>
+    <I>Mon Sep 26 02:02:05 PDT 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="042741.html">[antlr-interest] a logo design? branding.
+</A></li>
+        <LI>Next message: <A HREF="042733.html">[antlr-interest] Recognizing syntax errors with C#
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#42732">[ date ]</a>
+              <a href="thread.html#42732">[ thread ]</a>
+              <a href="subject.html#42732">[ subject ]</a>
+              <a href="author.html#42732">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I have written a grammar for a small subset of C and my parser does not work
+reliably, that is sometimes it reports syntax errors and sometimes it
+doesn't. For example, my grammar insists on variable initialization:
+
+bool x; // This is not allowed.
+bool y = true; // This is allowed
+
+My problem is that the parser emits an error message for the program above.
+But if I simply switch the lines like so:
+
+bool y = true; // This is allowed
+bool x; // This is not allowed.
+
+the parser happily creates an AST for the first statement and simply ignores
+the second one without noticing me about the syntax error. 
+
+What am I doing wrong? My grammar looks as follows:
+
+
+grammar MyGrammar;
+
+options {
+    language = CSharp3;
+    output = AST;
+    ASTLabelType = MyAST;
+}
+
+tokens {
+    VAR_DECL;
+	ARG_DECL;
+	METHOD_DECL;
+	ASSIGN = '=';
+	EXPR;
+	ELIST;
+	BLOCK;
+	CALL;
+	UNARY_MINUS;
+	UNARY_NOT;
+}
+
+@lexer::namespace{MyGrammar}
+@parser::namespace{MyGrammar}
+
+/******************************************************************************
+ *                             Parser section
+
+*****************************************************************************/
+
+public
+compilationUnit
+    :    (methodDeclaration | variableDeclaration)+
+	;
+
+methodDeclaration
+    :    returnType IDENTIFIER '(' (formalParameter (',' formalParameter)*)?
+')' block -&gt; ^(METHOD_DECL returnType IDENTIFIER formalParameter* block)
+    ;
+
+formalParameter
+    :    type IDENTIFIER -&gt; ^(ARG_DECL type IDENTIFIER)
+    ;
+
+variableDeclaration
+    :    type IDENTIFIER '=' expression ';' -&gt; ^(VAR_DECL type IDENTIFIER
+expression)
+    ;
+
+block 
+    :    '{' (statement)* '}' -&gt; ^(BLOCK statement*)
+    ;
+
+statement
+options { backtrack=true; }
+    :    block
+	|    variableDeclaration
+    |    lhs '=' expression ';' -&gt; ^('=' lhs expression)
+	|    'return' expression? ';' -&gt; ^('return' expression?)
+	|    'if' '(' expression ')' b1=block
+	     ('else' b2=block -&gt; ^('if' expression $b1 $b2)
+		 |                -&gt; ^('if' expression $b1)
+		 )
+    |    postfixExpression ';' -&gt; ^(EXPR postfixExpression)
+	|	 ';'!
+	;
+
+lhs :    postfixExpression -&gt; ^(EXPR postfixExpression)
+    ;
+
+expressionList
+    :    expr (',' expr)* -&gt; ^(ELIST expr+)
+    |    -&gt; ELIST
+    ;
+
+expression
+    :    expr -&gt; ^(EXPR expr)
+    ;
+
+expr:    logicalOrExpression
+    ;
+
+logicalOrExpression
+    :    logicalAndExpression ('or'^ logicalAndExpression)*
+	;
+
+logicalAndExpression
+    :    equalityExpression ('and'^ equalityExpression)*
+	;
+
+equalityExpression
+    :    relationalExpression (('!='^ | '=='^) relationalExpression)*
+    ;
+
+relationalExpression
+    :    additiveExpression (('&lt;'^ | '&gt;'^ | '&lt;='^ | '&gt;='^ )
+additiveExpression)*
+    ;
+
+additiveExpression
+    :    multiplicativeExpression (('+'^ | '-'^) multiplicativeExpression)*
+    ;
+
+multiplicativeExpression
+    :    unaryExpression (('*'^ | '/'^) unaryExpression)*
+    ;
+
+unaryExpression
+    :    '-' unaryExpression -&gt; ^(UNARY_MINUS unaryExpression)
+    |    '+' unaryExpression -&gt; unaryExpression
+    |    '!' unaryExpression -&gt; ^(UNARY_NOT unaryExpression)
+    |    postfixExpression
+    ;
+
+postfixExpression
+    :    (atom -&gt; atom)
+         (
+            '(' expressionList ')' -&gt; ^(CALL[&quot;CALL&quot;] $postfixExpression
+expressionList)
+         )*              
+    ;           
+
+atom:    IDENTIFIER
+	|	 literal
+	|	 '(' expr ')' -&gt; expr
+	;
+
+literal
+    :    INTLITERAL
+    |    LONGLITERAL
+    |    DOUBLELITERAL
+    |    STRINGLITERAL
+    |    'true'
+    |    'false'
+    ;
+
+returnType
+    :    type
+	|    'void'
+	;
+
+type
+    :    primitiveType
+	;
+
+primitiveType
+    :    'int'
+	|    'long'
+	|    'double'
+	|    'string'
+	|    'bool'
+	;
+
+/******************************************************************************
+ *                               Lexer section
+
+*****************************************************************************/
+
+ TRUE
+    :    'true'
+    ;
+
+ FALSE
+    :    'false'
+    ;
+
+LONGLITERAL
+    :    IntegerNumber LongSuffix
+    ;
+
+INTLITERAL
+    :    IntegerNumber
+	;
+
+fragment
+IntegerNumber
+    :    '0'
+    |	 '1'..'9' ('0'..'9')*
+    |	 '0' ('0'..'7')+
+    |    HexPrefix HexDigit+        
+    ;
+
+fragment
+HexPrefix
+    :    '0x' | '0X'
+    ;
+        
+fragment
+HexDigit
+    :   ('0'..'9'|'a'..'f'|'A'..'F')
+    ;
+
+fragment
+LongSuffix
+    :   'l' | 'L'
+    ;
+
+fragment
+NonIntegerNumber
+    :   ('0' .. '9')+ '.' ('0' .. '9')* Exponent?  
+    |   '.' ( '0' .. '9' )+ Exponent?  
+    |   ('0' .. '9')+ Exponent  
+    |   ('0' .. '9')+ 
+    |   
+        HexPrefix (HexDigit )* 
+        (    () 
+        |    ('.' (HexDigit )* ) 
+        ) 
+        ( 'p' | 'P' ) 
+        ( '+' | '-' )? 
+        ( '0' .. '9' )+
+        ;
+        
+fragment 
+Exponent    
+    :   ( 'e' | 'E' ) ( '+' | '-' )? ( '0' .. '9' )+ 
+    ;
+    
+fragment
+DoubleSuffix
+    :   'd' | 'D'
+    ;
+        
+DOUBLELITERAL
+    :   NonIntegerNumber DoubleSuffix?
+    ;
+
+STRINGLITERAL
+    :   '&quot;' (EscapeSequence | ~( '\\' | '&quot;' | '\r' | '\n' ) )* '&quot;' 
+    ;
+
+fragment
+EscapeSequence 
+    :   '\\' (
+                 'b' 
+             |   't' 
+             |   'n' 
+             |   'f' 
+             |   'r' 
+             |   '\&quot;' 
+             |   '\'' 
+             |   '\\' 
+             |   ('0'..'3') ('0'..'7') ('0'..'7')
+             |   ('0'..'7') ('0'..'7') 
+             |   ('0'..'7')
+             )          
+    ;     
+
+IDENTIFIER	:	('a'..'z' |'A'..'Z' |'_' ) ('a'..'z' |'A'..'Z' |'_' |'0'..'9'
+)* ;
+
+WS  :   (' ' | '\t' | '\n' | '\r')+ { $channel = 99; } ;
+
+COMMENT
+    :   '/*' (options {greedy=false;} : . )*  '*/' { $channel = 99; }
+    ;
+
+LINE_COMMENT
+    :   '//' ~('\n'|'\r')*  ('\r\n' | '\r' | '\n')  { $channel = 99; }
+    |   '//' ~('\n'|'\r')*  { $channel = 99; } // A line comment could
+appear at the end of the file without CR/LF
+    ;
+
+ANYCHAR : . ;
+
+
+Maik
+
+
+--
+View this message in context: <A HREF="http://antlr.1301665.n2.nabble.com/Recognizing-syntax-errors-with-C-tp6831210p6831210.html">http://antlr.1301665.n2.nabble.com/Recognizing-syntax-errors-with-C-tp6831210p6831210.html</A>
+Sent from the ANTLR mailing list archive at Nabble.com.
+</PRE>
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="042741.html">[antlr-interest] a logo design? branding.
+</A></li>
+	<LI>Next message: <A HREF="042733.html">[antlr-interest] Recognizing syntax errors with C#
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#42732">[ date ]</a>
+              <a href="thread.html#42732">[ thread ]</a>
+              <a href="subject.html#42732">[ subject ]</a>
+              <a href="author.html#42732">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

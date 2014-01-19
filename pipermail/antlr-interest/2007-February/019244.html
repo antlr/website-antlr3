@@ -1,0 +1,225 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Embedding ANTLR in my grammar
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Embedding%20ANTLR%20in%20my%20grammar&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="019284.html">
+   <LINK REL="Next"  HREF="019246.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Embedding ANTLR in my grammar</H1>
+    <B>Mark Bednarczyk</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Embedding%20ANTLR%20in%20my%20grammar&In-Reply-To="
+       TITLE="[antlr-interest] Embedding ANTLR in my grammar">voytechs at yahoo.com
+       </A><BR>
+    <I>Sat Feb  3 12:51:31 PST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="019284.html">[antlr-interest] Translating from Java to C++
+</A></li>
+        <LI>Next message: <A HREF="019246.html">[antlr-interest] Preprocessor
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#19244">[ date ]</a>
+              <a href="thread.html#19244">[ thread ]</a>
+              <a href="subject.html#19244">[ subject ]</a>
+              <a href="author.html#19244">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hope you guys don't mind I share some excittement.
+
+I have an interesting idea. I'm embedding ANTLR into my own grammar (NPL)
+and adding few extra's to make it work nice as a NPL file.
+ 
+Here is a non working sample as of yet, of the resulting syntax mix. I'm
+still working on the grammar, but I'm getting very excitted over here.
+
+Quick NPL intro: NPL is used to convert binary buffers full of network
+packet data (byte streams), into object oriented packet/header/field tree
+structured result. User's can access any of the declared members, fields and
+headers that were produced from a resulting Packet object.
+ 
+But what to do with textual protocols? This has been a major problem in
+previous version of jNetStream. My idea is to embed a full parser and let it
+handle all the complexity of parsing text input and then generate the proper
+output expected by the runtime:
+
+// HTTP NPL definition with ANTLR grammar definition embeded
+// First creates a parser with HTTP EBNF grammar
+// At end of NPL definition, we activate the parser  
+
+public header HTTP {
+	
+	/*
+	 * RFC 2616
+	 * Define a grammar for HTTP messages using ANTLR v3 syntax.
+	 * This a type definition for the parser, the parser is not
+instantiated
+	 * here.
+	 */
+	public typedef parser HTTPParser {
+		generic					// RFC 822 - generic
+message format
+			:	Request | Response	// HTTP/1.1 messages
+			;
+			
+		message
+			:	
+			
+			start 
+				(header CRLF)* 
+				CRLF
+				body?
+			;
+			
+		start
+			:	request | status
+			;
+			
+		public final field string 
+		request
+			:	method SP requestURI SP Version CRLF
+				(
+					(	generalHeader
+					|	requestHeader
+					|	entityHeader
+					) CRLF
+				)*
+				CRLF
+				body?
+			;
+				
+		public final field uri 
+		requestURI
+			:	'*'
+			|	absoluteURI
+			|	absPath
+			|	authority
+			;
+				
+		method
+			:	'OPTIONS&quot;
+			|	'GET'
+			|	'HEAD'
+			|	'POST'
+			|	'PUT'
+			|	'DELETE'
+			|	'TRACE'
+			|	'CONNECT'
+			|	extensionMethod
+			;
+			
+		extensionMethod
+			:	token
+			;
+	}; 
+	
+	/*
+	 * Allocate our parser statically, we don't want to allocate one per
+header
+	 * but 1 for all HTTP headers, and tell the runtime to use the
+parser as input
+	 * The parser will export all rules that are marked with &quot;field&quot;
+modifier as
+	 * fields to the HTTP header. Any of its subrules will become
+subfields.
+	 * So be careful not to go overboard or we could potentially create
+fields
+	 * down to individual tokens or worse, down to each character.
+	 */
+	public static final HTTPParser parser = new HTTPParser();
+	
+	/*
+	 * We only need to invoke the parser at runtime to kick start the
+parsing.
+	 * We pass in a reference to this header so that the parser can
+export the
+	 * fields its generates. The input is aready aligned at the start of
+HTTP 
+	 * data and ready for parsing.
+	 */
+	parser.generic(this);
+}
+
+Notice that certain rules are prefixed with &quot;public final field&quot; which would
+be filtered out and replaced by appropriate action to produce a &quot;field&quot; and
+export it into the parent header which is passed as an argument as the last
+line of code. After the filtering what would remain is pure ANTLR grammar
+that can be fed into ANTLR compiler. NPL definitions are cross compiled to
+normal java, so the NPL compilation step already involves invoking the javac
+as a second stage.
+
+If the above were to compile and to be used in a java program you'd use it
+like this. The NPL compiler generates java classes for headers and fields
+are accessible as class members. 
+
+	// Capture 10 HTTP packets
+	LiveCapture capture = Captures.openLive(10, new PcapFilter(&quot;http&quot;));
+
+	for (Packet packet: capture) {
+
+	  // A java class is generated for every NPL header statement - same
+name
+	  HTTP http = packet.getHeader(HTTP.class);
+
+	  // ANTLR rule &quot;request: ...&quot; turned into HTTP.request() and
+HTTP.hasRequest()
+	  if (http.hasRequest()) {  
+	    System.out.printf(&quot;HTTP packet was a request [%s] to URI=%s\n&quot;,
+	           http.request().toString(), http.requestURI().toString());
+	  } else {
+	    System.out.printf(&quot;HTTP packet was something else\n&quot;);
+	  }
+	}
+	capture.close();
+
+I think this is a pretty neat way to leverage the power of ANTLR.
+
+Cheers,
+Mark...
+
+<A HREF="http://jnetstream.sf.net">http://jnetstream.sf.net</A>
+
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="019284.html">[antlr-interest] Translating from Java to C++
+</A></li>
+	<LI>Next message: <A HREF="019246.html">[antlr-interest] Preprocessor
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#19244">[ date ]</a>
+              <a href="thread.html#19244">[ thread ]</a>
+              <a href="subject.html#19244">[ subject ]</a>
+              <a href="author.html#19244">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

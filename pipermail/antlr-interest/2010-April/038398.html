@@ -1,0 +1,147 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] mild simplification and tree grammars
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20mild%20simplification%20and%20tree%20grammars&In-Reply-To=%3C20100421111049.GH18833%40internode.on.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="038396.html">
+   <LINK REL="Next"  HREF="038399.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] mild simplification and tree grammars</H1>
+    <B>Mark Wright</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20mild%20simplification%20and%20tree%20grammars&In-Reply-To=%3C20100421111049.GH18833%40internode.on.net%3E"
+       TITLE="[antlr-interest] mild simplification and tree grammars">markwright at internode.on.net
+       </A><BR>
+    <I>Wed Apr 21 04:10:49 PDT 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="038396.html">[antlr-interest] Re :  help please
+</A></li>
+        <LI>Next message: <A HREF="038399.html">[antlr-interest] mild simplification and tree grammars
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#38398">[ date ]</a>
+              <a href="thread.html#38398">[ thread ]</a>
+              <a href="subject.html#38398">[ subject ]</a>
+              <a href="author.html#38398">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Wed, Apr 21, 2010 at 12:32:58PM +0200, Giampaolo Tomassoni wrote:
+&gt;<i> &gt; Another extension of the example shows another ANTLR feature,
+</I>&gt;<i> &gt; with associated subtle syntax.  Say the conditionalExpression
+</I>&gt;<i> &gt; was being called with TheActualASTRoot being optional, then
+</I>&gt;<i> &gt; ANTLR supports this with semantic predicates on the tree generation
+</I>&gt;<i> &gt; options:
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; protected
+</I>&gt;<i> &gt; conditionalExpression[CommonTree TheActualASTRoot]
+</I>&gt;<i> &gt;     :   QMARK t=expression COMMA f=expression
+</I>&gt;<i> &gt;             -&gt; {(TheActualASTRoot != null)}? ^(ITE {$TheActualASTRoot}
+</I>&gt;<i> &gt; $t $f)
+</I>&gt;<i> &gt;             -&gt; {(TheActualASTRoot == null)}? ^(ITE $t $f)
+</I>&gt;<i> &gt;             -&gt;
+</I>&gt;<i> &gt;     |
+</I>&gt;<i> &gt;     ;
+</I>&gt;<i> 
+</I>&gt;<i> Nice.
+</I>&gt;<i> 
+</I>&gt;<i> I didn't get why you were telling me that, but now I see: this way it is
+</I>&gt;<i> easier to avoid non-LLR notations.
+</I>&gt;<i> 
+</I>&gt;<i> Just, I can't turn on my shc (SomethingHasChanged) flag anymore: a rule
+</I>&gt;<i> like:
+</I>&gt;<i> 
+</I>&gt;<i> condExpr
+</I>&gt;<i> 	:    QMARK c=orExpression t=condExpr f=condExpr
+</I>&gt;<i> 		-&gt; {($c.tree.getType()==TRUE)}?  {shc=true;} $t
+</I>&gt;<i> 		-&gt; {($c.tree.getType()==FALSE)}? {shc=true;} $f
+</I>&gt;<i> 		-&gt;
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> Produces a java source with errors, because {shc=true;} is now interpreted
+</I>&gt;<i> like a tree node reference, not like a java statement to be passed to the
+</I>&gt;<i> compiler verbatim.
+</I>&gt;<i> 
+</I>&gt;<i> I had to use a function's side-effect to keep track of tree modifications:
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> @members {
+</I>&gt;<i>     private boolean shc = false;
+</I>&gt;<i> 
+</I>&gt;<i>     private boolean sshc(boolean cond) {
+</I>&gt;<i>     	shc |= cond;
+</I>&gt;<i>     	return(cond); 
+</I>&gt;<i>     }
+</I>&gt;<i> }
+</I>&gt;<i> 
+</I>&gt;<i> ...
+</I>&gt;<i> 
+</I>&gt;<i> protected
+</I>&gt;<i> condExpr
+</I>&gt;<i>     :	QMARK c=orExpression t=condExpr f=condExpr
+</I>&gt;<i> 		-&gt; {sshc($c.tree.getType()==TRUE)}?		$t
+</I>&gt;<i> 		-&gt; {sshc($c.tree.getType()==FALSE)}?	$f
+</I>&gt;<i> 		-&gt; QMARK $c $t $f
+</I>&gt;<i>     |	additiveExpression
+</I>&gt;<i>     ;
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> Also note the last '-&gt;' term is non-empty, because I'm not rewriting (the
+</I>&gt;<i> ANTLR compiler says rewrite mode implies backtrack=true).
+</I>&gt;<i> 
+</I>&gt;<i> Do you think is it fine this way or there is some workaround I can implement
+</I>&gt;<i> to avoid the need of a side-effect function?
+</I>&gt;<i> 
+</I>&gt;<i> Giampaolo
+</I>
+Predicates should not have observable* side effects.
+
+The solution seems simple: the actions should be called before the
+tree rewrites, like:
+
+condExpr
+	:    QMARK c=orExpression t=condExpr f=condExpr
+                {shc=true;}
+		-&gt; {($c.tree.getType()==TRUE)}?   $t
+		-&gt; {($c.tree.getType()==FALSE)}?  $f
+		-&gt;
+	;
+
+Regards, Mark
+
+PS * since disambiguating semantic predicates may be called tens or
+hundreds of times at the same input file position in complex
+predicated parsers by antlr generated code, for performance
+reasons it may be necessary for complex semantic predicates to calculate the
+result once at each input file position, and cache the result, to
+avoid re-computing it over and over again.
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="038396.html">[antlr-interest] Re :  help please
+</A></li>
+	<LI>Next message: <A HREF="038399.html">[antlr-interest] mild simplification and tree grammars
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#38398">[ date ]</a>
+              <a href="thread.html#38398">[ thread ]</a>
+              <a href="subject.html#38398">[ subject ]</a>
+              <a href="author.html#38398">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

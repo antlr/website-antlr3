@@ -1,0 +1,162 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] nodes, hidden tokens, garbage collection
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20nodes%2C%20hidden%20tokens%2C%20garbage%20collection&In-Reply-To=20020404115304.J4028%40cs.utwente.nl">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000900.html">
+   <LINK REL="Next"  HREF="000911.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] nodes, hidden tokens, garbage collection</H1>
+    <B>John Allen Green</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20nodes%2C%20hidden%20tokens%2C%20garbage%20collection&In-Reply-To=20020404115304.J4028%40cs.utwente.nl"
+       TITLE="[antlr-interest] nodes, hidden tokens, garbage collection">greenj at ix.netcom.com
+       </A><BR>
+    <I>Thu Apr  4 11:58:40 PST 2002</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000900.html">[antlr-interest] nodes, hidden tokens, garbage collection
+</A></li>
+        <LI>Next message: <A HREF="000911.html">[antlr-interest] nodes, hidden tokens, garbage collection
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#903">[ date ]</a>
+              <a href="thread.html#903">[ thread ]</a>
+              <a href="subject.html#903">[ subject ]</a>
+              <a href="author.html#903">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>--On 04/04/2002 11:53 AM +0200 Ric Klaren wrote:
+&gt;<i> Well I was planning to do some major surgery anyway ;)
+</I>&gt;<i> 
+</I>&gt;<i> First step custom would be adding a custom new/delete. Then problably do
+</I>&gt;<i> or a subclassing trick, or some template trick to select the desired
+</I>&gt;<i> memory pool (and/or the Boehm GC, I'm btw not sure how well the Boehm GC
+</I>&gt;<i> handles circular things...). Lately I've been experimenting with a memory
+</I>&gt;<i> pool implementation found in the Efficient C++ book from Bulka and Mayhew.
+</I>
+Regarding Boehm GC: From what I've read - yes, it should handle any
+circular structures fine. I think a bigger question about Boehm GC is: is
+it as portable as Antlr/C++ currently is?
+
+I think that for Antlr's purposes, a memory pool makes more sense than a
+full blown GC anyway. (Er, as long as it is implemented allowing Antlr
+users to easily create multiple memory pools - one for each tree required
+in memory.) With GC, there's the overhead of scanning the memory to find
+unreachable objects. With a memory pool - well - when you're done, you're
+done, right?
+
+It's been a while since I read about customizing new/delete in C++. I hope
+you're not talking about a global replacement for new/delete, but just
+building custom new/delete specifically for the objects which should be
+stored in memory pools...? I think I read somewhere that globally replacing
+new/delete is &quot;evil&quot;.
+
+Is there an online link to that book's memory pool implementation, or do I
+have to make a trip to the bookstore? :-)
+
+&gt;<i> At least RefAST would dissappear it's causing most 'problems' (or kludges)
+</I>&gt;<i> and indeed it would become a plain old pointer. RefToken is less
+</I>&gt;<i> troublesome (no heterogenous tokens and stuff like that).
+</I>
+If the overhead of a garbage collector is added anyway... it might not make
+sense to have the overhead of ref counting for anything. I'd like to deal
+with RefToken as well, at least eventually, because of the problems with
+hiddenTokens.
+
+&gt;<i> Can't you use your own flavour of hidden tokens? I just had a small look
+</I>&gt;<i> at the current implementation and I think it can be changed a little to
+</I>&gt;<i> solve the reference counting problem. (basically play dirty in a few
+</I>&gt;<i> places and store pointers to the objects in stead of using the RefToken) 
+</I>
+Wouldn't be too tough, I don't think. I'd have to hack or replace
+CommonHiddenStreamToken, as well as CommonHiddenTokenFilter, which refers
+to CommonHiddenStreamToken. Storing dumb pointers instead of storing
+RefTokens is asking for trouble down the road though, I think. For one, you
+would quickly find that you need to pass RefToken to various functions, and
+a dumb pointer does you no good.
+
+&gt;<i> Or do it less dirty and use a single linked list of visible tokens and in
+</I>&gt;<i> the visible tokens you store a vector (or single linked list) with all
+</I>&gt;<i> hidden tokens before/after the visible one. I don't see why a double
+</I>&gt;<i> linked list is necessary there (probably there because of direct port
+</I>&gt;<i> from java).
+</I>
+I thought about using a vector of backlinks instead of a double-linked AST
+structure. However, in designing it, I found that there was a fair bit less
+data overhead involved in just putting the backlinks directly into the AST.
+
+&gt;<i> Another possibility is adding a custom new/delete to the hidden token
+</I>&gt;<i> implementation. Allocate them from a pool attach the pool to the
+</I>&gt;<i> lexer/parser and delete the pool with the lexer/parser object.
+</I>&gt;<i> 
+</I>&gt;<i> If you switch to another scheme of reference counting (you btw got a
+</I>&gt;<i> reference on that style of ref counting?) you may have to do some antlr
+</I>&gt;<i> surgery.
+</I>
+A link to that style of ref counting:
+<A HREF="http://agora.cubik.org/wiki/view/Main/ReferenceCounting">http://agora.cubik.org/wiki/view/Main/ReferenceCounting</A>
+...follow the link to &quot;acyclic refcounting&quot;. Unfortunately, it's more a
+description of the motivation than it is a description of the
+implementation.
+
+To get me up and running quickly, I've identified where my problems are and
+have come up with a solution which should work for me, at least for the
+short term. It's certainly not as ideal as getting rid of the refcounting,
+but it'll do for now.
+
+There were two problems:
+1. With my double linked AST, cyclic dependencies would prevent a dropped
+branch from deleting itself. (It would get missed in my &quot;back unlink&quot;
+cleanup function.)
+2. With the current implementation of the hidden tokens, there was a
+problem with figuring out when to delete them. Given nodes N1 and N2,
+hidden tokens H1 and H2:
+  N1 -&gt; H1 &lt;=&gt; H2 &lt;- N2
+If N1 is dropped, how do I know if H1 and H2 are to be dropped as well? It
+depends on whether N2 still exists or not, but there's no link from H2 to
+N2, so there's no easy way to find out.
+
+My workaround: Don't drop/dereference (what do you call it?!) any nodes. If
+a node is to be removed from the tree, move it to -another- tree, which
+I've called &quot;looseEnds&quot;. Then, at cleanup time, clean up the main tree as
+well as the looseEnds tree. (Obviously I've already written functions for
+cleaning up back links in the AST and for cleaning up the hidden tokens
+when AST is deleted.)
+
+Regards,
+John
+
+
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000900.html">[antlr-interest] nodes, hidden tokens, garbage collection
+</A></li>
+	<LI>Next message: <A HREF="000911.html">[antlr-interest] nodes, hidden tokens, garbage collection
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#903">[ date ]</a>
+              <a href="thread.html#903">[ thread ]</a>
+              <a href="subject.html#903">[ subject ]</a>
+              <a href="author.html#903">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

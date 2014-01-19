@@ -1,0 +1,177 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] finish/stop parsing without closing reader
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20finish/stop%20parsing%20without%20closing%20reader&In-Reply-To=%3CC7096CEF.98A%25horst.dehmer%40inode.at%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="036507.html">
+   <LINK REL="Next"  HREF="036508.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] finish/stop parsing without closing reader</H1>
+    <B>Horst Dehmer</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20finish/stop%20parsing%20without%20closing%20reader&In-Reply-To=%3CC7096CEF.98A%25horst.dehmer%40inode.at%3E"
+       TITLE="[antlr-interest] finish/stop parsing without closing reader">horst.dehmer at inode.at
+       </A><BR>
+    <I>Sat Oct 24 17:48:15 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="036507.html">[antlr-interest] finish/stop parsing without closing reader
+</A></li>
+        <LI>Next message: <A HREF="036508.html">[antlr-interest] Nested multi-line comments
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36517">[ date ]</a>
+              <a href="thread.html#36517">[ thread ]</a>
+              <a href="subject.html#36517">[ subject ]</a>
+              <a href="author.html#36517">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Well, investing further my &#140;problem&#185; I come to understand that passing on
+the input stream from the lexer/parser to another component for storing
+binary data occurring after a certain rule was matched is not such a good
+idea. Mainly because the lexer loads a big chunk from the stream to an
+internal buffer for further processing.
+
+What I am now looking into is something like that:
+
+d_data
+  : oigId syncpointId uncompressedLength (BINARY { store/append
+$BINARY.text.getBytes() to file; })+
+  ;
+
+// zlib deflated data containing 0x00 and 0xff :-(
+BINARY
+  : (&#140;\u0000&#185;..&#185;\u00ff&#185;) [match at least 1 time, at most n * 1024 times]
+  ;
+
+But how could that ever work? I mean at least 0x00 and 0xff have special
+meanings. Which characters exactly would be matched by (.)+ for that matter?
+Probably not EOF.
+
+Maybe another approach would be to have some global state shared by the
+parser and lexer with which the lexer could be switched to write the
+remaining bytes to a file (directly from the input stream). But as far as I
+understand things (and that&#185;s not very much) the lexer would not be called
+another time after the parser is done recognizing. Problem is, I can&#185;t
+determine the time to switch to byte processing in the lexer.
+
+Honestly I&#185;m kinda stuck... Any ideas?
+
+- Horst
+
+
+On 24.10.09 15:07, &quot;Horst Dehmer&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">horst.dehmer at inode.at</A>&gt; wrote:
+
+&gt;<i> Hello!
+</I>&gt;<i> 
+</I>&gt;<i> For one special parser rule in my grammar I have to stop parsing and read the
+</I>&gt;<i> rest of the input from the reader as (compressed) binary data. Is there any
+</I>&gt;<i> way to instruct the parser to stop reading further tokens when the top most
+</I>&gt;<i> rule was successfully recognized?
+</I>&gt;<i> 
+</I>&gt;<i> Any help is highly appreciated!
+</I>&gt;<i> 
+</I>&gt;<i> - Horst
+</I>&gt;<i> 
+</I>&gt;<i> More details:  The rule recognizes header information for the then following
+</I>&gt;<i> binary data:
+</I>&gt;<i> 
+</I>&gt;<i> d_data returns [D_DATA pdu]
+</I>&gt;<i> @init {
+</I>&gt;<i>   pdu = null;
+</I>&gt;<i> }
+</I>&gt;<i>   : 'D4|' oigId = oig_id '|' syncpointId = syncpoint_id '|' uncompressedLength
+</I>&gt;<i> = length '|'
+</I>&gt;<i>     {
+</I>&gt;<i>       SyncpointDescriptor syncpoint = ...
+</I>&gt;<i>       pdu = new D_DATA(syncpoint);
+</I>&gt;<i>     }
+</I>&gt;<i>   ;
+</I>&gt;<i> 
+</I>&gt;<i> The size of the binary data following the last &#140;|&#185; can become quite big and I
+</I>&gt;<i> have to store them as a file to disk.
+</I>&gt;<i> After the header is recognized the parser returns but the input reader is
+</I>&gt;<i> closed. Without using EOF in the rule, it seems the additional bytes are
+</I>&gt;<i> consumed from ANTLRReaderStream:
+</I>&gt;<i> 
+</I>&gt;<i> CharStream charStream = new ANTLRReaderStream(reader);
+</I>&gt;<i> PduLexer lexer = new PduLexer(charStream);
+</I>&gt;<i> TokenStream tokenStream = new CommonTokenStream(lexer);
+</I>&gt;<i> PduParser parser = new PduParser(tokenStream);
+</I>&gt;<i> ...
+</I>&gt;<i> 
+</I>&gt;<i> With a trailing EOF in the rule the parser naturally complains about the
+</I>&gt;<i> additional information: line 1:36 extraneous input '&lt;binary data&gt;' expecting
+</I>&gt;<i> EOF
+</I>&gt;<i> The test case shows proper recognition of the T2/D4 along with syncpoint
+</I>&gt;<i> token, but reading &#140;&lt;binary data&gt;&#185; fails due to a closed reader/stream.
+</I>&gt;<i> 
+</I>&gt;<i> @Test
+</I>&gt;<i> public void parse_whole() throws RecognitionException, IOException {
+</I>&gt;<i>     final BigDecimal OIG = new BigDecimal(&quot;10903008203000000001&quot;);
+</I>&gt;<i>     final String SYNCPOINT = &quot;82737&quot;;
+</I>&gt;<i>     final long LENGTH = 40;
+</I>&gt;<i>     final String FORMAT = &quot;T2|D4|%20.0f|%s|%d|&lt;binary data&gt;&quot;;
+</I>&gt;<i>     final String MESSAGE = String.format(FORMAT, OIG, SYNCPOINT, LENGTH);
+</I>&gt;<i> 
+</I>&gt;<i>     StringReader reader = new StringReader(MESSAGE);
+</I>&gt;<i>     T_PDU t_pdu = parserDriver.parse(reader); // OK.
+</I>&gt;<i>     D_PDU d_pdu = ((T_DATA) t_pdu).getPdu(); // OK.
+</I>&gt;<i>     D_DATA d_data = (D_DATA) d_pdu; // OK.
+</I>&gt;<i>     SyncpointDescriptor token = d_data.getToken();
+</I>&gt;<i>     
+</I>&gt;<i>     assertEquals(OIG, token.oigId); // OK.
+</I>&gt;<i>     assertEquals(SYNCPOINT, token.syncpointId); // OK.
+</I>&gt;<i>     assertEquals(LENGTH, token.uncompressedLength); // OK.
+</I>&gt;<i> 
+</I>&gt;<i>     try {
+</I>&gt;<i>         // reader should be positioned at the rest of the message, i.e.
+</I>&gt;<i> &#140;&lt;binary data&gt;&#185;.
+</I>&gt;<i>         char[] buffer = new char[&quot;&lt;binary data&gt;&quot;.length()];
+</I>&gt;<i>         reader.read(buffer);
+</I>&gt;<i>     }
+</I>&gt;<i>     catch (IOException exception) {
+</I>&gt;<i>         // NOT OK:
+</I>&gt;<i>         // java.io.IOException: Stream closed
+</I>&gt;<i>     }
+</I>&gt;<i> }
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: 
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20091025/37d81ff5/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20091025/37d81ff5/attachment.html</A> 
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="036507.html">[antlr-interest] finish/stop parsing without closing reader
+</A></li>
+	<LI>Next message: <A HREF="036508.html">[antlr-interest] Nested multi-line comments
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36517">[ date ]</a>
+              <a href="thread.html#36517">[ thread ]</a>
+              <a href="subject.html#36517">[ subject ]</a>
+              <a href="author.html#36517">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

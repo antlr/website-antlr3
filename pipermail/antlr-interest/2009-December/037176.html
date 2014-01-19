@@ -1,0 +1,156 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] custom error recovery
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20custom%20error%20recovery&In-Reply-To=%3Ccae780b0912281132y121bac6bob6424f076d66dc7b%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="037184.html">
+   <LINK REL="Next"  HREF="037177.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] custom error recovery</H1>
+    <B>Christian Kihm</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20custom%20error%20recovery&In-Reply-To=%3Ccae780b0912281132y121bac6bob6424f076d66dc7b%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] custom error recovery">christian.kihm at googlemail.com
+       </A><BR>
+    <I>Mon Dec 28 11:32:23 PST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="037184.html">[antlr-interest] Problem with remote debugging
+</A></li>
+        <LI>Next message: <A HREF="037177.html">[antlr-interest] custom error recovery
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37176">[ date ]</a>
+              <a href="thread.html#37176">[ thread ]</a>
+              <a href="subject.html#37176">[ subject ]</a>
+              <a href="author.html#37176">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+I try to implement a logfile parser. Content of the logfile is a
+sequense of games like this:
+
+
+&#160; &#160;PokerStars Game #35139121861: Hold'em No Limit ($0.05/$0.10 USD) -
+2009/11/09 16:48:09 ET
+&#160; &#160;...
+
+&#160; &#160;PokerStars Game #35139121865: Hold'em No Limit ($0.05/$0.10 USD) -
+2009/11/09 16:48:45 ET
+&#160; &#160;...
+
+
+If there is an syntax error within a game, I would like to skip the
+whole game and start parsing the next. To do this I disabled the
+default recovery by overriding recoverFromMismatchedToken with:
+
+&#160; &#160;protected Object recoverFromMismatchedToken(IntStream input, int
+ttype, BitSet follow)
+&#160; &#160; &#160; &#160;throws RecognitionException
+&#160; &#160;{
+&#160; &#160; &#160; &#160;throw new MismatchedTokenException(ttype, input);
+&#160; &#160;}
+
+
+I also changed the default rule catch clause with this one:
+
+
+@rulecatch {
+&#160;catch (RecognitionException e) {
+
+&#160; &#160;reportError(e);
+&#160; &#160;throw e;
+&#160;}
+}
+
+For the parser rule &quot;game&quot; I have my own catch clause wich in case of
+an error will consume Until the Token SITE, &quot;PokerStars&quot; for the above
+example. Here are the relevant parts of the grammar:
+
+
+handhistory
+&#160; &#160; &#160; &#160; : ( game )*
+&#160; &#160; &#160; &#160; ;
+
+game
+&#160; &#160; &#160; &#160;: game_info
+&#160; &#160; &#160; &#160; &#160;table
+&#160; &#160; &#160; &#160; &#160;hand
+&#160; &#160; &#160; &#160; &#160;summary
+&#160; &#160; &#160; &#160;;
+&#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; catch [RecognitionException re] {
+&#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160;reportError(re);
+&#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160;consumeUntil(input, SITE);
+&#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; }
+
+&#160;game_info
+&#160; &#160; &#160; &#160;: &#160;site
+&#160; &#160; &#160; &#160; &#160; primarykey
+&#160; &#160; &#160; &#160; &#160; COLON (cash | tournament)
+&#160; &#160; &#160; &#160; &#160; MINUS datetime
+&#160; &#160; &#160; &#160;;
+
+
+&#160;site
+&#160; &#160; &#160; : SITE
+&#160; &#160; &#160; ;
+
+...
+
+
+Unfortunately it don't works as expected. In case of an invalid game
+the parser goes into the game catch clause, but don't continue
+parsing. To debug I also have override the consumeUntil Method:
+
+public void consumeUntil(IntStream input, int tokenType) {
+&#160; &#160;super.consumeUntil(input, tokenType);
+
+&#160; &#160;System.out.println(&quot;### NEXT Token ### &quot; + getCurrentInputSymbol(input));
+&#160;}
+
+
+The output of the parser is:
+
+line 61:59 [handhistory, game, game_info, tournament, buyin, rake,
+recoverFromMismatchedToken] mismatched input
+[@699,1923:1923='$',&lt;98&gt;,61:59] expecting RAKE
+### GAME CATCH ###
+### NEXT Token ### [@1350,3688:3702='PokerStars',&lt;4&gt;,123:0]
+
+
+I am wondering why the parser stops parsing here. As you could see in
+the output the next Token is as expectet &quot;PokerStars&quot;. I would be very
+happy for each hint.
+
+best regards, Christian
+</PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="037184.html">[antlr-interest] Problem with remote debugging
+</A></li>
+	<LI>Next message: <A HREF="037177.html">[antlr-interest] custom error recovery
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37176">[ date ]</a>
+              <a href="thread.html#37176">[ thread ]</a>
+              <a href="subject.html#37176">[ subject ]</a>
+              <a href="author.html#37176">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

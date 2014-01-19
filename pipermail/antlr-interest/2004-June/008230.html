@@ -1,0 +1,184 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] parser/lexer invocation: performance/optimization question
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20parser/lexer%20invocation%3A%20performance/optimization%20question&In-Reply-To=ca5det%2Bpqi5%40eGroups.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="008234.html">
+   <LINK REL="Next"  HREF="008232.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] parser/lexer invocation: performance/optimization question</H1>
+    <B>Ric Klaren</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20parser/lexer%20invocation%3A%20performance/optimization%20question&In-Reply-To=ca5det%2Bpqi5%40eGroups.com"
+       TITLE="[antlr-interest] parser/lexer invocation: performance/optimization question">klaren at cs.utwente.nl
+       </A><BR>
+    <I>Wed Jun  9 02:51:15 PDT 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="008234.html">[antlr-interest] Re: parser/lexer invocation: performance/optimization question
+</A></li>
+        <LI>Next message: <A HREF="008232.html">[antlr-interest] parser/lexer invocation: performance/optimization question
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#8230">[ date ]</a>
+              <a href="thread.html#8230">[ thread ]</a>
+              <a href="subject.html#8230">[ subject ]</a>
+              <a href="author.html#8230">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Tue, Jun 08, 2004 at 10:09:33PM -0000, Margaret Fieland wrote:
+&gt;<i>  I have a parser/lexer that is repeatedly invoked to parse a
+</I>&gt;<i> succession of strings.
+</I>&gt;<i>
+</I>&gt;<i> The current implementation is that the application invokes a routine
+</I>&gt;<i> that does something like:
+</I>&gt;<i>
+</I>&gt;<i> string source(&quot;Your input text&quot;);
+</I>&gt;<i> istringstream str(source);
+</I>&gt;<i>
+</I>&gt;<i> MyLexer lexer(str);
+</I>&gt;<i> MyParser parser(lexer);
+</I>&gt;<i>  ... initializeASTFactory
+</I>&gt;<i>  ... setASTFactory
+</I>&gt;<i>
+</I>&gt;<i> This routine is invoked literally thousands of times.
+</I>&gt;<i>
+</I>&gt;<i> I'd like to be able to the setup (above) once in a constructor and
+</I>&gt;<i> just invoke the parser multiple times on the strings as I would like
+</I>&gt;<i> to avoid the overhead in the initialization.
+</I>&gt;<i>
+</I>&gt;<i> Is there any way to do this?  Nothing I've tried so far has worked.
+</I>
+First time setup:
+
+// if we don't have a file we use stdin (cin) (or use a dummy stream)
+lexer = new Lexer(std::cin);
+
+nodes_factory = new antlr::ASTFactory();
+// Create a parser that reads from the scanner
+parser = new Parser( *lexer, symbol_information );
+// Initialize it with factory and setup the factory and other trivia
+parser-&gt;setASTNodeFactory( nodes_factory );
+// let the parser register the used ast types in the factory
+parser-&gt;initializeASTFactory( *nodes_factory );
+parser-&gt;setFilename(&quot;stdin&quot;);
+
+Then per file/string:
+
+---snip---
+ifstream file;
+
+file.open( filename );
+if( ! file.is_open() )
+{
+	cerr &lt;&lt; &quot;Error opening file: '&quot; &lt;&lt; filename &lt;&lt; &quot;'&quot; &lt;&lt; endl;
+   exit(1);
+}
+antlr::LexerSharedInputState lex_input = lexer-&gt;getInputState();
+lex_input-&gt;initialize(file, filename);
+// and reset parser (antlr) internal state
+parser-&gt;getInputState()-&gt;reset();
+parser-&gt;setFilename(filename);
+// start parsing at the 'start' rule
+parser-&gt;start();
+---snip---
+
+The above voodoo makes sure to reset all internal state of lexer and parser
+to defaults for a new file. E.g. resets column/line info, guessing mode
+info etc.
+
+The lex_input-&gt;initialize only reallocates a CharBuffer which isn't too
+expensive. You can use stringstreams in the above.
+
+You could also use a CharInputBuffer if you want to read from plain old
+char arrays. If you subclass it you can make a trivial addition to replace
+the buffer it is reading from. Say name it MyCharInputBuffer and add this
+method:
+
+void setBuffer( unsigned char* buf, size_t size, bool owner = false )
+{
+	// delete current buf if needed
+	if( delete_buffer &amp;&amp; buffer )
+		delete [] buffer;
+	buffer = buf;
+   end = buf+size;
+	delete_buffer = owner;
+}
+
+Then the first time setup becomes:
+
+unsigned char buf[BUF_SIZE];
+MyCharInputBuffer input( buffer, sizeof(buf) );
+lexer = new Lexer(input);
+... rest the same ...
+
+The per file bit:
+
+antlr::LexerSharedInputState lex_input = lexer-&gt;getInputState();
+lex_input-&gt;reset();
+MyCharInputBuffer* input = dynamic_cast&lt;MyCharInputBuffer*&gt;(&amp;lex_input-&gt;getInput());
+input-&gt;setBuffer( new_buf, size );
+// and reset parser (antlr) internal state
+parser-&gt;getInputState()-&gt;reset();
+parser-&gt;setFilename(filename);
+// start parsing at the 'start' rule
+parser-&gt;start();
+
+Actually the setBuffer method is something that's good for inclusion in the
+thing per default. Loring's dropin replacement might be nicer, I didn't
+look at it yet.
+
+Cheers,
+
+Ric
+--
+-----+++++*****************************************************+++++++++-------
+    ---- Ric Klaren ----- <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">j.klaren at utwente.nl</A> ----- +31 53 4893755  ----
+-----+++++*****************************************************+++++++++-------
+ 'And this 'rebooting' business? Give it a good kicking, do you?' 'Oh, no,
+  of course, we ... that is ... well, yes, in fact,' said Ponder. 'Adrian
+    goes round the back and ... er ... prods it with his foot. But in a
+     technical way,' he added. --- From: Hogfather by Terry Pratchett.
+
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+     <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+     <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+     <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="008234.html">[antlr-interest] Re: parser/lexer invocation: performance/optimization question
+</A></li>
+	<LI>Next message: <A HREF="008232.html">[antlr-interest] parser/lexer invocation: performance/optimization question
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#8230">[ date ]</a>
+              <a href="thread.html#8230">[ thread ]</a>
+              <a href="subject.html#8230">[ subject ]</a>
+              <a href="author.html#8230">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

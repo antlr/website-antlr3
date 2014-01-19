@@ -1,0 +1,209 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Adding custom functions to the parser in a C	target
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Adding%20custom%20functions%20to%20the%20parser%20in%20a%20C%0A%09target&In-Reply-To=%3C317b561353e3e949971827a8e194da73%40temporal-wave.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="038106.html">
+   <LINK REL="Next"  HREF="038120.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Adding custom functions to the parser in a C	target</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Adding%20custom%20functions%20to%20the%20parser%20in%20a%20C%0A%09target&In-Reply-To=%3C317b561353e3e949971827a8e194da73%40temporal-wave.com%3E"
+       TITLE="[antlr-interest] Adding custom functions to the parser in a C	target">jimi at temporal-wave.com
+       </A><BR>
+    <I>Wed Mar 31 07:56:05 PDT 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="038106.html">[antlr-interest] Adding custom functions to the parser in a C	target
+</A></li>
+        <LI>Next message: <A HREF="038120.html">[antlr-interest] Adding custom functions to the parser in a C	target
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#38109">[ date ]</a>
+              <a href="thread.html#38109">[ thread ]</a>
+              <a href="subject.html#38109">[ subject ]</a>
+              <a href="author.html#38109">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>No it isn't in case you want to encapsulate it elsewhere. However for context level elements you want to use the mechanism I established and not hijack super really (though super is meant for your own stuff).
+
+So:
+
+
+@parser::context
+{
+// A pointer to the blah that we blargle into a gargle
+//
+pBLAH                   papi;
+}
+
+@parser::apifuncs
+{
+	ctx-&gt;pBLAH = NULL;
+}
+
+@parser::includes
+{
+// Include the BLAH interface specifications, so we know how to call
+// an implementation to have it do work for us.
+//
+#include &lt;blah.h&gt;
+
+// Create a macro to make references to the BLAH pointer easier
+//
+#define BLAH CTX-&gt;pBLAH
+}
+
+
+Now in your actions you can use:
+
+{
+   BLAH-&gt;number = 666;
+   BLAH-&gt;myCall(BLAH, 666);
+ 
+   // And so on...
+
+}
+
+
+You use the context pointers because 'global' data is exactly what you don't want as you instantly destroy the free threading, which is built into the code generation and the runtime. Here you get one pBLAH per thread:
+
+psr	    = MyParserNew(tstream);
+
+    if (psr == NULL) ...
+    
+    // Install a BLAH interface
+    //
+    psr-&gt;blah   = getBlah();
+    if  (psr-&gt;blah == NULL) ...
+
+    if  ((retCode = psr-&gt;blah-&gt;blahInitialize(psr-&gt;blah)) != 0)...
+
+
+Jim
+
+
+&gt;<i> -----Original Message-----
+</I>&gt;<i> From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:antlr-interest-
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">bounces at antlr.org</A>] On Behalf Of Christopher L Conway
+</I>&gt;<i> Sent: Wednesday, March 31, 2010 7:36 AM
+</I>&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> Subject: Re: [antlr-interest] Adding custom functions to the parser in
+</I>&gt;<i> a C target
+</I>&gt;<i> 
+</I>&gt;<i> Andi,
+</I>&gt;<i> 
+</I>&gt;<i> I think you'll find the void* field super in ANTLR3_PARSER_struct,
+</I>&gt;<i> accessible in the grammar via PARSER-&gt;super, is a good place to stick
+</I>&gt;<i> implementation data. AFAICT, it is never set by the generated code.
+</I>&gt;<i> 
+</I>&gt;<i> -Chris
+</I>&gt;<i> 
+</I>&gt;<i> On Wed, Mar 31, 2010 at 1:51 AM, Andi Clemens &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">andi.clemens at gmx.net</A>&gt;
+</I>&gt;<i> wrote:
+</I>&gt;<i> &gt; Hi,
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; I want to use the PLSQL grammar from antlr.org with some
+</I>&gt;<i> modifications to
+</I>&gt;<i> &gt; detect table names in statements. I want to check, whenever I hit the
+</I>&gt;<i> &gt; &quot;table_spec&quot; rule, if this table name is in a whitelist and perform
+</I>&gt;<i> further
+</I>&gt;<i> &gt; actions.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; I have a problem now: How can I add global variables to the parser?
+</I>&gt;<i> &gt; I need to give the parser a pointer to the whitelist in memory and
+</I>&gt;<i> some other
+</I>&gt;<i> &gt; variables for detecting valid / invalid table names.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Defining variables in @members doesn't help, I am not able to access
+</I>&gt;<i> this from
+</I>&gt;<i> &gt; outside of the parser code.
+</I>&gt;<i> &gt; In Java it seems to be much easier, since you have a class where you
+</I>&gt;<i> can add
+</I>&gt;<i> &gt; public members, but in C I have no clue how to do it (yes, I need to
+</I>&gt;<i> use C,
+</I>&gt;<i> &gt; and I never programmed in that language, only in C++ and Python so
+</I>&gt;<i> far).
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; I want to do something like this.
+</I>&gt;<i> &gt; In the parser rule &quot;table_spec&quot;, I want to check the table name:
+</I>&gt;<i> &gt; {
+</I>&gt;<i> &gt; &#160; &#160;char result[256];
+</I>&gt;<i> &gt; &#160; &#160;strcat(result, s.tree ? s.tree-&gt;getText(s.tree)-&gt;chars : &quot;&quot;);
+</I>&gt;<i> &gt; &#160; &#160;strcat(result, s.tree ? &quot;.&quot; : &quot;&quot;);
+</I>&gt;<i> &gt; &#160; &#160;strcat(result, t.tree ? t.tree-&gt;getText(t.tree)-&gt;chars : &quot;&quot;);
+</I>&gt;<i> &gt; &#160; &#160;isValid = checkForValidTable(result);
+</I>&gt;<i> &gt; }
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; &quot;isValid&quot; and &quot;checkForValidTable&quot; are defined in @members, but the
+</I>&gt;<i> check
+</I>&gt;<i> &gt; function needs some statement handlers and other stuff coming from
+</I>&gt;<i> the
+</I>&gt;<i> &gt; outside. In the end, I wanted to have something like this in my
+</I>&gt;<i> main.cpp:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; [...]
+</I>&gt;<i> &gt; parser-&gt;setStmtHandle(some pointer);
+</I>&gt;<i> &gt; parser-&gt;setWhiteListHandle(some pointer);
+</I>&gt;<i> &gt; parser-&gt;sql_statement(parser); // this is the main function I would
+</I>&gt;<i> use from
+</I>&gt;<i> &gt; the PL/SQL grammar file
+</I>&gt;<i> &gt; bool isValid = parser-&gt;isValid();
+</I>&gt;<i> &gt; [...]
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Is it possible to do something like that? If not, how can I fix this
+</I>&gt;<i> problem?
+</I>&gt;<i> &gt; I need to get those handles inside of the parser somehow?
+</I>&gt;<i> &gt; Any ideas?
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Andi
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> &gt; Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-">http://www.antlr.org/mailman/options/antlr-</A>
+</I>&gt;<i> interest/your-email-address
+</I>&gt;<i> &gt;
+</I>&gt;<i> 
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-">http://www.antlr.org/mailman/options/antlr-interest/your-</A>
+</I>&gt;<i> email-address
+</I>
+
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="038106.html">[antlr-interest] Adding custom functions to the parser in a C	target
+</A></li>
+	<LI>Next message: <A HREF="038120.html">[antlr-interest] Adding custom functions to the parser in a C	target
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#38109">[ date ]</a>
+              <a href="thread.html#38109">[ thread ]</a>
+              <a href="subject.html#38109">[ subject ]</a>
+              <a href="author.html#38109">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

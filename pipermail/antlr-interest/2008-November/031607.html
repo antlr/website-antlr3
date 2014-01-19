@@ -1,0 +1,383 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Creating a simple expression language
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Creating%20a%20simple%20expression%20language&In-Reply-To=%3C23fce8e60811180413u30224e73t15088145d87d8ed0%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="031487.html">
+   <LINK REL="Next"  HREF="031662.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Creating a simple expression language</H1>
+    <B>James Abley</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Creating%20a%20simple%20expression%20language&In-Reply-To=%3C23fce8e60811180413u30224e73t15088145d87d8ed0%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Creating a simple expression language">james.abley at gmail.com
+       </A><BR>
+    <I>Tue Nov 18 04:13:49 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="031487.html">[antlr-interest] Creating a simple expression language
+</A></li>
+        <LI>Next message: <A HREF="031662.html">[antlr-interest] Creating a simple expression language
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#31607">[ date ]</a>
+              <a href="thread.html#31607">[ thread ]</a>
+              <a href="subject.html#31607">[ subject ]</a>
+              <a href="author.html#31607">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi all,
+
+Sorry, I'm still stuck with this. I have taken the sample grammar from
+the book and reduced it as small as I know how currently.
+
+
+grammar Expr;
+
+options {
+	output=AST;
+	ASTLabelType=CommonTree;
+	k = 1;
+}
+
+prog	:	(stat {System.out.println($stat.tree.toStringTree());} )+ ;
+
+stat	:	expr	-&gt; expr
+	;
+	
+expr	:	multExpr (('+' ^  | '-'^) multExpr)*
+	;
+	
+multExpr	:	atom ('*'^ atom)*
+	;
+	
+atom	:	INT
+	|	function
+	/* We don't want nodes for the parentheses */
+	|	'('! expr ')'!
+	;
+
+/* We don't want nodes for the paretheses or commas. */	
+function	:	FUNCNAME^ (WS)* '('! (WS)* (expr ( (WS)* ','! (WS)* expr )* )? ')'! ;
+	
+FUNCNAME	:	( 'a' .. 'z' | 'A' .. 'Z')+  ;
+INT	:	'0' .. '9'+ ;
+WS	:	( ' ' | '\t' | '\n' | '\r' ) + {skip(); };
+
+
+I then have a tree grammar to go with this AST grammar.
+
+
+
+tree grammar Eval;
+
+options {
+	tokenVocab=Expr;	// read the token types from Expr.tokens
+	ASTLabelType=CommonTree;
+}
+
+prog	:	stat+ ;
+
+stat	:	expr
+		{ System.out.println($expr.value); }
+	;
+	
+expr returns [int value]
+	:	^('+' a=expr b=expr) { $value = a+b; }
+	|	^('-' a=expr b=expr) { $value = a-b; }
+	|	^('*' a=expr b=expr) { $value = a*b; }
+	|	^( FUNCNAME expr*) { /* What do I do here? */ }
+	|	INT	{$value = Integer.parseInt($INT.text); }
+	;
+
+
+I'm not sure how to plugin in the function evaluation using just the
+tree grammar.
+
+    @Test
+    public void simpleAdditionDefinedInGrammar() throws Exception {
+        ExprLexer lexer = new ExprLexer(new ANTLRStringStream(&quot;1+15+23-3&quot;));
+        CommonTokenStream tokens = new CommonTokenStream(lexer);
+
+        ExprParser parser = new ExprParser(tokens);
+        ExprParser.expr_return r = parser.expr();
+
+        CommonTree tree = (CommonTree) r.getTree();
+
+        CommonTreeNodeStream nodes = new CommonTreeNodeStream(tree);
+
+        Eval eval = new Eval(nodes);
+
+        assertEquals(36, eval.expr());
+    }
+
+Evaluation using the rules defined in the grammar works fine, as per
+my test above. I need to have an environment to allow function binding
+and dispatch so that I can have a simple Java API for people to
+implement functions against, without having to know ANTLR and alter
+the grammar.
+
+Am I approaching this problem in the right way?
+
+I have been able to walk the CommonTree that I get back from the
+parser, but I'm not sure I'm doing that in the right way either. Is
+there an existing ANTLR API to walk / visit trees?
+
+[1] JUnit TestEval - <A HREF="http://pastie.org/317730">http://pastie.org/317730</A> - the second test fails
+since my tree grammar currently has no way to do any sort of lookup to
+a function.
+[2] Function - <A HREF="http://pastie.org/317734">http://pastie.org/317734</A>
+[3] AddFunction - <A HREF="http://pastie.org/317733">http://pastie.org/317733</A>
+[4] Environment - <A HREF="http://pastie.org/317736">http://pastie.org/317736</A>
+[5] TreeEvaluator - <A HREF="http://pastie.org/317737">http://pastie.org/317737</A>
+
+Cheers,
+
+James
+
+2008/11/11 James Abley &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">james.abley at gmail.com</A>&gt;:
+&gt;<i> Hi Michael,
+</I>&gt;<i>
+</I>&gt;<i> That helps, thanks. I have something like that, but I'm a little stuck
+</I>&gt;<i> with getting the Eval.g grammar going. I think I need to start with a
+</I>&gt;<i> simpler grammar and get a better handle on how that will hang
+</I>&gt;<i> together, and then see if I still don't understand how to apply that
+</I>&gt;<i> to my problem, and then take the CMinus example from the book and play
+</I>&gt;<i> around with that a little.
+</I>&gt;<i>
+</I>&gt;<i> Cheers,
+</I>&gt;<i>
+</I>&gt;<i> James
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> 2008/11/10 Michael Lee &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr at quantdev.com</A>&gt;:
+</I>&gt;&gt;<i> Hi, James
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I am a newbie as well. Past 4 weeks, I worked on creating an expression
+</I>&gt;&gt;<i> engine that will evaluate an FIX message during runtime. What I wanted to is
+</I>&gt;&gt;<i> 'compile' the expression into an expression during the program start time
+</I>&gt;&gt;<i> and evaluate them runtime. It also require to have binding to 'Msg' at
+</I>&gt;&gt;<i> evaluation and thread-safe.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> For example,
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Msg[&quot;PRICE&quot;] &lt; 5.00
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Msg[&quot;PRICE&quot;] will be evaluated during runtime - value is determined by
+</I>&gt;&gt;<i> FixMsg passed in for evaluation.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> For this, I created two separate files (Eval.g and Expr.g). One for parsing
+</I>&gt;&gt;<i> expression(Expr.g) and one for assembling parsed expression into an
+</I>&gt;&gt;<i> organized expression object(Eval.g).
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Eval.g is a tree grammar. Here is a simplified snippet...
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> expression returns [ Expression exp ]
+</I>&gt;&gt;<i> : ^(op='+' a=expression b=expression ) { $exp =
+</I>&gt;&gt;<i> NumericOperationExpression.createOperation( &quot;+&quot; , a , b); }
+</I>&gt;&gt;<i> | ^(op='-' a=expression b=expression ) { $exp =
+</I>&gt;&gt;<i> NumericOperationExpression.createOperation( &quot;-&quot; , a , b); }
+</I>&gt;&gt;<i> | ^(op='*' a=expression b=expression ) { $exp =
+</I>&gt;&gt;<i> NumericOperationExpression.createOperation( &quot;*&quot; , a , b); }
+</I>&gt;&gt;<i> | ^(op='/' a=expression b=expression ) { $exp =
+</I>&gt;&gt;<i> NumericOperationExpression.createOperation( &quot;/&quot; , a , b); }
+</I>&gt;&gt;<i> ;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I create an expression object by calling...
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> InputStream is = new ByteArrayInputStream( exprString.getBytes());
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> // Create an input character stream from standard in
+</I>&gt;&gt;<i> ANTLRInputStream input = new ANTLRInputStream(is);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> // Create an ExprLexer that feeds from that stream
+</I>&gt;&gt;<i> ExprLexer lexer = new ExprLexer(input);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> // Create a stream of tokens fed by the lexer
+</I>&gt;&gt;<i> CommonTokenStream tokens = new CommonTokenStream(lexer);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> // Create a parser that feeds off the token stream
+</I>&gt;&gt;<i> ExprParser parser = new ExprParser(tokens);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> // Begin parsing at rule prog, get return value structure
+</I>&gt;&gt;<i> ExprParser.expression_return r = parser.expression();
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> // WALK RESULTING TREE
+</I>&gt;&gt;<i> CommonTree t = (CommonTree)r.getTree(); // get tree from parser
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> // Create a tree node stream from resulting tree
+</I>&gt;&gt;<i> CommonTreeNodeStream nodes = new CommonTreeNodeStream(t);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Eval walker = new Eval(nodes); // create a tree parser
+</I>&gt;&gt;<i> Expression expression = walker.expression();
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Expression.evaluate has one argument - Msg. You can expand this to include
+</I>&gt;&gt;<i> context-binding instead of Msg.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Basically, an expression is compiled during the program start time and
+</I>&gt;&gt;<i> evaluate them during the runtime with some context.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I hope this helps.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Michael J. Lee
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> James Abley wrote:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> Hi,
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> I'm an ANTLR newbie. A code base that I work on has various expression
+</I>&gt;&gt;&gt;<i> evaluation aspects. I have to add to this by defining various
+</I>&gt;&gt;&gt;<i> functions that can be evaluated. ANTLR seemed like a good way of
+</I>&gt;&gt;&gt;<i> separating out the parsing aspects and should let my colleagues
+</I>&gt;&gt;&gt;<i> concentrate on just defining and plugging in new functions without
+</I>&gt;&gt;&gt;<i> having to know much about parsing, etc. I've skimmed the ANTLR
+</I>&gt;&gt;&gt;<i> Reference book, but don't quite have the time to go in depth at this
+</I>&gt;&gt;&gt;<i> point.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> I've written a grammar, which seems to do what I need. Doubtless it
+</I>&gt;&gt;&gt;<i> could be trimmed a bit as I learn more. Where I'm stuck is the
+</I>&gt;&gt;&gt;<i> connection between having a grammar which can parse the input and how
+</I>&gt;&gt;&gt;<i> it gets evaluated.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> The baggage that I'm struggling with is how to define my environment,
+</I>&gt;&gt;&gt;<i> bind variables, create stack frames, etc.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> I think this would be as part of a tree grammar the re-uses the tokens
+</I>&gt;&gt;&gt;<i> from the AST grammar, but would like to confirm.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> Cheers,
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> James
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> grammar Eval;
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> options {
+</I>&gt;&gt;&gt;<i>        output = AST;
+</I>&gt;&gt;&gt;<i> //      tokenVocab=Expr; // Read token types from Expr.tokens resource
+</I>&gt;&gt;&gt;<i> //      ASTLabelType=CommonTree;    // The Java type of the nodes.
+</I>&gt;&gt;&gt;<i> }
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> tokens {
+</I>&gt;&gt;&gt;<i>        FUNC;   // function call
+</I>&gt;&gt;&gt;<i>        STR;
+</I>&gt;&gt;&gt;<i> }
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> @parser::header {
+</I>&gt;&gt;&gt;<i> package com.example.expression;
+</I>&gt;&gt;&gt;<i> }
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> @lexer::header {
+</I>&gt;&gt;&gt;<i> package com.example.expression;
+</I>&gt;&gt;&gt;<i> }
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> stat    :       expr+;
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> /*
+</I>&gt;&gt;&gt;<i> For now, we define expr very basically. We don't need to support
+</I>&gt;&gt;&gt;<i> addition, multiplication or other operators. But if we
+</I>&gt;&gt;&gt;<i> do, the grammar is easy to alter.
+</I>&gt;&gt;&gt;<i> */
+</I>&gt;&gt;&gt;<i> expr    :       atom
+</I>&gt;&gt;&gt;<i>        ;
+</I>&gt;&gt;&gt;<i> //multExpr ( ( '+' | '-') multExpr)*;
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> //multExpr
+</I>&gt;&gt;&gt;<i> //      :       unaryExpr (( '*' | '/') unaryExpr)*;
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> //unaryExpr
+</I>&gt;&gt;&gt;<i> //      :       ('+' | '-')?  atom
+</I>&gt;&gt;&gt;<i> //      ;
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> /* Basic constituent of an expression.*/
+</I>&gt;&gt;&gt;<i> atom    :       var
+</I>&gt;&gt;&gt;<i>        |       LPAREN expr RPAREN      // Rule to allow nested
+</I>&gt;&gt;&gt;<i> expressions.
+</I>&gt;&gt;&gt;<i>        |       functionCall
+</I>&gt;&gt;&gt;<i>        |       stringLiteral
+</I>&gt;&gt;&gt;<i>        |       number
+</I>&gt;&gt;&gt;<i>        ;
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> functionCall
+</I>&gt;&gt;&gt;<i>        :       functionName LPAREN ( expr (COMMA expr)* )? RPAREN      -&gt;
+</I>&gt;&gt;&gt;<i> ^(FUNC
+</I>&gt;&gt;&gt;<i> functionName expr*)
+</I>&gt;&gt;&gt;<i>        ;
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> functionName
+</I>&gt;&gt;&gt;<i>        :       ALPHA (ALPHA | '-' | '_' | DIGIT )* ;
+</I>&gt;&gt;&gt;<i> /*
+</I>&gt;&gt;&gt;<i> Added to indicate how we currently reference bound variables in
+</I>&gt;&gt;&gt;<i> expressions.. This lets us parse them easily enough.
+</I>&gt;&gt;&gt;<i> with a view to consolidating our expression evaluation code into this
+</I>&gt;&gt;&gt;<i> ANTLR-based version.
+</I>&gt;&gt;&gt;<i> */
+</I>&gt;&gt;&gt;<i> var     :       '$' ALPHA (ALPHA | '-' | '_' | DIGIT)*
+</I>&gt;&gt;&gt;<i>        ;
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> stringLiteral   :       '&quot;'  ~'&quot;'* '&quot;'
+</I>&gt;&gt;&gt;<i>        |       '\'' ~'\''* '\''
+</I>&gt;&gt;&gt;<i>        ;
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> number  :       DIGIT+ ('.' DIGIT+)?
+</I>&gt;&gt;&gt;<i>        ;
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> DIGIT
+</I>&gt;&gt;&gt;<i>        :       '0' .. '9';
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> ALPHA
+</I>&gt;&gt;&gt;<i>        :        'a' .. 'z'
+</I>&gt;&gt;&gt;<i>        |        'A' .. 'Z';
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> COMMA
+</I>&gt;&gt;&gt;<i>        :       (WS* ',' WS*);
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> LPAREN
+</I>&gt;&gt;&gt;<i>        :       (WS*  '(' WS*);
+</I>&gt;&gt;&gt;<i> RPAREN
+</I>&gt;&gt;&gt;<i>        :       (WS* ')' WS*);
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> WS
+</I>&gt;&gt;&gt;<i>        :       ' '
+</I>&gt;&gt;&gt;<i>        |       '\t';
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;&gt;&gt;<i> Unsubscribe:
+</I>&gt;&gt;&gt;<i> <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;<i>
+</I></PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="031487.html">[antlr-interest] Creating a simple expression language
+</A></li>
+	<LI>Next message: <A HREF="031662.html">[antlr-interest] Creating a simple expression language
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#31607">[ date ]</a>
+              <a href="thread.html#31607">[ thread ]</a>
+              <a href="subject.html#31607">[ subject ]</a>
+              <a href="author.html#31607">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

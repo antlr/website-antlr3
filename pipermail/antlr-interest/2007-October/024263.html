@@ -1,0 +1,178 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] seeking advice for a good approach
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20seeking%20advice%20for%20a%20good%20approach&In-Reply-To=%3C471A9707.7030907%40Yahoo.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="024262.html">
+   <LINK REL="Next"  HREF="024264.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] seeking advice for a good approach</H1>
+    <B>Austin Hastings</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20seeking%20advice%20for%20a%20good%20approach&In-Reply-To=%3C471A9707.7030907%40Yahoo.com%3E"
+       TITLE="[antlr-interest] seeking advice for a good approach">Austin_Hastings at Yahoo.com
+       </A><BR>
+    <I>Sat Oct 20 17:02:15 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="024262.html">[antlr-interest] seeking advice for a good approach
+</A></li>
+        <LI>Next message: <A HREF="024264.html">[antlr-interest] Problem using string literals
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24263">[ date ]</a>
+              <a href="thread.html#24263">[ thread ]</a>
+              <a href="subject.html#24263">[ subject ]</a>
+              <a href="author.html#24263">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Geoff,
+
+I think that's the purpose of the &quot;tree grammar&quot; stuff. In the first 
+(syntax) grammar, you convert a parse tree into an AST. The point of the 
+AST is to be free of parse-tree stuff, totally clear as to purpose, and 
+easy to work with.
+
+Consider the various things you had to do to implement operator 
+precedence in your grammar: an expression is an and_expr, an and_expr is 
+one or more or_expr, an or_expr is one or more plus_expr, a plus_expr is 
+one or more mult_expr, etc. That goes away once you have your AST, 
+because you build your AST so that the tree structure encodes the order 
+of evaluation.
+
+Your &quot;semantic&quot; parser (tree grammar) just has one rule for expr: an 
+expr is a primary, or an expr + an operator + an expr. An operator is 
+any of (+,-,/,*,%,^,=,etc.) Because the tree itself will specify order, 
+your semantic parse can be really simple on this score. But what are you 
+going to DO?
+
+I think you'll be faced with several semantic passes, depending on your 
+target: a compiler will have maybe more than an interpreter. A 
+&quot;compiling interpreter&quot; might be the worst possible case. There's some 
+disagreement whether you should use a tree grammar, or use a 
+tree-walking code module (the Visitor pattern gets mentioned here, but 
+it's not the only way).
+
+You specifically mentioned type checking of operands. My solution to 
+that is to build a map&lt;node,info&gt; for the expressions, and then use the 
+sub-expressions to determine the type of operator to be called. Because 
+the tree objects can serve as keys in a map, you don't have to extend 
+the commontree class. You can attach the data via some other mechanism, 
+such as your symbol table.
+
+Please keep in mind that depending on the complexity of the language, 
+you're going to want both &quot;centralized&quot; and &quot;decentralized&quot; data 
+storage. You don't want to encode the info into every node, or every 
+token, but the tokens or nodes might be the right source of location 
+data -- an identifier 'foo' in one place isn't necessarily the same as 
+'foo' in another place.
+
+Another advantage of this approach is that you get away from throwing 
+exceptions whenever your parser is unhappy. For error diagnosis and 
+recovery, I'm taking the approach that my syntactic parser should accept 
+as much as possible, and that I'll generate hopefully-helpful 
+diagnostics from later stages. I think &quot;There is a type incompatibility 
+between the left- and right- sides of the '*' operator on line 262&quot; is a 
+better message than &quot;Parse failed at line 262&quot;.
+
+=Austin
+
+
+
+Geoff hendrey wrote:
+&gt;<i>
+</I>&gt;<i> Hi,
+</I>&gt;<i>
+</I>&gt;<i> I am building an AST using the &quot;-&gt;&quot; functionality in the grammar file.
+</I>&gt;<i>
+</I>&gt;<i> The AST contains various types of operator nodes that operate against 
+</I>&gt;<i> two operands (child operand nodes).
+</I>&gt;<i>
+</I>&gt;<i> For example, a logical AND operation, which has a left-hand-side 
+</I>&gt;<i> operand and a right-hand-side operand.
+</I>&gt;<i>
+</I>&gt;<i> I want to examine each AST node, and insure that both the child nodes 
+</I>&gt;<i> (the operands) are compatible with the operation being performed on them.
+</I>&gt;<i>
+</I>&gt;<i> Here is the approach I am going to take, but maybe some ANTLR genius 
+</I>&gt;<i> knows a better way.
+</I>&gt;<i>
+</I>&gt;<i> So my plan is to extend CommonTree, to say TypeCheckingTree. When  new 
+</I>&gt;<i> TypeCheckingTree is constructed, I'll record the type of the operator, 
+</I>&gt;<i> if the node is an operator. Then when addChild is called, I will throw 
+</I>&gt;<i> an Exception if the child (operand) is incompatible. For example if 
+</I>&gt;<i> the node is 'AND' and a child is the literal  '3.14159', an Exception 
+</I>&gt;<i> will be thrown since floating point numbers are not acceptable 
+</I>&gt;<i> operands to a boolean 'AND' function.
+</I>&gt;<i>
+</I>&gt;<i> Right now, the only way I can think of to record the operator type, is 
+</I>&gt;<i> to make some function like this, which would be called from the 
+</I>&gt;<i> constructor of TypeCheckingTree. This will allow the node to know it's 
+</I>&gt;<i> type, and to check the type of child nodes (operands) for compatibility :
+</I>&gt;<i>
+</I>&gt;<i> public String getType(Token t){
+</I>&gt;<i>     String astNodeName = t.toString();
+</I>&gt;<i>     if(astNodeName.equals(&quot;AND&quot;)){
+</I>&gt;<i>        return &quot;BOOLEAN&quot;
+</I>&gt;<i>     }else if(astNodeName.equals(&quot;OR&quot;)){
+</I>&gt;<i>        return &quot;BOOLEAN&quot;
+</I>&gt;<i>     }else if(astNodeName.equals(&quot;FLOAT&quot;)){
+</I>&gt;<i>        return &quot;NUMERIC&quot;;
+</I>&gt;<i>     }//etc,etc.
+</I>&gt;<i> }
+</I>&gt;<i>
+</I>&gt;<i> The above seems really flaky. Especially since &quot;etc, etc&quot; is a really 
+</I>&gt;<i> long list, and has to be maintained. It would be better if somehow I 
+</I>&gt;<i> could assign a  type  (or somehow attach meta data) to an AST node, 
+</I>&gt;<i> from inside the grammar file. Relying on String comparisons against 
+</I>&gt;<i> the node's name is pretty weak.
+</I>&gt;<i>
+</I>&gt;<i> I'm hoping I am an ignorant newbie and someone will slap me straight!!!
+</I>&gt;<i>
+</I>&gt;<i> -g
+</I>&gt;<i> ------------------------------------------------------------------------
+</I>&gt;<i>
+</I>&gt;<i> No virus found in this incoming message.
+</I>&gt;<i> Checked by AVG Free Edition. 
+</I>&gt;<i> Version: 7.5.488 / Virus Database: 269.15.3/1081 - Release Date: 10/19/2007 5:41 PM
+</I>&gt;<i>   
+</I>
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="024262.html">[antlr-interest] seeking advice for a good approach
+</A></li>
+	<LI>Next message: <A HREF="024264.html">[antlr-interest] Problem using string literals
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24263">[ date ]</a>
+              <a href="thread.html#24263">[ thread ]</a>
+              <a href="subject.html#24263">[ subject ]</a>
+              <a href="author.html#24263">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

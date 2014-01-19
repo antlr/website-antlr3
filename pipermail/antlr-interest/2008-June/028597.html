@@ -1,0 +1,203 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Tree Rewrite Caveats
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Tree%20Rewrite%20Caveats&In-Reply-To=%3C9bfd4b3c0806061640y3b53e048o1145a789e02bda18%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="028590.html">
+   <LINK REL="Next"  HREF="028603.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Tree Rewrite Caveats</H1>
+    <B>Robin Hamilton-Pennell</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Tree%20Rewrite%20Caveats&In-Reply-To=%3C9bfd4b3c0806061640y3b53e048o1145a789e02bda18%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Tree Rewrite Caveats">robin at pozytron.com
+       </A><BR>
+    <I>Fri Jun  6 16:40:36 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="028590.html">[antlr-interest] Tree Rewrite Caveats
+</A></li>
+        <LI>Next message: <A HREF="028603.html">[antlr-interest] Tree Rewrite Caveats
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#28597">[ date ]</a>
+              <a href="thread.html#28597">[ thread ]</a>
+              <a href="subject.html#28597">[ subject ]</a>
+              <a href="author.html#28597">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Terence,
+
+Not sure what you mean by &quot;first one,&quot; but if you are referring to the
+&quot;every (sub)rule that you are rewriting must match a tree node&quot; thing,
+here's a little more info.
+
+I've been using the tree rewriting stuff for a bit now, so I
+understand it a little better. For my explanation, here's a section of
+my grammar that works fine (I've simplified it a lot, only the
+relevant portions included):
+
+statement
+	: ^(EXPR_STATEMENT expr)					-&gt; ^(EXPR_STATEMENT expr)
+	| ^(BLOCK_STATEMENT basicBlock)				-&gt; ^(BLOCK_STATEMENT basicBlock)
+	| /*  more statement rules... */
+	;
+expr	: ^(TYPE expr typeParams)					-&gt; ^(TYPE expr typeParams)
+	| /*   more tree rewrite rules... */
+	| literal						
+	| basicBlock
+	| /*   more rule references... */
+	;
+literal
+	: IntLiteral							-&gt; IntLiteral
+	| FloatLiteral						-&gt; FloatLiteral
+	| BoolLiteral						-&gt; BoolLiteral
+	| StringLiteral						-&gt; StringLiteral
+	| 'null'								-&gt; 'null'
+	| /*   more token references... */
+	;
+
+This grammar works fine. Note that it's fine for me to rewrite lexer
+(token) references, and tree references, but I don't rewrite rule
+references.
+
+If, however, I change expr to rewrite a rule reference:
+
+expr	: ^(TYPE expr typeParams)					-&gt; ^(TYPE expr typeParams)
+	| /*   more tree rewrite rules... */
+	| literal									-&gt; literal
+	| basicBlock
+	| /*   more rule references... */
+	;
+
+... parsing will always fail with errors like the following:
+Exception in thread &quot;main&quot; java.lang.NullPointerException
+	at org.antlr.runtime.tree.CommonTreeAdaptor.getChildIndex(CommonTreeAdaptor.java:173)
+	at CogTreeRewriter.expr(CogTreeRewriter.java:1469)
+	at CogTreeRewriter.expr(CogTreeRewriter.java:1294)
+	at CogTreeRewriter.statement(CogTreeRewriter.java:382)
+	at CogTreeRewriter.basicBlock(CogTreeRewriter.java:2398)
+	at CogTreeRewriter.statement(CogTreeRewriter.java:745)
+	at CogTreeRewriter.program(CogTreeRewriter.java:210)
+
+The generated code from around line 1469 looks like this:
+                    // AST REWRITE
+                    // elements: literal
+                    // token labels:
+                    // rule labels: retval
+                    // token list labels:
+                    // rule list labels:
+                    retval.tree = root_0;
+                    RewriteRuleSubtreeStream stream_retval=new
+RewriteRuleSubtreeStream(adaptor,&quot;token
+retval&quot;,retval!=null?retval.tree:null);
+
+                    root_0 = (CogTree)adaptor.nil();
+                    // 91:17: -&gt; literal
+                    {
+                        adaptor.addChild(root_0, stream_literal.nextTree());
+
+                    }
+
+                    retval.tree = (CogTree)adaptor.rulePostProcessing(root_0);
+                    input.replaceChildren(adaptor.getParent(retval.start),
+                                          adaptor.getChildIndex(retval.start),
+                                          adaptor.getChildIndex(_last),
+                                          retval.tree);
+                    }
+                    break;
+
+If you need any other information, please let me know. I'm happy to help out!
+
+Thanks,
+Robin
+
+On Fri, Jun 6, 2008 at 3:27 PM, Terence Parr &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">parrt at cs.usfca.edu</A>&gt; wrote:
+&gt;<i>
+</I>&gt;<i> On May 23, 2008, at 8:21 PM, Robin Hamilton-Pennell wrote:
+</I>&gt;<i>
+</I>&gt;&gt;<i> Hi all,
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Been playing around with the tree rewriting stuff in 3.1b1. It's much
+</I>&gt;&gt;<i> better than the previous test build was. I'm not through with my
+</I>&gt;&gt;<i> experimentation and likely will find more things, but I thought I'd
+</I>&gt;&gt;<i> make some notes on a few troubles I ran into, in case it helps anyone
+</I>&gt;&gt;<i> else.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Firstly (this is probably true of tree parsers in general), if you use
+</I>&gt;&gt;<i> a custom class as your AST node and the Java target, you will probably
+</I>&gt;&gt;<i> need to add the method errorNode() in your TreeAdaptor class. This
+</I>&gt;&gt;<i> will also entail either adding error node utility methods to your AST
+</I>&gt;&gt;<i> node, or creating a custom subclass of CommonErrorNode. I could be
+</I>&gt;&gt;<i> completely misguided on this; please say so.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Second, every (sub)rule that you are rewriting must match a tree node,
+</I>&gt;&gt;<i> I think. This seems obvious in retrospect, but it took me a while to
+</I>&gt;&gt;<i> figure out. That means that you can't do this:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> stmt:
+</I>&gt;&gt;<i>   expr   -&gt;   expr
+</I>&gt;&gt;<i>   ;
+</I>&gt;<i>
+</I>&gt;<i> Really?  Why not?
+</I>&gt;<i>
+</I>&gt;&gt;<i> However, you can do either of the following (or change your AST
+</I>&gt;&gt;<i> generation code):
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> stmt:
+</I>&gt;&gt;<i>   expr  // omit rewrite rule
+</I>&gt;&gt;<i>   ;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> stmt:
+</I>&gt;&gt;<i>   // (after changing your AST generation)
+</I>&gt;&gt;<i>   ^(EXPR expr)   -&gt;   ^(EXPR expr)
+</I>&gt;&gt;<i>   ;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I should mention that both of these issues involves the rewrite=true
+</I>&gt;&gt;<i> option. I haven't tested the effects of turning that off, actually.
+</I>&gt;<i>
+</I>&gt;<i> Can you tell me what goes wrong with the first one?
+</I>&gt;<i> Ter
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Again, I could simply be completely misguided on this, in which case,
+</I>&gt;&gt;<i> please enlighten me.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Thanks,
+</I>&gt;&gt;<i> Robin
+</I>&gt;<i>
+</I>&gt;<i>
+</I></PRE>
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="028590.html">[antlr-interest] Tree Rewrite Caveats
+</A></li>
+	<LI>Next message: <A HREF="028603.html">[antlr-interest] Tree Rewrite Caveats
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#28597">[ date ]</a>
+              <a href="thread.html#28597">[ thread ]</a>
+              <a href="subject.html#28597">[ subject ]</a>
+              <a href="author.html#28597">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,143 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] setting, altering text in lexer rules
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20setting%2C%20altering%20text%20in%20lexer%20rules&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="016652.html">
+   <LINK REL="Next"  HREF="016593.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] setting, altering text in lexer rules</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20setting%2C%20altering%20text%20in%20lexer%20rules&In-Reply-To="
+       TITLE="[antlr-interest] setting, altering text in lexer rules">parrt at cs.usfca.edu
+       </A><BR>
+    <I>Mon Jun 12 11:34:49 PDT 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="016652.html">[antlr-interest] nant build error
+</A></li>
+        <LI>Next message: <A HREF="016593.html">[antlr-interest] (follow up) setting, altering text in lexer rules
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#16592">[ date ]</a>
+              <a href="thread.html#16592">[ thread ]</a>
+              <a href="subject.html#16592">[ subject ]</a>
+              <a href="author.html#16592">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+I'm finalizing how lexers emit tokens and possibly alter the text for  
+tokens.  I thought I'd run the ideas past you to make sure I'm not  
+crazy (about this anyway!) :)
+
+There are a few main things I want to be able to do:
+
+1. emit more than one token per lexer.nextToken() invocation (needed  
+for python etc...)
+
+2. allow you to modify the text of a text either with setText() or  
+text=foo;
+
+3. allow ! on lexical rule elements to delete text elements from  
+token easily
+
+4. I need the common case to be fast and I don't want to clutter up  
+the simple Lexer object
+
+Re #1: Currently, there is an emit(Token) method that can be  
+overridden to have a queue; nextToken would then be overridden to  
+pull from the queue.  When the user emits manually, the token rule  
+must avoid doing so.  Sounds easy but what happens when one rule  
+calls another?
+
+FLOAT : INT '.' INT ;
+INT : '0'..'9'+ ;
+
+How does INT know not to emit a token?  Currently I check &quot;if token! 
+=null emit&quot; but that emits two tokens.  So I think I need to add a  
+lexical rule nesting level var and a check &quot;if token!=null &amp;&amp;  
+level==0 emit&quot;.  That adds extra work and each rule would need to  
+have inc/dec code for the level.  This infrastructure will still work  
+for multiple token emits as emit can just set token to the last token  
+emitted to prevent auto emitting.
+
+Re #2: you need to be able to set the text of a token.  There is the  
+notion of a single token being matched and so it's ok to have the  
+idea of &quot;current text&quot;; i.e., an instance var.  A setText method can  
+alter a String and auto token emit can use this instead of indexes  
+into the charbuf if nonnull.  Easy until you realize you might want  
+to modify it as a buffer of char.  Then it must be a StringBuffer not  
+just a string...may be hard to avoid creating a buf for each  
+nextToken invocation.  Still it's pretty straightforward.
+
+Re #3.  Now, we need automatic modification of a text buffer to build  
+up a string.  Users should be careful doing manual alteration of a  
+buffer and using ! on elements.  The first ! that is encountered even  
+if deeply nested in multiple lexer rules must create a buffer and  
+copy all text from start of token (in the char buffer) to the new  
+StringBuffer.  At level==0, we need to add whatever other text  
+remains and we need to emit a token using either the modified buffer  
+or just pointing into the char buffer (for unmodified text).
+
+Re #4.  We end up with a complicated chunk of code at the end of each  
+lexer rule, which costs time/space:
+
+         // token rule postamble
+         level--;
+         if ( token==null &amp;&amp; level==0 ) {
+             if ( _buf!=null ) {
+                 _buf.append(input.substring(_start, getCharIndex()-1));
+             }
+             emit(type,line,charPosition,channel,start,getCharIndex 
+()-1);
+         }
+
+To avoid creating a new StringBuffer each time, I could reuse and set  
+the length to 0 at the start of each nextToken.  Otherwise I need to do
+
+if ( _buf==null ) { _buf = new StringBuffer(); }
+
+at each char reference or other element with a bang.  So, i guess I  
+need &quot;if ( _buf.length()&gt;0 )&quot; check not _buf==null check.  I hate to  
+slow down the token matching speed for every token to set the length  
+(the StringBuffer.setLength() method actually requires a fair bit of  
+code).
+
+Anybody wanna comment on the implementation?
+
+Ter
+
+</PRE>
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="016652.html">[antlr-interest] nant build error
+</A></li>
+	<LI>Next message: <A HREF="016593.html">[antlr-interest] (follow up) setting, altering text in lexer rules
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#16592">[ date ]</a>
+              <a href="thread.html#16592">[ thread ]</a>
+              <a href="subject.html#16592">[ subject ]</a>
+              <a href="author.html#16592">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

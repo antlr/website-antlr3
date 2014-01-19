@@ -1,0 +1,156 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Processing/traversing a rule -- dealing with conditionals
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Processing/traversing%20a%20rule%20--%20dealing%20with%0A%20conditionals&In-Reply-To=%3C0E0B60BD6BB03B4FA5F17D5C21AE4B361484B4F7BE%40MSPM1BMSGM102.ent.core.medtronic.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="038210.html">
+   <LINK REL="Next"  HREF="038226.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Processing/traversing a rule -- dealing with conditionals</H1>
+    <B>Farr, John</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Processing/traversing%20a%20rule%20--%20dealing%20with%0A%20conditionals&In-Reply-To=%3C0E0B60BD6BB03B4FA5F17D5C21AE4B361484B4F7BE%40MSPM1BMSGM102.ent.core.medtronic.com%3E"
+       TITLE="[antlr-interest] Processing/traversing a rule -- dealing with conditionals">john.farr at medtronic.com
+       </A><BR>
+    <I>Thu Apr  8 08:39:13 PDT 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="038210.html">[antlr-interest] Processing/traversing a rule
+</A></li>
+        <LI>Next message: <A HREF="038226.html">[antlr-interest] Processing/traversing a rule -- dealing with	conditionals
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#38212">[ date ]</a>
+              <a href="thread.html#38212">[ thread ]</a>
+              <a href="subject.html#38212">[ subject ]</a>
+              <a href="author.html#38212">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Tyler,
+
+It appears that you're trying to deal with the conditional aspect of your IF and WHILE statements in the tree grammar actions. I haven't found a way to do this exclusively in actions because the conditions determine which parts of the tree to &quot;evaluate&quot; and which parts to &quot;skip over&quot;.
+
+The way I deal with this in an expression evaluator tree is something like the following:
+
+//-------------
+
+@header { bool booleanResult; }
+
+expression returns [Result result]
+    : ^( IF     cond=expression
+                { booleanResult = $cond.result.asBool(); }
+                ( { booleanResult }?=&gt;
+                  s1=expression unevaluatedExpression
+                  { $result = $s1.result; }
+                | unevaluatedExpression s2=expression
+                  { $result = $s2.result; }
+                )
+       )
+    | ^( OR     op1=expression { booleanResult = $op1.result.asBool(); }
+                ( { booleanResult }?=&gt; unevaluatedExpression { $result = $op1.result; }
+                | op2=expression { $result = $op2.result; }
+                )
+       )
+    | ^( AND    op1=expression
+                { booleanResult = $op1.result.asBool(); }
+                ( { !booleanResult }?=&gt;
+                  unevaluatedExpression
+                  { $result = $op1.result; }
+                | op2=expression
+                  { $result = $op2.result; }
+                )
+       )
+    // ... other operators, literals, etc.
+    ;
+
+unevaluatedExpression
+    : ^( ( IF | OR | AND
+         | // other operators, etc.
+         ) unevaluatedExpression* )
+    | // literals, etc.
+    ;
+
+//-------------
+
+This is obviously simplified and incomplete but I hope you'll get the idea. There are a couple of things this approach depends on:
+
+1. A rule, unevaluatedExpression, that is like the main expression rule, but contains no evaluating actions.
+
+2. A data member of the parser class, booleanResult, used in semantic predicates to select which subexpressions to evaluate. It needs to be at the parser level (or in a scope), so that it can be seen by the code generated for the semantic predicate.
+
+3. The semantic predicates that select the appropriate subexpressions.
+
+I hope this helps.
+
+--John
+
+
+-----Original Message-----
+From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Tyler Distad
+Sent: Thursday, April 08, 2010 6:16 AM
+To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: [antlr-interest] Processing/traversing a rule
+
+I have a tree parser which is traversing the nodes of my AST. At points within the grammar, I use action blocks to call methods on my processing object, thus keeping large amounts of action code abstracted into a separate file.
+
+This has worked fine, but now I have the &quot;if&quot; and &quot;while&quot; statements visible
+below:
+
+stmtIf
+    : ^(STMT_IF expr trueStmts=stmt* (ELSE_KW falseStmts=stmt*)?)
+        { proc.outStmtIf($expr.start, $trueStmts.start,
+$falseStmts.start);    }
+    ;
+
+stmtWhile
+    : ^(STMT_WHILE expr stmt*)
+        { proc.outStmtWhile($expr.start, $stmt.start);    }
+    ;
+
+Obviously, this works fine for actions which take place after the entire if or while tree has been processed. But I want to do some processing before the tree is traversed, as well as some at specific points during. I could create more method calls in my processing object and sprinkle them throughout the above AST, but that feels so clunky. I'd like to be able to override the entire traversal of the rule at this point and do some custom work.
+
+So, two questions:
+ * In general, is my method of making calls to a processing object sane/normal/best practice?
+ * In the above cases, is there any practical method of manually processing an entire rule and its descendant tree?
+
+Tyler Distad
+
+List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+
+
+[CONFIDENTIALITY AND PRIVACY NOTICE]
+
+Information transmitted by this email is proprietary to Medtronic and is intended for use only by the individual or entity to which it is addressed, and may contain information that is private, privileged, confidential or exempt from disclosure under applicable law. If you are not the intended recipient or it appears that this mail has been forwarded to you without proper authority, you are notified that any use or dissemination of this information in any manner is strictly prohibited. In such cases, please delete this mail from your records.
+ 
+To view this notice in other languages you can either select the following link or manually copy and paste the link into the address bar of a web browser: <A HREF="http://emaildisclaimer.medtronic.com">http://emaildisclaimer.medtronic.com</A>
+
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="038210.html">[antlr-interest] Processing/traversing a rule
+</A></li>
+	<LI>Next message: <A HREF="038226.html">[antlr-interest] Processing/traversing a rule -- dealing with	conditionals
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#38212">[ date ]</a>
+              <a href="thread.html#38212">[ thread ]</a>
+              <a href="subject.html#38212">[ subject ]</a>
+              <a href="author.html#38212">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

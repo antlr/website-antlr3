@@ -1,0 +1,294 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] ANTLR v3 tree construction :)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20ANTLR%20v3%20tree%20construction%20%3A%29&In-Reply-To=2FE100F3-7C90-4709-8FDF-6CE44A78A8CD%40cs.usfca.edu">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="012831.html">
+   <LINK REL="Next"  HREF="012838.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] ANTLR v3 tree construction :)</H1>
+    <B>Akhilesh Mritunjai</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20ANTLR%20v3%20tree%20construction%20%3A%29&In-Reply-To=2FE100F3-7C90-4709-8FDF-6CE44A78A8CD%40cs.usfca.edu"
+       TITLE="[antlr-interest] ANTLR v3 tree construction :)">virtualaspirin at yahoo.com
+       </A><BR>
+    <I>Thu Jun 23 20:11:29 PDT 2005</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="012831.html">[antlr-interest] ANTLR v3 tree construction :)
+</A></li>
+        <LI>Next message: <A HREF="012838.html">[antlr-interest] Learning quickly....need recommendations
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#12834">[ date ]</a>
+              <a href="thread.html#12834">[ thread ]</a>
+              <a href="subject.html#12834">[ subject ]</a>
+              <a href="author.html#12834">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Terence
+
+Replies inline-
+
+--- Terence Parr &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">parrt at cs.usfca.edu</A>&gt; wrote:
+&gt;<i> I am not sure how to do that easily, though I of
+</I>&gt;<i> course see the need  
+</I>&gt;<i> (particularly given the tree sizes you refer to
+</I>&gt;<i> below...yikes!).  The  
+</I>&gt;<i> TreeNodeStream that serializes the trees for
+</I>&gt;<i> two-dimensional parsing  
+</I>&gt;<i> could be asked to replace the node I suppose...sort
+</I>&gt;<i> of like asking an  
+</I>&gt;<i> iterator to do a delete.  Hmm...that is an
+</I>
+Its not so simple given singly linked list approach.
+Thats why right now it takes a fair amount of kludgy
+code (need to keep track of previous sibling)....
+however, it also has an indispensable advantage that
+trivial amount book-keeping needs to be done. Any more
+pointers and it will lead to a mess.
+
+I feel that given the way (at least of 2.x) how tree
+parser works, it can sure handle this.  Basically it
+would amount to a LA(1) kinda thing inserted at proper
+place-
+
+ if(_delete(LA(1))
+ {
+   _t.setNextSibling(LA(1).getNextSibling());
+   _t = _t.getNextSibling(); // Advance
+   consume(LA(1)); // discard the deleted node
+ }
+
+&gt;<i> interesting approach.  It  
+</I>&gt;<i> would only allow replacement of a node under the
+</I>&gt;<i> &quot;cursor&quot; at input.LT(1) I guess.
+</I>
+Umm, actually it can decide one step ahead... LA is
+always &gt;= 1. So the current element is always
+'previous' and always available and 'cursor' is always
+one step ahead. In LA(k) situation, it can do it as
+far as k-1 (depending upon actual available tokens).
+
+&gt;<i>  It would have to make sure not to try
+</I>&gt;<i> to parse the new  
+</I>&gt;<i> node.
+</I>
+For additions, yes. Deletions should skip deleted
+nodes.
+
+&gt;<i>  You might have a  single node replaced with
+</I>&gt;<i> two nodes:
+</I>&gt;<i> 
+</I>&gt;<i> tree grammar t;
+</I>&gt;<i> a : b+ ;
+</I>&gt;<i> b : B -&gt; X Y ; // replace B with X Y (2 nodes)
+</I>&gt;<i> 
+</I>&gt;<i> If the input were say B B then after the first call
+</I>&gt;<i> to b the &quot;X Y&quot;  
+</I>&gt;<i> would replace the first B, yielding X Y B, but the
+</I>&gt;<i> TreeNodeStream  
+</I>&gt;<i> would have to do a &quot;replace and jump over new nodes&quot;
+</I>&gt;<i> so the current  
+</I>&gt;<i> pointer was on the 2nd B not the Y.
+</I>
+Fairly easy... this is what my current code does:
+(Using Java5 syntax)
+
+Vector&lt;AST&gt; additions = new Vector&lt;AST&gt;();
+additions.add(X);
+additions.add(Y);
+
+for(AST node : additions)
+{
+  node.setNextSibling(_t.getNextSibling());
+  _t.setNextSibling(node);
+  _t = node; // Advance
+}
+
+&gt;<i> Regardless, the approach would invisibly allow a
+</I>&gt;<i> completely new tree  
+</I>&gt;<i> to be created or to have a tree modified inline. 
+</I>&gt;<i> Wow.
+</I>
+And potentially killing off some arguments advocating
+writing native code visitors etc. :-) It will make
+compiler writing a bit more easy as primary code
+transforms can be done in *much* easier fashion, eg.
+making SSA trees and removing common sub-expressions.
+
+&gt;<i> &gt; 'dupTree=true' option (patch/standard), it will
+</I>&gt;<i> parser
+</I>&gt;<i> &gt; and either build a new tree of just the traversed
+</I>&gt;<i> &gt; nodes or 'peel-off' the whole traversed tree, if
+</I>&gt;<i> user
+</I>&gt;<i> &gt; doesn't want to write whole grammar for
+</I>&gt;<i> un-interesting
+</I>&gt;<i> &gt; sub-trees.
+</I>&gt;<i> 
+</I>&gt;<i> I'm not sure I follow.  I normally use dot
+</I>&gt;<i> (wildcard) to jump over  
+</I>&gt;<i> uninteresting nodes/trees, though I'm not sure how
+</I>&gt;<i> well that will  
+</I>&gt;<i> work in 3.0 as the parsing algorithm is a little
+</I>&gt;<i> different.  I might  
+</I>&gt;<i> have to add another element other than dot to mean
+</I>&gt;<i> ignore tree  
+</I>&gt;<i> instead of just ignore node.
+</I>
+The difference is that &quot;.&quot; will duplicate only the
+subtree root node, not the whole subtree present at
+&quot;.&quot; so, if the user wants to rewrite the tree by
+duplicating it (perhaps wanting to preserve the handed
+tree, as in my case), he gets a 'chopped-off' tree
+with subtrees missing here and there. The subtrees are
+not interesting for transformations, but that might
+not mean that he wanted them to be chopped off... (the
+'!' (antlr 2.x) notation is there for that). 
+
+What the 'dupTree' option does is it considers
+terminals as potential root elements of uninteresting
+subtrees and instead of calling 'create()' it calls
+'dupTree' on them... cloning the whole
+'processing-wise-uninteresting' subtree.
+
+Practical application I'm dealing with is creating a
+concrete tree from a code template that given values
+of some constants at runtime, generates different code
+(like an uber macro): eg
+
+@VAR i; // Compile time loop variable
+@CONST N; // User specifies value at compile time
+
+@IF(N == 0)
+int a;
+a = 0;
+@ELSE
+int a[N];
+
+@FOR(i = 0; i &lt; N; i = i + 1)
+   a[i] = 0;
+@ENDFOR
+
+@ENDIF
+
+given value N=3, it will generate:
+
+int a[3];
+a[0] = 0;
+a[1] = 0;
+a[2] = 0;
+
+and given N=0, it will generate:
+int a;
+a = 0;
+
+
+So a number of nodes in parse AST get deleted (the
+macro nodes) and a number of nodes get added.
+
+&gt;<i> Seems like you'll have a hard time fitting 500M
+</I>&gt;<i> nodes in memory.  1  
+</I>&gt;<i> 32 bit word per node would already be 4G of RAM. ;) 
+</I>&gt;<i> Are you going to  
+</I>&gt;<i> marshall these into/out of memory like virtual
+</I>&gt;<i> memory?
+</I>
+One of our product is already hitting 3G roof (upper
+1G is reserved for kernel, so unavailable on 32bit
+systems). My nodes are light-weight (payload in text
+field) and I plan to write/use a small objectDB for
+it. However, the pain is that most DBs' performance is
+a function of # of records and throwing 50M recodrs at
+them is not pretty! However, after some sort of
+packing and stuff, I expect to transparently implement
+on-demand loading and storing of nodes thanks to
+excellent architecture of ANTLR. (I have a small
+prototype working)
+
+&gt;<i> &gt; Basically, what I'm looking for is a full blown
+</I>&gt;<i> ANTLR
+</I>&gt;<i> &gt; tree-parsing stuff that whould make writing native
+</I>&gt;<i> &gt; code (visitors etc) as un-necessary as can be...
+</I>&gt;<i> Tree
+</I>&gt;<i> &gt; parser should be a full blown declarative language
+</I>&gt;<i> to
+</I>&gt;<i> &gt; process and manipulate trees in a language
+</I>&gt;<i> agnostic
+</I>&gt;<i> &gt; way.
+</I>&gt;<i> 
+</I>&gt;<i> That is my goal.  How much RAM does each node take
+</I>&gt;<i> for you?
+</I>
+~32 bytes, But I have kept min RAM requirements fairly
+low.  Due to factories, I can change node types from
+CommonAST to DBAST on the fly :-) And a nice node
+creation algorithm makes caching/purging really
+work... no issues on that front. 
+
+&gt;<i> eeewwww! ;)  Down with anything specified in XML
+</I>&gt;<i> that a human has to  
+</I>&gt;<i> touch. ;)
+</I>
+Ouch. The goal is to provide a declarative query/path
+language... on second thoughts, I guess existing ANTLR
+syntax is powerful enough to get the job done... I'll
+have to research more to come up with convinving
+arguments for/against the idea.
+
+Akhilesh
+
+
+
+		
+__________________________________ 
+Discover Yahoo! 
+Stay in touch with email, IM, photo sharing and more. Check it out! 
+<A HREF="http://discover.yahoo.com/stayintouch.html">http://discover.yahoo.com/stayintouch.html</A>
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="012831.html">[antlr-interest] ANTLR v3 tree construction :)
+</A></li>
+	<LI>Next message: <A HREF="012838.html">[antlr-interest] Learning quickly....need recommendations
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#12834">[ date ]</a>
+              <a href="thread.html#12834">[ thread ]</a>
+              <a href="subject.html#12834">[ subject ]</a>
+              <a href="author.html#12834">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

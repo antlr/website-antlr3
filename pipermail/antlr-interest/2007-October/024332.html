@@ -1,0 +1,187 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Lexer bug? (with test cases!)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Lexer%20bug%3F%20%28with%20test%20cases%21%29&In-Reply-To=%3C20071023121700.EE45411EB87%40www.antlr.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="024298.html">
+   <LINK REL="Next"  HREF="024333.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Lexer bug? (with test cases!)</H1>
+    <B>Gavin Lambert</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Lexer%20bug%3F%20%28with%20test%20cases%21%29&In-Reply-To=%3C20071023121700.EE45411EB87%40www.antlr.org%3E"
+       TITLE="[antlr-interest] Lexer bug? (with test cases!)">antlr at mirality.co.nz
+       </A><BR>
+    <I>Tue Oct 23 05:16:36 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="024298.html">[antlr-interest] Lexer bug?
+</A></li>
+        <LI>Next message: <A HREF="024333.html">[antlr-interest] Passing parameters to lexer grammars.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24332">[ date ]</a>
+              <a href="thread.html#24332">[ thread ]</a>
+              <a href="subject.html#24332">[ subject ]</a>
+              <a href="author.html#24332">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>At 19:21 22/10/2007, Loring Craymer wrote:
+ &gt;Um--I don't think that this is quite right.  ANTLR 3 has an
+ &gt;inelegant tendency to make k=1 decisions when it should not.
+ &gt;Specifically:  any time there is an epsilon alternative--as in
+ &gt;FRACTION?--ANTLR tends to make a k=1 decision, as in &quot;I see a 
+'.';
+ &gt;therefore, this is a FRACTION&quot; in Austin's NUMBER rule.  From my 
+
+ &gt;perspective, this is probably a bug in the LL* implementation: a 
+
+ &gt;lookahead DFA should be generated for such cases (to replace the 
+
+ &gt;&quot;if (LA(1) == '.') mFRACTION()&quot;) that does the right thing.
+[...]
+ &gt;If the FRACTION rule is inlined, ANTLR 3 will probably do the 
+right
+ &gt;thing (I have not tested this example, but have had to resort to 
+
+ &gt;inlining in other cases).  Again, this is indicative that Austin 
+is
+ &gt;correct in his assertion that this is a bug:  there should be no 
+
+ &gt;difference between rule invocations and the equivalent inlined
+ &gt;token or character sequences.
+
+Just to follow up on this, I ran a few tests just now (against 
+3.0.1) and inlining it doesn't help.  Here's a minimal 
+reproduction grammar illustrating the problem:
+
+lexer grammar test;
+NUMBER: ('0'..'9')+ ('.' ('0'..'9')+)?;
+OTHER: .;
+
+Given the input sequence &quot;10..30&quot;, the lexer *should* produce 
+&quot;NUMBER[10] OTHER[.] OTHER[.] NUMBER[30]&quot;, but it doesn't.  (I'm 
+not quite sure what it does do, since there aren't really any 
+facilities at the moment for debugging lexers short of writing 
+some custom code, and I didn't have that much spare time.)
+
+Looking at the generated code for this, right after matching the 
+first set of digits it has this code:
+
+             // test.g:4:16: ( '.' ( '0' .. '9' )+ )?
+             int alt3=2;
+             int LA3_0 = input.LA(1);
+
+             if ( (LA3_0=='.') ) {
+                 alt3=1;
+             }
+             switch (alt3) {
+                 case 1 :
+                     // 
+D:\\Programming\\antlr\\tests\\test4.g:4:17: '.' ( '0' .. '9' )+
+                     {
+                     match('.');
+                     // 
+D:\\Programming\\antlr\\tests\\test4.g:4:21: ( '0' .. '9' )+
+                     int cnt2=0;
+                     loop2:
+                     do {
+                         int alt2=2;
+                         int LA2_0 = input.LA(1);
+
+                         if ( ((LA2_0&gt;='0' &amp;&amp; LA2_0&lt;='9')) ) {
+                             alt2=1;
+                         }
+
+
+                         switch (alt2) {
+                     	case 1 :
+                     	    // 
+D:\\Programming\\antlr\\tests\\test4.g:4:22: '0' .. '9'
+                     	    {
+                     	    matchRange('0','9');
+
+                     	    }
+                     	    break;
+
+                     	default :
+                     	    if ( cnt2 &gt;= 1 ) break loop2;
+                                 EarlyExitException eee =
+                                     new EarlyExitException(2, 
+input);
+                                 throw eee;
+                         }
+                         cnt2++;
+                     } while (true);
+                     }
+                     break;
+             }
+
+(And yes, the indentation is a bit messed up.  This is how it 
+appeared in ANTLRworks though.)
+
+Anyway, looking at this it's clear to see that it examines only 
+one character of lookahead and basically decides that if there's a 
+dot then the entire optional clause must be present -- despite the 
+&quot;minimal satisfying input&quot; for that clause being a dot followed by 
+at least one digit.  So its lookahead is clearly insufficient for 
+the task.  (It would have been right if that were a * or ? instead 
+of a +, though.)
+
+Interestingly, it sometimes seems to get it right.  For example, 
+in this test grammar:
+
+lexer grammar test2;
+NUMBER: ('+' | '-')? ('0'..'9')+ ('.' ('0'..'9')+)?;
+OTHER: .;
+
+... the mTokens function does up to two characters of lookahead 
+(if the first characters is a digit, then it's a NUMBER, otherwise 
+if the first character is a plus or minus, *and* the second 
+character is a digit, then it's a NUMBER, otherwise it's an 
+OTHER), which is perfectly correct.  But then *this* grammar:
+
+lexer grammar test3;
+ONE	: 'one';
+TWO : 'two';
+OTHER: .;
+
+... is wrong again.  Here, it also tests up to two characters of 
+lookahead, which means that the input &quot;onf&quot; will be wrongly 
+interpreted as a ONE and will produce an error rather than 
+generating three OTHER tokens.
+
+</PRE>
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="024298.html">[antlr-interest] Lexer bug?
+</A></li>
+	<LI>Next message: <A HREF="024333.html">[antlr-interest] Passing parameters to lexer grammars.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24332">[ date ]</a>
+              <a href="thread.html#24332">[ thread ]</a>
+              <a href="subject.html#24332">[ subject ]</a>
+              <a href="author.html#24332">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

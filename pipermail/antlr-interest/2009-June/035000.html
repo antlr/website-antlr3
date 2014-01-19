@@ -1,0 +1,253 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] incorrect order for executing actions?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20incorrect%20order%20for%20executing%20actions%3F&In-Reply-To=%3CC13AF031-5182-401D-A644-DD9AC75A47D1%40cs.kuleuven.be%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="034998.html">
+   <LINK REL="Next"  HREF="035001.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] incorrect order for executing actions?</H1>
+    <B>Marko van Dooren</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20incorrect%20order%20for%20executing%20actions%3F&In-Reply-To=%3CC13AF031-5182-401D-A644-DD9AC75A47D1%40cs.kuleuven.be%3E"
+       TITLE="[antlr-interest] incorrect order for executing actions?">Marko.vanDooren at cs.kuleuven.be
+       </A><BR>
+    <I>Thu Jun 25 14:20:42 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="034998.html">[antlr-interest] Question about CommonTokens in Java Hashmaps
+</A></li>
+        <LI>Next message: <A HREF="035001.html">[antlr-interest] incorrect order for executing actions?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#35000">[ date ]</a>
+              <a href="thread.html#35000">[ thread ]</a>
+              <a href="subject.html#35000">[ subject ]</a>
+              <a href="author.html#35000">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+I use ANTLR to instantiate a metamodel of Java by calling the  
+appropriate constructors in actions. Sometimes, I must pass on an  
+expression to other rules using dynamic scopes. But in the example  
+below, which is based on the Java.g grammar on your website, things go  
+wrong. I have removed all subrules that are not relevant for the  
+problem.
+
+More specifically, the action of 'selector' , which creates an array  
+access expression, is executed (indicating that state.backtracking ==  
+0), but it results in a NullPointerException because the target field  
+of TargetScope is null. That field, however, is set in the rule of  
+'unaryExpressionNotPlusMinus', in the action after 'prim=primary'.  At  
+that place, the element that is used to set TargetScope::target is  
+checked, and an exception is thrown if it is null. That is also the  
+only place where 'selector' is used. This means that the action in  
+'unaryExpressionNotPlusMinus' was not executed (backtracking != 0),  
+but the action in 'selector' was executed (backtracking == 0). Is that  
+supposed to happen? It seems weird to me. I have included the  
+stacktrace of the parser, which shows that no synpred methods were  
+executed in between, and they seem to be the only methods that modify  
+the backtracking field, and they always perform a decrement before the  
+exit.
+
+Can somebody help me to solve this problem? I could introduce a  
+factory interface with a 'Expression setTarget(...)' method and return  
+factory objects instead of directly returning expressions, but that  
+seems to defeat the purpose of having dynamic scopes. I would also  
+want to avoid inlining because I also use the TargetScope in a number  
+of other places where the 'usage dependencies' are much more  
+complicated.
+
+If you want to, you can download the complete Java.g file at <A HREF="http://www.cs.kuleuven.be/~marko/Java.g">http://www.cs.kuleuven.be/~marko/Java.g</A> 
+. If you want to compile the parser, you'll need to check out the  
+following git repositories (and some help from me to sort out the  
+classpath ;) :
+<A HREF="http://www.cs.kuleuven.be/~marko/gitroot/code/chameleon.git">http://www.cs.kuleuven.be/~marko/gitroot/code/chameleon.git</A>
+<A HREF="http://www.cs.kuleuven.be/~marko/gitroot/code/chameleon-support.git">http://www.cs.kuleuven.be/~marko/gitroot/code/chameleon-support.git</A>
+<A HREF="http://www.cs.kuleuven.be/~marko/gitroot/code/jnome.git">http://www.cs.kuleuven.be/~marko/gitroot/code/jnome.git</A>  (this is the  
+Java metamodel which includes Java.g)
+<A HREF="http://www.cs.kuleuven.be/~marko/gitroot/code/rejuse.git">http://www.cs.kuleuven.be/~marko/gitroot/code/rejuse.git</A>
+
+Kind regards,
+
+Marko van Dooren
+
+
+
+
+
+
+scope TargetScope {
+   InvocationTarget target;
+}
+
+unaryExpressionNotPlusMinus returns [Expression element]
+scope TargetScope;
+     :   prim=primary
+            {check_null(prim.element);  
+$TargetScope::target=prim.element; retval.element=prim.element;}
+         (sel=selector
+            {$TargetScope::target=sel.element; retval.element =  
+sel.element;}
+         )*
+         (
+            '++' {retval.element = new PostfixOperatorInvocation(&quot;++&quot;,  
+retval.element);}
+          | '--' {retval.element = new PostfixOperatorInvocation(&quot;--&quot;,  
+retval.element);}
+         )?
+     ;
+
+
+
+// NEEDS_TARGET
+selector returns [Expression element]
+	:	
+        '[' arrex=expression ']'
+           {retval.element = new ArrayAccessExpression((Expression) 
+$TargetScope::target);
+            ((ArrayAccessExpression)retval.element).addIndex(new  
+FilledArrayIndex(arrex.element));
+           }
+	;
+
+
+
+
+
+
+
+46 Parsing /Users/marko/git/jnome/testsource/jutil/src/org/jutil/java/ 
+collections/SkipList.java
+java.lang.NullPointerException
+	at  
+jnome 
+.core 
+.expression.ArrayAccessExpression.setTarget(ArrayAccessExpression.java: 
+38)
+	at  
+jnome 
+.core 
+.expression.ArrayAccessExpression.&lt;init&gt;(ArrayAccessExpression.java:27)
+	at jnome.input.parser.JavaParser.selector(JavaParser.java:16037)
+	at  
+jnome 
+.input.parser.JavaParser.unaryExpressionNotPlusMinus(JavaParser.java: 
+15715)
+	at jnome.input.parser.JavaParser.castExpression(JavaParser.java:16185)
+	at  
+jnome 
+.input.parser.JavaParser.unaryExpressionNotPlusMinus(JavaParser.java: 
+15674)
+	at jnome.input.parser.JavaParser.unaryExpression(JavaParser.java:15548)
+	at  
+jnome.input.parser.JavaParser.multiplicativeExpression(JavaParser.java: 
+15217)
+	at jnome.input.parser.JavaParser.additiveExpression(JavaParser.java: 
+15065)
+	at jnome.input.parser.JavaParser.shiftExpression(JavaParser.java:14796)
+	at jnome.input.parser.JavaParser.relationalExpression(JavaParser.java: 
+14511)
+	at jnome.input.parser.JavaParser.instanceOfExpression(JavaParser.java: 
+14418)
+	at jnome.input.parser.JavaParser.equalityExpression(JavaParser.java: 
+14271)
+	at jnome.input.parser.JavaParser.andExpression(JavaParser.java:14165)
+	at  
+jnome.input.parser.JavaParser.exclusiveOrExpression(JavaParser.java: 
+14062)
+	at  
+jnome.input.parser.JavaParser.inclusiveOrExpression(JavaParser.java: 
+13959)
+	at  
+jnome.input.parser.JavaParser.conditionalAndExpression(JavaParser.java: 
+13859)
+	at  
+jnome.input.parser.JavaParser.conditionalOrExpression(JavaParser.java: 
+13759)
+	at  
+jnome.input.parser.JavaParser.conditionalExpression(JavaParser.java: 
+13655)
+	at jnome.input.parser.JavaParser.expression(JavaParser.java:13270)
+	at jnome.input.parser.JavaParser.expression(JavaParser.java:13292)
+	at jnome.input.parser.JavaParser.statementExpression(JavaParser.java: 
+13150)
+	at jnome.input.parser.JavaParser.statement(JavaParser.java:11885)
+	at jnome.input.parser.JavaParser.blockStatement(JavaParser.java:10875)
+	at jnome.input.parser.JavaParser.constructorBody(JavaParser.java:8334)
+	at  
+jnome 
+.input.parser.JavaParser.constructorDeclaratorRest(JavaParser.java:5874)
+	at  
+jnome.input.parser.JavaParser.constructorDeclaration(JavaParser.java: 
+3952)
+	at jnome.input.parser.JavaParser.memberDecl(JavaParser.java:3770)
+	at jnome.input.parser.JavaParser.classBodyDeclaration(JavaParser.java: 
+3584)
+	at jnome.input.parser.JavaParser.classBody(JavaParser.java:3274)
+	at  
+jnome.input.parser.JavaParser.normalClassDeclaration(JavaParser.java: 
+1954)
+	at jnome.input.parser.JavaParser.classDeclaration(JavaParser.java:1762)
+	at jnome.input.parser.JavaParser.memberDecl(JavaParser.java:3804)
+	at jnome.input.parser.JavaParser.classBodyDeclaration(JavaParser.java: 
+3584)
+	at jnome.input.parser.JavaParser.classBody(JavaParser.java:3274)
+	at  
+jnome.input.parser.JavaParser.normalClassDeclaration(JavaParser.java: 
+1954)
+	at jnome.input.parser.JavaParser.classDeclaration(JavaParser.java:1762)
+	at  
+jnome 
+.input.parser.JavaParser.classOrInterfaceDeclaration(JavaParser.java: 
+1239)
+	at jnome.input.parser.JavaParser.typeDeclaration(JavaParser.java:1135)
+	at jnome.input.parser.JavaParser.compilationUnit(JavaParser.java:824)
+	at jnome.input.JavaMetaModelFactory.parse(JavaMetaModelFactory.java: 
+540)
+	at  
+jnome.input.JavaMetaModelFactory.lexAndParse(JavaMetaModelFactory.java: 
+480)
+	at  
+jnome 
+.input.JavaMetaModelFactory.addFileToGraph(JavaMetaModelFactory.java: 
+402)
+	at  
+jnome 
+.input.JavaMetaModelFactory.getMetaModel(JavaMetaModelFactory.java:101)
+	at jnome.input.JavaMetaModelFactory.main(JavaMetaModelFactory.java:576)
+
+
+Disclaimer: <A HREF="http://www.kuleuven.be/cwis/email_disclaimer.htm">http://www.kuleuven.be/cwis/email_disclaimer.htm</A>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20090625/a4823eb7/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20090625/a4823eb7/attachment.html</A> 
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="034998.html">[antlr-interest] Question about CommonTokens in Java Hashmaps
+</A></li>
+	<LI>Next message: <A HREF="035001.html">[antlr-interest] incorrect order for executing actions?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#35000">[ date ]</a>
+              <a href="thread.html#35000">[ thread ]</a>
+              <a href="subject.html#35000">[ subject ]</a>
+              <a href="author.html#35000">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

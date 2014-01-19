@@ -1,0 +1,192 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Return values from listener methods (was &quot;Appropriate use of honey badger listeners&quot;)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Return%20values%20from%20listener%20methods%20%28was%0A%20%22Appropriate%20use%20of%20honey%20badger%20listeners%22%29&In-Reply-To=%3CCABJr57AQCC8qjkVw_4j6%3DVEJqaRtBP1eC9h9SLD-_52wrScUjg%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="043801.html">
+   <LINK REL="Next"  HREF="043816.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Return values from listener methods (was &quot;Appropriate use of honey badger listeners&quot;)</H1>
+    <B>Oliver Zeigermann</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Return%20values%20from%20listener%20methods%20%28was%0A%20%22Appropriate%20use%20of%20honey%20badger%20listeners%22%29&In-Reply-To=%3CCABJr57AQCC8qjkVw_4j6%3DVEJqaRtBP1eC9h9SLD-_52wrScUjg%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Return values from listener methods (was &quot;Appropriate use of honey badger listeners&quot;)">oliver.zeigermann at gmail.com
+       </A><BR>
+    <I>Sat Jan 14 04:31:03 PST 2012</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="043801.html">[antlr-interest] Report of GUI's death greatly exaggerated
+</A></li>
+        <LI>Next message: <A HREF="043816.html">[antlr-interest] Return values from listener methods (was	&quot;Appropriate use of honey badger listeners&quot;)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#43812">[ date ]</a>
+              <a href="thread.html#43812">[ thread ]</a>
+              <a href="subject.html#43812">[ subject ]</a>
+              <a href="author.html#43812">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I agree to what Sam says. Keeping it simple and using the means Java
+provides anyway is the solution to me. I think ANTLR could introduce a
+sensible general abstraction to this. Rahter provide best practices..
+
+I have an expression parser that does not generate a result, but
+rather a heterogeneous tree using exactly the same stack stuff as Sam
+only that I put Expression objects on a stack.
+
+Heterogeneous trees could also hold a reference to the parse tree they
+were created from. In case you need them later.
+
+My code that covers creating data structures from parses using
+multiply approaches has grown a little bit too large to share on a
+mailing list. If anyone is interested, I could set up a project
+somewhere. For now, here is a fraction of my expression listener
+
+
+	static class ExpressionASTConstructorListener extends BlankExprV4Listener {
+
+		private final Stack&lt;Expression&gt; stack = new Stack&lt;Expression&gt;();
+
+		@Override
+		public void exitRule(atomContext ctx) {
+			final Number number = new Number(ctx._tINT.getText());
+			stack.push(number);
+		}
+
+		@Override
+		public void exitRule(mulExprContext ctx) {
+			final Expression expr;
+			Expression leftExpr = stack.pop();
+			String op = ctx.mdop.op.getText();
+			Expression rightExpr = stack.pop();
+			Operation operation = new Operation(op, leftExpr, rightExpr);
+			expr = operation;
+			stack.push(expr);
+		}
+
+		@Override
+		public void exitRule(addExprContext ctx) {
+			final Expression expr;
+			Expression leftExpr = stack.pop();
+			String op = ctx.pmop.op.getText();
+			Expression rightExpr = stack.pop();
+			Operation operation = new Operation(op, leftExpr, rightExpr);
+			expr = operation;
+			stack.push(expr);
+		}
+	}
+
+for a grammar like this
+
+expr
+:<i> '(' e=expr ')' -&gt; parenExpr
+</I>|<i> left=expr mdop=mdOp right=expr -&gt; mulExpr
+</I>|<i> left=expr pmop=pmOp right=expr -&gt; addExpr
+</I>|<i> atom -&gt; atomExpr
+</I>;
+
+- Oliver
+
+2012/1/13 Terence Parr &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">parrt at cs.usfca.edu</A>&gt;:
+&gt;<i>
+</I>&gt;<i> On Jan 12, 2012, at 1:59 PM, Sam Harwell wrote:
+</I>&gt;<i>
+</I>&gt;&gt;<i> I've used listeners for several tasks in ANTLRWorks 2 and haven't
+</I>&gt;&gt;<i> encountered any problems in returning values which I wasn't able to work
+</I>&gt;&gt;<i> around in a clean manner.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> For the case of expressions like your example below, once you realize that
+</I>&gt;&gt;<i> exitRule behaves as an RPN calculator you just use a simple stack to track
+</I>&gt;&gt;<i> computed results. For other tasks I've used stacks, flags, counters, or
+</I>&gt;&gt;<i> whatever else was relevant to the specific task.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> For a simple calculator, you might have this:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> public void exitRule(multContext context) {
+</I>&gt;&gt;<i> &#160; &#160;double right = stack.pop();
+</I>&gt;&gt;<i> &#160; &#160;double left = stack.pop();
+</I>&gt;&gt;<i> &#160; &#160;stack.push(left * right);
+</I>&gt;&gt;<i> }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> If you don't mind reversing the operand order of a commutative operator, you
+</I>&gt;&gt;<i> could also write:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> public void exitRule(multContext context) {
+</I>&gt;&gt;<i> &#160; &#160;stack.push(stack.pop() * stack.pop());
+</I>&gt;&gt;<i> }
+</I>&gt;<i>
+</I>&gt;<i> This seems like a good solution for expressions. I wonder if we can come up with a solution that users don't have to manage&#8230;
+</I>&gt;<i>
+</I>&gt;<i> Ter
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I></PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="043801.html">[antlr-interest] Report of GUI's death greatly exaggerated
+</A></li>
+	<LI>Next message: <A HREF="043816.html">[antlr-interest] Return values from listener methods (was	&quot;Appropriate use of honey badger listeners&quot;)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#43812">[ date ]</a>
+              <a href="thread.html#43812">[ thread ]</a>
+              <a href="subject.html#43812">[ subject ]</a>
+              <a href="author.html#43812">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

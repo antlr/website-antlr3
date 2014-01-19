@@ -1,0 +1,190 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] problem in displayRecognitionError() in	antlr2baserecognizer.c
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20problem%20in%20displayRecognitionError%28%29%20in%0A%09antlr2baserecognizer.c&In-Reply-To=%3C79118B9FE8CE8E49B0D71964A79CB647026CB42B%40dekomplm002.net.plm.eds.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="034858.html">
+   <LINK REL="Next"  HREF="034831.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] problem in displayRecognitionError() in	antlr2baserecognizer.c</H1>
+    <B>Xie, Linlin</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20problem%20in%20displayRecognitionError%28%29%20in%0A%09antlr2baserecognizer.c&In-Reply-To=%3C79118B9FE8CE8E49B0D71964A79CB647026CB42B%40dekomplm002.net.plm.eds.com%3E"
+       TITLE="[antlr-interest] problem in displayRecognitionError() in	antlr2baserecognizer.c">linlin.xie at siemens.com
+       </A><BR>
+    <I>Mon Jun 15 04:19:45 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="034858.html">[antlr-interest] problem in displayRecognitionError() in	antlr2baserecognizer.c
+</A></li>
+        <LI>Next message: <A HREF="034831.html">[antlr-interest] Getting line and column numbers from a	CommonTreeNodeStream
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#34905">[ date ]</a>
+              <a href="thread.html#34905">[ thread ]</a>
+              <a href="subject.html#34905">[ subject ]</a>
+              <a href="author.html#34905">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Jim,
+
+ 
+
+Thanks for your reply. 
+
+ 
+
+1.       I changed my grammar to be the format you gave to get more
+meaningful error message, but it still failed to enter the
+mismatched_set_exception, instead it incurred
+no_viable_alternative_exception... Did I do anything wrong? Or how
+exactly the mismatched set exception can be incurred?
+
+2.       There is no embedded SKIP() method in c antlr lexer, I used
+&quot;EMIT()&quot;, apparently it does the same thing. Good to know that it's
+another way of suppressing lexer error report in addition to assigning a
+function that does nothing to ReportError of the lexer.
+
+ 
+
+Regards,
+
+Linlin
+
+ 
+
+From: Jim Idle [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">jimi at temporal-wave.com</A>] 
+Sent: 11 June 2009 19:30
+To: Xie, Linlin
+Cc: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>; Fitt, Andrew; Hamid, Nusrat
+Subject: Re: problem in displayRecognitionError() in
+antlr2baserecognizer.c
+
+ 
+
+Xie, Linlin wrote: 
+
+Hi Jim,
+
+ 
+
+Thanks for your reply. We finally figure out that large number of
+expecting is actually -1, which is EOF. 
+
+Yes - I figured as much. 
+
+
+
+I guess this would rule out the possibility of a bug in antlr, if we
+don't speak of the appropriateness of the message. In the use case I
+mentioned in my last email, I would think start(Rule2), start(Rule3) and
+; all should be the expected tokens, instead of EOF. Do you think if
+there is anything antlr can do to improve the error messages to make
+them more relevant? Or should I improve my grammar to get more
+appropriate error messages, and how?
+
+You have to write your own message display routines that make sense with
+your grammar. The default ones do check for EOF though. Your issue is
+that because all the things leading up to EOF are optional, ANTLR
+assumes that they are just not present:
+
+Say start(rule2) is FOO and start(rule3) is BAR.
+
+Then after rule1 it says:
+
+No FOO is there, so go past Rule2, it isn't present
+No BAR is there so go past Rule3, it isn't present
+
+Now, what is the start set that can come next? Only EOF, so match EOF -
+oh it failed, so the expecting token is -1 for EOF.
+
+However, if you do this:
+
+:<i> rule1
+</I>    (   rule2
+          (
+               rule3 EOF
+             | EOF
+          )
+       | rule3 EOF
+       | EOF
+    )
+;
+
+Now, after rule1 has parsed, the followset will be FOO | BAR|EOF so you
+will get the error straight away. After rule2 is parsed, followset will
+be BAR|EOF so you will get the error straight away, after rule3, only
+EOF is viable.
+
+
+
+ 
+
+Also I can see when the displayRecognitionError() checks the recognizer
+type, it only considers either parser or tree parser, why is lexer not
+considered here?
+
+1) Lexers can only say: &quot;Not expecting character 'y' here. and so
+antlr3lexer.c has its own handler. You should install your own handler
+remember?
+2) If your lexer is throwing errors, then it is broken really. It should
+be coded to cope with anything one way or another. However, sometimes
+that is difficult of course. You need to make sure that your lexer rules
+can terminate just about anywhere, but throw your own (descriptive
+error) about any missing pieces. Then you have a final lexer rule:
+
+ANY : . { SKIP(); log error about unknown character being ignored.
+
+What this does is then move all your error handling up to the parser,
+where you have better context. Similarly, you should move any errors
+that you can out the parser and in to the tree parser, where once again
+you have better context. The classic example is trying to code the
+number of parameters that any particular function can take. Don;t do
+that, accept any, including 0, then check for validity in your first
+tree walk.
+
+
+
+I can see that a lexer error is considered a No Via Alt parser
+exception, but there is still lexer error report from antlr, where can I
+find the lexer error report code? Or how can I intercept the lexer error
+like I do with the parser error report?
+
+Intercept the same way, install your own displayRecognitionError, but
+make it say &quot;Internal compiler error - lexer rules bad :-(  all your
+base belong to us&quot;
+
+Jim
+
+
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20090615/f631ad42/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20090615/f631ad42/attachment.html</A> 
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="034858.html">[antlr-interest] problem in displayRecognitionError() in	antlr2baserecognizer.c
+</A></li>
+	<LI>Next message: <A HREF="034831.html">[antlr-interest] Getting line and column numbers from a	CommonTreeNodeStream
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#34905">[ date ]</a>
+              <a href="thread.html#34905">[ thread ]</a>
+              <a href="subject.html#34905">[ subject ]</a>
+              <a href="author.html#34905">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

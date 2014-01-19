@@ -1,0 +1,148 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Re: patching a tree (recoverability)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20patching%20a%20tree%20%28recoverability%29&In-Reply-To=Pine.LNX.4.44.0411191423450.5076-100000%40g4.pauljlucas.org">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="010279.html">
+   <LINK REL="Next"  HREF="010286.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Re: patching a tree (recoverability)</H1>
+    <B>lgcraymer</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20patching%20a%20tree%20%28recoverability%29&In-Reply-To=Pine.LNX.4.44.0411191423450.5076-100000%40g4.pauljlucas.org"
+       TITLE="[antlr-interest] Re: patching a tree (recoverability)">lgc at mail1.jpl.nasa.gov
+       </A><BR>
+    <I>Fri Nov 19 17:17:01 PST 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="010279.html">[antlr-interest] patching a tree (recoverability)
+</A></li>
+        <LI>Next message: <A HREF="010286.html">[antlr-interest] StringTemplate and newlines
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#10283">[ date ]</a>
+              <a href="thread.html#10283">[ thread ]</a>
+              <a href="subject.html#10283">[ subject ]</a>
+              <a href="author.html#10283">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+
+--- In <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>, &quot;Paul J. Lucas&quot;
+&lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">pauljlucas at m...</A>&gt; wrote:
+&gt;<i> 	Suppose I want to parse and compile as much as possible.  An
+</I>&gt;<i> 	example is having:
+</I>&gt;<i> 
+</I>&gt;<i> 		funcDecl
+</I>&gt;<i> 		    : DECLARE! FUNCTION^ IDENT '('! paramList ')'! funcBody ';'!
+</I>&gt;<i> 		    	{
+</I>&gt;<i> 			    ##.setType( FUNC_DECL );
+</I>&gt;<i> 			}
+</I>&gt;<i> 		    ;
+</I>&gt;<i> 
+</I>&gt;<i> 	I want to recover if something doesn't parse in funcBody and
+</I>&gt;<i> 	produce a tree not having a body.  The reason is that the
+</I>&gt;<i> 	compiler (tree-walker) could compile the program from the AST as
+</I>&gt;<i> 	much as possible.  In this case, it could at least enter the
+</I>&gt;<i> 	function signature for the failed-to-compile function into the
+</I>&gt;<i> 	symbol table so that some later function can call the failed
+</I>&gt;<i> 	function and not generate a &quot;function not declared&quot; error.
+</I>
+Recovery is your first tough problem.  ANTLR error handling will allow
+you to intercept the error within your grammar.  The next problem is
+to resynch the token stream.  If you are looking at a fragment A B C D
+and an error is thrown because C is unexpected, then you still have D
+to deal with if it was part of the syntactic construct being matched
+(that is, you need to throw away D because you can recognized E F G).
+ So you will usually need to consume a few tokens before getting back
+in synch.  Resynching is very syntax-dependent; if you look at
+antlr.g, you can see places where a few abortive attempts were made to
+achieve grammar error recovery.
+
+&gt;<i> 	But how to communicate the &quot;failed-ness&quot; from the parser to the
+</I>&gt;<i> 	tree-parser?  Is there a standard-practice &quot;ANTLR way&quot; to do
+</I>&gt;<i> 	this?  If not, I've been thinking along the lines of
+</I>&gt;<i> 	introducing an &quot;ERROR&quot; token (yes, like yacc) and &quot;patching&quot; it
+</I>&gt;<i> 	into the tree.
+</I>&gt;<i>
+</I>&gt;<i> 		funcBody
+</I>&gt;<i> 		    : '{'! expr '}'!
+</I>&gt;<i> 		    ;
+</I>&gt;<i> 		    exception
+</I>&gt;<i> 		    catch [ TokenStreamRecognitionException e ] {
+</I>&gt;<i> 		    	## = #([ERROR,&quot;ERROR&quot;]);
+</I>&gt;<i> 		    }
+</I>&gt;<i> 
+</I>&gt;<i> 	Then in the tree-parser I can do:
+</I>&gt;<i> 
+</I>&gt;<i> 		functionDecl
+</I>&gt;<i> 		    : #( FUNC_DECL IDENT paramList
+</I>&gt;<i> 			( funcBody
+</I>&gt;<i> 			    {
+</I>&gt;<i> 			    	// The normal case
+</I>&gt;<i> 			    }
+</I>&gt;<i> 			| ERROR
+</I>&gt;<i> 			    {
+</I>&gt;<i> 			    	// At least enter the signature into the
+</I>&gt;<i> 				// symbol table.
+</I>&gt;<i> 			    }
+</I>&gt;<i> 			)
+</I>&gt;<i> 		       )
+</I>&gt;<i> 		    ;
+</I>&gt;<i> 
+</I>&gt;<i> 	Comments?
+</I>
+This could work--it depends very much on the language problem you are
+addressing.  In general, once you have managed to resynch the token
+stream, you are in unknown territory from an ANTLR perspective.
+
+--Loring
+
+&gt;<i> 	- Paul
+</I>
+
+
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+    <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+    <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+    <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="010279.html">[antlr-interest] patching a tree (recoverability)
+</A></li>
+	<LI>Next message: <A HREF="010286.html">[antlr-interest] StringTemplate and newlines
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#10283">[ date ]</a>
+              <a href="thread.html#10283">[ thread ]</a>
+              <a href="subject.html#10283">[ subject ]</a>
+              <a href="author.html#10283">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

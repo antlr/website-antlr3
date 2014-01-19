@@ -1,0 +1,223 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] i have a problem with multiplexing.Can anyone
+	help me?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20i%20have%20a%20problem%20with%20multiplexing.Can%20anyone%0A%09help%20me%3F&In-Reply-To=41FEE73D.000032.10851%40m164.163.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="011061.html">
+   <LINK REL="Next"  HREF="011063.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] i have a problem with multiplexing.Can anyone
+	help me?</H1>
+    <B>Dean Tribble</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20i%20have%20a%20problem%20with%20multiplexing.Can%20anyone%0A%09help%20me%3F&In-Reply-To=41FEE73D.000032.10851%40m164.163.com"
+       TITLE="[antlr-interest] i have a problem with multiplexing.Can anyone
+	help me?">tribble at e-dean.com
+       </A><BR>
+    <I>Tue Feb  1 01:50:11 PST 2005</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="011061.html">[antlr-interest] Lexer/Parser invocation
+</A></li>
+        <LI>Next message: <A HREF="011063.html">[antlr-interest] brief analysis of java.g's tree building in
+	2.x vs	proposed 3.0
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#11062">[ date ]</a>
+              <a href="thread.html#11062">[ thread ]</a>
+              <a href="subject.html#11062">[ subject ]</a>
+              <a href="author.html#11062">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I think that the problem in the code below is that you must pass
+getInputState() rather than selector to the newly created parser.
+Otherwise, they are not sharing the look ahead buffer.
+
+Three additional classes of problems I ran into were:
+
+- if the token sets are not compatible (i.e., common tokens need to be
+the same in all grammars) then you get strange results because a
+perfectly legitimate token in one lexer shows up as a strange token in
+another. You either need to explicitly declare some of the tokens in a
+common vocabulary, and make sure that all the grammars import the
+appropriate vocabularies.
+
+- look-ahead timing: the lexer lookahead and therefore the lexer actions
+happen before the corresponding parser actions. Thus, you could have
+tokens from one lexer being visible to the other parser. Unless you
+*relly* need a different identifier set, combine the grammars and just
+use separate lexers. I have a slightly different approach to rewind and
+such taht also help address the problem, which I will send to the list
+in the next few days (I just got this stuff working a few days ago).
+
+- it was not clear to me whether the production that invokes the other
+parser will end up with the other parser's result on the local stack. To
+eliminate this concern, I had something like:
+
+pattHole : ATCURLY!
+{ EParser p = new EParser(getInputState());
+p.pattern();
+## = p.getAST(); // get the production from the EParser to this parser.
+}
+&quot;}&quot;!
+;
+
+It may be that that falls out of the shared input state, however. I
+didn't figure out because I realized that changing to a single grammar
+on multiple lexers simplified things.
+
+&#186;&#206;&#179;&#172; wrote:
+
+&gt;<i> i've realized two separate grammars, one for java code analyse, the
+</I>&gt;<i> other for javadoc embedded in the java file. Then i try to link them
+</I>&gt;<i> together using the
+</I>&gt;<i> technology multiplexing. The critical parts are as follows:
+</I>&gt;<i> ---------- in java.g ------------------
+</I>&gt;<i> ...
+</I>&gt;<i>
+</I>&gt;<i> JAVADOC_OPEN: &quot;/**&quot;
+</I>&gt;<i> {
+</I>&gt;<i> selector.select(&quot;javadocLexer&quot;);
+</I>&gt;<i>
+</I>&gt;<i> // create a parser to handle the javadoc comment
+</I>&gt;<i> JavadocParser jdocparser = new JavadocParser(selector);
+</I>&gt;<i> jdocparser.comment();
+</I>&gt;<i> };
+</I>&gt;<i>
+</I>&gt;<i> ...
+</I>&gt;<i> ---------- in javadoc.g ------------------
+</I>&gt;<i> ...
+</I>&gt;<i>
+</I>&gt;<i> javadoc_comment
+</I>&gt;<i> : (options{greedy=true;}:STAR)*
+</I>&gt;<i> ( (AT)=&gt;AT javadoc_tag | description )
+</I>&gt;<i> javadoc_tags
+</I>&gt;<i> JAVADOC_CLOSE //here without EOF, and i believe no need
+</I>&gt;<i> ;
+</I>&gt;<i> ...
+</I>&gt;<i> ...
+</I>&gt;<i>
+</I>&gt;<i> JAVADOC_CLOSE: &quot;*/&quot; {selector.select(&quot;javaLexer&quot;);};
+</I>&gt;<i> ...
+</I>&gt;<i>
+</I>&gt;<i> ----------------------- Test.java---------------------------------
+</I>&gt;<i>
+</I>&gt;<i> import java.io.*;
+</I>&gt;<i> import antlr.CommonAST;
+</I>&gt;<i> import antlr.collections.AST;
+</I>&gt;<i> import antlr.debug.misc.ASTFrame;
+</I>&gt;<i> import java.util.*;
+</I>&gt;<i> import antlr.TokenStreamSelector;
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> class Test{
+</I>&gt;<i>
+</I>&gt;<i> public static void main(String[] args)
+</I>&gt;<i> {
+</I>&gt;<i> try {
+</I>&gt;<i> TokenStreamSelector selector = new TokenStreamSelector();
+</I>&gt;<i>
+</I>&gt;<i> JavaLexer mainLexer = new JavaLexer(
+</I>&gt;<i> new FileInputStream(args[0]));
+</I>&gt;<i> mainLexer.selector = selector;
+</I>&gt;<i>
+</I>&gt;<i> JavadocLexer docLexer =
+</I>&gt;<i> new JavadocLexer (mainLexer.getInputState());
+</I>&gt;<i> docLexer.selector = selector;
+</I>&gt;<i>
+</I>&gt;<i> selector.addInputStream(mainLexer, &quot;javaLexer&quot;);
+</I>&gt;<i> selector.addInputStream(docLexer, &quot;javadocLexer&quot;);
+</I>&gt;<i> selector.select(&quot;javaLexer&quot;);
+</I>&gt;<i>
+</I>&gt;<i> JavaParser parser = new JavaParser(selector);
+</I>&gt;<i> parser.compilationUnit();
+</I>&gt;<i>
+</I>&gt;<i> }catch(Exception e) {
+</I>&gt;<i> System.err.println(&quot;exception: &quot;+e);
+</I>&gt;<i> }
+</I>&gt;<i> }
+</I>&gt;<i> }
+</I>&gt;<i> ---------- java file for
+</I>&gt;<i> testing-------------------------------------------
+</I>&gt;<i> package com;
+</I>&gt;<i>
+</I>&gt;<i> import java.io.*;
+</I>&gt;<i>
+</I>&gt;<i> //single-line comment
+</I>&gt;<i>
+</I>&gt;<i> /*multi-line comment*/
+</I>&gt;<i>
+</I>&gt;<i> public class A
+</I>&gt;<i> {
+</I>&gt;<i> public A()
+</I>&gt;<i> {
+</I>&gt;<i> }
+</I>&gt;<i>
+</I>&gt;<i> /**
+</I>&gt;<i> * javadoc comment
+</I>&gt;<i> *
+</I>&gt;<i> * @author hc
+</I>&gt;<i> * @version 1.0
+</I>&gt;<i> * @param i the first number
+</I>&gt;<i> * @param j the second number
+</I>&gt;<i> * @return the sum of two numbers
+</I>&gt;<i> * @cml my own defined javadoc tag for some special purpose
+</I>&gt;<i> */
+</I>&gt;<i> public int add(int i,int j)
+</I>&gt;<i> {
+</I>&gt;<i> return i+j;
+</I>&gt;<i> }
+</I>&gt;<i> }
+</I>&gt;<i> -----------------------------------------------------------------------------
+</I>&gt;<i> Then i got the error message:
+</I>&gt;<i> exception: line 24:5: expecting EOF, found 'public'
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> i've been bewildered by this problem for quite a few days and look
+</I>&gt;<i> forward to help.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> &#161;&#164;&#205;&#248;&#210;&#215;126&#211;&#202;&#207;&#228; --&#215;&#168;&#210;&#181;&#181;&#231;&#215;&#211;&#211;&#202;&#190;&#214; 1.5G&#191;&#213;&#188;&#228;,30&#213;&#215;&#184;&#189;&#188;&#254; <A HREF="http://www.126.com">http://www.126.com</A> &gt;&gt;&gt;
+</I>&gt;<i> &lt;<A HREF="http://www.126.com">http://www.126.com</A>&gt; 
+</I>
+
+</PRE>
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="011061.html">[antlr-interest] Lexer/Parser invocation
+</A></li>
+	<LI>Next message: <A HREF="011063.html">[antlr-interest] brief analysis of java.g's tree building in
+	2.x vs	proposed 3.0
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#11062">[ date ]</a>
+              <a href="thread.html#11062">[ thread ]</a>
+              <a href="subject.html#11062">[ subject ]</a>
+              <a href="author.html#11062">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,145 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Predicate hoisting pain
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Predicate%20hoisting%20pain&In-Reply-To=%3C49E36833.6020108%40lancaster.ac.uk%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="034043.html">
+   <LINK REL="Next"  HREF="034049.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Predicate hoisting pain</H1>
+    <B>Sam Barnett-Cormack</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Predicate%20hoisting%20pain&In-Reply-To=%3C49E36833.6020108%40lancaster.ac.uk%3E"
+       TITLE="[antlr-interest] Predicate hoisting pain">s.barnett-cormack at lancaster.ac.uk
+       </A><BR>
+    <I>Mon Apr 13 09:28:35 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="034043.html">[antlr-interest] Predicate hoisting pain
+</A></li>
+        <LI>Next message: <A HREF="034049.html">[antlr-interest] multi-line chat messages
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#34045">[ date ]</a>
+              <a href="thread.html#34045">[ thread ]</a>
+              <a href="subject.html#34045">[ subject ]</a>
+              <a href="author.html#34045">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Jim Idle wrote:
+&gt;<i> Sam Barnett-Cormack wrote:
+</I>&gt;&gt;<i> Jim Idle wrote:
+</I>&gt;&gt;&gt;<i> However, as you can obviously distinguish the cases at some point 
+</I>&gt;&gt;&gt;<i> higher up the rule chain, then if you wish to pursue this, then all 
+</I>&gt;&gt;&gt;<i> you need do is create a scope with your flag in it at a high enough 
+</I>&gt;&gt;&gt;<i> level, init it to the default case, then set/unset it as the rules 
+</I>&gt;&gt;&gt;<i> descend, then use it as the gated predicate in your rule above:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> highuprule
+</I>&gt;&gt;&gt;<i>     scope
+</I>&gt;&gt;&gt;<i>      { boolean os; }
+</I>&gt;&gt;&gt;<i>     @init { $highuprule::os = false; }
+</I>&gt;&gt;&gt;<i> : rule rule rule ... ;
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> ...
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> ruleX :  X  Y (Z { $highuprule::os = true; }  objectSetSpec)? // Z 
+</I>&gt;&gt;&gt;<i> present means flip the flag
+</I>&gt;&gt;&gt;<i> ;
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> objectSetSpec
+</I>&gt;&gt;&gt;<i>    : {$highuprule:os}?=&gt;additionalSetSpec
+</I>&gt;&gt;&gt;<i>    | something else
+</I>&gt;&gt;&gt;<i>    ;
+</I>&gt;&gt;<i> It's more that it would have to be changed on the way down the parse 
+</I>&gt;&gt;<i> tree, and changed back on the way back. So ruleX would be more like 
+</I>&gt;&gt;<i> (if this would work):
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> ruleX
+</I>&gt;&gt;<i> @init {
+</I>&gt;&gt;<i>   boolean os = $highuprule::os;
+</I>&gt;&gt;<i> }
+</I>&gt;&gt;<i>   : X Y ({$highuprule::os = true;} ruleZ {$highuprule::os = os;})?
+</I>&gt;&gt;<i>   ;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> If that makes any sense at all.... 
+</I>&gt;<i> 
+</I>&gt;<i> Yes, but so long as your scope is high enough up then it is fine. Also, 
+</I>&gt;<i> don't forget that scopes stack so if you need to remember state, then 
+</I>&gt;<i> you coudl do it in ruleZ.
+</I>
+Good point. I forgot about shared scope stacks.
+
+&gt;<i> Also, you should probably switch state in ruleZ and not in the caller, 
+</I>&gt;<i> using the @init and @after actions for ruleZ.
+</I>&gt;&gt;<i> it needs to be able to change it for the duration of ruleZ (and stuff 
+</I>&gt;&gt;<i> under ruleZ might change it as well for things under themselves) while 
+</I>&gt;&gt;<i> changing it back to whatever it was on entering ruleX after it 
+</I>&gt;&gt;<i> finishes with ruleZ. All assuming that X Y (ruleZ)? wouldn't be 
+</I>&gt;&gt;<i> ambiguous, of course.
+</I>&gt;<i> This is why you should really merge it all into the one rule that know 
+</I>&gt;<i> everything, then reject the invalid constructs later, so long as they 
+</I>&gt;<i> are syntactically sound. Your parser is there only to verify syntactic 
+</I>&gt;<i> structure, not to check that it is the right structure for the right place.
+</I>
+The thing is, in this case &quot;in the right place&quot; isn't just a case of 
+being the right type for what it's being assigned to, for instance - 
+it's a case of there being two very different constructs that occur in 
+very different places (except once, and that's a separate problem), 
+inside different syntactic constructs - there's precisely one place that 
+  both are allowed, and it's admittedly a pain in the but, but there's a 
+few solutions I'm considering. On the other hand, trying to combine the 
+two unambiguously would lead to an AST barely more useful than a flat 
+token stream, and the treewalker isn't going to be in that much of a 
+better position to handle semantics. The handling of the token stream 
+would be left to the post-parse semantic stage, which is much less 
+convenient for handling it (difference between hand-crafting parser in 
+Java and using ANTLR, essentially). The only compromise I can see would 
+be keeping in the specific rules and calling them as start rules on a 
+synthetic token stream, once everything else is on to true semantic stuff.
+
+Sam
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="034043.html">[antlr-interest] Predicate hoisting pain
+</A></li>
+	<LI>Next message: <A HREF="034049.html">[antlr-interest] multi-line chat messages
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#34045">[ date ]</a>
+              <a href="thread.html#34045">[ thread ]</a>
+              <a href="subject.html#34045">[ subject ]</a>
+              <a href="author.html#34045">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

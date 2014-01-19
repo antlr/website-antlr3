@@ -1,0 +1,168 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] robust error recovery
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20robust%20error%20recovery&In-Reply-To=%3C678DAD1C-EA41-4D06-A2C1-7C221E562DAA%40smolyn.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="035706.html">
+   <LINK REL="Next"  HREF="035697.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] robust error recovery</H1>
+    <B>Greg Smolyn</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20robust%20error%20recovery&In-Reply-To=%3C678DAD1C-EA41-4D06-A2C1-7C221E562DAA%40smolyn.org%3E"
+       TITLE="[antlr-interest] robust error recovery">greg at smolyn.org
+       </A><BR>
+    <I>Wed Aug 19 11:07:26 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="035706.html">[antlr-interest] tree parser syntax
+</A></li>
+        <LI>Next message: <A HREF="035697.html">[antlr-interest] robust error recovery
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#35694">[ date ]</a>
+              <a href="thread.html#35694">[ thread ]</a>
+              <a href="subject.html#35694">[ subject ]</a>
+              <a href="author.html#35694">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+I've been using ANTLR quite successfully in a number of places in a  
+fairly large product-- mainly for parsing CSS and Javascript.
+
+However, I've recently tried to make my grammars more resilient to  
+errors and recover a bit more gracefully, and I've encountered a lot  
+of difficulty in finding information both in the ANTLR book (which  
+pretty much only describes how to _print_ errors) and in the mailing  
+list archives.  Mainly, I'd like to be able to catch a parsing  
+exception, skip it, but _continue_ to parse the rest of the rule.   
+Unfortunately, the way the exceptions are structured, there is no way  
+to catch an exception in a rule and carry on-- you're already outside  
+the main loop of that rule.
+
+Here's a scenario I've encountered-- I'll use CSS as an example.
+
+Say you're given a CSS ruleset with a bad property:
+
+a {
+      margin: 100px;
+     *margin: 200px;
+     background: foo.gif;
+}
+
+What I'd like to do is have it throw the exception and skip the  
+property, but continue along with the next one.  I am stymied by how  
+to do this, however.
+
+All I've been able to manage is to skip the rule altogether, thus  
+losing even the already properly parsed... here's the relevant bits of  
+grammar (before I tried to modify it to skip just the single property):
+
+&lt;===== cut here ======&gt;
+
+ruleset
+  	: selectors '{' properties RCURLY -&gt; ^( RULE selectors properties )
+	;
+     catch[RecognitionException re]
+	{
+		ConsumeUntil(input, RCURLY);
+		input.Consume();
+	}
+
+properties
+	: declaration (SEMI declaration?)* -&gt;  ^(PROPERTIES declaration*)
+         |  -&gt; PROPERTIES_EMPTY
+         ;
+     catch[RecognitionException re]
+	{
+		ConsumeUntil(input, RCURLY);
+                 if(input.LA(1) != RCURLY)
+                 {
+                     throw;
+                 }
+		return properties();
+	}
+	
+
+declaration
+	: IDENT ':' args -&gt; ^( PROPERTY IDENT args )
+	;
+
+&lt;===== cut here ======&gt;
+
+
+I attempted to add a catch clause on declaration, with an appropriate  
+ConsumeUntil(SEMI)--  however the issue is that it's in fact the  
+'properties' rule that throws the exception, as it cannot find the  
+right starting token for a 'declaration'.
+
+So, of course, we can change the properties rule to instead  
+ConsumeUntil(SEMI), but then what?  How do I convince it to continue  
+looping through the (SEMI declaration?)* clause?  Even if I split it  
+out into more rules, I have the same problem--  there is a list of  
+declarations, but it's the rule containing the list that throws the  
+exception--  since it sees the '*' before margin, and can't descend  
+into declaration.  But that exception occurs outside of the looping of  
+the rule, and thus I'm stuck.
+
+Any help would be greatly greatly appreciated--  I'd really like to  
+know a lot more about how to handle errors, insert/delete bits of tree  
+into the AST in these exception scenarios.
+
+Thanks so much!
+-greg
+
+
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="035706.html">[antlr-interest] tree parser syntax
+</A></li>
+	<LI>Next message: <A HREF="035697.html">[antlr-interest] robust error recovery
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#35694">[ date ]</a>
+              <a href="thread.html#35694">[ thread ]</a>
+              <a href="subject.html#35694">[ subject ]</a>
+              <a href="author.html#35694">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

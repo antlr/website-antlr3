@@ -1,0 +1,228 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [stringtemplate-interest] Strange tail-recursive behaviour
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:stringtemplate-interest%40antlr.org?Subject=%5Bstringtemplate-interest%5D%20Strange%20tail-recursive%20behaviour&In-Reply-To=55DDB08CC9CD2941A70E8D626789A2C97F3F6E%40ec8l7ljvo9h5dde.hosting.exch">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000114.html">
+   <LINK REL="Next"  HREF="000116.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[stringtemplate-interest] Strange tail-recursive behaviour</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:stringtemplate-interest%40antlr.org?Subject=%5Bstringtemplate-interest%5D%20Strange%20tail-recursive%20behaviour&In-Reply-To=55DDB08CC9CD2941A70E8D626789A2C97F3F6E%40ec8l7ljvo9h5dde.hosting.exch"
+       TITLE="[stringtemplate-interest] Strange tail-recursive behaviour">parrt at cs.usfca.edu
+       </A><BR>
+    <I>Wed Oct 12 11:19:20 PDT 2005</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000114.html">[stringtemplate-interest] Strange tail-recursive behaviour
+</A></li>
+        <LI>Next message: <A HREF="000116.html">[stringtemplate-interest] Raw speed!
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#115">[ date ]</a>
+              <a href="thread.html#115">[ thread ]</a>
+              <a href="subject.html#115">[ subject ]</a>
+              <a href="author.html#115">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Laurent,
+
+This definitely looks like a bug to me.  You have
+
+&gt;<i> TRUE:&lt;x&gt;
+</I>&gt;<i> TRUE:&lt;x&gt;
+</I>
+when x is B it prints
+
+TRUE:B
+TRUE:
+
+I just figured it out too.  You are passing in rest(x) which creates  
+an iterator.  When you ref it again, the iterator has not been  
+reset!  Ack!
+
+Adding as a bug unit test:
+
+     public void testRepeatedRestOpAsArg() throws Exception {
+         String templates =
+                 &quot;group test;&quot; +newline+
+                 &quot;root(names) ::= \&quot;$other(rest(names))$\&quot;&quot;+newline+
+                 &quot;other(x) ::= \&quot;$x$, $x$\&quot;&quot;+newline
+                 ;
+         StringTemplateGroup group =
+                 new StringTemplateGroup(new StringReader(templates));
+         StringTemplate e = group.getInstanceOf(&quot;root&quot;);
+         e.setAttribute(&quot;names&quot;, &quot;Ter&quot;);
+         e.setAttribute(&quot;names&quot;, &quot;Tom&quot;);
+         String expecting = &quot;Tom, Tom&quot;;
+         assertEqual(e.toString(), expecting);
+     }
+
+Passing an operation result as an attribute seems to reuse the same  
+iterator object. Hmm...
+
+Thanks!
+
+Ter
+
+On Oct 12, 2005, at 6:52 AM, VAUCHER Laurent wrote:
+
+&gt;<i>   Hi,
+</I>&gt;<i>
+</I>&gt;<i>   I'm currently trying StringTemplate (v2.2 downloaded yesterday  
+</I>&gt;<i> oct 11)
+</I>&gt;<i> and trying a kind of tail-recursive template, I stumbled upon the
+</I>&gt;<i> following behaviour.
+</I>&gt;<i>
+</I>&gt;<i>   I have a template group file that reads :
+</I>&gt;<i> --- &quot;mytest/main.stg&quot; ----------------------
+</I>&gt;<i> group main;
+</I>&gt;<i>
+</I>&gt;<i> /* Root template  */
+</I>&gt;<i> root(place) ::= &lt;&lt;
+</I>&gt;<i>
+</I>&gt;<i> &lt;namestail(place)&gt;
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> /* Tail template  */
+</I>&gt;<i> namestail(x) ::= &lt;&lt;
+</I>&gt;<i>
+</I>&gt;<i> &lt;if(x)&gt;
+</I>&gt;<i> ++++
+</I>&gt;<i> TRUE:&lt;x&gt;
+</I>&gt;<i> TRUE:&lt;x&gt;
+</I>&gt;<i> first(PLACE)=&lt;first(x)&gt;
+</I>&gt;<i> rest(PLACE)=&lt;rest(x)&gt;
+</I>&gt;<i> TAIL CALL:
+</I>&gt;<i> &lt;namestail(x=rest(x))&gt;
+</I>&gt;<i> &lt;else&gt;
+</I>&gt;<i> -----
+</I>&gt;<i> FALSE:&lt;x&gt;
+</I>&gt;<i> &lt;endif&gt;
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>
+</I>&gt;<i> ---------------------------------------------
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>   and a simple driver class
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> ----- &quot;Main.java&quot; ---------------------------
+</I>&gt;<i> import java.io.FileNotFoundException;
+</I>&gt;<i> import java.io.FileReader;
+</I>&gt;<i> import java.text.SimpleDateFormat;
+</I>&gt;<i> import java.util.Date;
+</I>&gt;<i>
+</I>&gt;<i> import org.antlr.stringtemplate.StringTemplate;
+</I>&gt;<i> import org.antlr.stringtemplate.StringTemplateGroup;
+</I>&gt;<i> import org.antlr.stringtemplate.language.AngleBracketTemplateLexer;
+</I>&gt;<i>
+</I>&gt;<i> public class Main {
+</I>&gt;<i>
+</I>&gt;<i>   /**
+</I>&gt;<i>    * @param args
+</I>&gt;<i>    */
+</I>&gt;<i>   public static void main(String[] args) {
+</I>&gt;<i>     System.out.println(new SimpleDateFormat().format(new Date()));
+</I>&gt;<i>
+</I>&gt;<i>     try {
+</I>&gt;<i>       FileReader reader = new FileReader(&quot;src/mytest/main.stg&quot;);
+</I>&gt;<i>       StringTemplateGroup stg = new StringTemplateGroup(reader,
+</I>&gt;<i>           AngleBracketTemplateLexer.class);
+</I>&gt;<i>
+</I>&gt;<i>       StringTemplate firstST = stg.getInstanceOf(&quot;root&quot;);
+</I>&gt;<i>       firstST.setAttribute(&quot;place&quot;, &quot;A&quot;);
+</I>&gt;<i>       firstST.setAttribute(&quot;place&quot;, &quot;B&quot;);
+</I>&gt;<i>
+</I>&gt;<i>       System.out.println(&quot;Generated [&quot; + firstST.toString() + &quot;]&quot;);
+</I>&gt;<i>     } catch (FileNotFoundException eFNFE) {
+</I>&gt;<i>       eFNFE.printStackTrace(System.err);
+</I>&gt;<i>     }
+</I>&gt;<i>   }
+</I>&gt;<i> }
+</I>&gt;<i> --------------------------------------------
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>    And the output is :
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> ------------- output -----------------------
+</I>&gt;<i> 12/10/05 15:37
+</I>&gt;<i> Generated [
+</I>&gt;<i>
+</I>&gt;<i> ++++
+</I>&gt;<i> TRUE:AB
+</I>&gt;<i> TRUE:AB
+</I>&gt;<i> first(PLACE)=A
+</I>&gt;<i> rest(PLACE)=B
+</I>&gt;<i> TAIL CALL:
+</I>&gt;<i>
+</I>&gt;<i> ++++
+</I>&gt;<i> TRUE:B
+</I>&gt;<i> TRUE:
+</I>&gt;<i> first(PLACE)=
+</I>&gt;<i> rest(PLACE)=
+</I>&gt;<i> TAIL CALL:
+</I>&gt;<i>
+</I>&gt;<i> -----
+</I>&gt;<i> FALSE:
+</I>&gt;<i> ]
+</I>&gt;<i> --------------------------------------------
+</I>&gt;<i>
+</I>&gt;<i>   What I find annoying is the inner call to namestail : the value of x
+</I>&gt;<i> changes from a line to the next. The first &quot;TRUE:&lt;x&gt;&quot; yields &quot;TRUE:b&quot;,
+</I>&gt;<i> the second &quot;TRUE:&quot; as if the value had been swallowed by the first  
+</I>&gt;<i> &lt;x&gt;.
+</I>&gt;<i> As you can see, the outer invocation of namestail does not seem
+</I>&gt;<i> afflicted...
+</I>&gt;<i>
+</I>&gt;<i>   Is there something I am missing (dynamic scoping can be tricky, I
+</I>&gt;<i> know) ?
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Laurent.
+</I>&gt;<i>
+</I>&gt;<i> _______________________________________________
+</I>&gt;<i> stringtemplate-interest mailing list
+</I>&gt;<i> <A HREF="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">stringtemplate-interest at antlr.org</A>
+</I>&gt;<i> <A HREF="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest</A>
+</I>&gt;<i>
+</I>
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000114.html">[stringtemplate-interest] Strange tail-recursive behaviour
+</A></li>
+	<LI>Next message: <A HREF="000116.html">[stringtemplate-interest] Raw speed!
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#115">[ date ]</a>
+              <a href="thread.html#115">[ thread ]</a>
+              <a href="subject.html#115">[ subject ]</a>
+              <a href="author.html#115">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">More information about the stringtemplate-interest
+mailing list</a><br>
+</body></html>

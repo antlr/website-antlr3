@@ -1,0 +1,157 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] problem with parsing valid input
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20problem%20with%20parsing%20valid%20input&In-Reply-To=%3C47060575.4090603%40Yahoo.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="023960.html">
+   <LINK REL="Next"  HREF="023964.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] problem with parsing valid input</H1>
+    <B>Austin Hastings</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20problem%20with%20parsing%20valid%20input&In-Reply-To=%3C47060575.4090603%40Yahoo.com%3E"
+       TITLE="[antlr-interest] problem with parsing valid input">Austin_Hastings at Yahoo.com
+       </A><BR>
+    <I>Fri Oct  5 02:35:49 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="023960.html">[antlr-interest] problem with parsing valid input
+</A></li>
+        <LI>Next message: <A HREF="023964.html">[antlr-interest]  problem with parsing valid input
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#23963">[ date ]</a>
+              <a href="thread.html#23963">[ thread ]</a>
+              <a href="subject.html#23963">[ subject ]</a>
+              <a href="author.html#23963">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello, Ojay,
+
+This isn't directly about your question, but I noticed that you have a 
+lot of tokens in your lexer section like:
+
+META_ATTRIBUTE
+	:	'date' | 'datetime'
+	;
+
+
+and
+
+PARAMETER 
+	:	PARAMETER_DESC | CONST_DESC
+	;
+
+
+Please consider that Antlr actually encodes the convention of Lexer tokens starting with an upper-case letter, while Parser productions start in lower-case.
+ 
+This means that you will have a lexer building regular expressions for &quot;PARAMETER_DESC&quot; and for &quot;PARAMETER&quot;. Obviously, one regex will be a superset of the other - either one could recognize the input.
+
+For example, consider a regex like &quot;a+&quot; - match one or more 'a' letters. Then consider a regex like &quot;(a|b)+&quot; - match one or more of either a or b. Now it's obvious that aaaa will match &quot;a+&quot;, but it will also match (a|b)+. 
+
+So which regex &quot;wins&quot; - that is, what does the lexer do? Simply, it goes with the one that is first (highest) in the file. 
+ 
+The effect may surprise you, as you will be getting tokens that are too high-level: if a &quot;CONST&quot; could be a character literal ('a') or a hex number (0xf00)
+how will you find out it's value? You'll have to take the token text, and RE-PARSE it to find out what it is.
+ 
+You'll be better served if you convert most of your &quot;complex&quot; TOKENS into parser productions:
+
+FORM_ATTRIBUTE
+	:	'formId' |'formKey' | 'lastUpdate'
+	;
+
+In this case, let the 'formId' strings be the tokens -- the parser is smart enough to create automatic tokens like T01, T02, T03 for those three keywords. Then you would use a parser production like 'form_attribute' (or 'formAttribute' - it just has to start lower-case) to include the choice of any of the tree in your grammar, rather than your lexer.
+ 
+form_attribute
+	: 'formId' | 'formKey' | 'lastUpdate'
+ 	;
+
+which is equivalent internally to:
+
+T01: 'formId';
+T02: 'formKey';
+T03: 'lastUpdate';
+
+form_attribute: T01 | T02 | T03 ;
+
+
+The difference is in the parse/syntax trees you can generate. With the first approach, you will get:
+
+term: FORM_ATTRIBUTE		# gives a parse like ^(term FORM_ATTRIBUTE{text=&quot;formKey&quot;})
+
+term: form_attribute		# gives a parse like ^(term 'formId')
+
+The difference is that with the FORM_ATTRIBUTE approach you don't actually know in the grammar what attribute you got - you'll have to write some code that checks $FORM_ATTRIBUTE.text to see which of the three strings it has in it. Whereas with the form_attribute version you can make decisions in the grammar based on knowing which keyword was used.
+
+
+
+A good indicator is this:
+
+PARAMETER_LIST 
+	:	PARAMETER (' '+ PARAMETER)* ' '*
+
+The fact that you have ' '+ and ' '* in there means you are having to fight against white space. That means you are trying to group several tokens into one super-token. Convert those things to parser productions by making them lower case, and the need to fight with white space will go away.
+
+Try this:
+
+arg_list:
+	arg (',' arg)*
+	;
+
+commandType: 'IsSet' | 'IsEqual' | 'IsSmaller' | 'If' ;
+
+command
+	: commandType '(' arg_list? ')'
+	;
+
+You won't have to fight whitespace in there.
+ 
+Alternatively, you might want to try:
+
+arity1: arg ;
+arity2: arg ',' arg ;
+arity3: arg ',' arg ',' arg ;
+
+command
+	: 'IsSet'	'(' arity1 ')'
+	| 'IsEqual'	'(' arity2 ')'
+	| 'If'		'(' arity2 ')'
+	| 'If'		'(' arity3 ')' 	// If-then-else version
+	;
+
+This approach spells out the expected number of arguments for each function. That makes the built-in functions a part of the syntax of the language, instead of being left to a later checking phase. The choice of where to put the check will depend on the language, but the example you have given points toward a &quot;basic-like&quot; language where functions are not definable by the user. If that is the case, then checking args in the parser may be a win. In a language like C or Java, where the user can add their own functions, you couldn't do that kind of checking. Then you would have to go with the first example (using an arg_list) and check the function args in your own code.
+
+Good luck,
+
+=Austin
+
+
+
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="023960.html">[antlr-interest] problem with parsing valid input
+</A></li>
+	<LI>Next message: <A HREF="023964.html">[antlr-interest]  problem with parsing valid input
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#23963">[ date ]</a>
+              <a href="thread.html#23963">[ thread ]</a>
+              <a href="subject.html#23963">[ subject ]</a>
+              <a href="author.html#23963">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,159 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] ANTLR 3: Problem with static DFA class generation
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20ANTLR%203%3A%20Problem%20with%20static%20DFA%20class%20generation&In-Reply-To=9da4f4520509190421346b701c%40mail.gmail.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="013683.html">
+   <LINK REL="Next"  HREF="013777.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] ANTLR 3: Problem with static DFA class generation</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20ANTLR%203%3A%20Problem%20with%20static%20DFA%20class%20generation&In-Reply-To=9da4f4520509190421346b701c%40mail.gmail.com"
+       TITLE="[antlr-interest] ANTLR 3: Problem with static DFA class generation">parrt at cs.usfca.edu
+       </A><BR>
+    <I>Fri Sep 23 18:54:27 PDT 2005</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="013683.html">[antlr-interest] ANTLR 3: Problem with static DFA class generation
+</A></li>
+        <LI>Next message: <A HREF="013777.html">[antlr-interest] ANTLR 3: Problem with static DFA class generation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#13776">[ date ]</a>
+              <a href="thread.html#13776">[ thread ]</a>
+              <a href="subject.html#13776">[ subject ]</a>
+              <a href="author.html#13776">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi.  Without altering the code generator *code*, I was easily able to  
+change the output to have nonstatic cyclic DFAs thanks to the power  
+of StringTemplate. :)
+
+Originally, the parser template had a &quot;hole&quot; for the cyclic DFAs:
+
+&lt;cyclicDFAs&gt;
+
+Aside from removing the &quot;static&quot; keyword everywhere, I added the  
+following line in front that applied a template to the DFAs:
+
+     &lt;! define a singleton instance for each cyclic DFA !&gt;
+     &lt;cyclicDFAs:{dfa | protected DFA&lt;dfa.decisionNumber&gt;  
+dfa&lt;dfa.decisionNumber&gt; = new DFA&lt;dfa.decisionNumber&gt;();}&gt;
+
+which generates a bunch of singletons:
+
+     protected DFA3 dfa3 = new DFA3();
+     protected DFA4 dfa4 = new DFA4();
+     ...
+
+in addition to the cyclic DFAs.
+
+The list of DFAs is actually a list of templates so I can ask for  
+their attributes no problem.  Nothing is converted to string until  
+the last minute.  Notice the really great SmallTalk-inspired syntax  
+of that template application:
+
+&lt;attributeList:{ iteratorVar | template}&gt;
+
+That was added in StringTemplate 2.2 :)
+
+Anyway, all my unit tests pass, but I'll try to add some more to see  
+if they compile ok and can access instance variables.
+
+Thanks for the inspiration Oliver!
+
+Ter
+
+On Sep 19, 2005, at 4:21 AM, Oliver Zeigermann wrote:
+
+&gt;<i> OK, I created patches for the new Java.stg, DFA.java (optional - makes
+</I>&gt;<i> predicat non-static) and finally a small one for Codegenerator.java.
+</I>&gt;<i> Using them will generate the code below.
+</I>&gt;<i>
+</I>&gt;<i> Oliver
+</I>&gt;<i>
+</I>&gt;<i> 2005/9/19, Oliver Zeigermann &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">oliver.zeigermann at gmail.com</A>&gt;:
+</I>&gt;<i>
+</I>&gt;&gt;<i> 2005/9/18, Terence Parr &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">parrt at cs.usfca.edu</A>&gt;:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> On Sep 12, 2005, at 3:41 AM, Oliver Zeigermann wrote:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> It simple makes all DFA code non static to allow full access to the
+</I>&gt;&gt;&gt;&gt;<i> outer class' (Lexer) fields. The part that creates a single DFA per
+</I>&gt;&gt;&gt;&gt;<i> decision and lexer like this:
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> class XMLLexer extends Lexer {
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> ...
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> private dfa10 = new DFA10();
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> ...
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> alt10 = dfa10.predict(input);
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> ...
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> }
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> Ok, I think figured out why I didn't want to do this before.  There
+</I>&gt;&gt;&gt;<i> is a bunch of state construction &quot;new&quot; operations that go on when  
+</I>&gt;&gt;&gt;<i> you
+</I>&gt;&gt;&gt;<i> say new DFA10().  I only wanted them to occur once as they are
+</I>&gt;&gt;&gt;<i> expensive.  I somehow missed the obvious reuse of the outermost DFA
+</I>&gt;&gt;&gt;<i> object; here you are using dfa10 to create DFA10 just once.  In this
+</I>&gt;&gt;&gt;<i> way, we only create the DFA states once like with static, but the
+</I>&gt;&gt;&gt;<i> inner classes have an implied &quot;this&quot; pointer and can see the  
+</I>&gt;&gt;&gt;<i> instance
+</I>&gt;&gt;&gt;<i> variables of the outer Lexer object.   I like it!
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Yes, that's right! My patch does not include the above single
+</I>&gt;&gt;<i> construction, as this would have required a bit more than changing a
+</I>&gt;&gt;<i> template, though. But I am pretty sure that you know how to do  
+</I>&gt;&gt;<i> this...
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Oliver
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> &lt;Java.stg.diff&gt;
+</I>&gt;&gt;<i> &lt;DFA.java.diff&gt;
+</I>&gt;&gt;<i> &lt;CodeGenerator.java.diff&gt;
+</I>&gt;<i>
+</I>
+--
+CS Professor &amp; Grad Director, University of San Francisco
+Creator, ANTLR Parser Generator, <A HREF="http://www.antlr.org">http://www.antlr.org</A>
+Cofounder, <A HREF="http://www.jguru.com">http://www.jguru.com</A>
+
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="013683.html">[antlr-interest] ANTLR 3: Problem with static DFA class generation
+</A></li>
+	<LI>Next message: <A HREF="013777.html">[antlr-interest] ANTLR 3: Problem with static DFA class generation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#13776">[ date ]</a>
+              <a href="thread.html#13776">[ thread ]</a>
+              <a href="subject.html#13776">[ subject ]</a>
+              <a href="author.html#13776">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

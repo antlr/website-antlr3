@@ -1,0 +1,185 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Resetting an AST tree walker
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Resetting%20an%20AST%20tree%20walker&In-Reply-To=%3C86403CA0939415448BCCB83855EFE09AA67F13%40Bloodymary.ironwillgames.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="034168.html">
+   <LINK REL="Next"  HREF="034170.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Resetting an AST tree walker</H1>
+    <B>Sam Harwell</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Resetting%20an%20AST%20tree%20walker&In-Reply-To=%3C86403CA0939415448BCCB83855EFE09AA67F13%40Bloodymary.ironwillgames.com%3E"
+       TITLE="[antlr-interest] Resetting an AST tree walker">sharwell at pixelminegames.com
+       </A><BR>
+    <I>Thu Apr 23 13:44:11 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="034168.html">[antlr-interest] Resetting an AST tree walker
+</A></li>
+        <LI>Next message: <A HREF="034170.html">[antlr-interest] Resetting an AST tree walker
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#34169">[ date ]</a>
+              <a href="thread.html#34169">[ thread ]</a>
+              <a href="subject.html#34169">[ subject ]</a>
+              <a href="author.html#34169">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I'm working with much larger input files (a few thousand normal source
+code files).
+
+ 
+
+The significant action performed on a TreeNodeStream is a call to
+LA(int32). For BufferedTreeNodeStream, this encloses the call to
+FillBuffer().
+
+ 
+
+The profiler revealed that BufferedTreeNodeStream.LA used 3.10% of the
+inclusive profiling samples. CommonTreeNodeStream.LA used only 1.95%
+over the same operation. I believe that for expected case inputs,
+CommonTreeNodeStream is the preferred TreeNodeStream, and the current
+performance is no worse than BufferedTreeNodeStream.
+
+ 
+
+In FastQueue&lt;T&gt;, constructor the list (FastQueue&lt;T&gt;.data) with a default
+capacity of 20. Let me know if the performance of CommonTreeNodeStream
+improves.
+
+ 
+
+Sam
+
+ 
+
+From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>
+[mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Steve Souza
+Sent: Thursday, April 23, 2009 2:48 PM
+To: Terence Parr
+Cc: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: Re: [antlr-interest] Resetting an AST tree walker
+
+ 
+
+&lt;&lt;I'm surprised by the speed difference though. I might have to rethink
+my filter; that is, which stream it uses.&gt;&gt;
+My test case which I execute 1,000,000 times:
+((2*3*4)/(2*3*4)+10*(5+5))*.5
+
+
+Execution time Using BufferedTreeNodeStream is 5855 ms.
+                CommonTree commonTree=(CommonTree)ast.getTree();
+                TreeNodeStream nodes=new
+BufferedTreeNodeStream(commonTree);
+                TreeParser walker=new MyTreeParser(nodes);
+
+Execution time Using CommonTreeNodeStream is 17387 ms.
+                CommonTree commonTree=(CommonTree)ast.getTree();
+                TreeNodeStream nodes=new
+CommonTreeNodeStream(commonTree);
+                TreeParser walker=new MyTreeParser(nodes);
+
+The performance difference would vary based on how many times you
+execute the case.  My application executes code like this a lot, so I
+used a high numbered test case.
+
+Calling reset on both BufferedTreeNodeStream and CommonTreeNodeStream
+both work properly for my code.   If I call TreeParser.reset() the
+subsquent calls give me the following message:  MyTreeParser.g: node
+from line 0:0 no viable alternative at input 'EOF'
+
+What method should I call to allow me to keep looping the TreeParser?
+Calling it on the NodeStreams seem to work, but I don't know if that is
+the preferred approach.  Also, is there a reason reset() isn't defined
+on either TreeNodeStream or IntStream.  It forces me to do a typecast
+like the following:  
+
+             private void resetStream() {
+                TreeNodeStream nodeStream=getTreeNodeStream();
+                if (nodeStream instanceof BufferedTreeNodeStream) 
+                  ((BufferedTreeNodeStream)nodeStream).reset();
+                else if (nodeStream instanceof CommonTreeNodeStream) 
+                  ((CommonTreeNodeStream)nodeStream).reset();
+
+             }
+
+Thanks for your help.
+
+ 
+
+On Thu, Apr 23, 2009 at 2:56 PM, Terence Parr &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">parrt at cs.usfca.edu</A>&gt;
+wrote:
+
+
+On Apr 22, 2009, at 8:17 PM, Steve Souza wrote:
+
+&lt;&lt;I don't like this at all, but I believe in the thread that you cited
+earlier someone says it is the intended behaviour.&gt;&gt;
+I wonder what the logic is there.  One of the big benefits of a tree
+walker is to be able to repeatedly walk the nodes.  I hope they don't
+remove that capability from the BufferedTreeNodeStream.
+
+ 
+
+Don't worry. We will keep the buffered version for sure. The primary
+reason to avoid the buffered version is when you're tree is absolutely
+huge and you can afford to create a big array pointing and all the
+nodes.  In the new tree filter mechanism, not yet officially released
+but in the software, it needs to constantly parse little snippets of the
+tree. re-creating an array for each subtree doesn't make much sense.
+
+I'm surprised by the speed difference though. I might have to rethink my
+filter; that is, which stream it uses.
+
+	 
+
+	Did that one work for you?  Except for increased memory is there
+ever a reason not to use BufferedTreeNodeStream instead of
+CommonTreeNodeStream?
+
+ 
+
+Nope.
+
+Ok, just checked.  Added 2 unit tests.  TreeIterator and
+CommonTreeNodeStream reset properly.  Perhaps it's the tree parser?
+
+Ter
+
+ 
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20090423/3491323e/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20090423/3491323e/attachment.html</A> 
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="034168.html">[antlr-interest] Resetting an AST tree walker
+</A></li>
+	<LI>Next message: <A HREF="034170.html">[antlr-interest] Resetting an AST tree walker
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#34169">[ date ]</a>
+              <a href="thread.html#34169">[ thread ]</a>
+              <a href="subject.html#34169">[ subject ]</a>
+              <a href="author.html#34169">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

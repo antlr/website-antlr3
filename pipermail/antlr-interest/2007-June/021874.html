@@ -1,0 +1,159 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Remote Debugging with C#
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Remote%20Debugging%20with%20C%23&In-Reply-To=%3C46858D52.7000501%40gmx.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="021860.html">
+   <LINK REL="Next"  HREF="021868.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Remote Debugging with C#</H1>
+    <B>Johannes Luber</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Remote%20Debugging%20with%20C%23&In-Reply-To=%3C46858D52.7000501%40gmx.de%3E"
+       TITLE="[antlr-interest] Remote Debugging with C#">jaluber at gmx.de
+       </A><BR>
+    <I>Fri Jun 29 15:53:06 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="021860.html">[antlr-interest] Remote Debugging with C#
+</A></li>
+        <LI>Next message: <A HREF="021868.html">[antlr-interest] Attribute Access in Tree Grammar Actions
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#21874">[ date ]</a>
+              <a href="thread.html#21874">[ thread ]</a>
+              <a href="subject.html#21874">[ subject ]</a>
+              <a href="author.html#21874">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Markus Kuhla wrote:
+&gt;<i> Hi,
+</I>&gt;<i> 
+</I>&gt;<i> I don't know if there's any differences for C#, but in Java I do:
+</I>&gt;<i> 1. do not generate in ANTLRworks (it ignores -debug option)
+</I>&gt;<i> 2. the generated parser has a second constructer argument, an DebugEventListener. I use it for the parse tree:
+</I>&gt;<i> 
+</I>&gt;<i> ParseTreeBuilder builder = new ParseTreeBuilder(&quot;start&quot;);
+</I>&gt;<i> testParser parser = new testParser(tokens, builder);
+</I>&gt;<i> parser.start();
+</I>&gt;<i> ParseTree pt = ((ParseTreeBuilder)builder).getTree();
+</I>
+I've noticed that the argument of ParseTreeBuilder is supposed to be the
+grammar name, not the start rule. A short look with .NET Reflector into
+the assembly told me (yes, that tool makes source code access nearly
+superfluous - only a shame, that no comments survive the compilation and
+that I have thought of it only a few days ago :( ). And isn't the
+conversion of the ParseTreeBuilder builder into a ParseTreeBuilder kinda
+superfluous here?
+
+&gt;<i> But as I know your other posts, your problem may be much harder ;)
+</I>
+I know. I have sometimes the feeling that I'm the pilot of a supersonic
+aircraft and I still have to push my vehicle by hand. :D But back the topic:
+
+You are truly prophetic - I couldn't simply compile the code. Turns out,
+that the template for C# uses constantly &quot;location&quot; instead &quot;Location&quot;.
+Then &quot;dbg.RecognitionException(nvae);&quot; is used, where no &quot;nvae&quot; is
+available. Instead I had to replace those occurrences with &quot;nvae_d4s0&quot;
+and similar (there were really many of those...). Then I've got this line:
+
+protected ITreeAdaptor adaptor = new DebugTreeAdaptor(dbg, new
+CommonTreeAdaptor());
+
+It is trying to initialize a member via the non-constructor way with a
+constructor-only argument, which of course the compiler doesn't know
+about. I removed the assignment and added in each constructor the line:
+
+adaptor = new DebugTreeAdaptor(dbg, new CommonTreeAdaptor());
+
+Actually, in the one-parameter constructor I used &quot;null&quot; instead &quot;dbg&quot;.
+It would cause NullReferenceExceptions everywhere, if the TreeAdaptor
+isn't set afterwards, but that seems to be the consequence anyway, as
+this constructor chains to the one-argument base constructor
+(Interestingly, the one-argument constructor has the line
+
+ruleMemo = new IDictionary[154+1];
+
+but the two-argument constructor does not. I'm further astonished that
+no constructor chaining is done from the one-argument constructor to the
+two-argument constructor.)
+
+Then the DFA class DFA71 wants to access the dbg field from the parser
+class, but the compiler doesn't allow this without having a reference to
+the parser class. I had to add another constructor parameter to DFA71
+and change things into the following:
+
+private void InitializeCyclicDFAs()
+{
+     this.dfa71 = new DFA71(this, this.dbg);
+}
+
+And in DFA71:
+
+IDebugEventListener dbg;
+
+public DFA71(BaseRecognizer recognizer, IDebugEventListener dbg)
+{
+    this.recognizer = recognizer;
+    this.decisionNumber = 71;
+    this.eot = DFA71_eot;
+    this.eof = DFA71_eof;
+    this.min = DFA71_min;
+    this.max = DFA71_max;
+    this.accept     = DFA71_accept;
+    this.special    = DFA71_special;
+    this.transition = DFA71_transition;
+    this.dbg = dbg;
+}
+
+After that it was easy to add override to
+
+public virtual override void Error(NoViableAltException nvae)
+
+because otherwise &quot;virtual&quot; would be wasted.
+
+Nonetheless, I'm still missing some pieces. What I am supposed to do
+with with the ParseTree pt? And when do I have to start ANTLRworks in
+the remote debugging mode?
+
+Best regards,
+Johannes Luber
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="021860.html">[antlr-interest] Remote Debugging with C#
+</A></li>
+	<LI>Next message: <A HREF="021868.html">[antlr-interest] Attribute Access in Tree Grammar Actions
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#21874">[ date ]</a>
+              <a href="thread.html#21874">[ thread ]</a>
+              <a href="subject.html#21874">[ subject ]</a>
+              <a href="author.html#21874">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,162 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [stringtemplate-interest] Formatting vs. Escaping in an	AttributeRenderer
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20Formatting%20vs.%20Escaping%20in%20an%0A%09AttributeRenderer&In-Reply-To=%3C4E6CCBFA.2010307%40web.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003798.html">
+   <LINK REL="Next"  HREF="003800.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[stringtemplate-interest] Formatting vs. Escaping in an	AttributeRenderer</H1>
+    <B>Tobias G&#252;ntner</B> 
+    <A HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20Formatting%20vs.%20Escaping%20in%20an%0A%09AttributeRenderer&In-Reply-To=%3C4E6CCBFA.2010307%40web.de%3E"
+       TITLE="[stringtemplate-interest] Formatting vs. Escaping in an	AttributeRenderer">fatbull at web.de
+       </A><BR>
+    <I>Sun Sep 11 07:55:54 PDT 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003798.html">[stringtemplate-interest] Formatting vs. Escaping in an	AttributeRenderer
+</A></li>
+        <LI>Next message: <A HREF="003800.html">[stringtemplate-interest] Formatting vs. Escaping in an	AttributeRenderer
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3799">[ date ]</a>
+              <a href="thread.html#3799">[ thread ]</a>
+              <a href="subject.html#3799">[ subject ]</a>
+              <a href="author.html#3799">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Am 10.09.2011 18:12, schrieb Sam Barnett-Cormack:
+&gt;<i> I suggested an orthogonal 'filter' API (as in separate from adapters
+</I>&gt;<i> and renderers) a while back,
+</I>
+In the &quot;Group Syntax extension for ModelAdapter and Renderer&quot; thread 
+from July? That's the only reference I found.
+
+&gt;<i> that would take what came out of adapters and renderers and 'filter'
+</I>&gt;<i> them in some way. There's lots of ways it could work in terms of
+</I>&gt;<i> default, non-default, when to apply which, etc etc.
+</I>
+Yes, a general &quot;filter&quot; option would work. I think a clear 
+adapter-&gt;render-&gt;filter/escape/postprocessing pipeline would definitely 
+be nice to have. I would prefer a more concise syntax, however, because 
+escaping is needed more often than formatting (at least in my experience).
+
+Since we're talking about language extensions anyway, let my mind wander 
+for a while. Other features could be useful, especially with escaping in 
+mind.
+
+For example, an easy way to specify escape sequences. It would be nice 
+if I could just write something like
+
+xml-attribute:
+     [\r\n\t ] -&gt; copy      // copy character as-is
+     [\0-\x1f] -&gt; invalid   // throw exception
+     '&amp;' -&gt; &quot;&amp;amp;&quot;         // replace character as requested
+     '&lt;' -&gt; &quot;&amp;lt;&quot;
+     '\&quot;' -&gt; &quot;&amp;quot;&quot;
+     ...
+
+and have ST automatically generate the appropriate code.
+
+Some sort of error checking would be useful as well. Perhaps typesafe 
+templates are a little farfetched, but at least ST would complain when I 
+embed unescaped JS in HTML.
+
+For example, we could associate a type with every template. Templates of 
+the same type can be combined freely, but different types require 
+explicit conversion. Then, for every type, we could define several 
+escape operations which transform plaintext into something usable in 
+this context (like a type cast for strings). Perhaps a few examples will 
+explain it (syntax is made up, but I think you'll get my point):
+
+// default template type/context is &quot;plaintext&quot; (or null?)
+// Attributes (or more precisely the output of an
+// AttributeRenderer) have type &quot;plaintext&quot; as well.
+greeting() ::= &quot;\&quot;Hello\&quot;,&amp;nbsp;World!&quot;
+
+// context/return type is &quot;js&quot;
+// escape greeting() for use as string literal (this also
+// changes the type from &quot;plaintext&quot; to &quot;js&quot; in this case)
+alert() -&gt; js ::= &quot;alert(\&quot;$lit!greeting()$\&quot;)&quot;
+
+// escape alert() for use as attribute content
+link() -&gt; html ::= &quot;&lt;a href=\&quot;...\&quot; onclick=\&quot;$attr!alert()$\&quot;&gt;...&lt;/a&gt;&quot;
+
+// OK: Use in &quot;plaintext&quot; context is always allowed to
+// ensure backwards compatibility (no escaping done).
+// (Perhaps the return type could be inferred automatically?)
+test1() ::= &quot;&lt;p&gt;$link()$&lt;/p&gt;&quot;
+
+// Error: Cannot use greeting() (type &quot;plaintext&quot;) in &quot;html&quot; context
+// (Unless a default escape mode was specified for this context.)
+test2() -&gt; html ::= &quot;&lt;p&gt;$greeting()$&lt;/p&gt;&quot;
+
+// OK: Escape to use as element text content
+test3() -&gt; html ::= &quot;&lt;p&gt;$cdata!greeting()$&lt;/p&gt;&quot;
+
+// OK: I really mean it! Do not escape!
+test4() -&gt; html ::= &quot;&lt;p&gt;$html!greeting()$&lt;/p&gt;&quot;
+
+// Error: Cannot use alert() (type &quot;js&quot;) in &quot;html&quot; context
+test5() -&gt; html ::= &quot;&lt;p onclick=\&quot;$alert()$\&quot;&gt;...&lt;/p&gt;&quot;
+
+// OK: link() (type &quot;html&quot;) can be embedded in other &quot;html&quot; template
+test6() -&gt; html ::= &quot;&lt;p&gt;$link()$&lt;/p&gt;&quot;
+
+// OK: Print the source code
+test7() -&gt; html ::= &quot;&lt;pre&gt;$cdata!link()$&lt;/pre&gt;&quot;
+
+// Error: &quot;lit&quot; escape mode is only valid in &quot;js&quot; context
+test8() -&gt; html ::= &quot;&lt;p&gt;$lit!greeting()$&lt;/p&gt;&quot;
+
+// OK: First escape as js string literal, then as url path,
+// finally as attribute content for use in &quot;html&quot; context
+test9() -&gt; html ::= &quot;&lt;a 
+href=\&quot;javascript:$attr!url!lit!greeting()$\&quot;&gt;...&lt;/a&gt;&quot;
+
+// OK: Mistake not detected, but impact is limited
+test10() -&gt; html ::= &quot;&lt;p $link()$ &gt;...&lt;/p&gt;&quot;
+
+A template writer would still need to choose the correct escape 
+function, but at least ST could detect one of the most dangerous 
+mistakes, i.e., if no escaping is done at all.
+
+Back to reality ...
+
+&gt;<i> I still think it's a good idea, but there wasn't a lot of enthusiasm
+</I>&gt;<i> for it ;)
+</I>
+So ... When is it done? ;)
+
+Regards,
+Tobias
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003798.html">[stringtemplate-interest] Formatting vs. Escaping in an	AttributeRenderer
+</A></li>
+	<LI>Next message: <A HREF="003800.html">[stringtemplate-interest] Formatting vs. Escaping in an	AttributeRenderer
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3799">[ date ]</a>
+              <a href="thread.html#3799">[ thread ]</a>
+              <a href="subject.html#3799">[ subject ]</a>
+              <a href="author.html#3799">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">More information about the stringtemplate-interest
+mailing list</a><br>
+</body></html>

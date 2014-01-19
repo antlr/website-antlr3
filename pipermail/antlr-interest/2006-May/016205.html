@@ -1,0 +1,196 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] executing actions during backtrack
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20executing%20actions%20during%20backtrack&In-Reply-To=D33B1D11-0F9F-432E-84FA-260BAC000D0B%40dolphin-services.de">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="016203.html">
+   <LINK REL="Next"  HREF="016206.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] executing actions during backtrack</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20executing%20actions%20during%20backtrack&In-Reply-To=D33B1D11-0F9F-432E-84FA-260BAC000D0B%40dolphin-services.de"
+       TITLE="[antlr-interest] executing actions during backtrack">parrt at cs.usfca.edu
+       </A><BR>
+    <I>Tue May  9 18:28:08 PDT 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="016203.html">[antlr-interest] executing actions during backtrack
+</A></li>
+        <LI>Next message: <A HREF="016206.html">[antlr-interest] executing actions during backtrack
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#16205">[ date ]</a>
+              <a href="thread.html#16205">[ thread ]</a>
+              <a href="subject.html#16205">[ subject ]</a>
+              <a href="author.html#16205">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+On May 9, 2006, at 3:30 PM, Kay Roepke wrote:
+&gt;&gt;&gt;<i> I guess you need something like an inverse action that applies when
+</I>&gt;&gt;&gt;<i> backtracking fails. So you might need a pair of actions. This way  
+</I>&gt;&gt;&gt;<i> all
+</I>&gt;&gt;&gt;<i> actions executed inside backtracking are undone when backtracking is
+</I>&gt;&gt;&gt;<i> done. Maybe it is enough to add an inverse action to indicate it
+</I>&gt;&gt;&gt;<i> should be executed inside backtracking?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Hi :)  Yep, thought about that and decided it's probably very hard  
+</I>&gt;&gt;<i> to always do an undo.  That said, for symbol tables it might be  
+</I>&gt;&gt;<i> doable.  Might have to track stuff in a data structure to manage  
+</I>&gt;&gt;<i> the undos.  What if we did &quot;software transaction&quot; like stuff to  
+</I>&gt;&gt;<i> auto-rewind?
+</I>&gt;<i>
+</I>&gt;<i> Perl does something like that, but of course that only applies to  
+</I>&gt;<i> changes to locally scoped variables when you embed code in regexes.
+</I>&gt;<i> Stacking those guessing code blocks and executing the undo blocks  
+</I>&gt;<i> on the way back would be the way to do, methinks.
+</I>&gt;<i> If a user does something that absolutely should only happen once,  
+</I>&gt;<i> one would assume that he tests for guessing mode anyway. We can't  
+</I>&gt;<i> second guess them
+</I>&gt;<i> there (as much as we wanted to ;))
+</I>
+What if we could auto unroll any object/data-structured you  
+identified somehow as transactional?  You would give me an undo()  
+method for each object, like a hashtable.  I could record the  
+arguments to pass to undo so it knows how to undo.  This would not be  
+perfect as the arguments could point at stuff that could change (like  
+a stringbuffer), but would be a poor man's transactions.
+
+We need to keep in mind that MOST of the time, this feature is  
+unnecessary.  It's only needed when you need both syn and sem preds  
+and they interact.
+
+Let's see.  Here's a simple example to chew on:
+
+{
+Scope scope = null; // current scope
+}
+
+a	:	(block '.')=&gt;block '.' // dummy rule to force backtrack of block
+	|	block '!'
+	;
+
+block
+	:	{scope = new LocalScope(scope);} // push new scope
+		'{' statement* '}'
+		{scope = scope.parent;} // pop scope
+	;
+
+statement
+	:	&quot;int&quot; ID ';' {scope.define($ID.text, new VariableSymbol($ID.text));}
+	|	&quot;if&quot; ...
+	;
+
+First time through on input
+
+{ int i; }.
+
+ANTLR backtracks through block and statement doing no actions.  Then  
+upon success, rewinds, and does it again with feeling.  Upon input
+
+{ int i; }!
+
+ANTLR backtracks through block and statement doing no actions.  Upon  
+failure, it rewinds and does 2nd alt, calling block with feeling.
+
+This is the normal case.  What if we needed a semantic predicate in  
+statement that needed to know whether an ID was a var?
+
+statement
+	:	&quot;int&quot; ID ';' {scope.define($ID.text, new VariableSymbol($ID.text));}
+	|	&quot;if&quot; ...
+	|	{isVar(input.LT(1))}? ID ... // some alt predicated upon ID being  
+a variable name
+	;
+
+Here, you MUST have the define() function call executed or else the  
+{...}? sem pred will always fail.
+
+Alright.  We need to unroll the define() action for sure but we could  
+avoid if by throwing out the entire scope.  If we executed the push/ 
+pop scope actions, the definitions would actually disappear already  
+and automatically!  Wow, interesting!
+
+Let's keep going with the undo() method though.  I'd need to track  
+the scope and ID.text and VariableSymbol objects so undo would know  
+what to do.  How can I know what to track?  Impossible.  Users will  
+have to provide a specific undo action that I can execute:
+
+statement
+	:	&quot;int&quot; ID ';'
+		{scope.define($ID.text, new VariableSymbol($ID.text));}
+		@undo {scope.remove($ID.text);}
+	|	&quot;if&quot; ...
+	|	{isVar(input.LT(1))}? ID ... // some alt predicated upon ID being  
+a variable name
+	;
+
+That would unroll it no problem.  Let's assume that plain {...}  
+actions always exec when an @undo is provided (heh, I like that).
+
+Where would the undo action get executed though?  What if the undo  
+action references a local variable?  It won't even compile if I move  
+it out to the commit/rollback of the synpred up in a().  The undo  
+cannot be done in the rule as statement will be called multiple  
+times.  It has t be at the transaction end (synpred fail/success)  
+where I roll back the input.  Oh!  Also, if it references input.LT(1)  
+that will be at some unknown location during the undo action's  
+rollback!  There would have to be lots of restrictions on the undo  
+actions.  For example, I can see already that $ID.text will be  
+unavailable in the rollback action in a().
+
+Ok, taking the cue from Jeff Barnes, perhaps the undo action actually  
+creates an object that parameterizes the action and executes it  
+during rollback in reverse order:
+
+@undo(Scope s=scope, String id=$ID.text) {s.remove(id);}
+
+Here it would evaluate scope and $ID.text in it's original context  
+but execute the action during rollback.  The object could be:
+
+class Action324 extends UndoAction {
+	Scope s;
+	String id;
+	public Action324(Scope s, String id) {...set fields...}
+	public void undo() { s.remove(id); }
+}
+
+The action would be translated to:
+
+undoActions.add(new Action324(scope,$ID.text));
+
+Later we can walk undoActions and undo everything.
+
+Hmm...would this work?  Surely in this case.  The key is passing all  
+necessary data to the undo as evaluated in its original context.
+
+Ter
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="016203.html">[antlr-interest] executing actions during backtrack
+</A></li>
+	<LI>Next message: <A HREF="016206.html">[antlr-interest] executing actions during backtrack
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#16205">[ date ]</a>
+              <a href="thread.html#16205">[ thread ]</a>
+              <a href="subject.html#16205">[ subject ]</a>
+              <a href="author.html#16205">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

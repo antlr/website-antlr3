@@ -1,0 +1,171 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Specifying only part of the grammatical structure	of an input file
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Specifying%20only%20part%20of%20the%20grammatical%20structure%0A%09of%20an%20input%20file&In-Reply-To=%3C344d61080809020741k3447ceacg114933080dbcf948%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="030463.html">
+   <LINK REL="Next"  HREF="030464.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Specifying only part of the grammatical structure	of an input file</H1>
+    <B>Bill Mayfield</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Specifying%20only%20part%20of%20the%20grammatical%20structure%0A%09of%20an%20input%20file&In-Reply-To=%3C344d61080809020741k3447ceacg114933080dbcf948%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Specifying only part of the grammatical structure	of an input file">antlrinterest at gmail.com
+       </A><BR>
+    <I>Tue Sep  2 07:41:01 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="030463.html">[antlr-interest] 3.1 C - target and error recovery
+</A></li>
+        <LI>Next message: <A HREF="030464.html">[antlr-interest] Specifying only part of the grammatical structure	of an input file
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30462">[ date ]</a>
+              <a href="thread.html#30462">[ thread ]</a>
+              <a href="subject.html#30462">[ subject ]</a>
+              <a href="author.html#30462">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+I want to parse a part of an HTML file in order to extract
+information. Take a look at my input file for example:
+
+&lt;html&gt;
+&lt;head&gt;...&lt;/head&gt;
+&lt;body&gt;
+&lt;all&gt;&lt;sorts&gt;&lt;of&gt;&lt;crazy&gt;&lt;tags&gt;&lt;and&gt;&lt;pcdata&gt;
+
+	&lt;tr&gt;
+		&lt;td&gt;Terence Parr&lt;/td&gt;
+		&lt;td&gt;Knows ANTLR really well!&lt;/td&gt;
+	&lt;/tr&gt;
+	&lt;tr&gt;
+		&lt;td&gt;Bill Mayfield&lt;/td&gt;
+		&lt;td&gt;Doesn't know ANTLR!&lt;/td&gt;
+	&lt;/tr&gt;
+
+
+&lt;all&gt;&lt;sorts&gt;&lt;of&gt;&lt;crazy&gt;&lt;tags&gt;&lt;and&gt;&lt;pcdata&gt;
+&lt;/body&gt;
+&lt;/html&gt;
+
+
+So I'm only interested in recognizing the individual &lt;tr&gt;&lt;/tr&gt; rows in
+order to extract the &lt;td&gt; labels. I've writting something that is
+loosly based on
+this article -&gt; <A HREF="http://www.antlr.org/wiki/display/ANTLR3/Parsing+XML">http://www.antlr.org/wiki/display/ANTLR3/Parsing+XML</A>
+
+
+Can you tell me how I can make my parser ignore all the crazy tags and
+pcdata before the pattern I would like to recognize? This is my
+grammar and it's giving me this error: (201) The following
+alternatives can never be matched: 1
+
+
+
+grammar XMLParser;
+
+@lexer::members {
+    Boolean tagMode = false;
+}
+
+
+
+document	: 	.* pattern .* ;
+
+pattern		:	(otr PCDATA?
+					otd PCDATA?
+						person=PCDATA
+					ctd PCDATA?
+					
+					otd PCDATA?
+						comment=PCDATA
+					ctd PCDATA?
+				ctr PCDATA?)* ;
+		
+	
+/* BEGIN: specific tags */
+otr			:	TAG_START_OPEN TR (attribute)* TAG_CLOSE;
+ctr			:	TAG_END_OPEN TR (attribute)* TAG_CLOSE;
+otd			:	TAG_START_OPEN TD (attribute)* TAG_CLOSE;
+ctd			:	TAG_END_OPEN TD (attribute)* TAG_CLOSE;
+einput		:	TAG_START_OPEN INPUT (attribute)* TAG_CLOSE;
+oa			:	TAG_START_OPEN A (attribute)* TAG_CLOSE;
+ca			:	TAG_END_OPEN A (attribute)* TAG_CLOSE;
+/* END: specific tags */
+
+startTag	:	TAG_START_OPEN GENERIC_ID (attribute)* TAG_CLOSE ;
+endTag		:	TAG_END_OPEN GENERIC_ID TAG_CLOSE ;
+emptyElement:	TAG_START_OPEN GENERIC_ID  (attribute)* TAG_EMPTY_CLOSE ;
+attribute	:	GENERIC_ID ATTR_EQ ATTR_VALUE ;
+
+
+
+/*
+  LEXER RULES
+*/
+
+TAG_START_OPEN 	:	'&lt;' { tagMode = true; } ;
+	
+TAG_END_OPEN	:	'&lt;/' { tagMode = true; } ;
+	
+TAG_CLOSE		:	{ tagMode }? =&gt; '&gt;' { tagMode = false; } ;
+	
+TAG_EMPTY_CLOSE	:	{ tagMode }?	=&gt; '/&gt;' { tagMode = false; } ;
+
+ATTR_EQ			:	{ tagMode }? =&gt; '=' ;
+
+ATTR_VALUE		:	{ tagMode }? =&gt;	( '&quot;' (~'&quot;')* '&quot;' | '\'' (~'\'')* '\'' ) ;
+
+PCDATA			:	{ !tagMode }? =&gt; (~'&lt;')+ ;
+	
+/* BEGIN: specific tags */
+TR				:	{ tagMode }? =&gt; 'tr';
+TD 				:	{ tagMode }? =&gt; 'td';
+INPUT			:	{ tagMode }? =&gt; 'input';
+A				:	{ tagMode }? =&gt; 'a';
+/* END: Specific tags */
+
+GENERIC_ID    	: 	{ tagMode }? =&gt; ( LETTER | '_' | ':') (NAMECHAR)* ;
+
+fragment NAMECHAR:	 LETTER | DIGIT | '.' | '-' | '_' | ':' ;
+
+fragment DIGIT	:    	'0'..'9' ;
+
+fragment LETTER	:	'a'..'z' | 'A'..'Z' ;
+
+WS				:	{ tagMode }? =&gt; (' '|'\r'|'\t'|'\u000C'|'\n') { $channel=99;}	;
+</PRE>
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="030463.html">[antlr-interest] 3.1 C - target and error recovery
+</A></li>
+	<LI>Next message: <A HREF="030464.html">[antlr-interest] Specifying only part of the grammatical structure	of an input file
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30462">[ date ]</a>
+              <a href="thread.html#30462">[ thread ]</a>
+              <a href="subject.html#30462">[ subject ]</a>
+              <a href="author.html#30462">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

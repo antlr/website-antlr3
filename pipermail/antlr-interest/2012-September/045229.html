@@ -1,0 +1,233 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Overriding INPUT-&gt;istream-&gt;consume
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Overriding%20INPUT-%3Eistream-%3Econsume&In-Reply-To=%3C6B458D23F5D4A24ABCDB3C78EA97393B0B9D296C%40EXCH-VIRTUAL.aerotechad.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="045261.html">
+   <LINK REL="Next"  HREF="045231.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Overriding INPUT-&gt;istream-&gt;consume</H1>
+    <B>Justin Murray</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Overriding%20INPUT-%3Eistream-%3Econsume&In-Reply-To=%3C6B458D23F5D4A24ABCDB3C78EA97393B0B9D296C%40EXCH-VIRTUAL.aerotechad.com%3E"
+       TITLE="[antlr-interest] Overriding INPUT-&gt;istream-&gt;consume">jmurray at aerotech.com
+       </A><BR>
+    <I>Thu Sep 13 06:25:04 PDT 2012</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="045261.html">[antlr-interest] Why Python behind?
+</A></li>
+        <LI>Next message: <A HREF="045231.html">[antlr-interest] Overriding INPUT-&gt;istream-&gt;consume
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#45229">[ date ]</a>
+              <a href="thread.html#45229">[ thread ]</a>
+              <a href="subject.html#45229">[ subject ]</a>
+              <a href="author.html#45229">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Jim,
+
+I've decided that for my current project, I need to override the
+functionality in antlr3UTF8Consume(). I need to correctly handle '\r'
+when setting the token line numbers. This means counting '\r' or '\n'
+alone each as a newline, and counting '\r' \'n' in sequence as a single
+newline. This was easy enough to do (attached as a reference for others,
+since I could not find this anywhere).
+
+What I have attached works, but notice that I had to redefine the arrays
+trailingBytesForUTF8 and offsetsFromUTF8 to use them in my version of
+the code. This is because they are declared as static in
+antlr3inputstream.c. I don't like the idea of modifying the distributed
+source for the runtime directly to make it not static (this is hard to
+maintain properly). I also don't like my current solution of just
+duplicating the code. My question for Jim is, is there a better way to
+do this, or is this something that could be improved in later versions
+of the runtime (this is 3.4)?
+
+Cheers,
+
+- Justin Murray
+
+----
+@lexer::apifuncs
+{
+	INPUT-&gt;istream-&gt;consume = customUTF8Consume;
+}
+
+@lexer::members
+{
+	// ------------------------------------------------------
+	// Following is from Unicode.org (see antlr3convertutf.c)
+	//
+
+	/// Index into the table below with the first byte of a UTF-8
+sequence to
+	/// get the number of trailing bytes that are supposed to follow
+it.
+	/// Note that *legal* UTF-8 values can't have 4 or 5-bytes. The
+table is
+	/// left as-is for anyone who may want to do such conversion,
+which was
+	/// allowed in earlier algorithms.
+	///
+	static const ANTLR3_UINT32 trailingBytesForUTF8[256] = {
+		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+		1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+		2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
+3,3,3,3,3,3,3,3,4,4,4,4,5,5,5,5
+	};
+
+	/// Magic values subtracted from a buffer value during UTF8
+conversion.
+	/// This table contains as many values as there might be
+trailing bytes
+	/// in a UTF-8 sequence.
+	///
+	static const UTF32 offsetsFromUTF8[6] = 
+	{ 0x00000000UL, 0x00003080UL, 0x000E2080UL, 0x03C82080UL,
+0xFA082080UL, 0x82082080UL };
+
+	// End of Unicode.org tables
+	// -------------------------
+
+	static void	customUTF8Consume(pANTLR3_INT_STREAM is)
+	{
+		pANTLR3_INPUT_STREAM    input;
+		ANTLR3_UINT32           extraBytesToRead;
+		ANTLR3_UCHAR            ch;
+		pANTLR3_UINT8           nextChar;
+
+		input   = ((pANTLR3_INPUT_STREAM) (is-&gt;super));
+
+		nextChar = (pANTLR3_UINT8)input-&gt;nextChar;
+
+		if	(nextChar &lt; (((pANTLR3_UINT8)input-&gt;data) +
+input-&gt;sizeBuf))
+		{	
+			// Indicate one more character in this line
+			//
+			input-&gt;charPositionInLine++;
+
+			// Are there more bytes needed to make up the
+whole thing?
+			//
+			extraBytesToRead =
+trailingBytesForUTF8[*nextChar];
+
+			if	(nextChar + extraBytesToRead &gt;=
+(((pANTLR3_UINT8)input-&gt;data) + input-&gt;sizeBuf))
+			{
+				input-&gt;nextChar =
+(((pANTLR3_UINT8)input-&gt;data) + input-&gt;sizeBuf);
+				return;
+			}
+
+			// Cases deliberately fall through (see note A
+in antlrconvertutf.c)
+			// Legal UTF8 is only 4 bytes but 6 bytes could
+be used in old UTF8 so
+			// we allow it.
+			//
+			ch  = 0;
+			switch (extraBytesToRead) {
+			case 5: ch += *nextChar++; ch &lt;&lt;= 6;
+			case 4: ch += *nextChar++; ch &lt;&lt;= 6;
+			case 3: ch += *nextChar++; ch &lt;&lt;= 6;
+			case 2: ch += *nextChar++; ch &lt;&lt;= 6;
+			case 1: ch += *nextChar++; ch &lt;&lt;= 6;
+			case 0: ch += *nextChar++;
+			}
+
+			// Magically correct the input value
+			//
+			ch -= offsetsFromUTF8[extraBytesToRead];
+			if  (ch == '\n')
+			{
+				/* Reset for start of a new line of
+input */
+				if ((input-&gt;nextChar == input-&gt;data) ||
+(*((pANTLR3_UINT8)input-&gt;nextChar-1) != '\r'))
+				{
+					// if it is the first character,
+or the previous character was not a \r
+					input-&gt;line++;
+				}
+			
+				input-&gt;charPositionInLine	= 0;
+				input-&gt;currentLine		= (void
+*)nextChar;
+			}
+			else if (ch == '\r')
+			{
+				/* Reset for start of a new line of
+input
+				*/
+				input-&gt;line++;
+				input-&gt;charPositionInLine	= 0;
+				input-&gt;currentLine		= (void
+*)nextChar;
+			}
+
+			// Update input pointer
+			//
+			input-&gt;nextChar = nextChar;
+		}
+	}
+}
+----
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="045261.html">[antlr-interest] Why Python behind?
+</A></li>
+	<LI>Next message: <A HREF="045231.html">[antlr-interest] Overriding INPUT-&gt;istream-&gt;consume
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#45229">[ date ]</a>
+              <a href="thread.html#45229">[ thread ]</a>
+              <a href="subject.html#45229">[ subject ]</a>
+              <a href="author.html#45229">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

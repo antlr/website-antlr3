@@ -1,0 +1,114 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] pass state from parser to lexer
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20pass%20state%20from%20parser%20to%20lexer&In-Reply-To=%3CFA21EA835C1467498B3E0B904C9CF2020F087344%40TK5EX14MBXC285.redmond.corp.microsoft.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="044827.html">
+   <LINK REL="Next"  HREF="044822.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] pass state from parser to lexer</H1>
+    <B>Scobie Smith (Insight Global)</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20pass%20state%20from%20parser%20to%20lexer&In-Reply-To=%3CFA21EA835C1467498B3E0B904C9CF2020F087344%40TK5EX14MBXC285.redmond.corp.microsoft.com%3E"
+       TITLE="[antlr-interest] pass state from parser to lexer">v-scobis at microsoft.com
+       </A><BR>
+    <I>Tue Jul  3 20:46:52 PDT 2012</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="044827.html">[antlr-interest] pass state from parser to lexer
+</A></li>
+        <LI>Next message: <A HREF="044822.html">[antlr-interest] get Line and Column in TreeParser with antlr 2.7.7 generating C# Code
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#44828">[ date ]</a>
+              <a href="thread.html#44828">[ thread ]</a>
+              <a href="subject.html#44828">[ subject ]</a>
+              <a href="author.html#44828">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Thanks, Benjamin and Bart. That helps a lot. However, there is one more complication that makes this worse. The BODY lex rule needs to be applicable only in the context of a given parser rule. The language has only one particular statement that involves this sort of BODY; elsewhere such a string should be tokenized piecemeal. (This BODY token would grab any string with &quot;bookends&quot;.) If there were some sort of dynamic scope, or state, or flag, that I could set in the parser at a given rule, which I could then check in lexer rules--then I could use semantic predicates to guide whether a lex rule should be used. But there seems to be nothing I can pass between parser and lexer, esp. from parser to lexer.
+
+So, what I am doing now is using an elaborate gated semantic predicate in the lexer that effectively checks if it can parse out this odd statement. The statement is not recursive, so I can get away with this in the lexer (at least this time). If the predicate detects the statement, it also grabs the relevant pieces, and then I emit those pieces manually as separate tokens.
+
+The lexer rule is basically this:
+
+ExecStatement:
+	{ DetectExec() }?=&gt; ExecCommand
+		{
+			MatchExecStatement();  // Just calls input.Consume() to move the char position along for all the pieces.
+			EmitExecStatement();  // Emits the three pieces (exec, mode, body).
+		} ;
+
+ExecCommand: { CharPosition == 0 }? 'exec' ;
+
+The DetectExec() method just looks down the input using LA(i) to parse out the pieces, saving them for the emit. This is looking like it is going to work.
+
+So, in effect, this is just a hack, to have the lexer (predicate) do the syntactical parsing. If the parsing works, then the lexer rule succeeds, and that &quot;token&quot; (ExecStatement) will then trigger the right parser rule.
+
+If anyone knows a hack to pass state from parser to lexer, let me know. :)
+
+Thanks.
+Scobie
+
+-----Original Message-----
+From: Benjamin S Wolf [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">jokeserver at gmail.com</A>] 
+Sent: Tuesday, July 03, 2012 6:45 PM
+To: Bart Kiers
+Cc: Scobie Smith (Insight Global); <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: Re: [antlr-interest] pass state from parser to lexer
+
+On Tue, Jul 3, 2012 at 10:31 AM, Bart Kiers &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">bkiers at gmail.com</A>&gt; wrote:
+&gt;<i> On Tue, Jul 3, 2012 at 6:13 PM, Benjamin S Wolf &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">jokeserver at gmail.com</A>&gt;
+</I>&gt;<i> wrote:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I believe you can also use ~ as a negation, eg.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> BODY : '#' ~'#'* '#' ;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> (if # is your delimiter, as an example)
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> The delimiter is variable and is provided (at runtime?) by the user, 
+</I>&gt;<i> as indicated by Scobie.
+</I>
+Oh, I see. Sorry I missed that. If the user gets to specify then you can't hard-code it into the Lexer, which is what those rules will assume you can do.
+
+Bart's suggestion works for specifying the delimiter at lexer initialization time. Here's a similar way to use a delimiter specified at lex time.
+
+BODY : delimiter=. ( {input.LA(1) != $delimiter}?=&gt; . )* . ;
+
+or
+
+@init { char delimiter; }
+BODY : a=. {delimiter=$a;} ( {input.LA(1) != delimiter}?=&gt; . )* . ;
+
+Use delimiter=~WS or similar if you don't want your grammar using whitespace characters as delimiters.
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="044827.html">[antlr-interest] pass state from parser to lexer
+</A></li>
+	<LI>Next message: <A HREF="044822.html">[antlr-interest] get Line and Column in TreeParser with antlr 2.7.7 generating C# Code
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#44828">[ date ]</a>
+              <a href="thread.html#44828">[ thread ]</a>
+              <a href="subject.html#44828">[ subject ]</a>
+              <a href="author.html#44828">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

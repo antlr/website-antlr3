@@ -1,0 +1,191 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Building syntax highlighters with ANTLR
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Building%20syntax%20highlighters%20with%20ANTLR&In-Reply-To=%3C200904160430.n3G4UJmp001789%40zinc.newtechlaw.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="034053.html">
+   <LINK REL="Next"  HREF="034059.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Building syntax highlighters with ANTLR</H1>
+    <B>Gerald Rosenberg</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Building%20syntax%20highlighters%20with%20ANTLR&In-Reply-To=%3C200904160430.n3G4UJmp001789%40zinc.newtechlaw.com%3E"
+       TITLE="[antlr-interest] Building syntax highlighters with ANTLR">gerald at certiv.net
+       </A><BR>
+    <I>Wed Apr 15 21:28:56 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="034053.html">[antlr-interest] Building syntax highlighters with ANTLR
+</A></li>
+        <LI>Next message: <A HREF="034059.html">[antlr-interest] Building syntax highlighters with ANTLR
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#34058">[ date ]</a>
+              <a href="thread.html#34058">[ thread ]</a>
+              <a href="subject.html#34058">[ subject ]</a>
+              <a href="author.html#34058">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>A better approach is to use a predicate.  That way you don't have to 
+intercept every lexer token and makes it considerably easier to 
+handle multiple pair sets.
+
+@lexer::members {
+   public boolean pairMatch(int limit) {
+     return PairMatcherHelper.pairMatch(input, limit);
+   }
+   public boolean pairMatch(int limit, char beg, char end) {
+     return PairMatcherHelper.pairMatch(input, limit, beg, end);
+   }
+}
+
+BRACE_BLOCK :'{' { pairMatch(200) }? ;
+BRACKET_BLOCK :'[' { pairMatch(50, '[', ']') }? ;
+
+PairMatcherHelper#pairMatch then does full nested pair matching, 
+subject to certain limitations.  Does respect Antlr's backtracking semantics.
+
+Note, the attached version is set up for just for single char delimiters.
+
+
+
+
+At 10:56 AM 4/15/2009, Sam Harwell wrote:
+
+&gt;<i>The new method uses a very different override of NextToken(). The 
+</I>&gt;<i>outer loop is largely a duplication of the functionality of 
+</I>&gt;<i>Lexer.NextToken(). I've highlighted the key section that reliably 
+</I>&gt;<i>manages the lexer state information (yay HTML email).
+</I>&gt;<i>
+</I>&gt;<i>public override IToken NextToken()
+</I>&gt;<i>{
+</I>&gt;<i>     for ( ; ; )
+</I>-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20090415/f01b8bfd/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20090415/f01b8bfd/attachment.html</A> 
+-------------- next part --------------
+package net.certiv.test;
+
+import org.antlr.runtime.ANTLRStringStream;
+import org.antlr.runtime.CharStream;
+
+public class PairMatchHelper {
+
+	private static boolean debug = false;
+
+	public static boolean pairMatch(CharStream input, int limit) {
+		return pairMatch(input, limit, '{', '}');
+	}
+
+	public static boolean pairMatch(CharStream input, int limit, char open, char close) {
+		int nest = 1; // already matched &amp; consumed open char
+		boolean done = false;
+		while (!done &amp;&amp; limit &gt; 0) {
+			int la_1 = input.LA(1);
+			if (la_1 == -1) return false;
+			if (la_1 == '\\') {
+				int la_2 = input.LA(2);
+				if (la_2 == -1) return false;
+				consume(input, limit);
+				consume(input, limit);
+			} else if (la_1 == '/') {
+				int la_2 = input.LA(2);
+				if (la_2 == -1) return false;
+				if (la_2 == '/') { // consume '//' to eol
+					consume(input, limit);
+					do {
+						consume(input, limit);
+						la_1 = input.LA(1);
+						if (la_1 == -1) return false;
+					} while (!(la_1 == '\r' || la_1 == '\n'));
+				} else {
+					consume(input, limit);
+				}
+			} else if (la_1 == '\'' || la_1 == '&quot;') {
+				boolean goodString = matchString(input, limit, (char) la_1);
+				if (!goodString) return false;
+			} else if (la_1 == open) {
+				nest++;
+				consume(input, limit);
+			} else if (la_1 == close) {
+				nest--;
+				consume(input, limit);
+				if (nest == 0) done = true;
+			} else {
+				consume(input, limit);
+			}
+		}
+		if (limit == 0) return false;
+		return true;
+	}
+
+	private static boolean matchString(CharStream input, int limit, char c) {
+		consume(input, limit); // already matched open char
+		boolean done = false;
+		while (!done &amp;&amp; limit &gt; 0) {
+			int la_1 = input.LA(1);
+			if (la_1 == -1) return false;
+			if (la_1 == '\\') {
+				int la_2 = input.LA(2);
+				if (la_2 == -1) return false;
+				consume(input, limit);
+				consume(input, limit);
+			} else if (la_1 == c) {
+				consume(input, limit);
+				done = true;
+			} else {
+				consume(input, limit);
+			}
+		}
+		if (limit == 0) return false;
+		return true;
+	}
+
+	private static void consume(CharStream input, int limit) {
+		if (debug) System.out.print((char) input.LA(1));
+		input.consume();
+		limit--;
+	}
+
+	// //////////////////////////////////////////////////////////////////////////
+
+	public static void main(String[] args) {
+		debug = true;
+		ANTLRStringStream input = new ANTLRStringStream(t2);
+		boolean result = pairMatch(input, 1000);
+		System.out.println(&quot;Result: &quot; + result);
+	}
+
+	public static final String t1 = &quot;hel'lo}and&quot;;
+	public static final String t2 = &quot;h{ell}o}and&quot;;
+	public static final String t3 = &quot;run(\&quot;A{}\&quot;); }&quot;;
+}
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="034053.html">[antlr-interest] Building syntax highlighters with ANTLR
+</A></li>
+	<LI>Next message: <A HREF="034059.html">[antlr-interest] Building syntax highlighters with ANTLR
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#34058">[ date ]</a>
+              <a href="thread.html#34058">[ thread ]</a>
+              <a href="subject.html#34058">[ subject ]</a>
+              <a href="author.html#34058">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

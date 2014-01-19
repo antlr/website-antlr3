@@ -1,0 +1,305 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] handling preprocessor #define and macro substitutions
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20handling%20preprocessor%20%23define%20and%20macro%20substitutions&In-Reply-To=cdengr%2Bs8dp%40eGroups.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="008723.html">
+   <LINK REL="Next"  HREF="008727.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] handling preprocessor #define and macro substitutions</H1>
+    <B>Mike Lischke</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20handling%20preprocessor%20%23define%20and%20macro%20substitutions&In-Reply-To=cdengr%2Bs8dp%40eGroups.com"
+       TITLE="[antlr-interest] handling preprocessor #define and macro substitutions">lists at lischke-online.de
+       </A><BR>
+    <I>Sun Jul 18 15:36:56 PDT 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="008723.html">[antlr-interest] handling preprocessor #define and macro substitutions
+</A></li>
+        <LI>Next message: <A HREF="008727.html">[antlr-interest] Match the End of File
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#8724">[ date ]</a>
+              <a href="thread.html#8724">[ thread ]</a>
+              <a href="subject.html#8724">[ subject ]</a>
+              <a href="author.html#8724">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Eric, 
+
+&gt;<i> I'm parsing a language that has something similar to the C 
+</I>&gt;<i> preprocessor constructs.  Is there something in antlr already 
+</I>&gt;<i> out there for this that somebody can point me to?
+</I>
+I'm currently exactly at that point: building a full preprocessor in Java. Actually, the preprocessor is ready, but I'm
+testing it up and down with all files I can get. Today I changed the #if/#ifdef#/#elif handling from simple recursive
+execution to a state machine. It should be ready for general use within the next two days.
+
+&gt;<i> - the substitution can occur within two different lexer 
+</I>&gt;<i> states where the tokens are different, so I think I need to 
+</I>&gt;<i> store the substitutition text as a string as opposed to a 
+</I>&gt;<i> list of tokens
+</I>
+What I do is to handle preprocessor directives before the text even reaches the lexer. For this I created a new input
+state class, which is abled to track include files and a preprocessor class, which knows about this special input state
+class. The input state class uses the preprocessor class as input reader, which in turn uses an input converter class
+that does line splicing and trigraph sequence handling.
+
+&gt;<i> - during the macro substitution, handling parameter 
+</I>&gt;<i> substituion.  One of my lexer states that doesn't even have 
+</I>&gt;<i> an identifier defined could make this problematic.
+</I>
+I also created a MacroTable class that does handle all the macro stuff. It is able to handle everything that can occur
+in this regard (macro functions, symbolic constants, aware of recursive macro definitions etc.). The whole thing was
+created according to MSDN:  Visual Studio -&gt; Visual C++ -&gt; Visual C++ Reference -&gt; C/C++ Languages -&gt;  C/C++
+Preprocessor Reference -&gt; The Preprocessor -&gt; Macros. Since macro expansion is done before any text reaches the lexer
+there is no problem with any combination of macro definitions and substitutions. See attachment (the class works fine
+standalone, you have to change the package name, though).
+
+&gt;<i> - expressions as arguments to the macro call.  The expression 
+</I>&gt;<i> is defined in the parser and not the lexer, so its definition 
+</I>&gt;<i> is not there.  Right now, I'm just matching up grouping 
+</I>&gt;<i> symbols that can contain the &quot;,&quot; which is also the separator 
+</I>&gt;<i> between the expressions.
+</I>
+I'd recommend not to let the normal parser/lexer combination handle the preprocessing stuff. Place an additional stage
+before the real parser.
+ 
+&gt;<i> Secondarily, an example for handling #if/#else would be nice. 
+</I>&gt;<i>  I assume this would just gobble up tokens when it would find 
+</I>&gt;<i> the condition to be false (nextToken).
+</I>
+Here is a part of my preprocessor that handles directives:
+
+  /**
+   * Checks for any known preprocessor directive and triggers individual processing.
+   * 
+   * @param input The directive with the number sign.
+   * @return &lt;b&gt;true&lt;/b&gt; if the calling method should stop its reader loop.
+   */
+  private boolean processDirective(int directive, String input) throws FileNotFoundException, 
+    IOException
+  {
+    boolean result = false;
+    // Remove the leading number sign and split the rest into two parts of which the first
+    // one is the directive and the second one the expression to parse.
+    String[] parts = splitDirective(input);
+    String directiveText = parts[1].trim();
+    switch (directive)
+    {
+      case INCLUDE:
+      {
+        if (!skip)
+          result = processInclude(macroTable.expandMacros(directiveText));
+        break;
+      }
+      case DEFINE:
+        if (!skip)
+          processDefine(parts[1]);
+        break;
+      case UNDEF:
+        if (!skip)
+          processUndef(parts[1]);
+        break;
+      case IFDEF:
+      {
+        pendingStates.push(IF_DIRECTIVE);
+        skipFlags.push(new Boolean(skip));
+        if (!skip)
+        {
+          boolean condition = macroTable.isDefined(directiveText);
+          if (!condition)
+            skip = true;
+        }
+        break;
+      }
+      case IFNDEF:
+      {
+        pendingStates.push(IF_DIRECTIVE);
+        skipFlags.push(new Boolean(skip));
+        if (!skip)
+        {
+          boolean condition = !macroTable.isDefined(directiveText);
+          if (!condition)
+            skip = true;
+        }
+        break;
+      }
+      case IF:
+      {
+        pendingStates.push(IF_DIRECTIVE);
+        skipFlags.push(new Boolean(skip));
+        if (!skip)
+        {
+          boolean condition = evaluateBooleanExpression(macroTable.expandMacros(directiveText));
+          if (!condition)
+            skip = true;
+        }
+        break;
+      }
+      case PRAGMA:
+        if (!skip)
+          processPragma(parts);
+        break; 
+      case ERROR:
+        if (!skip)
+          reportError(parts[1]);
+        break;
+      case ELSE:
+      {
+        Integer pendingState = (Integer) pendingStates.pop();
+        // See what the state was, which opened this conditional branch.
+        switch (pendingState.intValue())
+        {
+          case IF:
+          case IFDEF:
+          case IFNDEF:
+          case ELIF:
+          {
+            pendingStates.push(ELSE_DIRECTIVE);
+            // If the superordinated conditional branch was already skipping then continue that,
+            // otherwise reveverse the skip mode for this branch.
+            Boolean lastSkipMode = (Boolean) skipFlags.peek();
+            if (!lastSkipMode.booleanValue())
+              skip = !skip;
+            break;
+          }
+          default:
+          {
+            reportError(&quot;Unexpected #else preprocessor directive found.&quot;);
+          }
+        }
+        break;
+      }
+      case ELIF:
+      {
+        Integer pendingState = (Integer) pendingStates.pop();
+        // See what the state was, which opened this conditional branch.
+        switch (pendingState.intValue())
+        {
+          case IFDEF:
+          case IFNDEF:
+          case IF:
+          case ELIF:
+          {
+            pendingStates.push(IF_DIRECTIVE);
+            // If the superordinated conditional branch was already skipping then continue that,
+            // otherwise reveverse the skip mode for this branch.
+            Boolean lastSkipMode = (Boolean) skipFlags.peek();
+            if (!lastSkipMode.booleanValue())
+            {
+              // If currently lines are skipped then the previous conditional branch failed the
+              // condition. So check again if there is this time a hit.
+              if (skip)
+              {
+                boolean condition = evaluateBooleanExpression(macroTable.expandMacros(parts[1]));
+                if (condition)
+                  skip = false;
+              }
+            }
+            break;
+          }
+          default:
+          {
+            reportError(&quot;Unexpected #elif preprocessor directive found.&quot;);
+          }
+        }
+        break;
+      }
+      case ENDIF:
+      {
+        Integer pendingState = (Integer) pendingStates.pop();
+        Boolean lastSkipMode = (Boolean) skipFlags.pop();
+        skip = lastSkipMode.booleanValue();
+        // See what the state was, which opened this conditional branch.
+        switch (pendingState.intValue())
+        {
+          case IF:
+          case IFDEF:
+          case IFNDEF:
+          case ELIF:
+          case ELSE:
+          {
+            // Return to parent mode.
+            break;
+          }
+          default:
+          {
+            reportError(&quot;Unexpected #endif preprocessor directive found.&quot;);
+          }
+        }
+        break;
+      }
+    }
+    
+    return result;
+  }
+
+This code is currently under heavy testing and could change if an error is found.
+
+&gt;<i> Or, should the preprocessor be a separate filter instead of 
+</I>&gt;<i> included with the lexer - token stream filter?
+</I>
+Yes, definitely. I tried several times but could not get ANTRL to generate a preprocessor for me so I wrote one by hand.
+After many changes I ended up with a relatively simple preprocessor class, which is accompanied by the macro table, an
+expression parser (generated with ANTLR) and an evaluator class.
+
+&gt;<i> Again a preprocessor example with text subtitution (including
+</I>&gt;<i> parameters) and conditional constructs would help out a lot.  
+</I>&gt;<i> There's got to one out there.  I did some googling without success.
+</I>
+No, there is none (at least no free one). That's the reason why I started mine. But hold, soon there is a free one: I
+plan to publish mine as open source :-)
+
+Mike
+--
+www.soft-gems.net
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+    <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+    <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+    <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: MacroTable.zip
+Type: application/x-zip-compressed
+Size: 7559 bytes
+Desc: not available
+Url : <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20040719/be49bcd3/MacroTable.bin">http://www.antlr.org/pipermail/antlr-interest/attachments/20040719/be49bcd3/MacroTable.bin</A>
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="008723.html">[antlr-interest] handling preprocessor #define and macro substitutions
+</A></li>
+	<LI>Next message: <A HREF="008727.html">[antlr-interest] Match the End of File
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#8724">[ date ]</a>
+              <a href="thread.html#8724">[ thread ]</a>
+              <a href="subject.html#8724">[ subject ]</a>
+              <a href="author.html#8724">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

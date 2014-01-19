@@ -1,0 +1,132 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Lexer bug?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Lexer%20bug%3F&In-Reply-To=%3C20071022030232.E985911EC35%40www.antlr.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="024292.html">
+   <LINK REL="Next"  HREF="024304.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Lexer bug?</H1>
+    <B>Gavin Lambert</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Lexer%20bug%3F&In-Reply-To=%3C20071022030232.E985911EC35%40www.antlr.org%3E"
+       TITLE="[antlr-interest] Lexer bug?">antlr at mirality.co.nz
+       </A><BR>
+    <I>Sun Oct 21 20:02:24 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="024292.html">[antlr-interest] Lexer bug?
+</A></li>
+        <LI>Next message: <A HREF="024304.html">[antlr-interest] Lexer bug?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24296">[ date ]</a>
+              <a href="thread.html#24296">[ thread ]</a>
+              <a href="subject.html#24296">[ subject ]</a>
+              <a href="author.html#24296">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>At 13:49 22/10/2007, Clifford Heath wrote:
+ &gt;This rule consumes digits and one &quot;.&quot;, then stops - and that's 
+not
+ &gt;a legal token.
+
+I've been complaining off and on about similar cases since the 
+early betas.  Some useful discussion came up a while back that the 
+predefined &quot;Tokens&quot; rule was being generated on the basis of 
+matching only one token, and all the lookahead is generated from 
+that same perspective; whereas if it were generated to match a 
+sequence of tokens instead it generated better lookahead.
+
+Consider the source rules again for a moment:
+DOTTY : '..';
+NUMBER
+:<i>       SIGN? DIGIT+ FRACTION? EXPONENT?
+</I>|<i>       SIGN? FRACTION EXPONENT?
+</I>;
+fragment SIGN:          ('+' | '-');
+fragment FRACTION:      '.' DIGIT+;
+fragment EXPONENT:      ('e'|'E') SIGN? DIGIT+;
+fragment DIGIT  :       '0'..'9';
+
+To enter this rule, there must be one of these things:
+   1. a SIGN followed by at least one DIGIT
+   2. a SIGN followed by a FRACTION (which is a dot and at least 
+one DIGIT)
+   3. at least one DIGIT
+   4. a FRACTION (which is a dot and at least one DIGIT)
+
+As soon as you see any of those four cases, you can be reasonably 
+sure that you've got yourself a NUMBER (unless you're also trying 
+to produce longest-match-wins, in which case you have to entertain 
+the possibility it's something else).
+
+So, ok.  The input at this point is &quot;10..20&quot;.  This starts with a 
+sequence of digits, which matches option 3, so that's fine, it's a 
+NUMBER.  So the lexer consumes all the digits and completes the 
+first loop.  Everything is all good up to this point.
+
+This is where things go wrong, though.  In reality, the things 
+that ought to be permissible next are:
+   1. end of token (everything following the DIGIT loop is 
+optional, after all)
+   2. a FRACTION (a dot and at least one DIGIT)
+   3. an EXPONENT (starting with an e or E)
+   4. a FRACTION followed by an EXPONENT
+
+ANTLR currently looks ahead and sees a dot.  At this point, it 
+immediately assumes that it's got path #2 and tries to match a 
+FRACTION.  (Which it will eventually manage to do, but only by 
+discarding some of the input stream, which is naughty.)
+
+The &quot;correct&quot; answer should have been #1, to end the token at that 
+point (because it is perfectly valid, after all).  After doing 
+that, it would then see two dots and generate a DOTTY, then 
+another sequence of DIGITs and generate another NUMBER.  Which is 
+exactly what is desired here.
+
+So the assumption it made when seeing the dot was faulty.  It was 
+correct in that after seeing the dot the only thing that could 
+legally follow it would be a DIGIT loop (within that same token), 
+but it completely ignored the fact that it wasn't required to 
+consume the dot at all, since it was part of an optional clause.
+
+Whenever this comes up (and it does come up a lot), the answer 
+from Ter and Jim always seems to be &quot;it's supposed to do that&quot;, 
+and &quot;rewrite your lexer rules&quot; (usually involving syntactic 
+predicates in some way).  My point is that the current behaviour 
+is completely counter-intuitive (and hence &quot;wrong&quot;, from my 
+viewpoint), and while rewriting the lexer rules can often work 
+around it, we shouldn't have to.  (And it's a lot messier.)
+
+</PRE>
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="024292.html">[antlr-interest] Lexer bug?
+</A></li>
+	<LI>Next message: <A HREF="024304.html">[antlr-interest] Lexer bug?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24296">[ date ]</a>
+              <a href="thread.html#24296">[ thread ]</a>
+              <a href="subject.html#24296">[ subject ]</a>
+              <a href="author.html#24296">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

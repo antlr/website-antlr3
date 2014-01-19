@@ -1,0 +1,336 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Using a Parser as a TokenFilter
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Using%20a%20Parser%20as%20a%20TokenFilter&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001506.html">
+   <LINK REL="Next"  HREF="001509.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Using a Parser as a TokenFilter</H1>
+    <B>mzukowski at yci.com</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Using%20a%20Parser%20as%20a%20TokenFilter&In-Reply-To="
+       TITLE="[antlr-interest] Using a Parser as a TokenFilter">mzukowski at yci.com
+       </A><BR>
+    <I>Wed Jun 26 07:33:28 PDT 2002</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001506.html">[antlr-interest] RE: lexical nondeterminism question
+</A></li>
+        <LI>Next message: <A HREF="001509.html">[antlr-interest] Using a Parser as a TokenFilter
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1507">[ date ]</a>
+              <a href="thread.html#1507">[ thread ]</a>
+              <a href="subject.html#1507">[ subject ]</a>
+              <a href="author.html#1507">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Folks,
+	In case people want to comment on specifics of my recent article
+<A HREF="http://www.codetransform.com/filterexample.html,">http://www.codetransform.com/filterexample.html,</A> I'm posting the text of it
+here so it can be archived and quoted.
+
+Using a Parser as a TokenFilter
+
+I was trying out some &quot;extreme programming&quot; while rewriting a parser for
+AREV Basic, exploring incremental fixes to the problem of keywords being
+used as identifiers. The first one I encountered was labels (as in GOTO)
+with the name &quot;Exit&quot;, which is also a Basic statement. In this case I
+reasoned that I could detect the &quot;GOTO&quot; and then safely assume that what
+followed it was a really a label and not a keyword.
+
+I didn't want to recognize this in the lexer, because I didn't want to
+explicitly deal with whitespace in a rule, and I didn't want to check the
+literals table myself for the jump statements (some of which are two tokens
+long).
+
+
+Doing it in the parser leads to various ambiguity warnings, especially
+because antlr's &quot;linear approximate&quot; lookahead ORs together tests for each k
+of lookahead and these constructs are both one and two tokens long. The
+simple example is that '&quot;GO&quot; label' and '&quot;GO&quot; &quot;TO&quot; label' are valid. The
+label rule needs to allow keywords and identifiers as labels, but of course
+&quot;TO&quot; is among those. So then I have to use syntactic predicates combined
+with a semantic predicate that answers the question of whether this token is
+a literal or not.
+
+I felt the easiest thing to do would be to have a parser written as a
+TokenStreamFilter to recognize a jump statement like &quot;GOTO&quot; and then expect
+a label, coercing any keywords into a label as needed. If something else
+like an operator or String is found I just pass it along as it and let the
+parser deal with the error. Line numbers (optionally followed by a colon)
+are valid labels.
+
+A TokenStreamFilter simply implements one method: nextToken(). In my lexer I
+mark any IDENT or keyword token with the boolean &quot;possibleId&quot; as true. I
+wanted to write a parser like 
+
+
+jumpStatements:
+    (   &quot;GO&quot; (&quot;TO&quot;)? 
+     |  &quot;GOTO&quot;
+     |  &quot;GOSUB&quot;
+     |  &quot;RETURN&quot; &quot;TO&quot;
+     ) 
+     labelReferences
+     ;
+ exception 
+     catch [RecognitionException ex] {
+           consume();
+     }
+ 
+ labelReferences:
+     labelReference (COMMA labelReference)*
+     ;
+ 
+ labelReference
+     :   tok:~(EOL) { if ( ((ArevToken)tok).possibleId  ||
+tok.getType()==NUMBER_LITERAL)
+                     { 
+                             tok.setType(LABEL_REFERENCE);
+                     }
+             }
+         (COLON)? 
+     ;
+ 
+ 
+I would always enter at jumpStatements. If it failed to recognize something
+I simply consume() that token and pass it on. So there is the first
+problem--how do I pass on these tokens to the next parser? nextToken() only
+returns one token at a time but this parser wants to match more than one
+token at a time. I decided to use antlr.TokenQueue to queue up the tokens.
+nextToken() would first check to take a token off the queue, and if it was
+empty it would call jumpStatements to prime the queue. Using TokenQueue this
+way required some slight modifications, making it public and adding a
+length() method.
+
+Now how to get the tokens into the queue? In this case I want to pass on
+every token received, it's just that in some cases I want to change the
+type. So I decided to override consume() to add tokens to the queue. That
+way I knew all tokens that came through would be put in the queue. With this
+approach I had to take special care to handle RecognitionExceptions by using
+consume() on the token that caused the exceptions. One of my first bugs was
+getting into an infinite loop on a RecognitionException because I wasn't
+eating the offending token. That way I guarantee that everytime I call
+jumpStatements at least one token will be put in the queue.
+
+     public void consume() 
+     {
+         try 
+         {
+             queue.append(LT(1));
+         }
+         catch (TokenStreamException e) 
+         {
+             // do nothing
+         }
+         super.consume();
+     }
+ 
+     public Token nextToken() throws TokenStreamException 
+     {
+         Token ret;
+         if (queue.length()&lt;=0)
+         {
+             try 
+             {
+                 jumpStatements();
+             }
+             catch ( RecognitionException e) {;}
+             catch ( TokenStreamException e) {;}
+         }
+         ret = queue.elementAt(0);
+         queue.removeFirst();
+         return ret;
+     }
+ 
+The glue for being able to run this is this class:
+
+ public class LabelReferenceFilter  implements TokenStream 
+ {
+     BASICLabelReferenceParser streamParser;
+     public LabelReferenceFilter(TokenStream input) 
+     {
+         streamParser  = new BASICLabelReferenceParser(input);
+     }
+ 
+     public Token nextToken() throws TokenStreamException 
+     {
+         Token tok = streamParser.nextToken();
+         return tok;
+     }
+ }
+ 
+Now it turns out that I had another problem to solve with this filter. The
+parser I was working with was written to expect &quot;end of line&quot; tokens to
+separate statements. The lexer was written to send those EOL tokens, but it
+wasn't easy to collapse EOLs separated by whitespace into one EOL because of
+comments (which depended on knowing if their * or ! was the first thing on a
+line (after whitespace). Once out of the lexer the whitespace and comments
+would be gone, so it would be easy to collapse multiple EOLs into one. I
+modified the consume() method to collapse multiple EOLs in a row:
+
+     boolean currentIsNewline =  LA(1)==EOL;
+     if (!(previousWasNewline &amp;&amp; currentIsNewline))
+     {
+         queue.append(LT(1));
+     }
+     previousWasNewline = currentIsNewline;
+ 
+It also happened that calling labelReferences directly from jumpStatements
+didn't work because the parser assumed that EOF would follow when in fact
+this was working more like a lexer which gets called multiple times on the
+same stream and shouldn't be assuming EOF. So I modified it to call
+labelReferences as a method, not as a rule call, to avoid the associated
+lookahead. Then I also noticed I needed to handle the case where EOLs
+followed the jump, so I do my own testing of LA(1) to decide what to do. To
+handle syntax errors properly I also added the expectingLabel variable and
+set it to false if something goes wrong. Finally, here's the complete
+working BASICLabelReference.g file:
+
+ header {
+ 
+ import ArevToken;
+ import java.util.Hashtable;
+ import antlr.TokenQueue;
+ }
+ 
+ class BASICLabelReferenceParser extends Parser;
+ options {
+     importVocab=BASIC;
+     k=1;
+ }
+ 
+ {
+     TokenQueue queue = new TokenQueue(6);
+     boolean expectingLabel = false;
+     boolean previousWasNewline = false;
+ 
+   public void consume() {
+             try 
+             {
+                 boolean currentIsNewline =  LA(1)==EOL;
+                 if (!(previousWasNewline &amp;&amp; currentIsNewline))
+                 {
+                     queue.append(LT(1));
+                 }
+                 previousWasNewline = currentIsNewline;
+             }
+             catch (TokenStreamException e) 
+             {
+                 System.err.println(e);
+                 e.printStackTrace();
+                 // do nothing
+             }
+             super.consume();
+ 	}
+ 
+     public Token nextToken() throws TokenStreamException 
+     {
+         Token ret;
+         if (queue.length()&lt;=0)
+         {
+             try 
+             {
+                  jumpStatements();
+             }
+             catch ( RecognitionException e) {;}
+             catch ( TokenStreamException e) {;}
+         }
+         if (queue.length()&gt;0) 
+         {
+             ret = queue.elementAt(0);
+             queue.removeFirst();
+             return ret;
+         }
+         return new ArevToken(Token.EOF_TYPE,&quot;&quot;);
+     }
+ }
+ 
+ jumpStatements:
+     (   &quot;GO&quot; (&quot;TO&quot;)? 
+     |  &quot;GOTO&quot;
+     |  &quot;GOSUB&quot;
+     |  &quot;RETURN&quot; &quot;TO&quot;
+     ) 
+     {
+         expectingLabel = true;
+         if (LA(1)==EOL) eols();
+         else labelReferences();
+         expectingLabel = false;
+     }
+     ;
+ exception 
+     catch [RecognitionException ex] {
+         if (LA(1)==EOL) eols();
+         else consume();
+     }
+     
+ labelReferences:
+     labelReference (COMMA labelReference)*
+     ;
+ exception 
+     catch [RecognitionException ex] {
+         expectingLabel = false;
+     }
+ 
+ labelReference
+     :   tok:~(EOL) { if (expectingLabel &amp;&amp; ((((ArevToken)tok).possibleId)
+||<i> tok.getType()==NUMBER_LITERAL))
+</I>                     { 
+                             tok.setType(LABEL_REFERENCE);
+                             if (LA(1)!=COMMA) { expectingLabel = false; }
+                     }
+                     else
+                     {
+                         expectingLabel = false;
+                     }
+             }
+         (COLON)? 
+     ;
+ exception 
+     catch [RecognitionException ex] {
+         expectingLabel = false;
+     }
+ 
+ eols
+     :  (EOL)+
+     ;
+ exception 
+     catch [RecognitionException ex] {
+         expectingLabel = false;
+     }
+ 
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001506.html">[antlr-interest] RE: lexical nondeterminism question
+</A></li>
+	<LI>Next message: <A HREF="001509.html">[antlr-interest] Using a Parser as a TokenFilter
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1507">[ date ]</a>
+              <a href="thread.html#1507">[ thread ]</a>
+              <a href="subject.html#1507">[ subject ]</a>
+              <a href="author.html#1507">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

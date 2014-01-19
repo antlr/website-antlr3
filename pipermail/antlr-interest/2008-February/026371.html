@@ -1,0 +1,193 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Tokenizing question
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Tokenizing%20question&In-Reply-To=%3Cf0fcc6820802111339j32308c75jeaedbea8223e201d%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="026370.html">
+   <LINK REL="Next"  HREF="026399.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Tokenizing question</H1>
+    <B>Mark Volkmann</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Tokenizing%20question&In-Reply-To=%3Cf0fcc6820802111339j32308c75jeaedbea8223e201d%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Tokenizing question">r.mark.volkmann at gmail.com
+       </A><BR>
+    <I>Mon Feb 11 13:39:34 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="026370.html">[antlr-interest] Tokenizing question
+</A></li>
+        <LI>Next message: <A HREF="026399.html">[antlr-interest] Tokenizing question
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#26371">[ date ]</a>
+              <a href="thread.html#26371">[ thread ]</a>
+              <a href="subject.html#26371">[ subject ]</a>
+              <a href="author.html#26371">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Feb 11, 2008 3:20 PM, Amal Khailtash &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">akhailtash at gmail.com</A>&gt; wrote:
+&gt;<i> Yes, I think my biggest problem as you mentioned is the fact that
+</I>&gt;<i>  VALUE, NUMBER and IDENTIFIER all overlap!  And yes, I get a NUMBER
+</I>&gt;<i>  where I expect a VALUE, or an VALUE where I expect an IDENTIFIER, or
+</I>&gt;<i>  so many other ways.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> I completely understand that LEXER is done at a different stage and
+</I>&gt;<i>  that makes it difficult.  Tools like the old good lex have lexer
+</I>&gt;<i>  states to do context sensitive lexing.  ANTLR does not have context
+</I>&gt;<i>  sensitive lexing.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> So what is the recommended solution?  Should I merge all these rules
+</I>&gt;<i>  into one?  Can I not use syntactic predicates in the lexer to resolve
+</I>&gt;<i>  this?
+</I>
+I think Shmuel Siegel provided a solution in the thread on &quot;Lexer
+ambiguities&quot;. The trick is to make the most general of your
+conflicting rules be a lexer rule and make the other, more specific
+rules be parser rules.
+
+Here's some sample input.
+
+$timescale
+  19ms
+$end
+1Amal
+
+Here's a grammar that parses it using the trick from Shmuel.
+
+grammar Verilog2;
+
+value_change_dump_definition
+  : declaration_command* simulation_command* EOF
+  ; // omitted enddefinitions from middle of sequence
+
+declaration_command: timescale; // omitted other alternatives
+timescale: '$timescale' NUMBER time_unit '$end';
+time_unit: 's' | 'ms' | 'us' | 'ns' | 'ps' | 'fs';
+simulation_command: value_change; // omitted other alternatives
+value_change: scalar_value_change;
+scalar_value_change: value IDENTIFIER;
+
+value: '0' | '1' | 'x' | 'X' | 'z' | 'Z';
+NUMBER: DIGIT+;
+fragment DIGIT: '0'..'9';
+
+// An IDENTIFIER cannot begin with a digit.
+IDENTIFIER: ('!'..'/' | ':'..'~') ('!'..'~')*;
+
+WHITESPACE: (' ' | '\t')+ { $channel = HIDDEN; };
+NEWLINE: ('\r'? '\n')+ { $channel = HIDDEN; };
+
+&gt;<i> On Feb 11, 2008 7:14 AM, Gavin Lambert &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr at mirality.co.nz</A>&gt; wrote:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; At 11:33 11/02/2008, Amal Khailtash wrote:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; &gt;Each word is separated with whitespace.  Again this is from a
+</I>&gt;<i> &gt; &gt;Verilog VCD grammar that seems to have many ambiguities.  I
+</I>&gt;<i> &gt; &gt;rewrote it to make it simple to explain.  Part of the original
+</I>&gt;<i> &gt; &gt;grammar looks like:
+</I>&gt;<i> &gt; [...]
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; &gt;scalar_value_change
+</I>&gt;<i> &gt; &gt;   : VALUE IDENTIFIER
+</I>&gt;<i> &gt; &gt;   ;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;VALUE
+</I>&gt;<i> &gt; &gt;   : ('0' | '1' | 'x' | 'X' | 'z' | 'Z')
+</I>&gt;<i> &gt; &gt;   ;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;IDENTIFIER
+</I>&gt;<i> &gt; &gt;   : ('!'..'~')+
+</I>&gt;<i> &gt; &gt;   ;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;fragment
+</I>&gt;<i> &gt; &gt;DIGIT
+</I>&gt;<i> &gt; &gt;   : '0'..'9'
+</I>&gt;<i> &gt; &gt;   ;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;NUMBER
+</I>&gt;<i> &gt; &gt;   : DIGIT+
+</I>&gt;<i> &gt; &gt;   ;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; You're going to have to be careful with that VALUE rule, since it
+</I>&gt;<i> &gt; intersects with both IDENTIFIER and NUMBER.  (This isn't
+</I>&gt;<i> &gt; necessarily an error, it just means you need to realise you might
+</I>&gt;<i> &gt; end up with a VALUE token when you're expecting one of the
+</I>&gt;<i> &gt; others.)
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; &gt;The problem is the scalar_value_change rule.  VALUE and
+</I>&gt;<i> &gt; &gt;IDENTIFIER can be connected together.
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;A sample scalar_value_change is:
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;1aae
+</I>&gt;<i> &gt; &gt;0aae
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; I'm assuming there's also a WS rule with skip() or $channel =
+</I>&gt;<i> &gt; HIDDEN that you didn't present above.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; If both &quot;1 aae&quot; and &quot;1aae&quot; are valid constructs, then what you
+</I>&gt;<i> &gt; already have should be fine.  Tokens are not required to be
+</I>&gt;<i> &gt; separated by whitespace; whitespace (or any other skipped or
+</I>&gt;<i> &gt; hidden token) merely act as a &quot;break&quot; between character sequences
+</I>&gt;<i> &gt; that could otherwise have been merged into a single token.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; In other words, &quot;1 aae&quot; should produce VALUE WS IDENTIFIER (with
+</I>&gt;<i> &gt; the WS skipped or ignored), and &quot;1aae&quot; should produce VALUE
+</I>&gt;<i> &gt; IDENTIFIER.  In both cases it matches the scalar_value_change
+</I>&gt;<i> &gt; rule.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Now, &quot;11aae&quot; wouldn't -- that would be NUMBER IDENTIFIER.  But &quot;1
+</I>&gt;<i> &gt; 1aae&quot; would be VALUE WS VALUE IDENTIFIER, again with the WS
+</I>&gt;<i> &gt; skipped or ignored.  So you can see the whitespace acting as a
+</I>&gt;<i> &gt; token break here.
+</I>
+-- 
+R. Mark Volkmann
+Object Computing, Inc.
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="026370.html">[antlr-interest] Tokenizing question
+</A></li>
+	<LI>Next message: <A HREF="026399.html">[antlr-interest] Tokenizing question
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#26371">[ date ]</a>
+              <a href="thread.html#26371">[ thread ]</a>
+              <a href="subject.html#26371">[ subject ]</a>
+              <a href="author.html#26371">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

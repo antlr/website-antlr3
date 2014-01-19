@@ -1,0 +1,159 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Re: strange lexical nondeterminism
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20strange%20lexical%20nondeterminism&In-Reply-To=c2hu23%2Bglh8%40eGroups.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="006773.html">
+   <LINK REL="Next"  HREF="006767.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Re: strange lexical nondeterminism</H1>
+    <B>Lubos Vnuk</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20strange%20lexical%20nondeterminism&In-Reply-To=c2hu23%2Bglh8%40eGroups.com"
+       TITLE="[antlr-interest] Re: strange lexical nondeterminism">lubos.vnuk at rts.at
+       </A><BR>
+    <I>Mon Mar  8 09:38:46 PST 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="006773.html">[antlr-interest] Re: expecting IDENT, found 'x'
+</A></li>
+        <LI>Next message: <A HREF="006767.html">[antlr-interest] stuff I don't like about ANTLR 2.x
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6766">[ date ]</a>
+              <a href="thread.html#6766">[ thread ]</a>
+              <a href="subject.html#6766">[ subject ]</a>
+              <a href="author.html#6766">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Simon,
+
+Your problem is caused by ANTLR's linear approximation of the look-
+ahead. This means that ANTLR merges prediction sets of all the 
+alternative branches.
+
+For REL_TIME it will be:
+REL_TIME_LAset(1)={'0'..'9'} U {'0'..'2'}={'0'..'9'}
+REL_TIME_LAset(2)={'0'..'9'} U {'0'..'9'}={'0'..'9'}
+REL_TIME_LAset(3)={'0'..'9'} U {':'}     ={'0'..'9',':'}
+REL_TIME_LAset(4)={'.'}      U {'0'..'5'}={'.','0'..'5'}
+REL_TIME_LAset(5)={'0'..'2'} U {'0'..'9'}={'0'..'9'}
+REL_TIME_LAset(6)={'0'..'9'} U {EOF}     ={'0'..'9',EOF}
+REL_TIME_LAset(7)={':'}      U {EOF}     ={':',EOF}
+REL_TIME_LAset(8)={'0'..'5'} U {EOF}     ={'0'..'5',EOF}
+REL_TIME_LAset(9)={'0'..'9'} U {EOF}     ={'0'..'9',EOF}
+REL_TIME_LAset(10)={EOF}     U {EOF}     ={EOF}
+...
+
+For the INT rule it is (no linear approximation here):
+INT_LAset(1)={'0'..'9'}
+INT_LAset(2)={EOF,'0'..'9'}
+INT_LAset(3)={EOF,'0'..'9'}
+INT_LAset(4)={EOF,'0'..'9'}
+INT_LAset(5)={EOF,'0'..'9'}
+INT_LAset(6)={EOF,'0'..'9'}
+LAsINT_et(7)={EOF,'0'..'9'}
+INT_LAset(8)={EOF,'0'..'9'}
+INT_LAset(9)={EOF,'0'..'9'}
+INT_LAset(10)={EOF,'0'..'9'}
+...
+
+Now ANTLR will try to intersect these sets up to the maximum look-
+ahead level in order to find two disjoint sets that it can use to 
+unambiguously decide on the rule.
+
+REL_TIME_LAset(1) ^ INT_LAset(1)= {'0'..'9'}
+REL_TIME_LAset(2) ^ INT_LAset(2)= {'0'..'9'}
+REL_TIME_LAset(3) ^ INT_LAset(3)= {'0'..'9'}
+REL_TIME_LAset(4) ^ INT_LAset(4)= {'0'..'5'}
+REL_TIME_LAset(5) ^ INT_LAset(5)= {'0'..'9'}
+REL_TIME_LAset(6) ^ INT_LAset(6)= {EOF,'0'..'9'}
+REL_TIME_LAset(7) ^ INT_LAset(7)= {EOF}
+REL_TIME_LAset(8) ^ INT_LAset(8)= {EOF'0'..'5'}
+REL_TIME_LAset(9) ^ INT_LAset(9)= {EOF,'0'..'9'}
+REL_TIME_LAset(10)^ INT_LAset(10)={EOF}
+...
+
+HTH,
+Lubos.
+
+--- In <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>, &quot;Simon Kellett&quot; 
+&lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">skellett at a...</A>&gt; wrote:
+&gt;<i> Two of the rules in my Lexer are:
+</I>&gt;<i> 
+</I>&gt;<i> // optional 3 digit day, followed by hh:mm
+</I>&gt;<i> REL_TIME: ('0'..'9' '0'..'9' '0'..'9' '.')? '0'..'2' '0'..'9' ':'
+</I>&gt;<i> '0'..'5' '0'..'9';
+</I>&gt;<i> INT: ('0'..'9')+;
+</I>&gt;<i> 
+</I>&gt;<i> But I get the following warning (k=10):
+</I>&gt;<i> 
+</I>&gt;<i> lmp_grammer.g: warning:lexical nondeterminism between rules REL_TIME
+</I>&gt;<i> and INT upon
+</I>&gt;<i> lmp_grammer.g:     k==1:'0'..'9'
+</I>&gt;<i> lmp_grammer.g:     k==2:'0'..'9'
+</I>&gt;<i> lmp_grammer.g:     k==3:'0'..'9'
+</I>&gt;<i> lmp_grammer.g:     k==4:'0'..'5'
+</I>&gt;<i> lmp_grammer.g:     k==5:'0'..'9'
+</I>&gt;<i> lmp_grammer.g:     k==6:&lt;end-of-token&gt;,'0'..'9'
+</I>&gt;<i> lmp_grammer.g:     k==7:&lt;end-of-token&gt;
+</I>&gt;<i> lmp_grammer.g:     k==8:&lt;end-of-token&gt;,'0'..'5'
+</I>&gt;<i> lmp_grammer.g:     k==9:&lt;end-of-token&gt;,'0'..'9'
+</I>&gt;<i> lmp_grammer.g:     k==10:&lt;end-of-token&gt;
+</I>&gt;<i> 
+</I>&gt;<i> If I remove the optional &quot;?&quot; then the warning disappears.
+</I>&gt;<i> 
+</I>&gt;<i> Surely the Lexer (with k&gt;3) should always know whether it is dealing
+</I>&gt;<i> with a REL_TIME or an INT ? (if the 4th char is a '.' or the 3rd is 
+</I>a
+&gt;<i> ':' then the token must be a REL_TIME).
+</I>&gt;<i> 
+</I>&gt;<i> I could understand the nondeterminism if k=3 !!
+</I>&gt;<i> 
+</I>&gt;<i> But the generated code is OK: the REL_TIME is checked for first, and
+</I>&gt;<i> only later the INT is check for.
+</I>&gt;<i> 
+</I>&gt;<i> TIA, Simon
+</I>
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+     <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+     <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+     <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="006773.html">[antlr-interest] Re: expecting IDENT, found 'x'
+</A></li>
+	<LI>Next message: <A HREF="006767.html">[antlr-interest] stuff I don't like about ANTLR 2.x
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6766">[ date ]</a>
+              <a href="thread.html#6766">[ thread ]</a>
+              <a href="subject.html#6766">[ subject ]</a>
+              <a href="author.html#6766">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

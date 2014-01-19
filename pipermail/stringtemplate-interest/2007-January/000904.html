@@ -1,0 +1,181 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [stringtemplate-interest] bug? calling template with null	argument
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:stringtemplate-interest%40antlr.org?Subject=%5Bstringtemplate-interest%5D%20bug%3F%20calling%20template%20with%20null%0A%09argument&In-Reply-To=PMEOJKDLMMHOHNEAMPBGIEHPCAAA.jjsnyders%40rcn.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000903.html">
+   <LINK REL="Next"  HREF="000905.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[stringtemplate-interest] bug? calling template with null	argument</H1>
+    <B>John Snyders</B> 
+    <A HREF="mailto:stringtemplate-interest%40antlr.org?Subject=%5Bstringtemplate-interest%5D%20bug%3F%20calling%20template%20with%20null%0A%09argument&In-Reply-To=PMEOJKDLMMHOHNEAMPBGIEHPCAAA.jjsnyders%40rcn.com"
+       TITLE="[stringtemplate-interest] bug? calling template with null	argument">jjsnyders at rcn.com
+       </A><BR>
+    <I>Fri Jan 12 19:32:58 PST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000903.html">[stringtemplate-interest] bug? calling template with null argument
+</A></li>
+        <LI>Next message: <A HREF="000905.html">[stringtemplate-interest] trouble wth regions
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#904">[ date ]</a>
+              <a href="thread.html#904">[ thread ]</a>
+              <a href="subject.html#904">[ subject ]</a>
+              <a href="author.html#904">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I think I have the fix for this bug but I would like a second opinion if
+possible.
+
+In StringTemplate.java method
+public Object get(StringTemplate self, String attribute)
+
+I changed this:
+  if ( o==null &amp;&amp; self.enclosingInstance!=null ) {
+      Object valueFromEnclosing = get(self.enclosingInstance, attribute);
+      if ( valueFromEnclosing==null ) {
+        checkNullAttributeAgainstFormalArguments(self, attribute);
+      }
+      o = valueFromEnclosing;
+  }
+To this:
+  // not locally defined, check enclosingInstance if embedded
+  if ( o==null &amp;&amp; self.enclosingInstance!=null ) {
+      Object valueFromEnclosing = get(self.enclosingInstance, attribute);
+      if ( valueFromEnclosing==null ) {
+        checkNullAttributeAgainstFormalArguments(this, attribute);
+      }
+      o = valueFromEnclosing;
+  }
+
+The only change is replacing self with this when calling
+checkNullAttributeAgainstFormatArguments.
+
+The get method is called with this being the inner most template in the
+example below it is template input. The code above is invoked when there is
+still no value for the attribute and it recursively goes up the call stack
+looking for a value. When no value is found the checkNull... method is used
+just to make sure the attribute is defined by some template in the call
+stack. It is purely for runtime correctness checking. The problem is that
+self has no meaning at this point. The reason is that the get recursion ends
+when self is the second template from the top of the stack. The fix is to
+start looking for the attribute in the arguments starting with the template
+you are in which is this.
+
+Not sure I explained that well but take a look. So far I have not noticed
+any problems from this change but I have not run the unit tests.
+
+-John
+
+
+  -----Original Message-----
+  From: John Snyders [mailto:<A HREF="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">jjsnyders at rcn.com</A>]
+  Sent: Friday, January 12, 2007 10:38 AM
+  To: <A HREF="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">stringtemplate-interest at antlr.org</A>
+  Subject: bug? calling template with null argument
+
+
+  Hi all,
+  I am finding that I can't call a template with a null argument either
+explicitly or by omission unless the call is made from the top level
+template.
+
+  Here is an example of what I am trying to do:
+
+  page(name, value) ::= &lt;&lt;
+   $input(name=name, value=value, size=&quot;22&quot;, ...)$
+   $input(name=name, value=value, size=&quot;23&quot;, required=&quot;t&quot;, ...)$
+  &gt;&gt;
+
+  input(name, value, size, required) ::= &lt;&lt;
+    &lt;input type=&quot;text&quot; name=&quot;$name$&quot; size=&quot;$size$&quot; value=&quot;$value$&quot;&gt;
+    $if(required)$
+    &lt;span class=&quot;required&quot;&gt;*&lt;/span&gt;
+    $endif$
+  &gt;&gt;
+
+  This example works as intended. The output is
+     &lt;input type=&quot;text&quot; name=&quot;input1&quot; size=&quot;22&quot; value=&quot;value 1&quot;&gt;
+     &lt;input type=&quot;text&quot; name=&quot;input1&quot; size=&quot;23&quot; value=&quot;value 1&quot;&gt;
+     &lt;span class=&quot;required&quot;&gt;*&lt;/span&gt;
+
+  However, and here is the bug, when I nest the call to input in another
+template (named or anonymous) I get an exception.
+  Example:
+  page(name, value) ::= &lt;&lt;
+   $t2()$
+   $input(name=name, value=value, size=&quot;22&quot;, ...)$
+   $input(name=name, value=value, size=&quot;23&quot;, required=&quot;t&quot;, ...)$
+  &gt;&gt;
+
+  t2() ::= &lt;&lt;
+   named template
+   $input(name=name, value=value, size=&quot;21&quot;, ...)$
+  &gt;&gt;
+
+  Now I get this exception:
+  java.util.NoSuchElementException: no such attribute: required in template
+context [page t2(...) input(...)]
+
+  I think this is a bug because the behavior of passing parameters to a
+template should not depend on the nesting depth.
+
+  The problem seems to be in
+StringTemplate.checkNullAttributeAgainstFormalArguments at the call to
+lookupFormalArgument
+      FormalArgument formalArg = self.lookupFormalArgument(attribute);
+  In the case where input is called from the top level the lookup finds the
+argument required but when called from t2 it doesn't. It seems to be looking
+in the wrong place. I need to do some more debugging. I'm a bit unclear on
+the use of self vs. this. Can someone give an overview of what self is for.
+
+  Now if I remove the ... from the call to input in t2 it works. This
+example doesn't need the ... but in my real work I do need to use the ...
+  The reason it works without the ... is because of this code in
+StringTemplate.get which makes sense
+   if ( o==null &amp;&amp;
+     !self.passThroughAttributes &amp;&amp;
+     self.getFormalArgument(attribute)!=null )
+  The call to checkNullAttributeAgainstFormalArguments is never made.
+
+  Any comments? Anyone seen this or can confirm that this is a bug or have a
+fix?
+
+  Thanks,
+  -John
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20070112/de0d6daa/attachment.html">http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20070112/de0d6daa/attachment.html</A> 
+</PRE>
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000903.html">[stringtemplate-interest] bug? calling template with null argument
+</A></li>
+	<LI>Next message: <A HREF="000905.html">[stringtemplate-interest] trouble wth regions
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#904">[ date ]</a>
+              <a href="thread.html#904">[ thread ]</a>
+              <a href="subject.html#904">[ subject ]</a>
+              <a href="author.html#904">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">More information about the stringtemplate-interest
+mailing list</a><br>
+</body></html>

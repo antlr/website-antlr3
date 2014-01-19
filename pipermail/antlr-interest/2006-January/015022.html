@@ -1,0 +1,134 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] lexer rule matching problem
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20lexer%20rule%20matching%20problem&In-Reply-To=c7b221a70601082046r4c96a28dpf6af55944fef4b88%40mail.gmail.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="015019.html">
+   <LINK REL="Next"  HREF="015011.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] lexer rule matching problem</H1>
+    <B>tinker tailor</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20lexer%20rule%20matching%20problem&In-Reply-To=c7b221a70601082046r4c96a28dpf6af55944fef4b88%40mail.gmail.com"
+       TITLE="[antlr-interest] lexer rule matching problem">mail.tinker at gmail.com
+       </A><BR>
+    <I>Mon Jan  9 07:20:02 PST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="015019.html">[antlr-interest] lexer rule matching problem
+</A></li>
+        <LI>Next message: <A HREF="015011.html">[antlr-interest] proposed enhancement to ANTLR v3 ST integration
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#15022">[ date ]</a>
+              <a href="thread.html#15022">[ thread ]</a>
+              <a href="subject.html#15022">[ subject ]</a>
+              <a href="author.html#15022">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Nope, that didn't work! :( But I finally found the solution!! :D
+
+The trouble with the rule:
+  CONCAT : '&amp;' (( 'h' (HEX_DIGIT)+ (('&amp;')?)! ){ $setType(HEX); })? ;
+is that the lexer can't backtrack if it gets an input like a=a&amp;height
+Since the main requirement is that the lexer first try to match a hex
+number, and failing that backtrack and just match the ampersand '&amp;', I
+decided to check out ...yup, you guessed it...syntactic predicates!
+So, after much tinkering (and some tailoring), I finally arrived at a
+rule that is able to process all my input files correctly. And for
+your viewing pleasure, here it is:
+==================
+ CONCAT :  ('&amp;')=&gt; (HEX_NUM)=&gt;HEX_NUM{_ttype = HEX;}
+                |(OCT_NUM)=&gt;OCT_NUM{_ttype = OCT;}
+                | '&amp;'
+         ;
+protected  HEX_NUM
+:<i> '&amp;' 'h' (HEX_DIGIT)+ (('&amp;')?)!
+</I>;
+protected OCT_NUM
+:<i> '&amp;' 'o' ('0' .. '7')+ ;
+</I>
+==================
+Note that this rule takes care of the string concatenation operator
+'&amp;', as well as HEX (&amp;H1&amp;, &amp;H2) and OCTAL (&amp;O7) numbers.
+
+Now here is another question: valid hex numbers in VB can only have
+upto 8 digits. Is there any way in ANTLR that I can specify the number
+of times to match a  rule?
+
+off for some well deserved sleep.
+
+- tinker
+:<i>)
+</I>
+
+
+On 1/9/06, tinker tailor &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">mail.tinker at gmail.com</A>&gt; wrote:
+&gt;<i> Hi John,
+</I>&gt;<i>    Seems like this should do just what i want. I'll test it out and
+</I>&gt;<i> let you know.
+</I>&gt;<i> Thanks,
+</I>&gt;<i> Tinker
+</I>&gt;<i> :)
+</I>&gt;<i>
+</I>&gt;<i> On 1/6/06, John B. Brodie &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">jbb at acm.org</A>&gt; wrote:
+</I>&gt;<i> &gt; Tinker Tailor asked:
+</I>&gt;<i> &gt; &gt;  I am trying to parse a subset of the vbscript language, and have run
+</I>&gt;<i> &gt; &gt;into the following problem:
+</I>&gt;<i> &gt; &gt;   The '&amp;' in VBS can be used in two ways -
+</I>&gt;<i> &gt; &gt;       1. As a concatenation operator
+</I>&gt;<i> &gt; &gt;              e.g.:  a = b &amp; c    or   a=b&amp;c
+</I>&gt;<i> &gt; &gt;       2.As part of the prefix (&quot;&amp;H&quot;) and optional suffix('&amp;') for
+</I>&gt;<i> &gt; &gt;hexadecimal numbers
+</I>&gt;<i> &gt; &gt;             e.g.:  a=&amp;H9Abc    or  a=&amp;H9Abc&amp;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;So, here are the rules I made in my lexer (lookahead=3):
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;CONCAT : '&amp;';
+</I>&gt;<i> &gt; &gt;HEX : &quot;&amp;h&quot; (HEX_DIGIT)+ (('&amp;')?)! ;
+</I>&gt;<i> &gt; &gt;HEX_DIGIT : '0'..'9' | 'a'..'f' ;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;Now what I want the lexer to do is to first try and match a hex
+</I>&gt;<i> &gt; &gt;number, and only when that fails, to try and match for the CONCAT
+</I>&gt;<i> &gt; &gt;token. But I am not really sure how to tell antlr that. :(
+</I>&gt;<i> &gt; &gt; As things stand, the lexer first matches CONCAT, and as a result
+</I>&gt;<i> &gt; &gt;throws the 'unexpected token: exception when I give it the following
+</I>&gt;<i> &gt; &gt;valid input:
+</I>&gt;<i> &gt; &gt;     a = &amp;H345ad&amp;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;Any suggestions?
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; untested, but perhaps this might do it:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; token { HEX; }
+</I>&gt;<i> &gt; CONCAT : '&amp;' (( 'h' (HEX_DIGIT)+ (('&amp;')?)! ){ $setType(HEX); })? ;
+</I>&gt;<i> &gt; protected HEX_DIGIT : '0'..'9' | 'a'..'f' ;
+</I>&gt;<i> &gt;
+</I>&gt;<i>
+</I></PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="015019.html">[antlr-interest] lexer rule matching problem
+</A></li>
+	<LI>Next message: <A HREF="015011.html">[antlr-interest] proposed enhancement to ANTLR v3 ST integration
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#15022">[ date ]</a>
+              <a href="thread.html#15022">[ thread ]</a>
+              <a href="subject.html#15022">[ subject ]</a>
+              <a href="author.html#15022">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

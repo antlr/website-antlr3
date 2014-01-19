@@ -1,0 +1,163 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] AST Node data
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20AST%20Node%20data&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004675.html">
+   <LINK REL="Next"  HREF="004677.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] AST Node data</H1>
+    <B>Tiller, Michael (M.M.)</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20AST%20Node%20data&In-Reply-To="
+       TITLE="[antlr-interest] AST Node data">mtiller at ford.com
+       </A><BR>
+    <I>Tue Jul 29 11:20:39 PDT 2003</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004675.html">[antlr-interest] Candy Girl!
+</A></li>
+        <LI>Next message: <A HREF="004677.html">[antlr-interest] making AST from subrule as root AST in automatic AST generation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4676">[ date ]</a>
+              <a href="thread.html#4676">[ thread ]</a>
+              <a href="subject.html#4676">[ subject ]</a>
+              <a href="author.html#4676">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I was just reworking some of my heterogeneous AST types in C++ and I noticed
+certain patterns that I thought were interesting.  I mentioning this for the
+benefit of those people working on ANTLR 3 and/or reworking C++ AST support.
+ 
+In building up my nodes during parsing, I occasionally store certain
+information away directly in each node rather than using other nodes to
+capture it.  For example, if I have a declaration rule that says:
+ 
+declaration
+  : (qualifiers)* type_name:IDENT var_name:IDENT &quot;;&quot;
+  ;
+ 
+I will suppress the generation of AST nodes for &quot;type&quot; and &quot;var&quot;.  I do this
+because there is nothing inherently dynamic about these two pieces of
+information since they are always there and their type is known (so why use
+an abstract tree to store them?).  So with tree construction markup, my rule
+would then look something like:
+ 
+declaration
+  : (qualifiers)* type:IDENT! var:IDENT! &quot;;&quot;!
+    {
+       ##-&gt;p_typeName = #type-&gt;getText();
+       ##-&gt;p_varName = #var-&gt;getText();
+    }
+  ;
+ 
+Note the use of the &quot;p_&quot; prefix.  The idea here is that this is information
+gleaned purely from parsing (no semantics associated with it).
+ 
+OK, that isn't very interesting (and perhaps its even misguided :-), but the
+interesting part is the other stuff on the node.  I call this &quot;meta data&quot;
+although there is probably a more appropriate term.  This is information
+that represents relationships BETWEEN NODES.  The obvious child, sibling
+stuff is there, but this only covers the base relationships.  The other
+&quot;meta_data&quot; goes beyond these simple relationships.
+ 
+For example, as I run through the parsing (or possibly in a later pass with
+a tree parser), I might want to capture some scope information.  This isn't
+strictly parser data (i.e. data that is prefixed with &quot;p_&quot;) because it
+requires some knowledge of language semantics (beyond just the grammar).  In
+such a case, I might capture the scope information by adding another line to
+my action:
+  
+declaration
+  : (qualifiers)* type:IDENT! var:IDENT! &quot;;&quot;!
+    {
+       ##-&gt;p_typeName = #type-&gt;getText();
+       ##-&gt;p_varName = #var-&gt;getText();
+       ##-&gt;m_scope = scope;
+    }
+  ;
+ 
+...where scope is a member variable in my parser and it gets updated as a
+descend through the tree.  Node the &quot;m_&quot; prefix.  This is an indication that
+this is a relationship with some other node in my system (not necessarily a
+parent or child either).  It is probably worth mentioning that if you were
+to reverse the parsing process (i.e. output code based on the AST), the &quot;p_&quot;
+information would have to be taken into account, but the &quot;m_&quot; data
+shouldn't.  The &quot;m_&quot; data is only useful for transformations that require
+semantic information.
+ 
+OK, the pattern I noticed was that among the &quot;m_&quot; data, there are really
+three kinds.  Some &quot;m_&quot; data is shorthand for stuff below my node in the
+tree.  In other words, when I create the node I might do a search through my
+child nodes and extract some useful information so that I have it &quot;handy&quot;
+(i.e. I don't have to search the tree again).  Some information is related
+to my context in the tree (i.e. information above this node in the AST).
+Finally, some information is related to entirely different sections of the
+tree.
+ 
+Why is this classification interesting.  Well, when you call &quot;dupTree&quot;, you
+need to be able to update this information and what you do depends on the
+kind of information it is.  By duplicating a node in the tree, you are
+creating a copy and this affects each of these classes differently.  For
+data that is referencing information below you, you need to redo the
+original search that got you that data (since your children have been
+duplicated too).  For data above you, you need to rely on whoever &quot;duped&quot;
+you to fill that in (since nodes don't include any upward looking
+references, at least by default).  Data that refers to other parts of the
+tree is unaffected since its relationship to those nodes is not context
+dependent so you can just carry it over.
+ 
+I had already written my own &quot;dupTree&quot; method since ANTLR only provides this
+method in association with factory objects (which I don't really like).  To
+accommodate updating this information during a &quot;dupTree&quot;, I created another
+method on my nodes called &quot;resetMetaData&quot; (for lack of a better name) and
+while clone() gets called as we work our way *down* during the dupTree,
+resetMetaData() gets called on the way back *up* (so we can recover
+information about child nodes).
+ 
+Now I'm not disclosing all this because I think it is necessarily the best
+way to do this (hell, I don't really know much about building
+parsers/translators).  But, this provides one data point about how it might
+be done by some users and this can be useful in working out the design of
+any future features or enhancements.  Furthermore, it sounds like ANTLR3 is
+going to try and abstract the tree building process even more and so it
+seems useful to try and contribute these categorization ideas so they can be
+reconciled with proposed abstractions.
+ 
+OK, I just wanted to dump that before I forget it all and moved on to
+something else.  Back to work...
+ 
+--
+Mike
+ 
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20030729/1e47aeec/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20030729/1e47aeec/attachment.html</A>
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004675.html">[antlr-interest] Candy Girl!
+</A></li>
+	<LI>Next message: <A HREF="004677.html">[antlr-interest] making AST from subrule as root AST in automatic AST generation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4676">[ date ]</a>
+              <a href="thread.html#4676">[ thread ]</a>
+              <a href="subject.html#4676">[ subject ]</a>
+              <a href="author.html#4676">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,349 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Modifying tree based on semantic content
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Modifying%20tree%20based%20on%20semantic%20content&In-Reply-To=%3C11928A82-42F1-4B37-B530-D27648FF4A3C%40gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="034526.html">
+   <LINK REL="Next"  HREF="034528.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Modifying tree based on semantic content</H1>
+    <B>David Jameson</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Modifying%20tree%20based%20on%20semantic%20content&In-Reply-To=%3C11928A82-42F1-4B37-B530-D27648FF4A3C%40gmail.com%3E"
+       TITLE="[antlr-interest] Modifying tree based on semantic content">dhjdhj at gmail.com
+       </A><BR>
+    <I>Sun May 17 08:56:03 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="034526.html">[antlr-interest] Modifying tree based on semantic content
+</A></li>
+        <LI>Next message: <A HREF="034528.html">[antlr-interest] Lexer matching non-matching rule
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#34527">[ date ]</a>
+              <a href="thread.html#34527">[ thread ]</a>
+              <a href="subject.html#34527">[ subject ]</a>
+              <a href="author.html#34527">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Thank you ---- I'll have to study your response carefully to make sure  
+I understand it but I REALLY appreciate the time you took to write it,  
+that was very kind.
+
+With respect to my original question about the +, I just did that to  
+simplify the question, which was really about how to control the tree  
+output as a function of the semantic behavior of the language, in this  
+particular case, the types. I fully expected to be able to generalize  
+the original answer ( semantic predicates, as you helpfully told me)  
+for my real problem.
+
+Apart from simpleExpression, there are also rules for expression,  
+term, factor, thereby allowing the appropriate control of precedance  
+rules, for example you can write.
+
+if  a + b = c + d then  ....
+
+without any parentheses and get the right answer.
+
+Other than separation for precedance purposes, a binary comparison  
+operator is no different than a binary arithmetic operator and in fact  
+the expression and term rules are written much the same way as the  
+&quot;simpleExpression&quot; rule, replacing comparisonOperator with addOperator  
+and mulOperator and so forth.
+
+
+The grammar does also produce the correct tree for a sequence of more  
+than three items, so yes, I would in fact get
+
+     ^( PLUS 'lhs' ^( PLUS 'rhs1' 'rhs2 ) )
+
+The optionalSign supports the notion of unary minus so you can write  
+things like
+      -1 + 2
+
+
+
+
+The grammar I've developed is actually intended to translate a special  
+scripting language into Java source code. The scripting language  
+allows integers and strings to be compared using the same operator,  
+i.e, you can write
+     if   a = &quot;xyz&quot; then ....
+     if   i = 3 then ....
+
+but while the latter can be trivially rendered as
+     if (i == 3) { .... }
+the former requires
+     if (a.equals(&quot;xyz&quot;) .....
+
+
+and so I need to modify the tree output so that the tree grammar can  
+distinguish arithmetic operations from string operations, regardless  
+of what they are.
+
+
+I suspect I am just missing something really trival with respect to  
+ANTLR syntax that is preventing me from expressing the rewrite rules  
+properly.
+
+
+
+
+On May 17, 2009, at 11:07 AM, Steve Ebersole wrote:
+
+&gt;<i> I am not an Antlr3 expert, I really just started myself about a month
+</I>&gt;<i> ago (moving from v2).  It really is probably best to get an answer  
+</I>&gt;<i> from
+</I>&gt;<i> the list.  You are correct though, you cannot mix the two approaches.
+</I>&gt;<i>
+</I>&gt;<i> That being said...
+</I>&gt;<i>
+</I>&gt;<i> The most straight-forward way from your existing grammar rule AFAIK is
+</I>&gt;<i> to rewrite the initial simpleExpression result (removing optionalSign
+</I>&gt;<i> since I did not understand its purpose here):
+</I>&gt;<i>
+</I>&gt;<i> expression returns [TAttributeType type]
+</I>&gt;<i> @init { boolean isStringComparison=false; }
+</I>&gt;<i>    :   ( simpleExpression -&gt; simpleExpression ) {
+</I>&gt;<i>            $type = $expression.type;
+</I>&gt;<i>            isStringComparison = isString( $expression.type );
+</I>&gt;<i>        } (
+</I>&gt;<i>            comparisonOperator rhs = simpleExpression {
+</I>&gt;<i>                $type=...;
+</I>&gt;<i>            }
+</I>&gt;<i>            -&gt; { isStringComparison }?
+</I>&gt;<i>                    ^( STRINGOP $expression $rhs )
+</I>&gt;<i>            -&gt;
+</I>&gt;<i>                    ^(comparisonOperator $lhs $rhs)
+</I>&gt;<i>        )*
+</I>&gt;<i>    ;
+</I>&gt;<i>
+</I>&gt;<i> Note too that because of the '*' surrounding your &quot;(comparisonOperator
+</I>&gt;<i> rhs = simpleExpression)&quot; recognition and the fact that you ref &quot;lhs&quot;  
+</I>&gt;<i> in
+</I>&gt;<i> the rewrite, I think you will actually end up with trees like:
+</I>&gt;<i> ^( PLUS 'lhs' ^( PLUS 'lhs' 'rhs2 ) )
+</I>&gt;<i> instead of what I think you probably wanted:
+</I>&gt;<i> ^( PLUS 'lhs' ^( PLUS 'rhs1' 'rhs2 ) )
+</I>&gt;<i>
+</I>&gt;<i> Also, if you wanted to keep this resulting tree structure, a better
+</I>&gt;<i> option is probably to recurse the rule:
+</I>&gt;<i>
+</I>&gt;<i> expression
+</I>&gt;<i>    : ( lhs=simpleExpression -&gt; simpleExpression )
+</I>&gt;<i>      (
+</I>&gt;<i>          ( comparisonOperator rhs=expression )
+</I>&gt;<i>              -&gt; { isString( $lhs.type ) }?
+</I>&gt;<i>                  ^( STRINGOP $lhs $rhs )
+</I>&gt;<i>              -&gt;
+</I>&gt;<i>                  ^( comparisonOperator $lhs $rhs )
+</I>&gt;<i>      )?
+</I>&gt;<i>    ;
+</I>&gt;<i>
+</I>&gt;<i> See that 'rhs' recurses back into this rule..
+</I>&gt;<i>
+</I>&gt;<i> (I *think* that the '$lhs' references will work here but am not 100%
+</I>&gt;<i> sure.  try it out.  we use $expression rather than a label)
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Personally I'd be very uncomfortable with your notion of &quot;comparison
+</I>&gt;<i> operator&quot;.  I believe in your original email you were asking about '+'
+</I>&gt;<i> here.  Neither addition nor concatenation is a &quot;comparison&quot;.  I think
+</I>&gt;<i> you may be trying to handle multiple, unequal concepts here.  In my
+</I>&gt;<i> experience that causes problems.  I would look to split the notions of
+</I>&gt;<i> &quot;comparison&quot; and PLUS/MINUS/MULTIPLY/DIVIDE/CONCATENATE.  Why?  Well  
+</I>&gt;<i> as
+</I>&gt;<i> you see they are very different both structurally and semantically.   
+</I>&gt;<i> For
+</I>&gt;<i> example, most comparison operators (aside from something like a SQL's
+</I>&gt;<i> BETWEEN operator e.g.) are &quot;binary operand&quot; (two sides) operators;
+</I>&gt;<i> PLUS/MINUS/MULTIPLY/DIVIDE/CONCATENATE are all &quot;chained&quot; meaning that
+</I>&gt;<i> ^( PLUS op1 ^( PLUS op2 op3 ) ) is semantically the same as ^( PLUS  
+</I>&gt;<i> op1
+</I>&gt;<i> op2 op3).  Same for concatenation: ^( CONCAT op1 ^( CONCAT op2  
+</I>&gt;<i> op3) ) is
+</I>&gt;<i> the same as ^( CONCAT op1 op2 op ).  Antlr rewrite rules have a nice  
+</I>&gt;<i> way
+</I>&gt;<i> to treat this &quot;rolling up&quot;:
+</I>&gt;<i>
+</I>&gt;<i> addition
+</I>&gt;<i>    : additionOperand ( PLUS additionOperand )+
+</I>&gt;<i>          -&gt; ^( PLUS additionOperand+ )
+</I>&gt;<i>    ;
+</I>&gt;<i>
+</I>&gt;<i> Or in your case, something like:
+</I>&gt;<i> addition
+</I>&gt;<i> @init { boolean isString=false; }
+</I>&gt;<i>    : lhs=additionOperand {isString=...;} ( PLUS additionOperand )+
+</I>&gt;<i>        -&gt; {isString}? ^( CONCAT additionOperand )+
+</I>&gt;<i>        -&gt; ^( PLUS additionOperand+ )
+</I>&gt;<i>    ;
+</I>&gt;<i>
+</I>&gt;<i> Anyway, hope that helps...
+</I>&gt;<i>
+</I>&gt;<i> On Sun, 2009-05-17 at 09:36 -0400, David Jameson wrote:
+</I>&gt;&gt;<i> Steve, I hate to bother you personally but you were the only one who
+</I>&gt;&gt;<i> responded and pointed me in the right direction. Nobody but you had  
+</I>&gt;&gt;<i> an
+</I>&gt;&gt;<i> answer to my initial question and in the context of &quot;no good deed  
+</I>&gt;&gt;<i> goes
+</I>&gt;&gt;<i> unpunished&quot;, I'm really hoping you can spot what I am doing wrong as
+</I>&gt;&gt;<i> I've been pulling my hair out most of the weekend trying to get ANTLR
+</I>&gt;&gt;<i> to accept the &quot;fixes&quot;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Many thanks,
+</I>&gt;&gt;<i> D
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> ---------------------------
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I have been trying all day to get the rule below accepted.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> expression returns [TAttributeType type]
+</I>&gt;&gt;<i>               :
+</I>&gt;&gt;<i>               optionalSign
+</I>&gt;&gt;<i>               lhs = simpleExpression^
+</I>&gt;&gt;<i>                  {
+</I>&gt;&gt;<i>                     $type = $lhs.type;
+</I>&gt;&gt;<i>                  }
+</I>&gt;&gt;<i>                  (
+</I>&gt;&gt;<i>                   (comparisonOperator rhs = simpleExpression)	
+</I>&gt;&gt;<i>                   {
+</I>&gt;&gt;<i>                      $type =
+</I>&gt;&gt;<i> TErrorHandling.Compatible($comparisonOperator.tree.token,
+</I>&gt;&gt;<i> $comparisonOperator.token, $lhs.type, $rhs.type);
+</I>&gt;&gt;<i>                   }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>                     -&gt; { isString($lhs.type) }? ^(comparisonOperator
+</I>&gt;&gt;<i> STRINGOP $lhs $rhs)
+</I>&gt;&gt;<i>                     -&gt;  ^(comparisonOperator $lhs $rhs)
+</I>&gt;&gt;<i>                  )* 	
+</I>&gt;&gt;<i> 	        ;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I get a &quot;cannot generate the grammar because&quot; error  which is
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>    rule expression alt 1 uses rewrite syntax and also an AST operator
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Now, I'm pretty certain this is happening because of the &quot;^&quot; that
+</I>&gt;&gt;<i> follows lhs = simpleExpression^ in the first section of the rule.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> However, removing that operator causes no tree node to be generated  
+</I>&gt;&gt;<i> in
+</I>&gt;&gt;<i> the case where there is just a simple expression and that breaks the
+</I>&gt;&gt;<i> results.  However, I tried removing that operator and adding a  
+</I>&gt;&gt;<i> rewrite
+</I>&gt;&gt;<i> rule after the FIRST closing right brace, e.g.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>               lhs = simpleExpression
+</I>&gt;&gt;<i>                  {
+</I>&gt;&gt;<i>                     $type = $lhs.type;
+</I>&gt;&gt;<i>                  } -&gt; ^($lhs)
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> and many variants but this just caused ANTLR to complain that
+</I>&gt;&gt;<i> comparisonOperator was an unexpected token.  I also tried inserting a
+</I>&gt;&gt;<i> third predicate in the bottom group that would test whether $rhs was
+</I>&gt;&gt;<i> null and just put out the $lhs in that case but that didn't work  
+</I>&gt;&gt;<i> either.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Can somebody please put me out of my misery (in a kind manner (grin))
+</I>&gt;&gt;<i> and show me what I'm doing wrong? I'd love to have a quiet weekend
+</I>&gt;&gt;<i> with no problems to worry about!!!
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Thanks,
+</I>&gt;&gt;<i> D
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> ------------------------------------------------------------------
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> On May 15, 2009, at 7:26 AM, Steve Ebersole wrote:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> someRule
+</I>&gt;&gt;&gt;<i>   : a PLUS b
+</I>&gt;&gt;&gt;<i>       -&gt; { areStrings($a.tree,$b.tree) } ^(CONCATENATE a b)
+</I>&gt;&gt;&gt;<i>       -&gt; ^(PLUS a b)
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> On Thu, 2009-05-14 at 23:38 -0400, David Jameson wrote:
+</I>&gt;&gt;&gt;&gt;<i> Is there any way to control the built-in tree generation (from an
+</I>&gt;&gt;&gt;&gt;<i> initial parse phase) based on semantics of what is being parsed?
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> As a simple example,    if   I see the expression
+</I>&gt;&gt;&gt;&gt;<i>       a + b
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> then I want to produce
+</I>&gt;&gt;&gt;&gt;<i>    (PLUS a b)
+</I>&gt;&gt;&gt;&gt;<i> or
+</I>&gt;&gt;&gt;&gt;<i>   (CONCATENATE a b)
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> depending on whether a and b are numeric or string.
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> How can I do this with rewrite rules (for example)?   Or do I  
+</I>&gt;&gt;&gt;&gt;<i> have to
+</I>&gt;&gt;&gt;&gt;<i> construct my own trees?
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> Thanks,
+</I>&gt;&gt;&gt;&gt;<i> D
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;&gt;&gt;&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;&gt;&gt;<i> -- 
+</I>&gt;&gt;&gt;<i> Steve Ebersole &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">steve at hibernate.org</A>&gt;
+</I>&gt;&gt;&gt;<i> Hibernate.org
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;<i> -- 
+</I>&gt;<i> Steve Ebersole &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">steve at hibernate.org</A>&gt;
+</I>&gt;<i> Hibernate.org
+</I>&gt;<i>
+</I>
+</PRE>
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="034526.html">[antlr-interest] Modifying tree based on semantic content
+</A></li>
+	<LI>Next message: <A HREF="034528.html">[antlr-interest] Lexer matching non-matching rule
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#34527">[ date ]</a>
+              <a href="thread.html#34527">[ thread ]</a>
+              <a href="subject.html#34527">[ subject ]</a>
+              <a href="author.html#34527">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

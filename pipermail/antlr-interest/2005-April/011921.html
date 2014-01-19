@@ -1,0 +1,298 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] On trees and JavaBeans, part 2: tree creation
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20On%20trees%20and%20JavaBeans%2C%20part%202%3A%20tree%20creation&In-Reply-To=20050419012436.66B1A290071%40new.knowspam.net">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="011937.html">
+   <LINK REL="Next"  HREF="011927.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] On trees and JavaBeans, part 2: tree creation</H1>
+    <B>Loring Craymer</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20On%20trees%20and%20JavaBeans%2C%20part%202%3A%20tree%20creation&In-Reply-To=20050419012436.66B1A290071%40new.knowspam.net"
+       TITLE="[antlr-interest] On trees and JavaBeans, part 2: tree creation">Loring.G.Craymer at jpl.nasa.gov
+       </A><BR>
+    <I>Tue Apr 19 15:30:22 PDT 2005</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="011937.html">[antlr-interest] On trees and JavaBeans, part 2: tree creation
+</A></li>
+        <LI>Next message: <A HREF="011927.html">[antlr-interest] On trees and JavaBeans, part 2: tree   creation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#11921">[ date ]</a>
+              <a href="thread.html#11921">[ thread ]</a>
+              <a href="subject.html#11921">[ subject ]</a>
+              <a href="author.html#11921">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Scott--
+
+Separating data and navigation interfaces is key to supporting any sort of 
+transformation--to transform, you need to rewrap a data package with 
+navigation information.  Swing's JTree is mis-designed because the 
+navigation class (JTree.DynamicUtilTreeNode) is referenced from the data 
+container, not the other way around.  There are two navigation 
+paradigms:  you can either use a Cursor object to navigate (in which case, 
+the options are assigning an object to the cursor, moving the cursor to one 
+of the siblings or children of the assigned object, returning a 
+sibling/child of the assigned object, or adding a child/sibling) or a 
+Carrier.  With the Carrier approach, you might have to create Carriers when 
+navigating arbitrary data structures:
+
+class NewCarrier implements Carrier {
+...
+public Carrier getChild() {
+         Object o = payload.findFirstChild();
+         return (Carrier) new NewCarrier(o);
+}
+...
+}
+
+That may look like a lot of overhead to create Carriers willy-nilly, but in 
+practice it probably is not--the creation and destruction of Carriers is 
+just a recycling which the garbage collector will do as efficiently as one 
+can do manually or nearly so--when walking, Carriers are the only dynamic 
+element.
+
+And of course, there is no reason that an object cannot be both Carrier and 
+Payload:
+
+class AST implements Carrier, Payload {
+         ...
+}
+
+in which case getPayload() returns this.
+
+Really, it is all just a matter of which access pattern you are using, and 
+the key abstraction is to separate out data from navigation.
+
+--Loring
+
+
+At 06:54 PM 4/18/2005, Scott Stanchfield wrote:
+&gt;<i>Payload/carrier won't do IMHO. Too many carriers... Having a generic I/F ala
+</I>&gt;<i>Swing's TreeModel is really the right way to go, as it can work on any data
+</I>&gt;<i>structure. (I chatted with him a few weeks ago about it and he explained it
+</I>&gt;<i>to me)
+</I>&gt;<i>
+</I>&gt;<i>I understand the concern about loops, but it depends on what the data in the
+</I>&gt;<i>loops does and on semantic preds. Also, I'm thinking about an alternative
+</I>&gt;<i>kind of walker, a &quot;bean walker&quot; as well, in addition to the normal tree
+</I>&gt;<i>walker.
+</I>&gt;<i>
+</I>&gt;<i>Later,
+</I>&gt;<i>-- Scott
+</I>&gt;<i>
+</I>&gt;<i> &gt; -----Original Message-----
+</I>&gt;<i> &gt; From: Loring Craymer [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">Loring.G.Craymer at jpl.nasa.gov</A>]
+</I>&gt;<i> &gt; Sent: Monday, April 18, 2005 5:16 PM
+</I>&gt;<i> &gt; To: Scott Stanchfield; <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> &gt; Subject: Re: [antlr-interest] On trees and JavaBeans, part 2:
+</I>&gt;<i> &gt; tree creation
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Scott--
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; I believe that Ter has adopted the Payload/Carrier model for
+</I>&gt;<i> &gt; ANTLR 3--Carriers should implement an interface that contains
+</I>&gt;<i> &gt; navigation support (including token ids makes sense, but text
+</I>&gt;<i> &gt; belongs in the Payload), but all attribute data is in the
+</I>&gt;<i> &gt; Payloads.  If you look in the archives, you can find my posts
+</I>&gt;<i> &gt; and those of others involved in the discussion.  The
+</I>&gt;<i> &gt; separation of navigation from data goes a long way towards
+</I>&gt;<i> &gt; removing the awkwardnesses that you are trying to solve.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; The Carrier interface should be simple enough to wrap most
+</I>&gt;<i> &gt; compatible navigation classes, and the base Payload interface
+</I>&gt;<i> &gt; would just define
+</I>&gt;<i> &gt; getText() and maybe getLine() and getColumn().  Carriers get
+</I>&gt;<i> &gt; created with a Payload and a type and are homogeneous (but a
+</I>&gt;<i> &gt; tree parser pass can be used to convert from one Carrier
+</I>&gt;<i> &gt; class to another); Payloads are carried along through
+</I>&gt;<i> &gt; transformations and are rarely replaced in tree walks.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Tree grammars cannot walk &quot;any&quot; data structure--the data
+</I>&gt;<i> &gt; structure needs to be either a digraph with no loops, or a
+</I>&gt;<i> &gt; digraph in which the navigation methods prevent looping.
+</I>&gt;<i> &gt; Modal navigation (methods determine which field to
+</I>&gt;<i> &gt; dereference from a mode variable) is possible, but the core
+</I>&gt;<i> &gt; restriction is &quot;no loops&quot;.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; --Loring
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; At 05:21 AM 4/18/2005, Scott Stanchfield wrote:
+</I>&gt;<i> &gt; &gt;(Please read the &quot;part 1, interfaces, first)
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;[I forgot in part 1 to mention how we get &quot;token&quot; values:
+</I>&gt;<i> &gt; the ast model
+</I>&gt;<i> &gt; &gt;would define
+</I>&gt;<i> &gt; &gt;     int getTokenIdFor(Object node);
+</I>&gt;<i> &gt; &gt;     String getTextFor(Object node);
+</I>&gt;<i> &gt; &gt;  that would return the parts of a token for any given node.
+</I>&gt;<i> &gt; It could
+</I>&gt;<i> &gt; &gt;just return a Token, but that would require the model to
+</I>&gt;<i> &gt; create Token
+</I>&gt;<i> &gt; &gt;objects for each real object, which may not be necessary.]
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;Once we can use any data structure for tree parsing, for
+</I>&gt;<i> &gt; tree creation,
+</I>&gt;<i> &gt; &gt;it would be useful to be able to create *any* data
+</I>&gt;<i> &gt; structure. Factories
+</I>&gt;<i> &gt; &gt;are the right approach here, and are pretty close to being
+</I>&gt;<i> &gt; exactly what we need.
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;First, ASTFactory must be an interface. Then, abstract away
+</I>&gt;<i> &gt; &quot;AST&quot; from
+</I>&gt;<i> &gt; &gt;the methods. For example:
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;   void addChild(Object parent, Object child)
+</I>&gt;<i> &gt; &gt;   Object create(int type)
+</I>&gt;<i> &gt; &gt;   Object create(int type, String text)
+</I>&gt;<i> &gt; &gt;   Object create(int type, String text, String className)
+</I>&gt;<i> &gt; &gt;   ...
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;Poof.
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;Using the existing ANTLR tree support and only a slight bit of
+</I>&gt;<i> &gt; &gt;abstraction, we can now:
+</I>&gt;<i> &gt; &gt;* create any data structure
+</I>&gt;<i> &gt; &gt;* walk any data structure
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;ANTLR becomes the ultimate tool for everything ;)  [Not really of
+</I>&gt;<i> &gt; &gt;course, but tree parsers become much easier to use and
+</I>&gt;<i> &gt; therefore more
+</I>&gt;<i> &gt; &gt;useful, and parsing to build data structures becomes easy as well]
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;Next to JavaBeans, making it all even more powerful...
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;With a little syntactic sugar, we can have the grammar explicitly
+</I>&gt;<i> &gt; &gt;specify which properties of a bean to set or read.
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;The trouble with what I've said so far is that things are
+</I>&gt;<i> &gt; positional.
+</I>&gt;<i> &gt; &gt;The only way to determine what to parse or build is by the order of
+</I>&gt;<i> &gt; &gt;adds or the index when asking for a child.
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;What if we used labels that were javabean property names and had a
+</I>&gt;<i> &gt; &gt;&quot;bean mode&quot;? (Note: this would work for any language that we
+</I>&gt;<i> &gt; can create
+</I>&gt;<i> &gt; &gt;&quot;get&quot; and &quot;set&quot; methods for, not just java!)
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;   options {
+</I>&gt;<i> &gt; &gt;     beanMode = true;
+</I>&gt;<i> &gt; &gt;   }
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;   person creates Person
+</I>&gt;<i> &gt; &gt;     : name:IDENT phone:phoneNumber address:address
+</I>&gt;<i> &gt; &gt;     ;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;   address creates Address
+</I>&gt;<i> &gt; &gt;     : street:IDENT city:IDENT COMMA! state:IDENT zip:INTEGER
+</I>&gt;<i> &gt; &gt;     ;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;While this needs a little syntactic help, the idea is that
+</I>&gt;<i> &gt; the &quot;creates&quot;
+</I>&gt;<i> &gt; &gt;clause states what kind of object to create, and the labels specify
+</I>&gt;<i> &gt; &gt;which properties to assign in the bean being created.
+</I>&gt;<i> &gt; &gt;If the property is a token, we just set the token. If it's a
+</I>&gt;<i> &gt; string, we
+</I>&gt;<i> &gt; &gt;just set the token text. We'd probably want some special cases for a
+</I>&gt;<i> &gt; &gt;few other data types as well. Primitive conversions are
+</I>&gt;<i> &gt; simple string conversions.
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;Poof - no action code required to create a data structure
+</I>&gt;<i> &gt; based on set
+</I>&gt;<i> &gt; &gt;methods and no-arg constructors!
+</I>&gt;<i> &gt; &gt;(We don't really need the &quot;!&quot; in the above example; we could
+</I>&gt;<i> &gt; ignore any
+</I>&gt;<i> &gt; &gt;term without a label)
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;We'd also need &quot;add&quot; support as well as get/set. (Note here
+</I>&gt;<i> &gt; we *need*
+</I>&gt;<i> &gt; &gt;the parens for the * closure...)
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;   person creates Person
+</I>&gt;<i> &gt; &gt;     : name:IDENT ...
+</I>&gt;<i> &gt; &gt;       ( child:child )*
+</I>&gt;<i> &gt; &gt;     ;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;Assuming there's an addChild method, it would be called each time
+</I>&gt;<i> &gt; &gt;through the loop. If there were only a setChild, it would be
+</I>&gt;<i> &gt; &gt;overwritten each time through the loop. We could add some
+</I>&gt;<i> &gt; sugar here to ensure an add:
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;   person creates Person
+</I>&gt;<i> &gt; &gt;     : name:IDENT ...
+</I>&gt;<i> &gt; &gt;       ( add:child:child )*
+</I>&gt;<i> &gt; &gt;     ;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;(ewww)
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;But I don't think that's necessary.
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;This of course assumes that subrules all contribute to the rule's
+</I>&gt;<i> &gt; &gt;object being built. To build other objects, a separate
+</I>&gt;<i> &gt; top-level rule
+</I>&gt;<i> &gt; &gt;must be defined. (This is the way my XML parsing support
+</I>&gt;<i> &gt; works, and it
+</I>&gt;<i> &gt; &gt;seems peachy so far).
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;[For &quot;bean walking&quot;, this is an entirely new ballgame, and I haven't
+</I>&gt;<i> &gt; &gt;finished thinking through it. Current tree parsers are positional.
+</I>&gt;<i> &gt; &gt;Instead, the new type of tree parser could check properties
+</I>&gt;<i> &gt; instead of &quot;next child&quot;.
+</I>&gt;<i> &gt; &gt;I need to chew on this a bit more to get a good example before I
+</I>&gt;<i> &gt; &gt;propose it...]
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;Thoughts?
+</I>&gt;<i> &gt; &gt;-- Scott
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>
+
+</PRE>
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="011937.html">[antlr-interest] On trees and JavaBeans, part 2: tree creation
+</A></li>
+	<LI>Next message: <A HREF="011927.html">[antlr-interest] On trees and JavaBeans, part 2: tree   creation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#11921">[ date ]</a>
+              <a href="thread.html#11921">[ thread ]</a>
+              <a href="subject.html#11921">[ subject ]</a>
+              <a href="author.html#11921">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

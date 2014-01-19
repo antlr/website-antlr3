@@ -1,0 +1,2780 @@
+From j.stuyts at javathinker.com  Wed Aug  1 10:42:31 2007
+From: j.stuyts at javathinker.com (Johan Stuyts)
+Date: Wed, 01 Aug 2007 19:42:31 +0200
+Subject: [stringtemplate-interest] <pre> tags and recursive structures
+In-Reply-To: <8A9C0AB2-CA67-402A-AB7D-526D32FFB712@cs.usfca.edu>
+References: <op.twbwbl0mc4vsc3@audioslave.hippo.local>
+	<8A9C0AB2-CA67-402A-AB7D-526D32FFB712@cs.usfca.edu>
+Message-ID: <op.twd5451yc4vsc3@audioslave>
+
+> Hi. The one weakness of the autoindent is that I have no mechanism
+> yet to "unindent" any of the lines. :(
+
+I took a look at the code to see if it was easy to add this functionality,
+and it was :-)
+
+My changes make it possible to add an extra option, newIndentationContext,
+to a template invocation. This will store the current indentation stack,
+and replace it with an empty one. When the invoked template returns, the
+new indentation stack is discarded and the previous one is restored. Here
+is an example template group that uses this option:
+
+group newIndentationContextTest;
+
+page() ::= <<
+<html>
+    <head>
+      <title>New indentation context test</title>
+    </head>
+    <body>
+      <pre>
+        $foo();newIndentationContext="dummy"$
+      </pre>
+    </body>
+</html>
+
+>>
+
+foo() ::= <<
+foo
+    $bar()$
+>>
+
+bar() ::= <<
+bar
+$baz()$
+>>
+
+baz() ::= <<
+baz
+>>
+
+This is the output that will be generated (using the AutoIndentWriter):
+
+<html>
+    <head>
+      <title>New indentation context test</title>
+    </head>
+    <body>
+      <pre>
+foo
+    bar
+    baz
+      </pre>
+    </body>
+</html>
+
+See below for the changes that are needed to make it work.
+
+Johan
+
+
+--- original-src/org/antlr/stringtemplate/AutoIndentWriter.java	2007-08-01
+15:32:10.234375000 +0200
++++ src/org/antlr/stringtemplate/AutoIndentWriter.java	2007-08-01
+17:19:28.921875000 +0200
+@@ -54,6 +54,7 @@
+   	 *  from 0..n-1.  List<String>
+   	 */
+   	protected List indents = new ArrayList();
++	protected List indentationContexts = new ArrayList();
+
+   	/** Stack of integer anchors (char positions in line); avoid Integer
+   	 *  creation overhead.
+@@ -94,6 +95,16 @@
+           return (String)indents.remove(indents.size()-1);
+       }
+
++    public void pushIndentationContext() {
++    	indentationContexts.add(indents);
++    	indents = new ArrayList();
++    	indents.add(null);
++    }
++
++    public void popIndentationContext() {
++    	indents =
+(List)indentationContexts.remove(indentationContexts.size() - 1);
++    }
++
+   	public void pushAnchorPoint() {
+   		if ( (anchors_sp +1)>=anchors.length ) {
+   			int[] a = new int[anchors.length*2];
+--- original-src/org/antlr/stringtemplate/language/ASTExpr.java	2007-08-01
+15:32:10.265625000 +0200
++++ src/org/antlr/stringtemplate/language/ASTExpr.java	2007-08-01
+15:33:18.312500000 +0200
+@@ -125,6 +125,10 @@
+           }
+   		out.pushIndentation(getIndentation());
+   		// handle options, anchor, wrap, separator...
++		StringTemplateAST newIndentationContextAST =
+(StringTemplateAST)getOption("newIndentationContext");
++		if ( newIndentationContextAST!=null ) { // any non-empty expr means
+true; check presence
++			out.pushIndentationContext();
++		}
+   		StringTemplateAST anchorAST = (StringTemplateAST)getOption("anchor");
+   		if ( anchorAST!=null ) { // any non-empty expr means true; check
+presence
+   			out.pushAnchorPoint();
+@@ -140,6 +144,9 @@
+           catch (RecognitionException re) {
+               self.error("can't evaluate tree: "+exprTree.toStringList(),
+re);
+           }
++		if ( newIndentationContextAST!=null ) {
++			out.popIndentationContext();
++		}
+           out.popIndentation();
+   		if ( anchorAST!=null ) {
+   			out.popAnchorPoint();
+---
+original-src/org/antlr/stringtemplate/StringTemplateWriter.java	2007-08-01
+15:32:10.296875000 +0200
++++ src/org/antlr/stringtemplate/StringTemplateWriter.java	2007-08-01
+15:33:18.421875000 +0200
+@@ -43,6 +43,10 @@
+
+       String popIndentation();
+
++	void pushIndentationContext();
++
++	void popIndentationContext();
++
+   	void pushAnchorPoint();
+
+   	void popAnchorPoint();
+---
+original-src/org/antlr/stringtemplate/test/TestStringTemplate.java	2007-08-01
+15:32:10.296875000 +0200
++++ src/org/antlr/stringtemplate/test/TestStringTemplate.java	2007-08-01
+18:59:23.890625000 +0200
+@@ -2090,6 +2090,10 @@
+   			public String popIndentation() {
+   				return null;
+   			}
++			public void pushIndentationContext() {
++			}
++			public void popIndentationContext() {
++			}
+   			public void pushAnchorPoint() {
+   			}
+   			public void popAnchorPoint() {
+
+From JB0284 at att.com  Fri Aug  3 09:10:44 2007
+From: JB0284 at att.com (Barnes, Jeff)
+Date: Fri, 3 Aug 2007 09:10:44 -0700
+Subject: [stringtemplate-interest] StringTemplate conditional
+In-Reply-To: <A21CD234-DB29-48D2-AF6F-CC53E98D16A2@classdump.org>
+References: <3FDBFA5A9BC6BD4EB5FFE1B29E33DB4802F25CDC@BD01MSXMB021.US.Cingular.Net>
+	<A21CD234-DB29-48D2-AF6F-CC53E98D16A2@classdump.org>
+Message-ID: <3FDBFA5A9BC6BD4EB5FFE1B29E33DB4802F25D26@BD01MSXMB021.US.Cingular.Net>
+
+Thanks, Kay for the effort you put into your response.
+
+There is one other option I'll add for completeness of the concept. I currently add a selection array variable to the Form object. It seems to be a good compromise between adding a controller layer and breaking model/view separation.
+
+Thank you again for your reply. Sorry for the wrong list last time. Code follows.
+
+Regards,
+Jeff
+
+import org.antlr.stringtemplate.StringTemplateGroup;
+import org.antlr.stringtemplate.StringTemplate;
+
+public class Test
+{
+     static class User {
+         String name;
+         public String getName() {
+             return name;
+         }
+     }
+
+     static class Form {
+         User[] users;
+         String[] selectedArray;
+
+         public String[] getSelectedArray() { return selectedArray; }
+
+         public User[] getUsers() { return users; }
+     }
+
+     public static void main(String[] args)
+     {
+         User[] users = new User[2];
+         users[0] = new User();
+         users[0].name = "Terence";
+         users[1] = new User();
+         users[1].name = "Parr";
+
+         Form f = new Form();
+         f.users = users;
+         f.selectedArray = new String[] { null, " selected" };
+
+         StringTemplate st = new StringTemplate ( 
+             "$form.users,form.selectedArray:{user,selected |" +
+             "<option$selected$>$user.name$</option>"+
+             "};separator=\"\n\"$");
+         st.setAttribute("form", f);
+         System.out.println(st.toString());
+     }
+}
+
+
+
+-----Original Message-----
+From: antlr-interest-bounces at antlr.org [mailto:antlr-interest-bounces at antlr.org] On Behalf Of Kay Roepke
+Sent: Friday, August 03, 2007 9:42 AM
+To: Barnes, Jeff
+Cc: antlr-interest at antlr.org
+Subject: Re: [antlr-interest] StringTemplate conditional
+
+Hi Jeff!
+
+On Aug 3, 2007, at 2:54 PM, Barnes, Jeff wrote:
+
+> The StringTemplate declaration is not valid. Does this break model/ 
+> view
+> separation?
+
+Sort of, yes.
+
+> Why doesn't StringTemplate support this? Is there another
+> way to conceptualize this problem?
+
+StringTemplate doesn't support arbitrary comparisons. (The  
+user=form.selectedUser is throwing it off.)
+
+You will have to pass in the information whether a user is selected  
+or not, doing the actual comparison
+in code. This ensures that no (business) logic is in the view.  
+StringTemplate is very rigorous with this,
+providing (almost) no means to cirumvent this. But you wouldn't wanna  
+do that anyway.
+
+So, what are your options?
+You could add a controller layer to shield your User object from  
+needing to know whether it is selected or not.
+That would add a lot of overhead, though.
+
+Disclaimer: Written in mail, might not compile or might bring the  
+world to an end.
+
+It'd look like this (adding to your example):
+
+	static class FormController {
+		Form form;
+		public FormController(Form form) { this.form = form; }
+		public UserController[] getUsers() {
+			int numUsers = form.getUsers().length;
+			UserController[] users = new UserController[numUsers];
+			for (int i=0; i<numUsers; i++) {
+				User user = form.getUsers()[i];
+				users[i] = new UserController(user, form.getSelectedUser() == user);
+			}
+			return users;
+		}
+	}
+	
+	static class UserController {
+		User user;
+		boolean selected;
+		public UserController(User user, boolean selected) { this.user =  
+user; this.selected = selected;}
+		public String getName() { return user.getName(); }
+		public boolean getSelected() { return selected; }
+	}
+
+     public static void main(String[] args)
+     {
+         User[] users = new User[2];
+         users[0] = new User();
+         users[0].name = "Terence";
+         users[1] = new User();
+         users[1].name = "Parr";
+
+         Form f = new Form();
+         f.users = users;
+         f.selectedUser = users[1];
+
+         StringTemplate st = new StringTemplate("$form.users:{user |  
+<option"+
+                "$if(user.selected)$ selected$endif$>" +
+                "$user.name$</option>};separator=\"\n\"$");
+         st.setAttribute("form", new FormController(f));
+         System.out.println(st.toString());
+     }
+
+That prints the correct string, but is adding a lot of overhead.
+Alternatively, if you are comfortable with adding presentation code  
+to Form, you can do this:
+
+import org.antlr.stringtemplate.StringTemplateGroup;
+import org.antlr.stringtemplate.StringTemplate;
+
+public class Test
+{
+     static class User {
+         String name;
+         public String getName() {
+             return name;
+         }
+     }
+
+     static class Form {
+         User[] users;
+         User selectedUser;
+         public User[] getUsers() { return users; }
+         public User getSelectedUser() { return selectedUser; }
+
+		public StringTemplate[] getUserTemplates() {
+			StringTemplate[] ts = new StringTemplate[users.length];
+			for (int i = 0; i < users.length; i++) {
+				ts[i] = new StringTemplate("<option$if(selected)$ selected$endif$> 
+$name$</option>");
+				ts[i].setAttribute("selected", users[i] == selectedUser);
+				ts[i].setAttribute("name", users[i].getName());
+			}
+			return ts;
+		}
+     }
+
+     public static void main(String[] args)
+     {
+         User[] users = new User[2];
+         users[0] = new User();
+         users[0].name = "Terence";
+         users[1] = new User();
+         users[1].name = "Parr";
+
+         Form f = new Form();
+         f.users = users;
+         f.selectedUser = users[1];
+
+         StringTemplate st = new StringTemplate 
+("$form.userTemplates;separator=\"\n\"$");
+         st.setAttribute("form", f);
+         System.out.println(st.toString());
+     }
+}
+
+
+Or naturally any abstraction you'd like to see.
+
+OTOH if you do not depend on the order of the options (though most  
+probably you do), you could
+iterate over two different lists (one for the unselected users and on  
+for the selected ones).
+But I think iterating over one "annotated list" is better. It just  
+depends on how you structure your
+code, so that you have a clean separation of model and view in your  
+Java code. But then again, this
+is just another example of MVC at work :)
+
+HTH,
+-k
+
+P.S.: This mail probably belongs on stringtemplate-interest but I  
+didn't bother to crosspost or
+set the reply-to. It's a bit off-topic for antlr-interest.
+-- 
+Kay R?pke
+http://classdump.org/
+
+
+
+
+
+From JB0284 at att.com  Mon Aug  6 08:35:24 2007
+From: JB0284 at att.com (Barnes, Jeff)
+Date: Mon, 6 Aug 2007 08:35:24 -0700
+Subject: [stringtemplate-interest] Ok, I'm stumped
+Message-ID: <3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017DAB@BD01MSXMB021.US.Cingular.Net>
+
+The following code outputs:
+Terence
+I'm True
+Parr
+I'm False
+
+I was expecting:
+Terence
+I'm False
+Parr
+I'm True
+
+Huh???
+
+Note: reversing the Boolean values gives the 'correct' output.
+
+Huh???
+
+import org.antlr.stringtemplate.StringTemplateGroup;
+import org.antlr.stringtemplate.StringTemplate;
+import org.antlr.stringtemplate.language.DefaultTemplateLexer;
+import java.io.InputStreamReader;
+
+public class Test
+{
+     static class Form {
+         String[] names;
+         boolean[] values;
+         public String[] getNames() { return names; }
+         public boolean[] getValues() { return values; }
+     }
+
+     public static void main(String[] args)
+     {
+
+         Form f = new Form();
+         f.names = new String[] { "Terence", "Parr" };
+         f.values = new boolean[] { false, true };
+
+         StringTemplate st = new StringTemplate( 
+             "$form.names,form.values:{ name, value |\n" +
+             "$name$\n" +
+             "$if(value)$I'm True$else$I'm False$endif$" +
+             "};separator=\"\n\"$");
+         st.setAttribute("form", f);
+         System.out.println(st.toString());
+     }
+}
+
+From kroepke at classdump.org  Mon Aug  6 09:07:38 2007
+From: kroepke at classdump.org (Kay Roepke)
+Date: Mon, 6 Aug 2007 18:07:38 +0200
+Subject: [stringtemplate-interest] Ok, I'm stumped
+In-Reply-To: <3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017DAB@BD01MSXMB021.US.Cingular.Net>
+References: <3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017DAB@BD01MSXMB021.US.Cingular.Net>
+Message-ID: <ABA5C720-AAB1-41A7-B5B2-4EDA7AB694CD@classdump.org>
+
+Hi Jeff!
+
+On Aug 6, 2007, at 5:35 PM, Barnes, Jeff wrote:
+
+> Huh???
+
+mh.
+
+> Note: reversing the Boolean values gives the 'correct' output.
+
+It only appears to do so...
+
+> Huh???
+
+Huh! :)
+
+Using Boolean objects makes this work.
+Don't ask my why, but adding $value$ to the $if$ clearly shows that  
+the boolean[] is passed
+into ST wholesale and the first time evaluates to true (its pointer)  
+and the second time the
+form.values is exhausted and evaluates to false.
+
+I didn't expect it to do so, either. Ter, is this supposed to work?
+
+cheers,
+-k
+
+-- 
+Kay R?pke
+http://classdump.org/
+
+
+
+
+
+From JB0284 at att.com  Mon Aug  6 09:24:50 2007
+From: JB0284 at att.com (Barnes, Jeff)
+Date: Mon, 6 Aug 2007 09:24:50 -0700
+Subject: [stringtemplate-interest] Ok, I'm stumped
+In-Reply-To: <ABA5C720-AAB1-41A7-B5B2-4EDA7AB694CD@classdump.org>
+References: <3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017DAB@BD01MSXMB021.US.Cingular.Net>
+	<ABA5C720-AAB1-41A7-B5B2-4EDA7AB694CD@classdump.org>
+Message-ID: <3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017DEB@BD01MSXMB021.US.Cingular.Net>
+
+True dat... This code better illuminates the problem. I guess I better go back and revise some unit tests... ;-)
+
+import org.antlr.stringtemplate.StringTemplate;
+
+public class Test
+{
+     static class Form {
+         String[] names;
+         boolean[] values;
+         public String[] getNames() { return names; }
+         public boolean[] getValues() { return values; }
+     }
+
+     public static void main(String[] args)
+     {
+         Form f = new Form();
+         f.names = new String[] { "Terence", "Parr" };
+         f.values = new boolean[] { false, true };
+
+         StringTemplate st = new StringTemplate( 
+             "$form.names,form.values:{ name, value |\n" +
+             "$name$\n" +
+             "$value$ " +
+             "$if(value)$I'm True$else$I'm False$endif$" +
+             "};separator=\"\n\"$");
+         st.setAttribute("form", f);
+         System.out.println(st.toString());
+     }
+}
+
+
+
+-----Original Message-----
+From: Kay Roepke [mailto:kroepke at classdump.org] 
+Sent: Monday, August 06, 2007 12:08 PM
+To: Barnes, Jeff
+Cc: StringTemplate; Terence Parr
+Subject: Re: [stringtemplate-interest] Ok, I'm stumped
+
+Hi Jeff!
+
+On Aug 6, 2007, at 5:35 PM, Barnes, Jeff wrote:
+
+> Huh???
+
+mh.
+
+> Note: reversing the Boolean values gives the 'correct' output.
+
+It only appears to do so...
+
+> Huh???
+
+Huh! :)
+
+Using Boolean objects makes this work.
+Don't ask my why, but adding $value$ to the $if$ clearly shows that  
+the boolean[] is passed
+into ST wholesale and the first time evaluates to true (its pointer)  
+and the second time the
+form.values is exhausted and evaluates to false.
+
+I didn't expect it to do so, either. Ter, is this supposed to work?
+
+cheers,
+-k
+
+-- 
+Kay R?pke
+http://classdump.org/
+
+
+
+
+
+From parrt at cs.usfca.edu  Mon Aug  6 11:34:29 2007
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Mon, 6 Aug 2007 11:34:29 -0700
+Subject: [stringtemplate-interest] Ok, I'm stumped
+In-Reply-To: <3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017DEB@BD01MSXMB021.US.Cingular.Net>
+References: <3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017DAB@BD01MSXMB021.US.Cingular.Net>
+	<ABA5C720-AAB1-41A7-B5B2-4EDA7AB694CD@classdump.org>
+	<3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017DEB@BD01MSXMB021.US.Cingular.Net>
+Message-ID: <067916BC-4502-4750-8561-7DE2102A31C1@cs.usfca.edu>
+
+
+On Aug 6, 2007, at 9:24 AM, Barnes, Jeff wrote:
+
+> True dat... This code better illuminates the problem. I guess I  
+> better go back and revise some unit tests... ;-)
+>
+> import org.antlr.stringtemplate.StringTemplate;
+>
+> public class Test
+> {
+>      static class Form {
+>          String[] names;
+>          boolean[] values;
+>          public String[] getNames() { return names; }
+>          public boolean[] getValues() { return values; }
+>      }
+>
+>      public static void main(String[] args)
+>      {
+>          Form f = new Form();
+>          f.names = new String[] { "Terence", "Parr" };
+>          f.values = new boolean[] { false, true };
+>
+>          StringTemplate st = new StringTemplate(
+>              "$form.names,form.values:{ name, value |\n" +
+>              "$name$\n" +
+>              "$value$ " +
+>              "$if(value)$I'm True$else$I'm False$endif$" +
+>              "};separator=\"\n\"$");
+>          st.setAttribute("form", f);
+>          System.out.println(st.toString());
+>      }
+> }
+
+Hi GUys!
+
+Hmm...does
+
+$form.values:{v|...}$
+
+work?  If so, then it's an issue with the parallel walking thingie.   
+Let me know; i'll add  abug.
+
+Ter
+
+From JB0284 at att.com  Mon Aug  6 11:37:36 2007
+From: JB0284 at att.com (Barnes, Jeff)
+Date: Mon, 6 Aug 2007 11:37:36 -0700
+Subject: [stringtemplate-interest] Ok, I'm stumped
+In-Reply-To: <067916BC-4502-4750-8561-7DE2102A31C1@cs.usfca.edu>
+References: <3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017DAB@BD01MSXMB021.US.Cingular.Net><ABA5C720-AAB1-41A7-B5B2-4EDA7AB694CD@classdump.org><3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017DEB@BD01MSXMB021.US.Cingular.Net>
+	<067916BC-4502-4750-8561-7DE2102A31C1@cs.usfca.edu>
+Message-ID: <3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017E7F@BD01MSXMB021.US.Cingular.Net>
+
+No it doesn't work either.
+
+Regards,
+Jeff
+
+-----Original Message-----
+From: stringtemplate-interest-bounces at antlr.org
+[mailto:stringtemplate-interest-bounces at antlr.org] On Behalf Of Terence
+Parr
+Sent: Monday, August 06, 2007 2:34 PM
+To: StringTemplate
+Subject: Re: [stringtemplate-interest] Ok, I'm stumped
+
+
+On Aug 6, 2007, at 9:24 AM, Barnes, Jeff wrote:
+
+> True dat... This code better illuminates the problem. I guess I  
+> better go back and revise some unit tests... ;-)
+>
+> import org.antlr.stringtemplate.StringTemplate;
+>
+> public class Test
+> {
+>      static class Form {
+>          String[] names;
+>          boolean[] values;
+>          public String[] getNames() { return names; }
+>          public boolean[] getValues() { return values; }
+>      }
+>
+>      public static void main(String[] args)
+>      {
+>          Form f = new Form();
+>          f.names = new String[] { "Terence", "Parr" };
+>          f.values = new boolean[] { false, true };
+>
+>          StringTemplate st = new StringTemplate(
+>              "$form.names,form.values:{ name, value |\n" +
+>              "$name$\n" +
+>              "$value$ " +
+>              "$if(value)$I'm True$else$I'm False$endif$" +
+>              "};separator=\"\n\"$");
+>          st.setAttribute("form", f);
+>          System.out.println(st.toString());
+>      }
+> }
+
+Hi GUys!
+
+Hmm...does
+
+$form.values:{v|...}$
+
+work?  If so, then it's an issue with the parallel walking thingie.   
+Let me know; i'll add  abug.
+
+Ter
+_______________________________________________
+stringtemplate-interest mailing list
+stringtemplate-interest at antlr.org
+http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+From parrt at cs.usfca.edu  Mon Aug  6 11:47:19 2007
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Mon, 6 Aug 2007 11:47:19 -0700
+Subject: [stringtemplate-interest] Ok, I'm stumped
+In-Reply-To: <3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017E7F@BD01MSXMB021.US.Cingular.Net>
+References: <3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017DAB@BD01MSXMB021.US.Cingular.Net><ABA5C720-AAB1-41A7-B5B2-4EDA7AB694CD@classdump.org><3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017DEB@BD01MSXMB021.US.Cingular.Net>
+	<067916BC-4502-4750-8561-7DE2102A31C1@cs.usfca.edu>
+	<3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017E7F@BD01MSXMB021.US.Cingular.Net>
+Message-ID: <E2C7ECA6-C9D0-4C53-A7A4-4C7BC8CF2DD2@cs.usfca.edu>
+
+
+On Aug 6, 2007, at 11:37 AM, Barnes, Jeff wrote:
+
+> No it doesn't work either.
+
+wow!
+
+Hmm...maybe I fixed something.  I get
+
+/tmp $ java Test
+Terence
+false I'm False
+Parr
+true I'm True
+
+      public static void main(String[] args)
+      {
+          Form f = new Form();
+          f.names = new String[] { "Terence", "Parr" };
+          f.values = new boolean[] { false, true };
+
+          StringTemplate st = new StringTemplate(
+              "$form.names,form.values:{ name, value |\n" +
+              "$name$\n" +
+              "$value$ " +
+              "$if(value)$I'm True$else$I'm False$endif$" +
+              "};separator=\"\n\"$");
+          st.setAttribute("form", f);
+          System.out.println(st.toString());
+      }
+
+which seems right given false followed by true.
+
+Ter
+
+From JB0284 at att.com  Mon Aug  6 11:52:23 2007
+From: JB0284 at att.com (Barnes, Jeff)
+Date: Mon, 6 Aug 2007 11:52:23 -0700
+Subject: [stringtemplate-interest] Ok, I'm stumped
+In-Reply-To: <E2C7ECA6-C9D0-4C53-A7A4-4C7BC8CF2DD2@cs.usfca.edu>
+References: <3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017DAB@BD01MSXMB021.US.Cingular.Net><ABA5C720-AAB1-41A7-B5B2-4EDA7AB694CD@classdump.org><3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017DEB@BD01MSXMB021.US.Cingular.Net><067916BC-4502-4750-8561-7DE2102A31C1@cs.usfca.edu><3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017E7F@BD01MSXMB021.US.Cingular.Net>
+	<E2C7ECA6-C9D0-4C53-A7A4-4C7BC8CF2DD2@cs.usfca.edu>
+Message-ID: <3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017E98@BD01MSXMB021.US.Cingular.Net>
+
+My distro is about a month old...
+
+Terence
+[Z at 1ffbd68 I'm True
+Parr
+ I'm False
+
+     public static void main(String[] args)
+     {
+         Form f = new Form();
+         f.names = new String[] { "Terence", "Parr" };
+         f.values = new boolean[] { false, true };
+
+          StringTemplate st = new StringTemplate(
+              "$form.names,form.values:{ name, value |\n" +
+              "$name$\n" +
+              "$value$ " +
+              "$if(value)$I'm True$else$I'm False$endif$" +
+              "};separator=\"\n\"$");
+          st.setAttribute("form", f);
+          System.out.println(st.toString());
+     }
+
+-----Original Message-----
+From: stringtemplate-interest-bounces at antlr.org
+[mailto:stringtemplate-interest-bounces at antlr.org] On Behalf Of Terence
+Parr
+Sent: Monday, August 06, 2007 2:47 PM
+To: StringTemplate
+Subject: Re: [stringtemplate-interest] Ok, I'm stumped
+
+
+On Aug 6, 2007, at 11:37 AM, Barnes, Jeff wrote:
+
+> No it doesn't work either.
+
+wow!
+
+Hmm...maybe I fixed something.  I get
+
+/tmp $ java Test
+Terence
+false I'm False
+Parr
+true I'm True
+
+      public static void main(String[] args)
+      {
+          Form f = new Form();
+          f.names = new String[] { "Terence", "Parr" };
+          f.values = new boolean[] { false, true };
+
+          StringTemplate st = new StringTemplate(
+              "$form.names,form.values:{ name, value |\n" +
+              "$name$\n" +
+              "$value$ " +
+              "$if(value)$I'm True$else$I'm False$endif$" +
+              "};separator=\"\n\"$");
+          st.setAttribute("form", f);
+          System.out.println(st.toString());
+      }
+
+which seems right given false followed by true.
+
+Ter
+_______________________________________________
+stringtemplate-interest mailing list
+stringtemplate-interest at antlr.org
+http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+From JB0284 at att.com  Mon Aug  6 12:01:48 2007
+From: JB0284 at att.com (Barnes, Jeff)
+Date: Mon, 6 Aug 2007 12:01:48 -0700
+Subject: [stringtemplate-interest] Ok, I'm stumped
+In-Reply-To: <3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017E98@BD01MSXMB021.US.Cingular.Net>
+References: <3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017DAB@BD01MSXMB021.US.Cingular.Net><ABA5C720-AAB1-41A7-B5B2-4EDA7AB694CD@classdump.org><3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017DEB@BD01MSXMB021.US.Cingular.Net><067916BC-4502-4750-8561-7DE2102A31C1@cs.usfca.edu><3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017E7F@BD01MSXMB021.US.Cingular.Net><E2C7ECA6-C9D0-4C53-A7A4-4C7BC8CF2DD2@cs.usfca.edu>
+	<3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017E98@BD01MSXMB021.US.Cingular.Net>
+Message-ID: <3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017EA9@BD01MSXMB021.US.Cingular.Net>
+
+I just downloaded from stringtemplate.org and get the same results. When
+did you push last?
+
+Jeff
+
+-----Original Message-----
+From: stringtemplate-interest-bounces at antlr.org
+[mailto:stringtemplate-interest-bounces at antlr.org] On Behalf Of Barnes,
+Jeff
+Sent: Monday, August 06, 2007 2:52 PM
+To: StringTemplate
+Subject: Re: [stringtemplate-interest] Ok, I'm stumped
+
+My distro is about a month old...
+
+Terence
+[Z at 1ffbd68 I'm True
+Parr
+ I'm False
+
+     public static void main(String[] args)
+     {
+         Form f = new Form();
+         f.names = new String[] { "Terence", "Parr" };
+         f.values = new boolean[] { false, true };
+
+          StringTemplate st = new StringTemplate(
+              "$form.names,form.values:{ name, value |\n" +
+              "$name$\n" +
+              "$value$ " +
+              "$if(value)$I'm True$else$I'm False$endif$" +
+              "};separator=\"\n\"$");
+          st.setAttribute("form", f);
+          System.out.println(st.toString());
+     }
+
+-----Original Message-----
+From: stringtemplate-interest-bounces at antlr.org
+[mailto:stringtemplate-interest-bounces at antlr.org] On Behalf Of Terence
+Parr
+Sent: Monday, August 06, 2007 2:47 PM
+To: StringTemplate
+Subject: Re: [stringtemplate-interest] Ok, I'm stumped
+
+
+On Aug 6, 2007, at 11:37 AM, Barnes, Jeff wrote:
+
+> No it doesn't work either.
+
+wow!
+
+Hmm...maybe I fixed something.  I get
+
+/tmp $ java Test
+Terence
+false I'm False
+Parr
+true I'm True
+
+      public static void main(String[] args)
+      {
+          Form f = new Form();
+          f.names = new String[] { "Terence", "Parr" };
+          f.values = new boolean[] { false, true };
+
+          StringTemplate st = new StringTemplate(
+              "$form.names,form.values:{ name, value |\n" +
+              "$name$\n" +
+              "$value$ " +
+              "$if(value)$I'm True$else$I'm False$endif$" +
+              "};separator=\"\n\"$");
+          st.setAttribute("form", f);
+          System.out.println(st.toString());
+      }
+
+which seems right given false followed by true.
+
+Ter
+_______________________________________________
+stringtemplate-interest mailing list
+stringtemplate-interest at antlr.org
+http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+_______________________________________________
+stringtemplate-interest mailing list
+stringtemplate-interest at antlr.org
+http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+From JB0284 at att.com  Mon Aug  6 12:19:45 2007
+From: JB0284 at att.com (Barnes, Jeff)
+Date: Mon, 6 Aug 2007 12:19:45 -0700
+Subject: [stringtemplate-interest] Ok, I'm stumped
+In-Reply-To: <3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017EA9@BD01MSXMB021.US.Cingular.Net>
+References: <3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017DAB@BD01MSXMB021.US.Cingular.Net><ABA5C720-AAB1-41A7-B5B2-4EDA7AB694CD@classdump.org><3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017DEB@BD01MSXMB021.US.Cingular.Net><067916BC-4502-4750-8561-7DE2102A31C1@cs.usfca.edu><3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017E7F@BD01MSXMB021.US.Cingular.Net><E2C7ECA6-C9D0-4C53-A7A4-4C7BC8CF2DD2@cs.usfca.edu><3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017E98@BD01MSXMB021.US.Cingular.Net>
+	<3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017EA9@BD01MSXMB021.US.Cingular.Net>
+Message-ID: <3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017EC0@BD01MSXMB021.US.Cingular.Net>
+
+My version src of
+org.antlr.stringtemplate.language.ASTExpr.convertArrayToList(Object)
+starts off like
+
+                if ( value==null ) {
+                        return null;
+                }
+                /*
+                if ( !(value instanceof StringTemplate) ) {
+                        System.out.println("convert "+value+" to
+array?");
+                }
+                */
+                /*
+                if ( !arraysConvertibleToList.contains(value.getClass())
+&&
+                         !(value instanceof Object[]) )
+                {
+                        return value;
+                }
+                */
+                if ( value instanceof Object[] ) {
+                        Object[] list = (Object[])value;
+                        List v = new
+StringTemplate.STAttributeList(list.le
+ngth);
+                        for (int i = 0; i < list.length; i++) {
+                                Object elem = list[i];
+                                v.add(elem);
+                        }
+                        value = v;
+                }
+                else if ( value instanceof int[] ) {
+                        int[] list = (int[])value;
+                        List v = new
+StringTemplate.STAttributeList(list.le
+ngth);
+                        for (int i = 0; i < list.length; i++) {
+                                int elem = list[i];
+                                v.add(new Integer(elem));
+                        }
+                        value = v;
+                }
+                else if ( value instanceof long[] ) {
+                        long[] list = (long[])value;
+                        List v = new
+StringTemplate.STAttributeList(list.le
+ngth);
+                        for (int i = 0; i < list.length; i++) {
+                                long elem = list[i];
+                                v.add(new Long(elem));
+                        }
+                        value = v;
+                }
+                else if ( value instanceof float[] ) {
+                        float[] list = (float[])value;
+                        List v = new
+StringTemplate.STAttributeList(list.le
+ngth);
+                        for (int i = 0; i < list.length; i++) {
+                                float elem = list[i];
+                                v.add(new Float(elem));
+
+
+...
+
+There is no check for Boolean array.
+
+The latest and greatest is a much shorter method:
+
+        public static Object convertArrayToList(Object value) {
+
+	                if ( value==null ) {
+ 	                        return null;
+ 	                }
+
+	                if ( value.getClass().isArray() ) {
+
+	                        if (
+value.getClass().getComponentType().isPrimitive() ) {
+                                return new ArrayWrappedInList(value);
+
+	                        }
+	                        return Arrays.asList((Object[])value);
+	                }
+                return value;
+
+        }
+
+Hope this helps.
+
+Jeff
+
+-----Original Message-----
+From: stringtemplate-interest-bounces at antlr.org
+[mailto:stringtemplate-interest-bounces at antlr.org] On Behalf Of Barnes,
+Jeff
+Sent: Monday, August 06, 2007 3:02 PM
+To: StringTemplate
+Subject: Re: [stringtemplate-interest] Ok, I'm stumped
+
+I just downloaded from stringtemplate.org and get the same results. When
+did you push last?
+
+Jeff
+
+-----Original Message-----
+From: stringtemplate-interest-bounces at antlr.org
+[mailto:stringtemplate-interest-bounces at antlr.org] On Behalf Of Barnes,
+Jeff
+Sent: Monday, August 06, 2007 2:52 PM
+To: StringTemplate
+Subject: Re: [stringtemplate-interest] Ok, I'm stumped
+
+My distro is about a month old...
+
+Terence
+[Z at 1ffbd68 I'm True
+Parr
+ I'm False
+
+     public static void main(String[] args)
+     {
+         Form f = new Form();
+         f.names = new String[] { "Terence", "Parr" };
+         f.values = new boolean[] { false, true };
+
+          StringTemplate st = new StringTemplate(
+              "$form.names,form.values:{ name, value |\n" +
+              "$name$\n" +
+              "$value$ " +
+              "$if(value)$I'm True$else$I'm False$endif$" +
+              "};separator=\"\n\"$");
+          st.setAttribute("form", f);
+          System.out.println(st.toString());
+     }
+
+-----Original Message-----
+From: stringtemplate-interest-bounces at antlr.org
+[mailto:stringtemplate-interest-bounces at antlr.org] On Behalf Of Terence
+Parr
+Sent: Monday, August 06, 2007 2:47 PM
+To: StringTemplate
+Subject: Re: [stringtemplate-interest] Ok, I'm stumped
+
+
+On Aug 6, 2007, at 11:37 AM, Barnes, Jeff wrote:
+
+> No it doesn't work either.
+
+wow!
+
+Hmm...maybe I fixed something.  I get
+
+/tmp $ java Test
+Terence
+false I'm False
+Parr
+true I'm True
+
+      public static void main(String[] args)
+      {
+          Form f = new Form();
+          f.names = new String[] { "Terence", "Parr" };
+          f.values = new boolean[] { false, true };
+
+          StringTemplate st = new StringTemplate(
+              "$form.names,form.values:{ name, value |\n" +
+              "$name$\n" +
+              "$value$ " +
+              "$if(value)$I'm True$else$I'm False$endif$" +
+              "};separator=\"\n\"$");
+          st.setAttribute("form", f);
+          System.out.println(st.toString());
+      }
+
+which seems right given false followed by true.
+
+Ter
+_______________________________________________
+stringtemplate-interest mailing list
+stringtemplate-interest at antlr.org
+http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+_______________________________________________
+stringtemplate-interest mailing list
+stringtemplate-interest at antlr.org
+http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+_______________________________________________
+stringtemplate-interest mailing list
+stringtemplate-interest at antlr.org
+http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+From parrt at cs.usfca.edu  Mon Aug  6 12:50:15 2007
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Mon, 6 Aug 2007 12:50:15 -0700
+Subject: [stringtemplate-interest] Ok, I'm stumped
+In-Reply-To: <3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017E98@BD01MSXMB021.US.Cingular.Net>
+References: <3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017DAB@BD01MSXMB021.US.Cingular.Net><ABA5C720-AAB1-41A7-B5B2-4EDA7AB694CD@classdump.org><3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017DEB@BD01MSXMB021.US.Cingular.Net><067916BC-4502-4750-8561-7DE2102A31C1@cs.usfca.edu><3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017E7F@BD01MSXMB021.US.Cingular.Net>
+	<E2C7ECA6-C9D0-4C53-A7A4-4C7BC8CF2DD2@cs.usfca.edu>
+	<3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017E98@BD01MSXMB021.US.Cingular.Net>
+Message-ID: <A7CC239B-C5A1-4A75-B06B-66ACB7EA2978@cs.usfca.edu>
+
+
+On Aug 6, 2007, at 11:52 AM, Barnes, Jeff wrote:
+
+> My distro is about a month old...
+
+Yeah, i have a prerelease I'm using ;)
+
+Hmm...seems I should push it out as a build ;)
+
+Ter
+>
+> Terence
+> [Z at 1ffbd68 I'm True
+> Parr
+>  I'm False
+>
+>      public static void main(String[] args)
+>      {
+>          Form f = new Form();
+>          f.names = new String[] { "Terence", "Parr" };
+>          f.values = new boolean[] { false, true };
+>
+>           StringTemplate st = new StringTemplate(
+>               "$form.names,form.values:{ name, value |\n" +
+>               "$name$\n" +
+>               "$value$ " +
+>               "$if(value)$I'm True$else$I'm False$endif$" +
+>               "};separator=\"\n\"$");
+>           st.setAttribute("form", f);
+>           System.out.println(st.toString());
+>      }
+>
+> -----Original Message-----
+> From: stringtemplate-interest-bounces at antlr.org
+> [mailto:stringtemplate-interest-bounces at antlr.org] On Behalf Of  
+> Terence
+> Parr
+> Sent: Monday, August 06, 2007 2:47 PM
+> To: StringTemplate
+> Subject: Re: [stringtemplate-interest] Ok, I'm stumped
+>
+>
+> On Aug 6, 2007, at 11:37 AM, Barnes, Jeff wrote:
+>
+>> No it doesn't work either.
+>
+> wow!
+>
+> Hmm...maybe I fixed something.  I get
+>
+> /tmp $ java Test
+> Terence
+> false I'm False
+> Parr
+> true I'm True
+>
+>       public static void main(String[] args)
+>       {
+>           Form f = new Form();
+>           f.names = new String[] { "Terence", "Parr" };
+>           f.values = new boolean[] { false, true };
+>
+>           StringTemplate st = new StringTemplate(
+>               "$form.names,form.values:{ name, value |\n" +
+>               "$name$\n" +
+>               "$value$ " +
+>               "$if(value)$I'm True$else$I'm False$endif$" +
+>               "};separator=\"\n\"$");
+>           st.setAttribute("form", f);
+>           System.out.println(st.toString());
+>       }
+>
+> which seems right given false followed by true.
+>
+> Ter
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+
+From parrt at cs.usfca.edu  Mon Aug  6 12:51:52 2007
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Mon, 6 Aug 2007 12:51:52 -0700
+Subject: [stringtemplate-interest] Ok, I'm stumped
+In-Reply-To: <3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017EC0@BD01MSXMB021.US.Cingular.Net>
+References: <3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017DAB@BD01MSXMB021.US.Cingular.Net><ABA5C720-AAB1-41A7-B5B2-4EDA7AB694CD@classdump.org><3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017DEB@BD01MSXMB021.US.Cingular.Net><067916BC-4502-4750-8561-7DE2102A31C1@cs.usfca.edu><3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017E7F@BD01MSXMB021.US.Cingular.Net><E2C7ECA6-C9D0-4C53-A7A4-4C7BC8CF2DD2@cs.usfca.edu><3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017E98@BD01MSXMB021.US.Cingular.Net>
+	<3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017EA9@BD01MSXMB021.US.Cingular.Net>
+	<3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017EC0@BD01MSXMB021.US.Cingular.Net>
+Message-ID: <DCB5AFB1-AD15-4DF0-AA37-67F37B027DEB@cs.usfca.edu>
+
+Ah. yep, i have a new one:
+
+	/** Do a standard conversion of array attributes to a List.  Wrap the
+	 *  array instead of copying like old version.  Make an
+	 *  ArrayWrappedInList that knows to create an ArrayIterator.
+	 */
+	public static Object convertArrayToList(Object value) {
+		if ( value==null ) {
+			return null;
+		}
+		if ( value.getClass().isArray() ) {
+			if ( value.getClass().getComponentType().isPrimitive() ) {
+				return new ArrayWrappedInList(value);
+			}
+			return Arrays.asList((Object[])value);
+		}
+		return value;
+	}
+
+which uses my new iterator:
+
+package org.antlr.stringtemplate.language;
+
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.lang.reflect.Array;
+
+/** Turn an array into a List; subclass ArrayList for easy  
+development, but
+*  it really doesn't use super stuff for anything.  Ensure we create
+*  ArrayIterator for this List.
+*/
+public class ArrayWrappedInList extends ArrayList {
+	protected Object array = null;
+	/** Arrays are fixed size; precompute. */
+	protected int n;
+
+	public ArrayWrappedInList(Object array) {
+		this.array = array;
+		n = Array.getLength(array);
+	}
+
+	public Object get(int i) {
+		return Array.get(array, i);
+	}
+
+	public int size() {
+		return n;
+	}
+
+	public boolean isEmpty() {
+		return n==0;
+	}
+
+	public Object[] toArray() {
+		return (Object[])array;
+	}
+
+	public Iterator iterator() {
+		return new ArrayIterator(array);
+	}
+}
+
+Can I send you a tarball to try?
+
+Ter
+
+On Aug 6, 2007, at 12:19 PM, Barnes, Jeff wrote:
+
+> My version src of
+> org.antlr.stringtemplate.language.ASTExpr.convertArrayToList(Object)
+> starts off like
+>
+>                 if ( value==null ) {
+>                         return null;
+>                 }
+>                 /*
+>                 if ( !(value instanceof StringTemplate) ) {
+>                         System.out.println("convert "+value+" to
+> array?");
+>                 }
+>                 */
+>                 /*
+>                 if ( !arraysConvertibleToList.contains 
+> (value.getClass())
+> &&
+>                          !(value instanceof Object[]) )
+>                 {
+>                         return value;
+>                 }
+>                 */
+>                 if ( value instanceof Object[] ) {
+>                         Object[] list = (Object[])value;
+>                         List v = new
+> StringTemplate.STAttributeList(list.le
+> ngth);
+>                         for (int i = 0; i < list.length; i++) {
+>                                 Object elem = list[i];
+>                                 v.add(elem);
+>                         }
+>                         value = v;
+>                 }
+>                 else if ( value instanceof int[] ) {
+>                         int[] list = (int[])value;
+>                         List v = new
+> StringTemplate.STAttributeList(list.le
+> ngth);
+>                         for (int i = 0; i < list.length; i++) {
+>                                 int elem = list[i];
+>                                 v.add(new Integer(elem));
+>                         }
+>                         value = v;
+>                 }
+>                 else if ( value instanceof long[] ) {
+>                         long[] list = (long[])value;
+>                         List v = new
+> StringTemplate.STAttributeList(list.le
+> ngth);
+>                         for (int i = 0; i < list.length; i++) {
+>                                 long elem = list[i];
+>                                 v.add(new Long(elem));
+>                         }
+>                         value = v;
+>                 }
+>                 else if ( value instanceof float[] ) {
+>                         float[] list = (float[])value;
+>                         List v = new
+> StringTemplate.STAttributeList(list.le
+> ngth);
+>                         for (int i = 0; i < list.length; i++) {
+>                                 float elem = list[i];
+>                                 v.add(new Float(elem));
+>
+>
+> ...
+>
+> There is no check for Boolean array.
+>
+> The latest and greatest is a much shorter method:
+>
+>         public static Object convertArrayToList(Object value) {
+>
+> 	                if ( value==null ) {
+>  	                        return null;
+>  	                }
+>
+> 	                if ( value.getClass().isArray() ) {
+>
+> 	                        if (
+> value.getClass().getComponentType().isPrimitive() ) {
+>                                 return new ArrayWrappedInList(value);
+>
+> 	                        }
+> 	                        return Arrays.asList((Object[])value);
+> 	                }
+>                 return value;
+>
+>         }
+>
+> Hope this helps.
+>
+> Jeff
+>
+> -----Original Message-----
+> From: stringtemplate-interest-bounces at antlr.org
+> [mailto:stringtemplate-interest-bounces at antlr.org] On Behalf Of  
+> Barnes,
+> Jeff
+> Sent: Monday, August 06, 2007 3:02 PM
+> To: StringTemplate
+> Subject: Re: [stringtemplate-interest] Ok, I'm stumped
+>
+> I just downloaded from stringtemplate.org and get the same results.  
+> When
+> did you push last?
+>
+> Jeff
+>
+> -----Original Message-----
+> From: stringtemplate-interest-bounces at antlr.org
+> [mailto:stringtemplate-interest-bounces at antlr.org] On Behalf Of  
+> Barnes,
+> Jeff
+> Sent: Monday, August 06, 2007 2:52 PM
+> To: StringTemplate
+> Subject: Re: [stringtemplate-interest] Ok, I'm stumped
+>
+> My distro is about a month old...
+>
+> Terence
+> [Z at 1ffbd68 I'm True
+> Parr
+>  I'm False
+>
+>      public static void main(String[] args)
+>      {
+>          Form f = new Form();
+>          f.names = new String[] { "Terence", "Parr" };
+>          f.values = new boolean[] { false, true };
+>
+>           StringTemplate st = new StringTemplate(
+>               "$form.names,form.values:{ name, value |\n" +
+>               "$name$\n" +
+>               "$value$ " +
+>               "$if(value)$I'm True$else$I'm False$endif$" +
+>               "};separator=\"\n\"$");
+>           st.setAttribute("form", f);
+>           System.out.println(st.toString());
+>      }
+>
+> -----Original Message-----
+> From: stringtemplate-interest-bounces at antlr.org
+> [mailto:stringtemplate-interest-bounces at antlr.org] On Behalf Of  
+> Terence
+> Parr
+> Sent: Monday, August 06, 2007 2:47 PM
+> To: StringTemplate
+> Subject: Re: [stringtemplate-interest] Ok, I'm stumped
+>
+>
+> On Aug 6, 2007, at 11:37 AM, Barnes, Jeff wrote:
+>
+>> No it doesn't work either.
+>
+> wow!
+>
+> Hmm...maybe I fixed something.  I get
+>
+> /tmp $ java Test
+> Terence
+> false I'm False
+> Parr
+> true I'm True
+>
+>       public static void main(String[] args)
+>       {
+>           Form f = new Form();
+>           f.names = new String[] { "Terence", "Parr" };
+>           f.values = new boolean[] { false, true };
+>
+>           StringTemplate st = new StringTemplate(
+>               "$form.names,form.values:{ name, value |\n" +
+>               "$name$\n" +
+>               "$value$ " +
+>               "$if(value)$I'm True$else$I'm False$endif$" +
+>               "};separator=\"\n\"$");
+>           st.setAttribute("form", f);
+>           System.out.println(st.toString());
+>       }
+>
+> which seems right given false followed by true.
+>
+> Ter
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+
+From parrt at cs.usfca.edu  Mon Aug  6 14:18:48 2007
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Mon, 6 Aug 2007 14:18:48 -0700
+Subject: [stringtemplate-interest] ST-3.1b1 available
+Message-ID: <22905D68-5DFB-4E64-BBC2-68DBA413618A@cs.usfca.edu>
+
+Hi, just pushing an interim release...
+
+http://www.stringtemplate.org/download/stringtemplate-3.1b1.tar.gz
+
+see:
+
+http://www.stringtemplate.org/CHANGES.txt
+
+Ter
+
+From JB0284 at att.com  Mon Aug  6 14:24:13 2007
+From: JB0284 at att.com (Barnes, Jeff)
+Date: Mon, 6 Aug 2007 14:24:13 -0700
+Subject: [stringtemplate-interest] Ok, I'm stumped
+In-Reply-To: <3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017E98@BD01MSXMB021.US.Cingular.Net>
+References: <3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017DAB@BD01MSXMB021.US.Cingular.Net><ABA5C720-AAB1-41A7-B5B2-4EDA7AB694CD@classdump.org><3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017DEB@BD01MSXMB021.US.Cingular.Net><067916BC-4502-4750-8561-7DE2102A31C1@cs.usfca.edu><3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017E7F@BD01MSXMB021.US.Cingular.Net><E2C7ECA6-C9D0-4C53-A7A4-4C7BC8CF2DD2@cs.usfca.edu>
+	<3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017E98@BD01MSXMB021.US.Cingular.Net>
+Message-ID: <3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803017F55@BD01MSXMB021.US.Cingular.Net>
+
+With the interim release...
+
+Terence
+false I'm False
+Parr
+true I'm True
+
+Hooray!
+
+Jeff
+
+-----Original Message-----
+From: stringtemplate-interest-bounces at antlr.org
+[mailto:stringtemplate-interest-bounces at antlr.org] On Behalf Of Barnes,
+Jeff
+Sent: Monday, August 06, 2007 2:52 PM
+To: StringTemplate
+Subject: Re: [stringtemplate-interest] Ok, I'm stumped
+
+My distro is about a month old...
+
+Terence
+[Z at 1ffbd68 I'm True
+Parr
+ I'm False
+
+     public static void main(String[] args)
+     {
+         Form f = new Form();
+         f.names = new String[] { "Terence", "Parr" };
+         f.values = new boolean[] { false, true };
+
+          StringTemplate st = new StringTemplate(
+              "$form.names,form.values:{ name, value |\n" +
+              "$name$\n" +
+              "$value$ " +
+              "$if(value)$I'm True$else$I'm False$endif$" +
+              "};separator=\"\n\"$");
+          st.setAttribute("form", f);
+          System.out.println(st.toString());
+     }
+
+-----Original Message-----
+From: stringtemplate-interest-bounces at antlr.org
+[mailto:stringtemplate-interest-bounces at antlr.org] On Behalf Of Terence
+Parr
+Sent: Monday, August 06, 2007 2:47 PM
+To: StringTemplate
+Subject: Re: [stringtemplate-interest] Ok, I'm stumped
+
+
+On Aug 6, 2007, at 11:37 AM, Barnes, Jeff wrote:
+
+> No it doesn't work either.
+
+wow!
+
+Hmm...maybe I fixed something.  I get
+
+/tmp $ java Test
+Terence
+false I'm False
+Parr
+true I'm True
+
+      public static void main(String[] args)
+      {
+          Form f = new Form();
+          f.names = new String[] { "Terence", "Parr" };
+          f.values = new boolean[] { false, true };
+
+          StringTemplate st = new StringTemplate(
+              "$form.names,form.values:{ name, value |\n" +
+              "$name$\n" +
+              "$value$ " +
+              "$if(value)$I'm True$else$I'm False$endif$" +
+              "};separator=\"\n\"$");
+          st.setAttribute("form", f);
+          System.out.println(st.toString());
+      }
+
+which seems right given false followed by true.
+
+Ter
+_______________________________________________
+stringtemplate-interest mailing list
+stringtemplate-interest at antlr.org
+http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+_______________________________________________
+stringtemplate-interest mailing list
+stringtemplate-interest at antlr.org
+http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+From JB0284 at att.com  Tue Aug  7 10:20:10 2007
+From: JB0284 at att.com (Barnes, Jeff)
+Date: Tue, 7 Aug 2007 10:20:10 -0700
+Subject: [stringtemplate-interest] For Humans
+Message-ID: <3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803018109@BD01MSXMB021.US.Cingular.Net>
+
+I like to talk to myself when I use vi. :)
+
+$myList,anotherList:{myListItem, anotherListItem |
+...
+};separator="\n"$
+
+I say "For each item in myList and the item at the same index in
+anotherList, lets call the item in myList myListItem, the item in
+anotherList anotherListItem and substitute their values in this template
+area in place of their markers as follows
+
+...
+
+We'll separate each iteration with a new line.
+
+How would you say it?
+
+Regards,
+Jeff
+
+From parrt at cs.usfca.edu  Tue Aug  7 10:28:42 2007
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Tue, 7 Aug 2007 10:28:42 -0700
+Subject: [stringtemplate-interest] For Humans
+In-Reply-To: <3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803018109@BD01MSXMB021.US.Cingular.Net>
+References: <3FDBFA5A9BC6BD4EB5FFE1B29E33DB4803018109@BD01MSXMB021.US.Cingular.Net>
+Message-ID: <53EA5DF0-9E86-46DF-8D69-4402EA6DD26D@cs.usfca.edu>
+
+
+On Aug 7, 2007, at 10:20 AM, Barnes, Jeff wrote:
+
+> I like to talk to myself when I use vi. :)
+>
+> $myList,anotherList:{myListItem, anotherListItem |
+> ...
+> };separator="\n"$
+>
+> I say "For each item in myList and the item at the same index in
+> anotherList, lets call the item in myList myListItem, the item in
+> anotherList anotherListItem and substitute their values in this  
+> template
+> area in place of their markers as follows
+>
+> ...
+>
+> We'll separate each iteration with a new line.
+>
+> How would you say it?
+
+I usually say iterate across myList and anotherList in parallel,  
+applying the anonymous templates with iterator attributes...
+
+Ter
+
+From rhwilburn at gmail.com  Sat Aug 11 17:49:45 2007
+From: rhwilburn at gmail.com (Richard Wilburn)
+Date: Sun, 12 Aug 2007 12:49:45 +1200
+Subject: [stringtemplate-interest] Newbie Help
+Message-ID: <f6deb3e40708111749m5b70f1dcq41064ee63a7b5f17@mail.gmail.com>
+
+Hi I am new to StringTemplate :)
+
+I am trying to use StringTemplate to generate source code. I realise that in
+order to use string template I need to think in a way similar to functional
+programming however its been along time since I have done any so I
+struggling a bit. I am trying to generate c# code. In particular a case
+statement.
+
+Here is the code that is in template.st
+
+
+switch(eventlist)
+{
+    $events:{event|
+        case $event$:
+        $rulelist:{rule|
+            $if(event == rule))$
+                //if sender is in eca1's xpath query.
+                      //if precondition is satisfied
+                           //do action1();
+                //elseif sender is in eca2's xpath query (eca2 also listens
+for event1)
+                     //if precondition
+                          //do action2();
+
+            $endif$
+        }$
+        break;
+
+    }$
+
+    default:
+     //add event to event stack and ignore it.
+     break;
+   }
+
+
+
+It appears from the documentation that I cannot do an equivilence operator?
+Am I thinking on the correct track with the imperitive style if statement or
+is there someother way I must do it.
+
+Essentially as the output I would expect something like (assuming 2 ECA
+rules apply to event1 and 1 applies to event2):
+
+switch(eventlist)
+
+{
+
+     case event1:
+                //if sender is in eca1's xpath query.
+                      //if precondition is satisfied
+                           //do action1();
+                //elseif sender is in eca2's xpath query (eca2 also listens
+for event1)
+                     //if precondition
+                          //do action2();
+
+                //if sender is in eca1's xpath query.
+                      //if precondition is satisfied
+                           //do action1();
+                //elseif sender is in eca2's xpath query (eca2 also listens
+for event1)
+                     //if precondition
+                          //do action2();
+     break;
+
+     case event2:
+                 //if sender is in eca1's xpath query.
+                      //if precondition is satisfied
+                           //do action1();
+                //elseif sender is in eca2's xpath query (eca2 also listens
+for event1)
+                     //if precondition
+                          //do action2();
+     break;
+
+....
+
+What the output is trying to do is to take an event that occurs (we don't
+know what it is until runtime) and try to work out (think c++ style event
+loop/message pump)  what it is with the case statement. Then I have a list
+of ECA rules (event condition action rules that I want to put in based on
+what their event. So event1 could be mouseclicked and event2 could be
+keypress. ECA rules 1,2,3,10 could apply to event1 and ECA rule 4 could
+apply to event 2. So what i need to do is a comparison to get the ECA rules
+in the correct case statement. If I haven't explained anything enough let me
+know. Ultimately I am after some sort of string value comparison operator.
+
+Thanks
+
+Richard
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20070812/6fe256e1/attachment.html 
+
+From krriggs at comcast.net  Mon Aug 13 09:49:53 2007
+From: krriggs at comcast.net (krriggs at comcast.net)
+Date: Mon, 13 Aug 2007 16:49:53 +0000
+Subject: [stringtemplate-interest] some templates do, some don't
+Message-ID: <081320071649.4600.46C08BB00009B365000011F822058864429C0909079D9D05@comcast.net>
+
+Probably a newbie error!
+
+Re-wrote an HL proof to java code gnerator using rewrite and tokenStream and added some extensions.
+Problem is this: some templates are invoked and others are not.
+I assume rewrites are 'in' the token stream and evaluated during 'toString'
+Am I overloking something basic?
+
+For the really obliging, the grammar, the (UTF-8) input to the system, the actual output and the required output for a sumple example are below:
+
+vvvvv       GRAMMAR vvvvvvvvvvvv
+grammar Jape;
+options {
+     //output =AST;
+     //ASTLabelType=CommonTree;
+     output=template;
+     rewrite=true;
+     }
+  @header{package j2j;}  
+  @lexer::header{package j2j;} 
+     @members {
+                   JapeProgramWriter prg = new JapeProgramWriter();
+ JapeProgramWriter results(){return prg;}
+}
+   
+proof: lSection (cSection lSection)+ EOF;
+lSection  :  '{' logic '}' 
+            -> template(lx={$logic.text})
+               " if (<lx>) passed(); else failed(); "
+               ;
+cSection: '(' cc=code ')' | cc=code
+            -> template(cx={$cc.text}) " <cx> "
+;
+// took += out after ex2
+logic  : ex1=impLogic (PIFF ex2=impLogic)*
+            -> {ex2!=null}?  template(l1={$ex1.text},l2={$ex2.text})
+                 " [[<lx1>) == [<lx2>]] && [![<lx1>)== ![<lx2>]] "
+           ->  template(l3={$ex1.text})
+                                 " <l3> "
+;
+// took += out after ex2
+impLogic :  e1=orLogic (PIMPLIES e2=orLogic)*
+            -> {e2!=null}? template(lx1={$e1.text},lx2={$e2.text})
+                                 " !(<lx1>)||(<lx2>) "
+             ->template(lx1={$e1.text})
+                                " <lx1> "
+                       ;
+orLogic  :  andLogic (POR andLogic)*//->(LOR andLogic+) 
+                       ;
+andLogic :  bool (PAND bool)* //-> (LAND bool+)
+                       ;
+bool :  boolTerm 
+                         | PNOT boolTerm
+                         ;
+boolTerm       :  'true' 
+                        | 'false'
+                        | BOOLVAR
+                        | cExpr //-> (cExpr)
+                        | universal
+                        | existential
+                        | '(' logic ')';
+ universal  :  'forAll' ID '.' '(' logic ')' 
+                     ->template(ix={$ID.text},lx={$logic.text})
+                        " forAll(\"<ix>\",\"<lx>\")"
+                     ;
+ existential
+  : 'eXists' ID '.' '(' logic ')'
+                     ->template(ix={$ID.text},lx={$logic.text})
+                        " eXists(\"<ix>\",\"<lx>\")"
+  ;
+// add for all afteradded to CharTransliterator
+cExpr :  expr relOp expr ;
+code: statement  (';' statement)* 
+;
+statement: assigns | ifs | whiles | skips;
+assigns : ID ':=' expr 
+                       -> template(id={$ID.text},e={$expr.text})"<id>=<e>;"
+               | BOOLVAR ':=' cExpr
+               {prg.addBool($BOOLVAR.text);}
+                       -> template(id={$BOOLVAR.text},e={$cExpr.text})
+                          "<id>=<e>;"
+                       
+               ;
+ifs: PIF l=logic PTHEN e=code PELSE e2=code PFI
+     -> template(lx={$logic.text},tx={$e.text},ex={$e2.text})
+         "if (<lx>) {<tx>} else {<ex>}"
+;
+whiles: PWHILE lx=logic PDO cx=code POD
+    -> template(ly={$lx.text},cy={$cx.text})
+         << while (<ly>) { 
+                 <cy> 
+                 } >>
+;
+skips: 'skip' ->template()" ";
+expr :   multExpr (addOp multExpr)* ;
+addOp : PLUS | MINUS;
+multExpr     :  powerExpr (multOp powerExpr)*  ; 
+multOp : TIMES | DIVIDE | MOD ;
+powerExpr:  value 
+ | value (POWER e2=powerExpr )
+               -> template(v1={$value.text},v2={$e2.text})
+                    "Math.power(<v1>, <v2>)"
+;
+value: ID         {prg.addVar($ID.text);}   
+           | NINT 
+           | parameter {prg.addConst($parameter.text);}
+           | BOOLVAR {if (!prg.boolNames.contains($BOOLVAR.text))
+                                     prg.addConst($BOOLVAR.text);}
+           ; 
+parameter :  GIVEN ;
+//id  :  ID;
+anInt  :  NINT;
+relOp: 
+         LT  
+         | GT 
+         | EQ -> template()"=="
+         | LTE 
+         | GTE 
+         | NE ;
+// for the sake of the AST tree
+//LAND :;
+//LOR :;
+//LIMPLIES :;
+//LIFF :;
+//MCODE :;
+//MLOGIC :;
+PIF:'if';
+PFI:'fi';
+PELSE:'else';
+PTHEN:'then';
+PWHILE:'while';
+PDO:'do';
+POD:'od';
+PSKIP:'skip';
+ASSIGN:':=';
+LPAREN:  '(';
+RPAREN: ')' ;
+LBRKT:'{';
+RBRKT:'}';
+SEMIC:';';
+POWER:'^';
+PLUS  : '+' ;
+MINUS : '-' ;
+TIMES: '*';
+DIVIDE:'/';
+MOD : '%';
+
+GTE:'>=';
+LTE:'<=';
+NE: '!=';
+EQ: '=';
+GT: '>';
+LT:'<';
+PNOT: '!';
+POR: '||';
+PAND: '&&';
+PIMPLIES : '=>';
+PIFF : '<=>';
+ID    : ('a'..'z')( 'a'..'z' | '0'..'9')?;
+BOOLVAR         : ('a'..'z')('a'..'z')('a'..'z')+;
+GIVEN : 'K'( 'a'..'z' | '0'..'9')?;
+NINT: /*'-'?*/ ('0'..'9')+;
+WS : (' '|'\t'|'\n'|'\r\n')+ {$channel=HIDDEN;};
+//JUNK : '\uFFFF' {$channel=HIDDEN;};
+
+vvvvvvvv INPUT vvvvvvvv
+{n??2}(i:=2){2??i??i??n????x.(2??x??x<i??n mod x??0)}while n mod i??0 do i:=i+1 od{2??i??i??n????x.(2??x??x<i??n mod x??0)??n mod i=0}
+--- an XLATION from UTF-8 is also done
+vvvvvvvv ACTUAL OUTPUT (w/o pre-,post- amble) vvvvvvvvv
+if ( n>=2 ) passed(); else failed(); 
+(i=2;) 
+if ( 2<=i&&i<=n&& forAll("x"," !(2<=x&&x<i)||(n%x!=0) ") ) passed(); else failed(); 
+while n%i!=0 do i=i+1; od 
+if ( 2<=i&&i<=n&& forAll("x"," !(2<=x&&x<i)||(n%x!=0) ")&&n%i==0 ) passed(); else failed(); 
+
+vvvvvvvv DESIRED OUTPUT vvvvvvvvv
+if ( n>=2 ) passed(); else failed(); 
+i=2;
+if ( 2<=i&&i<=n&& forAll("x"," !(2<=x&&x<i)||(n%x!=0) ") ) passed(); else failed(); 
+while ( n%i!=0 ) { i=i+1; } 
+if ( 2<=i&&i<=n&& forAll("x"," !(2<=x&&x<i)||(n%x!=0) ")&&n%i==0 ) passed(); else failed(); 
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20070813/73b4c5d1/attachment.html 
+
+From zyzhu2000 at gmail.com  Mon Aug 13 10:29:01 2007
+From: zyzhu2000 at gmail.com (Geoffrey Zhu)
+Date: Mon, 13 Aug 2007 12:29:01 -0500
+Subject: [stringtemplate-interest] String-template in the ISS/ASP.NET Setting
+Message-ID: <fcedc2970708131029h76bf2bcbx2a319f4c7ffb007b@mail.gmail.com>
+
+Hi All,
+
+>From reading about it, it looks like string-template can be used as a nice
+template-engine for generating web pages. I am just wondering if anyone has
+used it with ASP.NET and IIS to build web sites, and if so, what is the best
+way to work under such a setting. For example, what is the best way to edit
+the templates? What is the best workflow? What is the best way to debug?
+
+Thanks,
+Geoffrey
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20070813/9205202c/attachment.html 
+
+From parrt at cs.usfca.edu  Mon Aug 13 16:26:05 2007
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Mon, 13 Aug 2007 16:26:05 -0700
+Subject: [stringtemplate-interest] Newbie Help
+In-Reply-To: <f6deb3e40708111749m5b70f1dcq41064ee63a7b5f17@mail.gmail.com>
+References: <f6deb3e40708111749m5b70f1dcq41064ee63a7b5f17@mail.gmail.com>
+Message-ID: <C7C9DBE7-A471-4FDC-8BE6-8E2DDC2DA09E@cs.usfca.edu>
+
+
+On Aug 11, 2007, at 5:49 PM, Richard Wilburn wrote:
+
+> Hi I am new to StringTemplate :)
+>
+> I am trying to use StringTemplate to generate source code. I  
+> realise that in order to use string template I need to think in a  
+> way similar to functional programming however its been along time  
+> since I have done any so I struggling a bit. I am trying to  
+> generate c# code. In particular a case statement.
+>
+> Here is the code that is in template.st
+>
+> switch(eventlist)
+> {
+>     $events:{event|
+>         case $event$:
+>         $rulelist:{rule|
+>             $if(event == rule))$
+
+ST won't let you do any attribute evaluations in the template.  Pass  
+in as field or method of event.  then do $if(event.isInECA1xpathquery) 
+$...$endif$.
+
+> What the output is trying to do is to take an event that occurs (we  
+> don't know what it is until runtime) and try to work out (think c++  
+> style event loop/message pump)  what it is with the case statement.  
+> Then I have a list of ECA rules (event condition action rules that  
+> I want to put in based on what their event. So event1 could be  
+> mouseclicked and event2 could be keypress. ECA rules 1,2,3,10 could  
+> apply to event1 and ECA rule 4 could apply to event 2. So what i  
+> need to do is a comparison to get the ECA rules in the correct case  
+> statement. If I haven't explained anything enough let me know.  
+> Ultimately I am after some sort of string value comparison operator.
+Yep, must do that computation in model though :)
+
+Ter
+
+
+From parrt at cs.usfca.edu  Mon Aug 13 16:28:18 2007
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Mon, 13 Aug 2007 16:28:18 -0700
+Subject: [stringtemplate-interest] some templates do, some don't
+In-Reply-To: <081320071649.4600.46C08BB00009B365000011F822058864429C0909079D9D05@comcast.net>
+References: <081320071649.4600.46C08BB00009B365000011F822058864429C0909079D9D05@comcast.net>
+Message-ID: <DC7439A7-DA89-43D5-BF38-6A81215A847A@cs.usfca.edu>
+
+
+On Aug 13, 2007, at 9:49 AM, krriggs at comcast.net wrote:
+
+> Probably a newbie error!
+>
+> Re-wrote an HL proof to java code gnerator using rewrite and  
+> tokenStream and added some extensions.
+> Problem is this: some templates are invoked and others are not.
+> I assume rewrites are 'in' the token stream and evaluated during  
+> 'toString'
+> Am I overloking something basic?
+
+Can you be more specific?  Which templates?  Probably rule is not  
+matched so no template eval.  Remember you must track and use ST's  
+returned from rules or the value evaporates.
+
+Ter
+
+
+From zyzhu2000 at gmail.com  Tue Aug 14 12:11:11 2007
+From: zyzhu2000 at gmail.com (Geoffrey Zhu)
+Date: Tue, 14 Aug 2007 14:11:11 -0500
+Subject: [stringtemplate-interest] String-template in the ISS/ASP.NET
+	Setting
+In-Reply-To: <fcedc2970708131029h76bf2bcbx2a319f4c7ffb007b@mail.gmail.com>
+References: <fcedc2970708131029h76bf2bcbx2a319f4c7ffb007b@mail.gmail.com>
+Message-ID: <fcedc2970708141211q2e3f9aaeq96aa3f54cb1de938@mail.gmail.com>
+
+No use case/best practices about setting up string-template as a
+template engine to generate HTML to share?
+
+The string-template interface is straightforward. I just want to know
+how others with more experience use it to do web development.
+
+On 8/13/07, Geoffrey Zhu <zyzhu2000 at gmail.com> wrote:
+>
+> Hi All,
+>
+> From reading about it, it looks like string-template can be used as a nice template-engine for generating web pages. I am just wondering if anyone has used it with ASP.NET and IIS to build web sites, and if so, what is the best way to work under such a setting. For example, what is the best way to edit the templates? What is the best workflow? What is the best way to debug?
+>
+> Thanks,
+> Geoffrey
+
+From ianrae88 at gmail.com  Tue Aug 14 17:36:49 2007
+From: ianrae88 at gmail.com (Ian Rae)
+Date: Tue, 14 Aug 2007 20:36:49 -0400
+Subject: [stringtemplate-interest] String-template in the ISS/ASP.NET
+	Setting
+In-Reply-To: <fcedc2970708141211q2e3f9aaeq96aa3f54cb1de938@mail.gmail.com>
+References: <fcedc2970708131029h76bf2bcbx2a319f4c7ffb007b@mail.gmail.com>
+	<fcedc2970708141211q2e3f9aaeq96aa3f54cb1de938@mail.gmail.com>
+Message-ID: <c96a6ef10708141736h584b2b00yc09b8f44a3a65d9b@mail.gmail.com>
+
+ASP.Net has a fair number of nice features so I'm not sure why you want to
+replace it with ST.  But for some types of apps I'm sure it might be
+better.  My ASP.Net life got much better when I switched to a MVP
+(ModelViewPresenter) approach using NUnit to unit test most of the code, and
+very lightweight views to bind data to ASP.Net widgets.  This way most
+development can be done in a console app (the M and P precisely) where
+debugging is simple.
+
+--Ian
+
+On 8/14/07, Geoffrey Zhu <zyzhu2000 at gmail.com> wrote:
+>
+> No use case/best practices about setting up string-template as a
+> template engine to generate HTML to share?
+>
+> The string-template interface is straightforward. I just want to know
+> how others with more experience use it to do web development.
+>
+> On 8/13/07, Geoffrey Zhu <zyzhu2000 at gmail.com> wrote:
+> >
+> > Hi All,
+> >
+> > From reading about it, it looks like string-template can be used as a
+> nice template-engine for generating web pages. I am just wondering if anyone
+> has used it with ASP.NET and IIS to build web sites, and if so, what is
+> the best way to work under such a setting. For example, what is the best way
+> to edit the templates? What is the best workflow? What is the best way to
+> debug?
+> >
+> > Thanks,
+> > Geoffrey
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20070814/1a0320f7/attachment.html 
+
+From tbrandonau at gmail.com  Fri Aug 17 04:05:05 2007
+From: tbrandonau at gmail.com (Thomas Brandon)
+Date: Fri, 17 Aug 2007 21:05:05 +1000
+Subject: [stringtemplate-interest] Error on super reference in if
+Message-ID: <ebc876d70708170405k3bc7e5b3m4874db33a10cc8f2@mail.gmail.com>
+
+In String Template 3.1b1 using a super reference in an if block results in:
+exception java.lang.NullPointerException
+	at org.antlr.stringtemplate.StringTemplateGroup.getEmbeddedInstanceOf(StringTemplateGroup.java:413)
+
+The problem is that nativeGroup is not set in the sub-templates
+created for if\else blocks.
+Adding subtemplate.setNativeGroup(self.getNativeGroup()); (and a
+similar line for elseSubTemplate) to the initialisation of the
+template in the action rule of template.g seems to fix the issue. Unit
+tests seemed to run with no new errors after the change and it seems
+to use the right group for template lookups (as in rule2 in the test
+case).
+
+A test case to go in TestStringTemplate is:
+    public void testSuperReferenceInIf() throws Exception {
+		String superGroupString =
+			"group superG;" + newline +
+			"rule1(attr) ::= \"<attr>\"" + newline +
+			"rule2(attr) ::= \"<rule3()><attr>\"" + newline +
+			"rule3() ::= \"super\""
+			;
+		StringTemplateGroup superGroup = new StringTemplateGroup(
+			new StringReader(superGroupString), AngleBracketTemplateLexer.class);
+		String subGroupString =
+			"group subG;\n" +
+			"rule1(attr) ::= \"<if(attr)><super.rule1(attr)><endif>\"" + newline +
+			"rule1b(attr) ::= \"<if(!attr)><else><super.rule1(attr)><endif>\""
++ newline +
+			"rule2(attr) ::= \"<if(attr)><super.rule2(attr)><endif>\"" + newline +
+			"rule3() ::= \"sub\""
+			;
+		StringTemplateGroup subGroup = new StringTemplateGroup(
+			new StringReader(subGroupString), AngleBracketTemplateLexer.class);
+		subGroup.setSuperGroup(superGroup);
+		StringTemplate rule1 = subGroup.getInstanceOf("rule1");
+		rule1.setAttribute("attr", "val");
+		assertEquals("val", rule1.toString());
+		StringTemplate rule1b = subGroup.getInstanceOf("rule1b");
+		rule1b.setAttribute("attr", "val");
+		assertEquals("val", rule1b.toString());
+		StringTemplate rule2 = subGroup.getInstanceOf("rule2");
+		rule2.setAttribute("attr", "val");
+		assertEquals("subval", rule2.toString());
+    }
+
+Tom.
+
+From parrt at cs.usfca.edu  Fri Aug 17 13:26:41 2007
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Fri, 17 Aug 2007 13:26:41 -0700
+Subject: [stringtemplate-interest] Error on super reference in if
+In-Reply-To: <ebc876d70708170405k3bc7e5b3m4874db33a10cc8f2@mail.gmail.com>
+References: <ebc876d70708170405k3bc7e5b3m4874db33a10cc8f2@mail.gmail.com>
+Message-ID: <C754FCE9-3CF1-4E15-8A14-675B2A014E21@cs.usfca.edu>
+
+Interesting...thanks for the fix.  It actually should be:
+
+				s.setNativeGroup(self.getNativeGroup());
+
+not subtemplate.setN...
+
+I'll add the unit test. with my mods.
+Thanks,
+Ter
+On Aug 17, 2007, at 4:05 AM, Thomas Brandon wrote:
+
+> In String Template 3.1b1 using a super reference in an if block  
+> results in:
+> exception java.lang.NullPointerException
+> 	at  
+> org.antlr.stringtemplate.StringTemplateGroup.getEmbeddedInstanceOf 
+> (StringTemplateGroup.java:413)
+>
+> The problem is that nativeGroup is not set in the sub-templates
+> created for if\else blocks.
+> Adding subtemplate.setNativeGroup(self.getNativeGroup()); (and a
+> similar line for elseSubTemplate) to the initialisation of the
+> template in the action rule of template.g seems to fix the issue. Unit
+> tests seemed to run with no new errors after the change and it seems
+> to use the right group for template lookups (as in rule2 in the test
+> case).
+>
+> A test case to go in TestStringTemplate is:
+>     public void testSuperReferenceInIf() throws Exception {
+> 		String superGroupString =
+> 			"group superG;" + newline +
+> 			"rule1(attr) ::= \"<attr>\"" + newline +
+> 			"rule2(attr) ::= \"<rule3()><attr>\"" + newline +
+> 			"rule3() ::= \"super\""
+> 			;
+> 		StringTemplateGroup superGroup = new StringTemplateGroup(
+> 			new StringReader(superGroupString),  
+> AngleBracketTemplateLexer.class);
+> 		String subGroupString =
+> 			"group subG;\n" +
+> 			"rule1(attr) ::= \"<if(attr)><super.rule1(attr)><endif>\"" +  
+> newline +
+> 			"rule1b(attr) ::= \"<if(!attr)><else><super.rule1(attr)><endif>\""
+> + newline +
+> 			"rule2(attr) ::= \"<if(attr)><super.rule2(attr)><endif>\"" +  
+> newline +
+> 			"rule3() ::= \"sub\""
+> 			;
+> 		StringTemplateGroup subGroup = new StringTemplateGroup(
+> 			new StringReader(subGroupString), AngleBracketTemplateLexer.class);
+> 		subGroup.setSuperGroup(superGroup);
+> 		StringTemplate rule1 = subGroup.getInstanceOf("rule1");
+> 		rule1.setAttribute("attr", "val");
+> 		assertEquals("val", rule1.toString());
+> 		StringTemplate rule1b = subGroup.getInstanceOf("rule1b");
+> 		rule1b.setAttribute("attr", "val");
+> 		assertEquals("val", rule1b.toString());
+> 		StringTemplate rule2 = subGroup.getInstanceOf("rule2");
+> 		rule2.setAttribute("attr", "val");
+> 		assertEquals("subval", rule2.toString());
+>     }
+>
+> Tom.
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+
+From greg.parker at brovada.com  Sat Aug 18 19:02:51 2007
+From: greg.parker at brovada.com (Greg Parker)
+Date: Sat, 18 Aug 2007 23:02:51 -0300
+Subject: [stringtemplate-interest] deployment question
+Message-ID: <46C7A4CB.7050909@brovada.com>
+
+Just curious to see if StringTemplate can solve a particular deployment 
+requirement I have on a project.  Currently we host a repository full of 
+Velocity templates that our clients download and use within software 
+installed on their computers.  We are now getting ready to add 
+muti-language support to these templates.  I would like to maintain one 
+copy of each template and simply externalize all the language elements 
+into resource files.  At deployment time I would like to preprocess the 
+templates into one repository per supported language.  So all we have to 
+do is maintain one template, and one resource file per language.  The 
+problem is that the templates are velocity templates.  If I use velocity 
+to preprocess the templates to add the language support, I will also 
+inadvertently affect the template variables that have nothing to do with 
+language support.  I just thought I would post this question on the off 
+chance that StringTemplate has some type of facility for this, or that 
+someone might have a solution.
+
+Thanks
+
+From ccbean at gmail.com  Sat Aug 18 19:15:49 2007
+From: ccbean at gmail.com (Colin Bean)
+Date: Sat, 18 Aug 2007 19:15:49 -0700
+Subject: [stringtemplate-interest] deployment question
+In-Reply-To: <46C7A4CB.7050909@brovada.com>
+References: <46C7A4CB.7050909@brovada.com>
+Message-ID: <29a6ca010708181915w17d5382fm5871074ae5e9eb00@mail.gmail.com>
+
+Take a look at this article by John Snyders:
+
+http://hardlikesoftware.com/weblog/2007/01/15/i18n-with-stringtemplate/
+
+Should work for what you're doing.
+
+-Colin
+
+
+
+On 8/18/07, Greg Parker <greg.parker at brovada.com> wrote:
+> Just curious to see if StringTemplate can solve a particular deployment
+> requirement I have on a project.  Currently we host a repository full of
+> Velocity templates that our clients download and use within software
+> installed on their computers.  We are now getting ready to add
+> muti-language support to these templates.  I would like to maintain one
+> copy of each template and simply externalize all the language elements
+> into resource files.  At deployment time I would like to preprocess the
+> templates into one repository per supported language.  So all we have to
+> do is maintain one template, and one resource file per language.  The
+> problem is that the templates are velocity templates.  If I use velocity
+> to preprocess the templates to add the language support, I will also
+> inadvertently affect the template variables that have nothing to do with
+> language support.  I just thought I would post this question on the off
+> chance that StringTemplate has some type of facility for this, or that
+> someone might have a solution.
+>
+> Thanks
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>
+
+From jaluber at gmx.de  Mon Aug 20 07:02:21 2007
+From: jaluber at gmx.de (Johannes Luber)
+Date: Mon, 20 Aug 2007 16:02:21 +0200
+Subject: [stringtemplate-interest] Syntax problems
+Message-ID: <46C99EED.3080401@gmx.de>
+
+Hello!
+
+I have the following template file:
+
+group ANTLR3ToRelaxNG;
+
+/** The start template. Call only this template from a program. */
+Grammar(Name, StartRule, Elements) ::= <<
+# Grammar <Name>
+grammar{
+start = element <StartRule> { <StartRule>Content }
+
+<Elements:CreateContent(); separator="\n">
+
+}
+>>
+
+/** This rule generates the content elements. */
+CreateContent(element) ::= <<
+<if(element.IsRootElement)>
+<element.Name>Content =
+	<element.Children:CreateContent()>
+<endif>
+<if(element.IsAndElement)>(<element.Children:CreateContent();
+separator=",\n">)<endif>
+<if(element.IsOrElement)>(<element.Children:CreateContent();
+separator="|\n">)<endif>
+<if(element.IsOptionalElement)><element.Children:CreateContent()>?<endif>
+<if(element.IsZeroOrMoreElement)><element.Children:CreateContent()>*<endif>
+<if(element.IsOneOrMoreElement)><element.Children:CreateContent()>+<endif>
+<if(element.IsEmptyElement)><element.Name>Content = empty<endif>
+<if(element.IsTextElement)><element.Name>Content = text<endif>
+<if(element.IsAnyElement)><element.Name>Content = *<endif>
+<if(element.IsLeafElement)>element <element.Name> {
+<element.Name>Content }<endif>
+>>
+
+While this seems to work in general, I'd like to want some adjustments.
+It may be difficult to see, but Children of IsAndElement-s and
+IsOrElement-s are always enclosed with parentheses. In general it is
+necessary, but I know that calling the CreateContent template from the
+Grammar rule has only one direct child and doesn't need the parentheses
+there.
+
+My plan was to add an encloseElements parameter to the parameter list of
+CreateContent, but I can't get the template calls work correctly with:
+
+<Elements:{e|<CreateContent(e, "false")>}; separator="\n">
+
+Testing the template group with STST (Standalone Sring Template) results in:
+
+"Error: action parse error in group ANTLR3ToRelaxNG line 7; template
+context is [Grammar anonymous] at line 1, column 1:
+unexpected token: CreateContent
+Error: action parse error in group ANTLR3ToRelaxNG line 7; template
+context is [Grammar anonymous] at line 1, column 16:
+ unexpected token: ,
+Error: problem parsing template 'anonymous nested in Grammar': null"
+
+How do I write it correctly? For testing purposes I've attached my JSON
+file. The object with the name "CompilationUnit" doesn't work correctly,
+but if this is a JSON syntax error, I can't find it. :(
+
+Thanks in advance,
+Johannes Luber
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: test.js
+Type: application/x-javascript
+Size: 4717 bytes
+Desc: not available
+Url : http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20070820/95abfc22/attachment.js 
+
+From parrt at cs.usfca.edu  Mon Aug 20 12:32:40 2007
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Mon, 20 Aug 2007 12:32:40 -0700
+Subject: [stringtemplate-interest] Syntax problems
+In-Reply-To: <46C99EED.3080401@gmx.de>
+References: <46C99EED.3080401@gmx.de>
+Message-ID: <72940C8D-D6BD-4922-8B15-B4B095E046A5@cs.usfca.edu>
+
+
+On Aug 20, 2007, at 7:02 AM, Johannes Luber wrote:
+> My plan was to add an encloseElements parameter to the parameter  
+> list of
+> CreateContent, but I can't get the template calls work correctly with:
+>
+> <Elements:{e|<CreateContent(e, "false")>}; separator="\n">
+
+You need arg assignment and matching number of them:
+
+<CreateContent(element=e)>
+
+Ter
+
+
+From parrt at cs.usfca.edu  Wed Aug 22 14:04:46 2007
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Wed, 22 Aug 2007 14:04:46 -0700
+Subject: [stringtemplate-interest] antlr.org server bouncing...
+Message-ID: <9B158103-4C4E-4B12-BFE6-2D0C8568B833@cs.usfca.edu>
+
+...be back up shortly.
+Ter
+
+From jjsnyders at rcn.com  Thu Aug 23 12:02:59 2007
+From: jjsnyders at rcn.com (John Snyders)
+Date: Thu, 23 Aug 2007 15:02:59 -0400 (EDT)
+Subject: [stringtemplate-interest] deployment question
+Message-ID: <20070823150259.AED86127@ms10.lnh.mail.rcn.net>
+
+What I find interesting about this scenario is that one template language is being used to generate the text of another template language. This can be done as long as the syntax of one language doesn't get confused by another. I think Velocity uses $ so you will need to use the < > delimiters in ST. 
+
+I think there is a use case (Greg gives a real world example of it) for a template language to be able to easily generate templates in it's own language.
+
+Another way to look at this is as multiple passes over the same template or processing the templates in different modes. Just the template expressions intended for that pass/mode should be executed.
+
+You can escape the template delimiter with \$ but this gets messy especially with more than one pass. The third pass would use \\\$.
+
+A nice thing about ST is that it can use two different sets of delimiters < > or $ $ so you can change the parser between passes.
+
+This may be all that is ever needed but I wonder if being able to target rules to specific modes would be useful.  For example:
+
+Here is attribute foo from mode 1 $/mode1/foo$ and here is bar from mode 2 $/mode2/bar$
+
+Running ST with mode == "mode1" would produce:
+
+Here is attribute foo from mode 1 value-of-foo and here is bar from mode 2 $/mode2/bar$
+
+-John
+
+---- Original message ----
+>Date: Sat, 18 Aug 2007 19:15:49 -0700
+>From: "Colin Bean" <ccbean at gmail.com>  
+>Subject: Re: [stringtemplate-interest] deployment question  
+>To: "Greg Parker" <greg.parker at brovada.com>
+>Cc: stringtemplate-interest at antlr.org
+>
+>Take a look at this article by John Snyders:
+>
+>http://hardlikesoftware.com/weblog/2007/01/15/i18n-with-stringtemplate/
+>
+>Should work for what you're doing.
+>
+>-Colin
+>
+>
+>
+>On 8/18/07, Greg Parker <greg.parker at brovada.com> wrote:
+>> Just curious to see if StringTemplate can solve a particular deployment
+>> requirement I have on a project.  Currently we host a repository full of
+>> Velocity templates that our clients download and use within software
+>> installed on their computers.  We are now getting ready to add
+>> muti-language support to these templates.  I would like to maintain one
+>> copy of each template and simply externalize all the language elements
+>> into resource files.  At deployment time I would like to preprocess the
+>> templates into one repository per supported language.  So all we have to
+>> do is maintain one template, and one resource file per language.  The
+>> problem is that the templates are velocity templates.  If I use velocity
+>> to preprocess the templates to add the language support, I will also
+>> inadvertently affect the template variables that have nothing to do with
+>> language support.  I just thought I would post this question on the off
+>> chance that StringTemplate has some type of facility for this, or that
+>> someone might have a solution.
+>>
+>> Thanks
+>> _______________________________________________
+>> stringtemplate-interest mailing list
+>> stringtemplate-interest at antlr.org
+>> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>>
+>_______________________________________________
+>stringtemplate-interest mailing list
+>stringtemplate-interest at antlr.org
+>http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+From lists.stringtemplate at jhoward.fastmail.fm  Thu Aug 23 18:19:35 2007
+From: lists.stringtemplate at jhoward.fastmail.fm (lists.stringtemplate at jhoward.fastmail.fm)
+Date: Fri, 24 Aug 2007 11:19:35 +1000
+Subject: [stringtemplate-interest] [Patch] CustomFormatAttribute
+Message-ID: <1187918375.29993.1207008815@webmail.messagingengine.com>
+
+I wanted to be able to have the model tell the view how it should be
+rendered, without creating a separate class for each different way of
+rendering a float/date/etc. Here's the goal:
+----
+[CustomFormat("0.0%")]
+public double A1 { 
+  get { return a1_; } 
+  set { a1_ = value; } 
+}
+----
+
+That's C# of course. The bit in '[]' is a .Net "Attribute" (nothing to
+do with the ST concept of "Attribute"!). The equivalent in Java is the
+"Annotation". The "0.0%" is a standard .Net format string, passed to
+IFormattable.Format(). All of the standard .Net base types support
+IFormattable, and you can easily add this interface to your own types
+too (it only has one member).
+
+So, here's all the code necessary to get it to work:
+
+ASTExpr.cs:
+----
+In ASTExpr.GetPropertyValue() after:
+  @value = pi.GetValue(paramBag.instance, null);
+insert:
+
+object[] custAttr = pi.GetCustomAttributes(
+  typeof(CustomFormatAttribute), false);
+if (custAttr.Length>0) {
+    CustomFormatAttribute attr = 
+      (CustomFormatAttribute) custAttr[0];
+    string fmt = attr.Format;
+    IFormattable f = (IFormattable) @value;
+    @value = f.ToString(fmt, null);
+}
+
+----
+
+And then add a test:
+----
+class CustomFormatTest {
+double a1_, a2_;
+
+public CustomFormatTest(double a1, double a2) {
+    a1_ = a1;
+    a2_ = a2;
+}
+
+[CustomFormat("0.0%")] public double A1 { 
+  get { return a1_; } set { a1_ = value; } }
+public double A2 { 
+  get { return a2_; } set { a2_ = value; } }
+}
+
+[Test] public void CustomFormatAttributeTest() {
+    StringTemplate st = new StringTemplate(
+      "$Items:{<td>$it.A1$</td><td>$it.A2$</td>}$");
+    List<CustomFormatTest> l = new List<CustomFormatTest>();
+    l.Add(new CustomFormatTest(.5, .6));
+    st.SetAttribute("Items", l);
+    Assert.AreEqual("<td>50.0%</td><td>0.6</td>", st.ToString());
+}
+----
+
+That's it! This seems to fit within the MVC separation rules quite
+nicely - does it seem like a reasonable addition to ST?
+
+TIA,
+  Jeremy
+-- 
+  Jeremy Howard
+  jhoward at optimaldecisions.com
+  The Optimal Decisions Group, Pty Ltd
+
+
+From oanat at yoterra.ro  Sat Aug 25 05:34:07 2007
+From: oanat at yoterra.ro (Oana Tabaranu)
+Date: Sat, 25 Aug 2007 15:34:07 +0300
+Subject: [stringtemplate-interest]  question about maps
+In-Reply-To: <mailman.5.1187722802.13188.stringtemplate-interest@antlr.org>
+References: <mailman.5.1187722802.13188.stringtemplate-interest@antlr.org>
+Message-ID: <20070825122528.M13654@yoterra.ro>
+
+Hello!
+  I would like to iterate over a map using as key another list value(like a double for
+loop):
+$myKeys:{k|<a href = "#">$k$</a>
+<div>$myMap.$k$:{l|<a href = "#"> $l$</a> &nbsp;}$</div>
+}$
+Is it possible to do something like this using ST?
+Oana
+
+From flop at rogers.com  Sat Aug 25 20:45:09 2007
+From: flop at rogers.com (Florin T.PATRASCU)
+Date: Sat, 25 Aug 2007 23:45:09 -0400
+Subject: [stringtemplate-interest] StringTemplate 3.1.b1 stable?
+Message-ID: <877DE107-1208-4DFD-ABB3-E52188299E9E@rogers.com>
+
+Hi there,
+
+Being my first post here, I want to congratulate the authors of the  
+StringTemplate library for the quality of this framework! We just  
+started using ST few weeks ago and we are addicted already :)
+
+Because our plans is to use ST for web development, we recently added  
+ST support for View Rendering to our open source project JPublish  
+(http://code.google.com/p/jpublish/) and we are already thinking to  
+make ST the default ViewRenderer for the web content. Therefore I  
+just want to ask, are there any plans for releasing the 3.1 version  
+soon? Or, how safe is 3.1b1?
+
+Thank you,
+-florin
+
+
+
+From parrt at cs.usfca.edu  Thu Aug 30 13:18:27 2007
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Thu, 30 Aug 2007 13:18:27 -0700
+Subject: [stringtemplate-interest] question about maps
+In-Reply-To: <20070825122528.M13654@yoterra.ro>
+References: <mailman.5.1187722802.13188.stringtemplate-interest@antlr.org>
+	<20070825122528.M13654@yoterra.ro>
+Message-ID: <55FCE192-1EAC-4B63-AF98-0A5564D551F1@cs.usfca.edu>
+
+
+On Aug 25, 2007, at 5:34 AM, Oana Tabaranu wrote:
+
+> Hello!
+>   I would like to iterate over a map using as key another list value 
+> (like a double for
+> loop):
+> $myKeys:{k|<a href = "#">$k$</a>
+> <div>$myMap.$k$:{l|<a href = "#"> $l$</a> &nbsp;}$</div>
+> }$
+> Is it possible to do something like this using ST?
+
+  something like that should work in concept.
+
+Ter
+
+
+From parrt at cs.usfca.edu  Thu Aug 30 13:19:22 2007
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Thu, 30 Aug 2007 13:19:22 -0700
+Subject: [stringtemplate-interest] StringTemplate 3.1.b1 stable?
+In-Reply-To: <877DE107-1208-4DFD-ABB3-E52188299E9E@rogers.com>
+References: <877DE107-1208-4DFD-ABB3-E52188299E9E@rogers.com>
+Message-ID: <915624B0-B7D1-49CA-9ED5-97938C1E4670@cs.usfca.edu>
+
+
+On Aug 25, 2007, at 8:45 PM, Florin T.PATRASCU wrote:
+
+> Hi there,
+>
+> Being my first post here, I want to congratulate the authors of the
+> StringTemplate library for the quality of this framework! We just
+> started using ST few weeks ago and we are addicted already :)
+
+Hooray!
+
+> Because our plans is to use ST for web development, we recently added
+> ST support for View Rendering to our open source project JPublish
+> (http://code.google.com/p/jpublish/) and we are already thinking to
+> make ST the default ViewRenderer for the web content. Therefore I
+> just want to ask, are there any plans for releasing the 3.1 version
+> soon? Or, how safe is 3.1b1?
+
+3.1b1 is very safe and I should probably just release the damn  
+thing ;) I just don't have time to fix the documentation right now.    
+I did however just fixed a bug today :)
+
+Ter
+
+
+From flop at rogers.com  Fri Aug 31 04:19:21 2007
+From: flop at rogers.com (Florin T.PATRASCU)
+Date: Fri, 31 Aug 2007 07:19:21 -0400
+Subject: [stringtemplate-interest] StringTemplate 3.1.b1 stable?
+In-Reply-To: <915624B0-B7D1-49CA-9ED5-97938C1E4670@cs.usfca.edu>
+References: <877DE107-1208-4DFD-ABB3-E52188299E9E@rogers.com>
+	<915624B0-B7D1-49CA-9ED5-97938C1E4670@cs.usfca.edu>
+Message-ID: <9AE4D0A7-5FAA-48D2-A343-F77424974DE2@rogers.com>
+
+Hi Ter,
+
+Thank you for the update. I will add the 3.1b1 to JPublish. Right  
+now, ST rocks!
+
+I am sure we have more to learn (until all the Velocity traces will  
+wash away ;) and more questions to ask, but right now we're impressed  
+with ST, for real!
+
+Silly question though, can I define the ST templates in files with  
+other extension names than .st?
+
+
+V/r
+-florin
+
+
+On 30-Aug-07, at 16:19 , Terence Parr wrote:
+>
+> On Aug 25, 2007, at 8:45 PM, Florin T.PATRASCU wrote:
+>
+>> Hi there,
+>>
+>> Being my first post here, I want to congratulate the authors of the
+>> StringTemplate library for the quality of this framework! We just
+>> started using ST few weeks ago and we are addicted already :)
+>
+> Hooray!
+>
+>> Because our plans is to use ST for web development, we recently added
+>> ST support for View Rendering to our open source project JPublish
+>> (http://code.google.com/p/jpublish/) and we are already thinking to
+>> make ST the default ViewRenderer for the web content. Therefore I
+>> just want to ask, are there any plans for releasing the 3.1 version
+>> soon? Or, how safe is 3.1b1?
+>
+> 3.1b1 is very safe and I should probably just release the damn
+> thing ;) I just don't have time to fix the documentation right now.
+> I did however just fixed a bug today :)
+>
+> Ter
+>
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+
+
+
+From parrt at cs.usfca.edu  Fri Aug 31 08:53:27 2007
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Fri, 31 Aug 2007 08:53:27 -0700
+Subject: [stringtemplate-interest] StringTemplate 3.1.b1 stable?
+In-Reply-To: <9AE4D0A7-5FAA-48D2-A343-F77424974DE2@rogers.com>
+References: <877DE107-1208-4DFD-ABB3-E52188299E9E@rogers.com>
+	<915624B0-B7D1-49CA-9ED5-97938C1E4670@cs.usfca.edu>
+	<9AE4D0A7-5FAA-48D2-A343-F77424974DE2@rogers.com>
+Message-ID: <B30105B2-9537-49AE-BEC6-7E23F7E779C4@cs.usfca.edu>
+
+
+On Aug 31, 2007, at 4:19 AM, Florin T.PATRASCU wrote:
+
+> Hi Ter,
+>
+> Thank you for the update. I will add the 3.1b1 to JPublish. Right  
+> now, ST rocks!
+>
+> I am sure we have more to learn (until all the Velocity traces will  
+> wash away ;) and more questions to ask, but right now we're  
+> impressed with ST, for real!
+>
+> Silly question though, can I define the ST templates in files with  
+> other extension names than .st?
+
+I can't remember ;)  At the moment, I'm guessing it looks for  
+templatename.st.  Sorry!  Have you tried the ST group file format?
+
+Ter
+

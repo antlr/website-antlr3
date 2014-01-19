@@ -1,0 +1,167 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Re: Problem with existence of the same literal in two rules
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20Problem%20with%20existence%20of%20the%20same%20literal%20in%20two%20rules&In-Reply-To=b8od8p%2Bhbuu%40eGroups.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003749.html">
+   <LINK REL="Next"  HREF="003789.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Re: Problem with existence of the same literal in two rules</H1>
+    <B>antlrlist</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20Problem%20with%20existence%20of%20the%20same%20literal%20in%20two%20rules&In-Reply-To=b8od8p%2Bhbuu%40eGroups.com"
+       TITLE="[antlr-interest] Re: Problem with existence of the same literal in two rules">antlrlist at yahoo.com
+       </A><BR>
+    <I>Fri May  2 08:17:35 PDT 2003</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003749.html">[antlr-interest] ISSUE: ANTLR only looks in output directory for XXXTokenTypes.txt file
+</A></li>
+        <LI>Next message: <A HREF="003789.html">[antlr-interest] Re: Problem with existence of the same literal in two rules
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3750">[ date ]</a>
+              <a href="thread.html#3750">[ thread ]</a>
+              <a href="subject.html#3750">[ subject ]</a>
+              <a href="author.html#3750">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+Your STRING rule is indeed being called.
+
+What amazes me the most is that ANTLR actually lets you use this
+grammar. Didn't it report a conflict between STRING and WFCS?
+
+There's no easy way you can change the behaviour. The first solution
+you could use would be avoiding the use of L,H,Z and/or X in STRING:
+
+STRING : ( 'a'..'g' | 'i'..'k' | 'm'..'w' | 'y' |
+           'A'..'G' | 'I'..'K' | 'M'..'W' | 'Z' )+
+         INT
+       ;
+
+If you need those letters in your STRING, there's no easy solution:
+your grammar is non-LL(k) for any k, so you'll have to manually code
+the recognition rules. What I advice you is start with a very generic
+STRING, an then use an action to see if its a STRING, WTFS or
+erroneous. You'll have to use some an imaginary token, $setType() and
+some native (java/C++/C#) code. I'll assume that you're using java.
+
+The complete grammar would look as this:
+
+class myScanner extends Scanner;
+options {
+   // don't know, probably k=2;
+}
+
+tokens {
+   WFCS; // Imaginary token
+}
+
+{ // native code
+
+   public boolean isWFCS(String text)
+   {
+      // Returns true if text is made of L,H,Z and/or X,
+      // false otherwise - I'll let you implement this one :)
+   }
+
+   public boolean isInvalidString(String text)
+   {
+      // Returns true if text is NOT a combination of alphabetic chars
+      // followed by a single digit - false otherwise
+      // You'll also have to implement this one
+   }
+}
+
+// Usual STRING implementation- a letter followed by zero or more 
+// letters or digits
+STRING : ('a'..'z' | 'A'..'Z')  ('a'..'z' | 'A'..'Z'|INT)*
+         {
+           // If it's a WFCS, change the type
+           if( isWFCS( $getText() ) ) $setType(WFCS);
+           // Else check correctness
+           else if ( isInvalidString($getText() ) )
+               // error here (throw new MismatchedCharException(...;
+         }
+
+       ;
+
+INT :('0'..'9')+ ;
+
+I hope this could help you...
+
+
+--- In <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>, &quot;ramyasivadas&quot;
+&lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">ramyasivadas at y...</A>&gt; wrote:
+&gt;<i> Hi,
+</I>&gt;<i> 
+</I>&gt;<i> Let me quote an example to help me explain the problem.
+</I>&gt;<i> 
+</I>&gt;<i> I have a rule as follows
+</I>&gt;<i> STRING
+</I>&gt;<i> :('a'..'z' | 'A'..'Z')+ (INT)
+</I>&gt;<i> ;
+</I>&gt;<i> 
+</I>&gt;<i> I also have a rule
+</I>&gt;<i> WFCS
+</I>&gt;<i> :'L'|'H'|'Z'|'X'
+</I>&gt;<i> ;
+</I>&gt;<i> 
+</I>&gt;<i> INT
+</I>&gt;<i> :('0'..'9')+
+</I>&gt;<i> ;
+</I>&gt;<i> 
+</I>&gt;<i> The issue is, if I have a set of literals constituting a rule and if 
+</I>&gt;<i> one or more of the same literals form a part of another independent 
+</I>&gt;<i> rule, the parser generates an exception. How can I avoid this.
+</I>&gt;<i> 
+</I>&gt;<i> For example, the rule STRING is defined to be made up of a 
+</I>&gt;<i> combination of any alphabets followed by a numeral. Another rule WFCS 
+</I>&gt;<i> which has nothing to do with STRING can be made up of a combination 
+</I>&gt;<i> of L,H,Z and/or X.
+</I>&gt;<i> 
+</I>&gt;<i> When the parsing for WFCS block is done, the parser expects an INT 
+</I>&gt;<i> after the alphabet. I assume it is applying the STRING rule on the 
+</I>&gt;<i> WFCS block since it has encountered an alphabet. Can we override this 
+</I>&gt;<i> behaviour.
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> Thanks in advance.
+</I>&gt;<i> 
+</I>&gt;<i> Regards,
+</I>&gt;<i> Ramya
+</I>
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003749.html">[antlr-interest] ISSUE: ANTLR only looks in output directory for XXXTokenTypes.txt file
+</A></li>
+	<LI>Next message: <A HREF="003789.html">[antlr-interest] Re: Problem with existence of the same literal in two rules
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3750">[ date ]</a>
+              <a href="thread.html#3750">[ thread ]</a>
+              <a href="subject.html#3750">[ subject ]</a>
+              <a href="author.html#3750">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

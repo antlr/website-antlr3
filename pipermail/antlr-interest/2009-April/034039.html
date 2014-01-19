@@ -1,0 +1,165 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Predicate hoisting pain
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Predicate%20hoisting%20pain&In-Reply-To=%3C49E35962.4040602%40lancaster.ac.uk%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="034032.html">
+   <LINK REL="Next"  HREF="034041.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Predicate hoisting pain</H1>
+    <B>Sam Barnett-Cormack</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Predicate%20hoisting%20pain&In-Reply-To=%3C49E35962.4040602%40lancaster.ac.uk%3E"
+       TITLE="[antlr-interest] Predicate hoisting pain">s.barnett-cormack at lancaster.ac.uk
+       </A><BR>
+    <I>Mon Apr 13 08:25:22 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="034032.html">[antlr-interest] Predicate hoisting pain
+</A></li>
+        <LI>Next message: <A HREF="034041.html">[antlr-interest] Predicate hoisting pain
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#34039">[ date ]</a>
+              <a href="thread.html#34039">[ thread ]</a>
+              <a href="subject.html#34039">[ subject ]</a>
+              <a href="author.html#34039">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Jim Idle wrote:
+&gt;<i> Sam Barnett-Cormack wrote:
+</I>&gt;&gt;<i> Hi all,
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> So, in my grammar I have need to re-use rules so they ultimately refer 
+</I>&gt;&gt;<i> to a different rule (so I don't have to duplicate 
+</I>&gt;&gt;<i> intersection/union/exception rules). I use a parameter and gated 
+</I>&gt;&gt;<i> predicates, like so:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> elements[boolean os]
+</I>&gt;&gt;<i>    : {!$os}?=&gt;subtypeElements
+</I>&gt;&gt;<i>    | {$os}?=&gt;objectSetElements
+</I>&gt;&gt;<i>    | LPAREN! elementSetSpec[$os] RPAREN!
+</I>&gt;&gt;<i>    ;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> This is ultimately referred to from two places. The first, which 
+</I>&gt;&gt;<i> generates code that's just fine, is:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> elementSetSpecs
+</I>&gt;&gt;<i>    : rootElementSetSpec[false] (COMMA EXTMARK (COMMA 
+</I>&gt;&gt;<i> additionalElementSetSpec[false])?)?
+</I>&gt;&gt;<i>    -&gt; ^(ELEMENTSET rootElementSetSpec EXTMARK? additionalElementSetSpec?)
+</I>&gt;&gt;<i>    ;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> However, in the *slightly* more complex case:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> objectSetSpec
+</I>&gt;&gt;<i>    : rootElementSetSpec[true] (COMMA EXTMARK 
+</I>&gt;&gt;<i> additionalElementSetSpec[true]?)?
+</I>&gt;&gt;<i>    | EXTMARK (COMMA additionalElementSetSpec[true])?
+</I>&gt;&gt;<i>    ;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> The predicates get hoisted in the generated code, and then there's 
+</I>&gt;&gt;<i> compile errors with undefined variable 'os'.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I'm not sure why it happens in one case and not the other, and I'm even 
+</I>&gt;&gt;<i> less clear on how to fix it. Can anyone help?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>   
+</I>&gt;<i> This is an FAQ basically, but you answer your own question as to why as 
+</I>&gt;<i> your parameter to the rule is a local parameter but the code must be/can 
+</I>&gt;<i> be hoisted for some decisions.
+</I>&gt;<i> 
+</I>&gt;<i> The solution is relatively simple, but it probably isn't the correct 
+</I>&gt;<i> solution as your need for this indicates that you are probably going 
+</I>&gt;<i> wrong in the way you are constructing the parser. What you shoudl really 
+</I>&gt;<i> do is merge these two possibilities in the parser, then in your tree 
+</I>&gt;<i> walk, if you detect the use of a construct that is not valid for the 
+</I>&gt;<i> context, then you parser it anyway but issue a really good semantic 
+</I>&gt;<i> error along the lines of &quot;Element specs like FOO cannot be used within 
+</I>&gt;<i> specs for BARs&quot;. If you do not do this then your users will just get 
+</I>&gt;<i> &quot;Syntax error at FOO!&quot;, and unless they are already very knowledgeable 
+</I>&gt;<i> about the language, then they won't really know what this means.
+</I>
+&gt;<i> However, remember the rules of good construction:
+</I>&gt;<i> 
+</I>&gt;<i> 1) Anything that can be moved as an error in the lexer syntactically, to 
+</I>&gt;<i> a semantic error, or left to the parser, should be;
+</I>&gt;<i> 2) Anything that can be moved from a syntax error in the parser to a 
+</I>&gt;<i> semantic error in the tree walker, should be;
+</I>&gt;<i> 
+</I>&gt;<i> In general this means that error messages from your front end will be as 
+</I>&gt;<i> good as they can be:
+</I>&gt;<i> 
+</I>&gt;<i> 1) &quot;Unknown character '\u8290'; in the lexer becomes: &quot;Line 20, offset 
+</I>&gt;<i> 42: The character 'u8290' is not a valid character for use in a variable 
+</I>&gt;<i> name!&quot;
+</I>&gt;<i> 2) &quot;No viable alt at 'FOO'&quot;, becomes &quot;Line 42, offset 22: The construct 
+</I>&gt;<i> FOO cannot be used within a BAR, only within a BAZ, try specifying as a 
+</I>&gt;<i> BARRY.&quot;
+</I>
+So I would merge the two in the parser, and then separate them again in 
+the tree parser, and then do the context-sensitive validation there? In 
+this case, a user would be more likely to make a mistake that looks like 
+a mixture of a valueSet and an objectSet, rather than use one in the 
+place of another. They look different in any but the simplest cases 
+(where all the values or objects in a set are references - ie names),
+
+However, something else in the language requires differentiation between 
+valueSets and objectSets to be deferred until semantic-building time 
+(when the type of the LHS of an expression is known), so I guess I'll 
+have to do that. It just sticks in my craw to let the parser allow 
+through something that isn't valid as *either*. However, there's a way 
+around that as well... boolean flags that get set on seeing a value 
+literal or object literal (the things that can't be mixed). Then a mixed 
+case won't get passed. However, I suspect that might be better left to 
+the semantic stage, where each element of the set can be validated, 
+based on the LHS that it goes with.
+
+Sam
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="034032.html">[antlr-interest] Predicate hoisting pain
+</A></li>
+	<LI>Next message: <A HREF="034041.html">[antlr-interest] Predicate hoisting pain
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#34039">[ date ]</a>
+              <a href="thread.html#34039">[ thread ]</a>
+              <a href="subject.html#34039">[ subject ]</a>
+              <a href="author.html#34039">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

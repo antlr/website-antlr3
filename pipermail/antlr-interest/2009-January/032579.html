@@ -1,0 +1,240 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Bug Report - Composite Grammars only allow 1 level	of lexer import
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Bug%20Report%20-%20Composite%20Grammars%20only%20allow%201%20level%0A%09of%20lexer%20import&In-Reply-To=%3C172F00E6EC7B4FB582F4DEF7FF5F1FC3%40gsce0ae1cfad8d%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="032583.html">
+   <LINK REL="Next"  HREF="032581.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Bug Report - Composite Grammars only allow 1 level	of lexer import</H1>
+    <B>George S. Cowan</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Bug%20Report%20-%20Composite%20Grammars%20only%20allow%201%20level%0A%09of%20lexer%20import&In-Reply-To=%3C172F00E6EC7B4FB582F4DEF7FF5F1FC3%40gsce0ae1cfad8d%3E"
+       TITLE="[antlr-interest] Bug Report - Composite Grammars only allow 1 level	of lexer import">cowang at comcast.net
+       </A><BR>
+    <I>Sun Jan 25 13:34:13 PST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="032583.html">[antlr-interest] Shortcircuiting the tree parser
+</A></li>
+        <LI>Next message: <A HREF="032581.html">[antlr-interest] Bug Report - Composite Grammars only allow 1	level of lexer import
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#32579">[ date ]</a>
+              <a href="thread.html#32579">[ thread ]</a>
+              <a href="subject.html#32579">[ subject ]</a>
+              <a href="author.html#32579">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Only one level of import works for lexers in Composite grammars. I present
+my suggested solution at the bottom of this message, but for an example of
+the error, here is a slight modification of the final example at
+<A HREF="http://www.antlr.org/wiki/display/ANTLR3/Composite+Grammars">http://www.antlr.org/wiki/display/ANTLR3/Composite+Grammars</A> that tries to
+import 2 levels of lexers.
+ 
+------- Start grammar files ------
+lexer grammar LSub ;
+ 
+SPACE : ' ' ;
+----------------------------------
+lexer grammar L ;
+ 
+import LSub;
+ 
+LETTER : 'a'..'z' ;
+// SPACE : ' ' ;
+NUMBER : '0'..'9' ;
+ 
+----------------------------------
+parser grammar P1 ;
+ 
+letter : LETTER ;
+spaces : SPACE+ ;
+----------------------------------
+parser grammar P2 ;
+import P1 ;
+ 
+letters : letter+ ;
+----------------------------------
+grammar C ;
+import L, P2 ;
+ 
+stuff : ( letters spaces )+ ;
+ 
+LETTER : 'a'..'z' ;
+------ End grammar files ---------
+ 
+
+---------- ANTLR SysOut ----------
+ANTLR Parser Generator  Version 3.1.1
+---- End SysOut (notice there is no error) ----
+ 
+
+--------- gUnit testsuite ---------
+gunit C;
+ 
+LETTER
+:<i> &quot;a&quot;   OK
+</I>  &quot;A&quot;   FAIL 
+ 
+letter
+:<i> &quot;a&quot;   OK
+</I>  &quot;B&quot;   FAIL
+ 
+spaces
+:<i> &quot;  &quot;  OK
+</I> 
+letters
+:<i> &quot;abc&quot;     OK
+</I>  &quot;aBc&quot;     FAIL
+ 
+stuff
+:<i> &quot;a ab c   &quot;   OK
+</I>  &quot; A ab C  &quot;   FAIL
+  &quot;A ab C   &quot;   FAIL
+------- End gUnit testsuite -------
+ 
+---------- gUnit output ----------
+-----------------------------------------------------------------------
+executing testsuite for grammar:C with 10 tests
+-----------------------------------------------------------------------
+2 failures found:
+test5 (spaces, line12) -
+expected: OK
+actual: FAIL
+ 
+test8 (stuff, line19) -
+expected: OK
+actual: FAIL
+ 
+
+Tests run: 10, Failures: 2
+----- CTest gUnit completed -----
+-------- End gUnit output --------
+ 
+
+----------- CTest.java -----------
+import java.io.IOException;
+ 
+import org.antlr.runtime.*;
+ 
+public class CTest {
+ 
+      public static void 
+  parseText(String fileToParse) throws IOException, RecognitionException {
+    final CParser parser = new CParser(lexFileToTokenStream(fileToParse));
+    parser.stuff();
+  }
+ 
+      private static CommonTokenStream 
+  lexFileToTokenStream(String fileToParse) throws IOException {
+    final ANTLRStringStream input 
+      = (fileToParse==null) ? new ANTLRInputStream() 
+                            : new ANTLRFileStream(fileToParse);
+    final CLexer lexer = new CLexer(input);
+    return new CommonTokenStream(lexer);
+  }
+    
+      public static void 
+  main(String[] args) throws Exception {
+    if (args.length == 0) {
+      parseText(null);
+    } else {
+      for (int i=0; i&lt;args.length; i++) {
+        parseText(args[i]);
+      }
+    }
+  }
+}
+--------- End CTest.java ---------
+ 
+
+------------ Test File (C01.testme)-----------
+a b ccc 
+---------- End Test File ---------
+ 
+-------- Testing File C01.testme  --------
+C:\Projects\SW_Development\ANTLRv3\CompositeLexBug\work&gt;java -cp
+C:\Java\ANTLR\antlrworks-1.2.2.jar;. CTest ..\*.testme
+Exception in thread &quot;main&quot; java.lang.NullPointerException
+        at CLexer.mTokens(CLexer.java:121)
+        at org.antlr.runtime.Lexer.nextToken(Unknown Source)
+        at org.antlr.runtime.CommonTokenStream.fillBuffer(Unknown Source)
+        at org.antlr.runtime.CommonTokenStream.LT(Unknown Source)
+        at org.antlr.runtime.CommonTokenStream.LA(Unknown Source)
+        at CParser.stuff(CParser.java:51)
+        at CTest.parseText(CTest.java:10)
+        at CTest.main(CTest.java:28)
+------ End Test File 1 Output ----
+ 
+ 
+** THE SOLUTION **
+ 
+The problem seems to be that, although CLexer.java does have
+        gL = new C_L(input, state, this);
+at line 26 in the CLexer constructor, it needs to follow it with
+        gLSub = gL.gLSub;
+(a similar thing is already done in the parsers).
+ 
+When I add that line in the generated CLexer, everything works fine.
+ 
+The following is a model for a temporary fix for grammars that have multiple
+levels of lexers. However, it does not allow direct testing of any rules but
+the ones that have the @init fix added to them.
+ 
+------------- C.g with temporary fix --------------
+grammar C ;
+import L, P2 ;
+ 
+stuff 
+  @init {
+    // kludge for problem in generating CLexer.java  
+    CLexer clex = (CLexer)input.getTokenSource();
+    clex.gLSub = clex.gL.gLSub; 
+  }
+:<i> ( letters spaces )+ ;
+</I> 
+LETTER : 'a'..'z' ;
+----------------------------------------------------
+ 
+Regards,
+George
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20090125/8239b762/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20090125/8239b762/attachment.html</A> 
+</PRE>
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="032583.html">[antlr-interest] Shortcircuiting the tree parser
+</A></li>
+	<LI>Next message: <A HREF="032581.html">[antlr-interest] Bug Report - Composite Grammars only allow 1	level of lexer import
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#32579">[ date ]</a>
+              <a href="thread.html#32579">[ thread ]</a>
+              <a href="subject.html#32579">[ subject ]</a>
+              <a href="author.html#32579">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

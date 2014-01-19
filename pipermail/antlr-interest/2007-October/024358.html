@@ -1,0 +1,176 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Lexer bug? (with test cases!)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Lexer%20bug%3F%20%28with%20test%20cases%21%29&In-Reply-To=%3C20071024110956.2B8AF11EBF9%40www.antlr.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="024355.html">
+   <LINK REL="Next"  HREF="024359.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Lexer bug? (with test cases!)</H1>
+    <B>Gavin Lambert</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Lexer%20bug%3F%20%28with%20test%20cases%21%29&In-Reply-To=%3C20071024110956.2B8AF11EBF9%40www.antlr.org%3E"
+       TITLE="[antlr-interest] Lexer bug? (with test cases!)">antlr at mirality.co.nz
+       </A><BR>
+    <I>Wed Oct 24 04:09:46 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="024355.html">[antlr-interest] Lexer bug? (with test cases!)
+</A></li>
+        <LI>Next message: <A HREF="024359.html">[antlr-interest] Lexer bug? (with test cases!)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24358">[ date ]</a>
+              <a href="thread.html#24358">[ thread ]</a>
+              <a href="subject.html#24358">[ subject ]</a>
+              <a href="author.html#24358">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>At 23:05 24/10/2007, Terence Parr wrote:
+ &gt;The issue is that there is an implied (ANYTOKEN)* and really
+ &gt;wildcard following any rule.  I can look at it again sometime,
+ &gt;but i am unsure how to make antlr see farther into the fog of
+ &gt;&quot;there are infinite unspecified char next&quot;.
+
+But it doesn't need to care about that, surely?  Once it's entered 
+a rule, it's happy that it will be able to produce a valid token 
+(assuming the lookahead was sufficient to guarantee this), so the 
+only bits it needs to worry about are embedded optional bits, 
+which simply have a &quot;match exactly or exit the rule&quot; 
+behaviour.  No need to look &quot;past&quot; the end of the token -- as soon 
+as you see something that can't possibly match any of the 
+alternatives currently &quot;in play&quot;, then you exit the rule, having 
+consumed only those characters of input that validly matched, 
+leaving the stuff you couldn't match to try matching against a 
+different rule later on.
+
+ &gt;Can you tell me how to compute the static LL lookahead?  If not, 
+
+ &gt;then trust that I know it's not possible or at least too much 
+for my
+ &gt;brain. ;)  It's the fog that causes the problem for LL(*).
+
+This is just off the cuff, so there are quite likely some holes in 
+it, but:
+
+First, expand and inline all subrule references.  Then classify 
+the rule like so:
+1. No optional components:
+   'foo'
+   Required lookahead = length of string, ie. 3
+2. Optional components:
+   'bar'?
+   ('a' | 'b')*
+   Required lookahead = 0 (this is illegal at the top level, but 
+is valid as a subclause)
+3. At-least-one loops (+ loop, required loop)
+   ('a' | 'b')+
+   Required lookahead = required lookahead of subclause, ie. 1
+4. Alternates:
+   'foo' | 'tu'
+   Required lookahead = up to max(lookahead of each subclause)
+   (This can be done incrementally; ie. in this example you first 
+look at the first character and see if it's 'f', 't', or exit 
+rule.  Once you know that, you can then match the rest of the 
+string with 2 lookahead if it was an 'f' or 1 lookahead if it was 
+a 't'.)
+5. Basic sequentials:
+   'foo' 'bar'
+   Required lookahead = required lookahead of first + required 
+lookahead of second
+6. Any required element (nonzero lookahead) following a required 
+loop:
+   'a'+ 'b'
+   Required lookahead = infinite
+
+This process is recursive, with each subclause being similarly 
+classifiable.
+
+So for example, given the rule &quot;DIGIT+ ('.' DIGIT+)?&quot;, this is 
+broken down like so:
+   - first expand to &quot;('0'..'9')+ ('.' ('0'..'9')+)?&quot;
+   - top level: + loop, optional component
+     - lookahead = (lookahead of subclause &quot;'0'..'9'&quot;) + 0
+   - subclause &quot;'0'..'9'&quot;: single character range
+     - lookahead = 1
+
+Therefore the top level lookahead is 1 -- the Tokens rule only has 
+to look at one character (to see if it's in '0'..'9') before it 
+can unambiguously declare the input to be a NUMBER.
+
+Next up, once inside NUMBER, we match as many digits as we 
+can.  Once we encounter a non-digit, the + loop is complete and 
+it's time to move on to the next subclause.  Since this is an 
+optional clause, it is permitted to be entirely absent.
+   - subclause &quot;'.' ('0'..'9')+&quot;: single character, + loop
+     - lookahead = 1 + (lookahead of subclause &quot;'0'..'9'&quot;)
+                 = 1 + 1
+                 = 2
+
+So we must look ahead two characters and verify that they are 
+indeed a dot and a digit before we can unambiguously declare this 
+subclause to be present.  (If they're not a dot and a digit, then 
+the subclause is not present and we shouldn't consume anything 
+more.)
+
+And that's it -- we've figured out this whole rule now.  For a 
+more problematic example:
+
+   - rule &quot;('0'..'9')+ '.' ('0'..'9')+&quot;
+     - minor variation on the last one, but it makes this a much 
+more complicated case
+     - + loop, single character, + loop
+     - lookahead = infinite (by rule 6), then 1 + 1 = 2
+
+Here there are no subclauses (other than &quot;'0'..'9'&quot;, which is 
+trivial) to break down, and we can't do any better than infinite 
+lookahead.  Before we can decide that we've even got a NUMBER 
+token we must be prepared to scan past a potentially infinite 
+series of digits; as soon as we encounter any non-digit, though 
+(terminating the + loop) the &quot;infinite&quot; portion of the lookahead 
+is complete and we're left with a simple two-character lookahead 
+decision again -- if it's a dot and another digit then it's a 
+NUMBER, otherwise it isn't (and we need to avoid consuming any of 
+those initial digits and try a different lexer rule instead).
+
+ &gt;Have you built a lex like creature before?  I have back in 1988.
+ &gt;I believe I'm remembering how it operates correctly.
+
+No; I've written a few hand-rolled parsers/lexers before, but not 
+a parser/lexer generator.  I bow to your experience there, but 
+that doesn't mean I can't say when I think there might be a 
+&quot;better&quot; way of doing something :)
+
+</PRE>
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="024355.html">[antlr-interest] Lexer bug? (with test cases!)
+</A></li>
+	<LI>Next message: <A HREF="024359.html">[antlr-interest] Lexer bug? (with test cases!)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24358">[ date ]</a>
+              <a href="thread.html#24358">[ thread ]</a>
+              <a href="subject.html#24358">[ subject ]</a>
+              <a href="author.html#24358">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

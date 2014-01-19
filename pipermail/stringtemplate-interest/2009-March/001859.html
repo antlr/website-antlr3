@@ -1,0 +1,143 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [stringtemplate-interest] StringTemplate Compiler for .NET
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20StringTemplate%20Compiler%20for%20.NET&In-Reply-To=%3C1D3D27D0-FA72-4DDD-A3CA-4AC75F9C9219%40cs.usfca.edu%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001842.html">
+   <LINK REL="Next"  HREF="001863.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[stringtemplate-interest] StringTemplate Compiler for .NET</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20StringTemplate%20Compiler%20for%20.NET&In-Reply-To=%3C1D3D27D0-FA72-4DDD-A3CA-4AC75F9C9219%40cs.usfca.edu%3E"
+       TITLE="[stringtemplate-interest] StringTemplate Compiler for .NET">parrt at cs.usfca.edu
+       </A><BR>
+    <I>Mon Mar 30 14:03:54 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001842.html">[stringtemplate-interest] StringTemplate Compiler for .NET
+</A></li>
+        <LI>Next message: <A HREF="001863.html">[stringtemplate-interest] StringTemplate Compiler for .NET
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1859">[ date ]</a>
+              <a href="thread.html#1859">[ thread ]</a>
+              <a href="subject.html#1859">[ subject ]</a>
+              <a href="author.html#1859">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+On Mar 21, 2009, at 12:07 PM, Sam Harwell wrote:
+
+&gt;<i> This email describes a proposal that I'm absolutely willing to
+</I>&gt;<i> implement. As I mention at the end, I'm very interested in feedback on
+</I>&gt;<i> the idea as will.
+</I>&gt;<i>
+</I>&gt;<i> Before I work to optimize handling of various cases, I'm modifying
+</I>&gt;<i> StringTemplate to have a Frozen (immutable) state. Before the object  
+</I>&gt;<i> is
+</I>&gt;<i> frozen, a call to ToString() will internally call GetAsFrozen()
+</I>&gt;<i> (actually not quite; see #4 below) to get a frozen duplicate of the
+</I>&gt;<i> current template, and evaluate ToString() on it. A warning will
+</I>&gt;<i> optionally be issued to stderr when this case occurs.
+</I>&gt;<i>
+</I>&gt;<i> When a template is frozen, all attributes are locked and the  
+</I>&gt;<i> expression
+</I>&gt;<i> tree is compiled.
+</I>
+That's the same as evaluating it to a string so why not just do that?  
+you can cache the string instead of compiling.
+
+&gt;<i> However, a subsequent call to Clone will return an
+</I>&gt;<i> non-frozen copy of the template with no attributes set. The advantage
+</I>&gt;<i> comes from several key characteristics of the cloned copies:
+</I>&gt;<i>
+</I>&gt;<i> 1. The clone gets a copy of the compiled expression tree. As long as  
+</I>&gt;<i> the
+</I>&gt;<i> pattern is not changed, the expression tree will not need recompiling
+</I>&gt;<i> before evaluation. The calls to Freeze or GetAsFrozen will simply lock
+</I>&gt;<i> the attribute set.
+</I>
+  expression trees never change, do they?
+
+&gt;<i> 2. When the expression tree is compiled, a List of objects is created
+</I>&gt;<i> with a bucket for every referenced attribute of every template. When
+</I>&gt;<i> SetAttribute is called, the value is placed immediately in the proper
+</I>&gt;<i> bin for direct lookup during evaluation. Otherwise, it goes in the
+</I>&gt;<i> dictionary and the values are placed in bins after the expression is
+</I>&gt;<i> compiled.
+</I>&gt;<i>
+</I>&gt;<i> 3. If a never-frozen template is cloned, the non-compiled template is
+</I>&gt;<i> copied on write. This means if *either* copy is frozen, both copies  
+</I>&gt;<i> will
+</I>&gt;<i> get the expression tree and bin layout. The frozen copy will move
+</I>&gt;<i> attributes to the bins immediately; the other will copy them when it  
+</I>&gt;<i> is
+</I>&gt;<i> frozen later, but it won't have to recomputed the bins.
+</I>&gt;<i>
+</I>&gt;<i> 4. Calls to GetAsFrozen copy all frozen subtemplates by reference. Two
+</I>&gt;<i> additional methods, CloneCurrentValue and GetCurrentValueAsFrozen,
+</I>&gt;<i> return copies including all current attributes. Clearly a call to
+</I>&gt;<i> GetCurrentValueAsFrozen on a frozen template will simply &quot;return  
+</I>&gt;<i> this;&quot;,
+</I>&gt;<i> and a call to Freeze on a frozen template will immediately return.  
+</I>&gt;<i> With
+</I>&gt;<i> that said, a call to ToString on a non-frozen template will actually
+</I>&gt;<i> call GetCurrentValueAsFrozen. :)
+</I>&gt;<i>
+</I>&gt;<i> It's my opinion (open to suggestions) that this implementation is
+</I>&gt;<i> appropriate for the following reasons:
+</I>&gt;<i>
+</I>&gt;<i> A. It's conceptually straightforward and therefore straightforward to
+</I>&gt;<i> implement.
+</I>&gt;<i> B. It addresses all remaining bottlenecks that have been described  
+</I>&gt;<i> here
+</I>&gt;<i> on the list.
+</I>&gt;<i> C. It offers excellent performance for a variety of uses/order of
+</I>&gt;<i> operations. It's easy to add runtime warnings for performance- 
+</I>&gt;<i> degrading
+</I>&gt;<i> uses such as calls to ToString() on non-frozen templates while
+</I>&gt;<i> simultaneously holding on to the compiled expression so the  
+</I>&gt;<i> performance
+</I>&gt;<i> is strong on later calls to ToString() on that same template.
+</I>&gt;<i> D. Since the concept is not reliant on either the template compilation
+</I>&gt;<i> method or syntax/built-in functions/features of the StringTemplate
+</I>&gt;<i> language itself, it will be portable to version 4. We've also already
+</I>&gt;<i> shown that multiple compilation techniques can be used targeting the
+</I>&gt;<i> CLI, and I imagine similar could be done in Java (jealous of our  
+</I>&gt;<i> lambdas
+</I>&gt;<i> yet? =) ).
+</I>
+Still not sure what frozen means. sorry.
+
+Does any of this break the lazy evaluation?
+
+Ter
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001842.html">[stringtemplate-interest] StringTemplate Compiler for .NET
+</A></li>
+	<LI>Next message: <A HREF="001863.html">[stringtemplate-interest] StringTemplate Compiler for .NET
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1859">[ date ]</a>
+              <a href="thread.html#1859">[ thread ]</a>
+              <a href="subject.html#1859">[ subject ]</a>
+              <a href="author.html#1859">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">More information about the stringtemplate-interest
+mailing list</a><br>
+</body></html>

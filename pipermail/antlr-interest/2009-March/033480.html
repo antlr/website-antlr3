@@ -1,0 +1,221 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] V3 Rule Action allowing inline tree building?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20V3%20Rule%20Action%20allowing%20inline%20tree%20building%3F&In-Reply-To=%3C86403CA0939415448BCCB83855EFE09AA67B88%40Bloodymary.ironwillgames.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="033477.html">
+   <LINK REL="Next"  HREF="033619.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] V3 Rule Action allowing inline tree building?</H1>
+    <B>Sam Harwell</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20V3%20Rule%20Action%20allowing%20inline%20tree%20building%3F&In-Reply-To=%3C86403CA0939415448BCCB83855EFE09AA67B88%40Bloodymary.ironwillgames.com%3E"
+       TITLE="[antlr-interest] V3 Rule Action allowing inline tree building?">sharwell at pixelminegames.com
+       </A><BR>
+    <I>Wed Mar 18 11:15:04 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="033477.html">[antlr-interest] V3 Rule Action allowing inline tree building?
+</A></li>
+        <LI>Next message: <A HREF="033619.html">[antlr-interest] V3 Rule Action allowing inline tree building?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#33480">[ date ]</a>
+              <a href="thread.html#33480">[ thread ]</a>
+              <a href="subject.html#33480">[ subject ]</a>
+              <a href="author.html#33480">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Once you get the hang of it, you can do it by hand without too much
+trouble. For example, in converting a v2 grammar to v3, I encountered
+this in the members section:
+
+ 
+
+stringAlias =
+
+        #(#[BLOCK], #(#[ALT], #[STRING_LITERAL], #[EOA]), #[EOB]);
+
+ 
+
+Which became this (you can use CommonTree instead of GrammarAST). Note
+that this uses the CSharp3 target so the function names are capitalized,
+unlike the Java target.
+
+ 
+
+/*
+
+ * stringAlias = ^(BLOCK[] ^(ALT[] STRING_LITERAL[] EOA[]) EOB[])
+
+ */
+
+stringAlias = (GrammarAST)adaptor.Create( BLOCK, &quot;BLOCK&quot; );
+
+{
+
+    GrammarAST alt = (GrammarAST)adaptor.Create( ALT, &quot;ALT&quot; );
+
+    adaptor.AddChild( alt, adaptor.Create( STRING_LITERAL,
+&quot;STRING_LITERAL&quot; ) );
+
+    adaptor.AddChild( alt, adaptor.Create( EOA, &quot;EOA&quot; ) );
+
+    adaptor.AddChild( stringAlias, alt );
+
+}
+
+adaptor.AddChild( stringAlias, adaptor.Create( EOB, &quot;EOB&quot; ) );
+
+ 
+
+In your case, you'd use something like this:
+
+ 
+
+CommonTree tree = (CommonTree)adaptor.Nil();
+
+adaptor.AddChild( tree, adaptor.Create( LITERAL_enum, &quot;enum&quot; ) );
+
+adaptor.AddChild( tree, adaptor.Create( ID, enumName ) );
+
+ 
+
+Sam
+
+ 
+
+From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>
+[mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Lucien Antlr
+Sent: Wednesday, March 18, 2009 11:53 AM
+To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: [antlr-interest] V3 Rule Action allowing inline tree building?
+
+ 
+
+Hi folks,
+
+ 
+
+I saw back in 2005 there was a bit of discussion around inline tree
+building.   ( linked here 
+
+<A HREF="http://markmail.org/message/7zigjknpakugflje">http://markmail.org/message/7zigjknpakugflje</A>
+&lt;<A HREF="http://markmail.org/message/7zigjknpakugflje">http://markmail.org/message/7zigjknpakugflje</A>&gt;  ).  For practice I am
+converting the freely available C v2 ANTLR .g  and I came over a rule
+that has me stuck...
+
+ 
+
+It keeps the internal symbol-table by adding part of a tree into the
+symbol table along with the C symbol (in this case enum).
+
+ 
+
+Normally a v2 rewrite would look like below (from stdcparser.g)
+
+ 
+
+enumerator[String enumName]
+        :       i:ID                { symbolTable.add(  i.getText(),
+                                                        #(   null,
+ 
+#[LITERAL_enum, &quot;enum&quot;],
+                                                            #[ ID,
+enumName]
+                                                         )
+                                                     );
+                                    }
+                (ASSIGN constExpr)?
+        ;
+
+#( ) under v2 calls ASTFactory.create(), but under v3 it just appears to
+pass straight through into the Java target?  
+
+ 
+
+This is true even when re-written, as I guessed it should be below.
+
+ 
+
+enumerator[String enumName]  
+
+        :       i=ID         { symbolTable.add(  $i.text,
+                                                        ^(   NULL,
+ 
+^(LITERAL_enum),
+                                                            ^(ID
+$enumName.text)
+                                                         )
+                                                     );
+                                    }
+                (ASSIGN constExpr)?
+        ;
+
+The only thing I came up with is &quot;rewriting&quot; the rule, and creating a
+dummy rule inside and using $dummy.tree inside the action.
+
+ 
+
+Any thoughts from the more experienced community?
+
+ 
+
+Kind Regards,
+
+ 
+
+Luc
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20090318/a1898ea7/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20090318/a1898ea7/attachment.html</A> 
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="033477.html">[antlr-interest] V3 Rule Action allowing inline tree building?
+</A></li>
+	<LI>Next message: <A HREF="033619.html">[antlr-interest] V3 Rule Action allowing inline tree building?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#33480">[ date ]</a>
+              <a href="thread.html#33480">[ thread ]</a>
+              <a href="subject.html#33480">[ subject ]</a>
+              <a href="author.html#33480">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

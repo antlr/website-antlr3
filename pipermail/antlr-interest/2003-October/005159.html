@@ -1,0 +1,269 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Re: Skipping grammar
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20Skipping%20grammar&In-Reply-To=002401c38dc9%24e861eae0%241ac8090a%40oddi.is">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005152.html">
+   <LINK REL="Next"  HREF="005145.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Re: Skipping grammar</H1>
+    <B>pwolleba</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20Skipping%20grammar&In-Reply-To=002401c38dc9%24e861eae0%241ac8090a%40oddi.is"
+       TITLE="[antlr-interest] Re: Skipping grammar">pwolleba at yahoo.no
+       </A><BR>
+    <I>Thu Oct  9 00:54:17 PDT 2003</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005152.html">[antlr-interest] Re: Skipping grammar
+</A></li>
+        <LI>Next message: <A HREF="005145.html">[antlr-interest] On a more personal note...
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5159">[ date ]</a>
+              <a href="thread.html#5159">[ thread ]</a>
+              <a href="subject.html#5159">[ subject ]</a>
+              <a href="author.html#5159">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello everyone
+
+As you maybe know have I been struggling to parse a document language 
+which we are using at work. Anyway I have come to the conclusion that 
+I have to use multi lexer after some recommendations on this news 
+group. 
+So far it seems to be the correct choice, however now I have found a 
+new problem which I need your help to solve! (I will paste the code 
+below)
+When parsing the document the parser is working properly, the tree 
+builder does not!
+
+I have divided the parsing into two different documents where we 
+start with the model node, and when finding a method node it will 
+load the next parser. I have added &quot;System.out.println&quot; to see if the 
+method parser is loaded an activated, and it does, I get the correct 
+information printed. 
+
+The problem start when I want to print the full tree that is built by 
+both parsers, it doesn't print all, I just get some of the structure!
+
+Model
+|<i>
+</I>|<i>------BeerModel
+</I>|<i>
+</I>|<i>------Method
+</I>            |
+            |------on subscribe
+
+
+I expected more a structure like this
+
+Model
+|<i>
+</I>|<i>------BeerModel
+</I>|<i>
+</I>|<i>------Method
+</I>            |
+            |----onsubscribe
+            |
+	    |----Arguments
+            |            |- test1
+            |            |- test2
+            |  
+            |----Expression
+                        |
+                        |-the expression text
+
+  
+
+I hope that you can find my error, and explain it to me. If you find 
+anything else I also should change please dont hesitate to tell me.
+
+Best regards,
+Per
+
+
+------------------------------------MODEL PARSER-----------
+
+header{
+	package accessclassgenerator;
+}
+
+class ModelParser extends Parser;
+
+options {
+	buildAST=true;
+	k=2;
+}
+
+tokens{
+  DECLARATION;
+}
+modelNode               : (MODEL^) modelDeclaration;
+
+modelDeclaration        : identifier (modelInherits)? (LCURLY!) 
+(modelDeclerationList)? (RCURLY!)(SEMI!);
+
+modelDeclerationList    : (modelDeclerations)+;
+
+modelDeclerations	:(methodeNode);
+
+modelInherits           : (INHERITS^) modelInheritsBody;
+
+modelInheritsBody       : identifier (DOT! modelInheritsBody)?;
+
+methodeNode             : methodeBody {#methodeNode=#
+([DECLARATION,&quot;method&quot;],#methodeNode);};
+
+methodeBody             : (JAVADOC_OPEN!)                        {
+                          MethodParser parser = new MethodParser
+(getInputState());
+                          parser.methodeNode();
+                          {#methodeBody=#([parser.getAST
+()],#methodeBody);};
+                        };
+
+
+identifier              : ID;
+class ModelLexer extends Lexer;
+
+options {
+	k=10;
+        filter=true;
+       /* importVocab = Common;*/
+}
+
+LPAREN	    : '(';
+RPAREN	    : ')';
+LCURLY      : '{';
+RCURLY	    : '}';
+SEMI	    : ';';
+COMMA	    : ',';
+
+INHERITS    : &quot;inherits &quot;;
+MODEL       : &quot;model &quot;;
+JAVADOC_OPEN: &quot;method &quot; {StartGenerate.selector.push(&quot;methodLexer&quot;);};
+
+ID          : (CHAR|'_')(CHAR|'_'|'0'..'9')*;
+
+STRING_LITERAL :('&quot;'!)(~'&quot;')*('&quot;'!);
+
+
+WS		:	(' '
+		|	'\t'
+		|	'\n'  { newline(); }
+		|	'\r')
+			{ $setType(Token.SKIP); }
+		;
+protected
+CHAR        : ('a'..'z'|'A'..'Z');
+
+----------------------METHOD PARSER----------------------------
+
+header{
+	package accessclassgenerator;
+}
+
+class MethodParser extends Parser;
+
+options {
+	buildAST=true;
+	k=2;
+}
+
+tokens {
+  ARGUMENTS;
+  EXPRESSION;
+}
+
+methodeNode         : (ID^) methodeDecleration methodBody;
+
+
+methodeDecleration  : (LPAREN!) (methodArguments)? (RPAREN!)
+                      {#methodeDecleration=#
+([ARGUMENTS,&quot;Arguments&quot;],#methodeDecleration);}
+                    ;
+
+methodArguments     : (methodArgument (COMMA! methodArguments)?)
+                    ;
+
+methodArgument      : declarationName;
+
+methodBody          : (i:METHOD_BODY^) {System.out.println(i.getText
+());}
+                    ;
+
+declarationName     : (i:ID^) {System.out.println(i.getText());};
+
+class MethodLexer extends Lexer;
+
+options {
+	k=7;
+
+        /*importVocab = Common;*/
+        filter=true;
+}
+
+LPAREN	    : '(';
+RPAREN	    : ')';
+LCURLY      : '{';
+RCURLY	    : '}';
+SEMI	    : ';';
+COMMA	    : ',';
+
+JAVADOC_CLOSE : (RCURLY)!(SEMI)! {StartGenerate.selector.pop();};
+
+METHOD_BODY : '{'! (BracedExpr |~'}')* JAVADOC_CLOSE;
+
+ID          : (CHAR|'_')(CHAR|'_'|'0'..'9')*;
+
+STRING_LITERAL :('&quot;'!)(~'&quot;')*('&quot;'!);
+
+
+WS		:	(' '
+		|	'\t'
+		|	'\n'  { newline(); }
+		|	'\r')
+			{ $setType(Token.SKIP); }
+		;
+protected
+CHAR        : ('a'..'z'|'A'..'Z');
+
+protected
+BracedExpr  : '{' (BracedExpr | ~'}')* &quot;}&quot;;
+
+---------------------------------
+
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005152.html">[antlr-interest] Re: Skipping grammar
+</A></li>
+	<LI>Next message: <A HREF="005145.html">[antlr-interest] On a more personal note...
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5159">[ date ]</a>
+              <a href="thread.html#5159">[ thread ]</a>
+              <a href="subject.html#5159">[ subject ]</a>
+              <a href="author.html#5159">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

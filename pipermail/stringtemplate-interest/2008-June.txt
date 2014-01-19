@@ -1,0 +1,2314 @@
+From jax at ning.com  Mon Jun  2 14:48:16 2008
+From: jax at ning.com (Jax Law)
+Date: Mon, 02 Jun 2008 14:48:16 -0700
+Subject: [stringtemplate-interest] what is the use for embeddedInstances ?
+Message-ID: <48446AA0.1000001@ning.com>
+
+Hi,
+
+In StringTemplate.java, what is the purpose of the LinkedList 
+embeddedInstances ?
+I've searched the source tree and there is no usage of this LinkedList. 
+We've found
+an obscure memory leak issue with embeddedInstances where the list has grown
+to 10 million entries. The issue is that when 
+StringTemplate.getInstanceOf() method
+is called, the copy it returns is not a true deep copy. It has many 
+references to the
+original StringTemplate via the chunks Expr, StringTemplateAST ...etc. 
+One of
+these references is accessible to a write() method call stack and thus 
+build up the
+embeddedInstances LinkedList.
+
+Since no usage can be found, I am assuming we can make addEmbeddedInstance
+a No-Op in our own build ?
+
+Thanks !
+
+Jax
+
+
+From parrt at cs.usfca.edu  Mon Jun  2 16:09:15 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Mon, 2 Jun 2008 16:09:15 -0700
+Subject: [stringtemplate-interest] what is the use for embeddedInstances
+	?
+In-Reply-To: <48446AA0.1000001@ning.com>
+References: <48446AA0.1000001@ning.com>
+Message-ID: <D0A238EF-5030-49C5-9AB1-7D80D9F8C059@cs.usfca.edu>
+
+thanks! just added bug:
+
+http://www.antlr.org:8888/browse/ST-39
+
+Ter
+On Jun 2, 2008, at 2:48 PM, Jax Law wrote:
+
+> Hi,
+>
+> In StringTemplate.java, what is the purpose of the LinkedList
+> embeddedInstances ?
+> I've searched the source tree and there is no usage of this  
+> LinkedList.
+> We've found
+> an obscure memory leak issue with embeddedInstances where the list  
+> has grown
+> to 10 million entries. The issue is that when
+> StringTemplate.getInstanceOf() method
+> is called, the copy it returns is not a true deep copy. It has many
+> references to the
+> original StringTemplate via the chunks Expr, StringTemplateAST ...etc.
+> One of
+> these references is accessible to a write() method call stack and thus
+> build up the
+> embeddedInstances LinkedList.
+>
+> Since no usage can be found, I am assuming we can make  
+> addEmbeddedInstance
+> a No-Op in our own build ?
+>
+> Thanks !
+>
+> Jax
+>
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+
+From parrt at cs.usfca.edu  Mon Jun  2 19:01:38 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Mon, 2 Jun 2008 19:01:38 -0700
+Subject: [stringtemplate-interest] "rest" and template recursion FIXED
+In-Reply-To: <91DF7AC2-AD1F-4963-A9EB-77861BA1BF51@cs.usfca.edu>
+References: <8c9befbf0805302022x1c09d1cdw4da788fc5d2885de@mail.gmail.com>
+	<9AC3565A-96BB-4A61-AF08-CB5D41D6D824@cs.usfca.edu>
+	<8c9befbf0805302305u344c2d6h6d00f78c1f789cc9@mail.gmail.com>
+	<20080531063038.GE8646@freedbms.net>
+	<91DF7AC2-AD1F-4963-A9EB-77861BA1BF51@cs.usfca.edu>
+Message-ID: <2AB4ED7A-1175-4DCB-A29A-4C687A105BB0@cs.usfca.edu>
+
+Ok, Fixed. THis test passes:
+
+	public void testReUseOfRestResult() throws Exception {
+		String templates =
+			"group test;" +newline+
+			"a(names) ::= \"<b(rest(names))>\""+newline+
+			"b(x) ::= \"<x>, <x>\""+newline
+			;
+		StringTemplateGroup group =
+			new StringTemplateGroup(new StringReader(templates));
+		StringTemplate e = group.getInstanceOf("a");
+		List names = new ArrayList();
+		names.add("Ter");
+		names.add("Tom");
+		e.setAttribute("names", names);
+		String expecting = "Tom, Tom";
+		assertEquals(expecting, e.toString());
+	}
+
+and this one:
+
+	public void testReUseOfStripResult() throws Exception {
+		String templates =
+			"group test;" +newline+
+			"a(names) ::= \"<b(strip(names))>\""+newline+
+			"b(x) ::= \"<x>, <x>\""+newline
+			;
+		StringTemplateGroup group =
+			new StringTemplateGroup(new StringReader(templates));
+		StringTemplate e = group.getInstanceOf("a");
+		List names = new ArrayList();
+		names.add("Ter");
+		names.add(null);
+		names.add("Tom");
+		e.setAttribute("names", names);
+		String expecting = "TerTom, TerTom";
+		assertEquals(expecting, e.toString());
+	}
+
+failed beforehand.
+
+Implemented trunc also:
+
+	public void testTruncOp() throws Exception {
+		StringTemplate e = new StringTemplate(
+				"$trunc(names); separator=\", \"$"
+			);
+		e = e.getInstanceOf();
+		e.setAttribute("names", "Ter");
+		e.setAttribute("names", "Tom");
+		e.setAttribute("names", "Sriram");
+		String expecting = "Ter, Tom";
+		assertEquals(expecting, e.toString());
+	}
+
+edit //depot/code/stringtemplate/java/main/CHANGES.txt#15
+edit //depot/code/stringtemplate/java/main/src/org/antlr/ 
+stringtemplate/language/ASTExpr.java#47
+delete //depot/code/stringtemplate/java/main/src/org/antlr/ 
+stringtemplate/language/StripIterator.java#3
+edit //depot/code/stringtemplate/java/main/src/org/antlr/ 
+stringtemplate/test/TestStringTemplate.java#84
+Change 4977 submitted.
+
+Ter
+
+On May 31, 2008, at 4:39 PM, Terence Parr wrote:
+
+>
+> On May 30, 2008, at 11:30 PM, Zenaan Harkness wrote:
+>
+>> On Fri, May 30, 2008 at 11:05:22PM -0700, Sasha Crosland wrote:
+>>> Thanks for the explanation, Terence.  A side-effect-free rest()
+>>> does seem
+>>> more in the spirit of StringTemplate, doesn't it?  I vote yes, for
+>>> what it's
+>>> worth.
+>>>
+>>> But would you actually need to make a copy of the list data?  If
+>>> lists are
+>>> immutable within a template, then couldn't you easily return a
+>>> lightweight
+>>> view of the sublist that reads through to the original list, just
+>>> like with
+>>> an iterator?
+>>
+>> Vote thirded.
+>>
+>> Recursion ought to Just Work (TM).
+>>
+>> I additionally vote for an addition to first,last,rest to fill the
+>> gap,
+>> perhaps "front" (all but last).
+>
+> I think i have trunc for that.
+>
+>> Lightweight container wrapper is definitely the go here.
+>> ArrayList.clone(), or Collection.clone() should do what's needed.
+>
+> kewl. thanks.
+> Ter
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+
+From parrt at cs.usfca.edu  Mon Jun  2 19:24:30 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Mon, 2 Jun 2008 19:24:30 -0700
+Subject: [stringtemplate-interest] Fixed ST-33
+Message-ID: <F0B9DA37-9024-402B-AC6C-043DCC2CC70E@cs.usfca.edu>
+
+http://www.antlr.org:8888/browse/ST-33
+
+edit //depot/code/stringtemplate/java/main/CHANGES.txt#16
+edit //depot/code/stringtemplate/java/main/src/org/antlr/ 
+stringtemplate/language/ASTExpr.java#48
+add //depot/code/stringtemplate/java/main/src/org/antlr/stringtemplate/ 
+language/Cat.java#1
+delete //depot/code/stringtemplate/java/main/src/org/antlr/ 
+stringtemplate/language/CatIterator.java#4
+edit //depot/code/stringtemplate/java/main/src/org/antlr/ 
+stringtemplate/language/eval.g#18
+Change 4979 submitted.
+
+http://www.antlr.org/download/build/stringtemplate-06-02-2008.19.tar.gz
+
+Ter
+
+From parrt at cs.usfca.edu  Mon Jun  2 19:25:15 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Mon, 2 Jun 2008 19:25:15 -0700
+Subject: [stringtemplate-interest] new daily build for ST
+Message-ID: <BD8AAD23-107D-4BB5-BF4F-C369D5830502@cs.usfca.edu>
+
+Hi.
+
+http://www.antlr.org/download/build/stringtemplate-06-02-2008.19.tar.gz
+
+Fixes:
+
+06-08-2008
+
+o rest and strip returned iterators.  Made them return show list copies
+   so recursion works. iterators have side-effects.  Added 2 unit tests.
+
+o implemented trunc. returns all but last element.
+
+o Fix ST-33; [a,b] cat function used iterators; side-effect problem.
+
+05-07-2008
+
+o Had a problem with "int" : "0" in a map but ST as incoming lookup key.
+   Decided that I'd lookup as raw object first so Integer lookup works
+   but I try toString version if not found. Document this!
+
+05-06-2008
+
+o <aMap.(k)> no longer calls toString() on k.
+   <aMap.keys:{k|<k>:<aMap.(k)>} was not working when aMap had Integer
+   keys.  Added unit test.
+
+04-07-2008
+
+o Made unit tests not depend on map order.  commented out tests that  
+fail.
+
+02-11-2008
+
+o debug tags now emit group name with tags. improves debugging ability.
+
+Ter
+
+From jax at ning.com  Tue Jun  3 11:37:46 2008
+From: jax at ning.com (Jax Law)
+Date: Tue, 03 Jun 2008 11:37:46 -0700
+Subject: [stringtemplate-interest] what is the use for embeddedInstances
+ ?
+In-Reply-To: <D0A238EF-5030-49C5-9AB1-7D80D9F8C059@cs.usfca.edu>
+References: <48446AA0.1000001@ning.com>
+	<D0A238EF-5030-49C5-9AB1-7D80D9F8C059@cs.usfca.edu>
+Message-ID: <48458F7A.3050909@ning.com>
+
+Hi Terence,
+
+Thanks for the prompt reply ! I've attached a simple test case where the 
+memory leak can be reproduced.
+
+Here is a summary of the issue:
+
+1. A StringTemplateGroup is held from a singleton
+2. One of the template ( the order_by, say ST1 ) has an anonymous 
+template ( say ST2 )
+3. The cached copy of the "order_by" template in the StringTemplateGroup 
+has a chunk ( ASTExpr )
+    that has a parse tree that leads to ST2
+4. A copy of the ST1 obtained from the group.getInstanceOf() method 
+return a new ST but the chunk
+    list is copied as-is.
+5. Calling toString() on the copy leads to a series of unwrapping of 
+references of the AST and ultimately
+    ST2.write() is called, which then addEmbeddedInstance is called.
+6. Since ST2 is reachable from the singleton via the templates HashMap, 
+embeddedInstances list is never
+    garbage collected.
+
+We have workaround the issue by simply making addEmbeddedInstnace() a 
+no-op. It seems to have
+also improved performance greatly. Another suggestion to avoid this 
+issue is to make toString() and
+write() method non-state-changing, or making dup() returns a true deep copy.
+
+Thanks a lot !
+
+Jax
+
+
+Terence Parr wrote:
+> thanks! just added bug:
+>
+> http://www.antlr.org:8888/browse/ST-39
+>
+> Ter
+> On Jun 2, 2008, at 2:48 PM, Jax Law wrote:
+>
+>> Hi,
+>>
+>> In StringTemplate.java, what is the purpose of the LinkedList
+>> embeddedInstances ?
+>> I've searched the source tree and there is no usage of this LinkedList.
+>> We've found
+>> an obscure memory leak issue with embeddedInstances where the list 
+>> has grown
+>> to 10 million entries. The issue is that when
+>> StringTemplate.getInstanceOf() method
+>> is called, the copy it returns is not a true deep copy. It has many
+>> references to the
+>> original StringTemplate via the chunks Expr, StringTemplateAST ...etc.
+>> One of
+>> these references is accessible to a write() method call stack and thus
+>> build up the
+>> embeddedInstances LinkedList.
+>>
+>> Since no usage can be found, I am assuming we can make 
+>> addEmbeddedInstance
+>> a No-Op in our own build ?
+>>
+>> Thanks !
+>>
+>> Jax
+>>
+>> _______________________________________________
+>> stringtemplate-interest mailing list
+>> stringtemplate-interest at antlr.org
+>> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>
+>
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: st39.jar
+Type: application/octet-stream
+Size: 4445 bytes
+Desc: not available
+Url : http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20080603/df4b2188/attachment.obj 
+
+From parrt at cs.usfca.edu  Tue Jun  3 12:13:50 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Tue, 3 Jun 2008 12:13:50 -0700
+Subject: [stringtemplate-interest] what is the use for embeddedInstances
+	?
+In-Reply-To: <48458F7A.3050909@ning.com>
+References: <48446AA0.1000001@ning.com>
+	<D0A238EF-5030-49C5-9AB1-7D80D9F8C059@cs.usfca.edu>
+	<48458F7A.3050909@ning.com>
+Message-ID: <EB2CC4F4-604F-478D-86C1-AEBC8612F0BF@cs.usfca.edu>
+
+Hi Jax,
+
+ok, I have simply removed the list of embedded instances. I believe I  
+used to have that in there so that during debugging we could walk from  
+the top of the list downwards. As it stands, you cannot ask a template  
+to list all of the embedded templates. Well, I wonder if we could get  
+that from the list of chunks and attributes. perhaps.
+
+I read your test, after making it compile on my machine, and then ran
+
+time java MemoryLeakTestCase > /dev/null
+
+it took 6m13s and then got an out of memory exception. I am rerunning  
+it now to see if there is a speed improvement as you suggest. Surely  
+there must be a memory improvement ;)   Actually, I guess it will keep  
+going and take a very long time because it does not get an exception.
+
+How noticeable was your performance improvement?
+
+Ok, test also got a memory exception at 6m16s. Does your test throw  
+anything away? in other words, should it run until completion?
+
+All tests seem to pass, so I'm going to  submit this to the repository  
+and make a new daily build.
+
+http://www.antlr.org/download/build/stringtemplate-06-03-2008.12.tar.gz
+
+Ter
+
+On Jun 3, 2008, at 11:37 AM, Jax Law wrote:
+
+> Hi Terence,
+>
+> Thanks for the prompt reply ! I've attached a simple test case where  
+> the memory leak can be reproduced.
+>
+> Here is a summary of the issue:
+>
+> 1. A StringTemplateGroup is held from a singleton
+> 2. One of the template ( the order_by, say ST1 ) has an anonymous  
+> template ( say ST2 )
+> 3. The cached copy of the "order_by" template in the  
+> StringTemplateGroup has a chunk ( ASTExpr )
+>   that has a parse tree that leads to ST2
+> 4. A copy of the ST1 obtained from the group.getInstanceOf() method  
+> return a new ST but the chunk
+>   list is copied as-is.
+> 5. Calling toString() on the copy leads to a series of unwrapping of  
+> references of the AST and ultimately
+>   ST2.write() is called, which then addEmbeddedInstance is called.
+> 6. Since ST2 is reachable from the singleton via the templates  
+> HashMap, embeddedInstances list is never
+>   garbage collected.
+>
+> We have workaround the issue by simply making addEmbeddedInstnace()  
+> a no-op. It seems to have
+> also improved performance greatly. Another suggestion to avoid this  
+> issue is to make toString() and
+> write() method non-state-changing, or making dup() returns a true  
+> deep copy.
+>
+> Thanks a lot !
+>
+> Jax
+>
+>
+> Terence Parr wrote:
+>> thanks! just added bug:
+>>
+>> http://www.antlr.org:8888/browse/ST-39
+>>
+>> Ter
+>> On Jun 2, 2008, at 2:48 PM, Jax Law wrote:
+>>
+>>> Hi,
+>>>
+>>> In StringTemplate.java, what is the purpose of the LinkedList
+>>> embeddedInstances ?
+>>> I've searched the source tree and there is no usage of this  
+>>> LinkedList.
+>>> We've found
+>>> an obscure memory leak issue with embeddedInstances where the list  
+>>> has grown
+>>> to 10 million entries. The issue is that when
+>>> StringTemplate.getInstanceOf() method
+>>> is called, the copy it returns is not a true deep copy. It has many
+>>> references to the
+>>> original StringTemplate via the chunks Expr,  
+>>> StringTemplateAST ...etc.
+>>> One of
+>>> these references is accessible to a write() method call stack and  
+>>> thus
+>>> build up the
+>>> embeddedInstances LinkedList.
+>>>
+>>> Since no usage can be found, I am assuming we can make  
+>>> addEmbeddedInstance
+>>> a No-Op in our own build ?
+>>>
+>>> Thanks !
+>>>
+>>> Jax
+>>>
+>>> _______________________________________________
+>>> stringtemplate-interest mailing list
+>>> stringtemplate-interest at antlr.org
+>>> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>>
+>>
+>
+> <st39.jar>
+
+
+From parrt at cs.usfca.edu  Tue Jun  3 12:32:18 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Tue, 3 Jun 2008 12:32:18 -0700
+Subject: [stringtemplate-interest] Talk in Aachen Germany
+Message-ID: <C8571DA5-FD89-4D57-857B-A9176B0489D6@cs.usfca.edu>
+
+Hi.  I will be speaking at RWTH soon if you would like to make it to  
+this public lecture:
+
+Time:	Friday, 16 June 2008, 13:30
+Place:	Seminar area of the computing and communication of center,
+office building Seffenter way 23
+
+Terence
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: Parr-Kolloq-Ank?ndigung.pdf
+Type: application/pdf
+Size: 23925 bytes
+Desc: not available
+Url : http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20080603/6d1e41bb/attachment-0001.pdf 
+-------------- next part --------------
+
+
+From parrt at cs.usfca.edu  Tue Jun  3 14:16:22 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Tue, 3 Jun 2008 14:16:22 -0700
+Subject: [stringtemplate-interest] [antlr-interest] Talk in Aachen
+	Germany
+In-Reply-To: <C8571DA5-FD89-4D57-857B-A9176B0489D6@cs.usfca.edu>
+References: <C8571DA5-FD89-4D57-857B-A9176B0489D6@cs.usfca.edu>
+Message-ID: <8BC13557-B3BB-4186-8A8D-8E1F587D6C7A@cs.usfca.edu>
+
+The German translator on the web apparently got it wrong. it's on  
+Monday the 16th not Friday. :)
+Ter
+On Jun 3, 2008, at 12:32 PM, Terence Parr wrote:
+
+> Hi.  I will be speaking at RWTH soon if you would like to make it to  
+> this public lecture:
+>
+> Time:	Friday, 16 June 2008, 13:30
+> Place:	Seminar area of the computing and communication of center,
+> office building Seffenter way 23
+>
+> Terence
+>
+> <Parr-Kolloq-Ank?ndigung.pdf>
+
+
+From brianchina60221 at gmail.com  Tue Jun  3 15:11:01 2008
+From: brianchina60221 at gmail.com (brian)
+Date: Tue, 3 Jun 2008 17:11:01 -0500
+Subject: [stringtemplate-interest] messed up ST 3.1 Maven POM
+In-Reply-To: <22f6a8f70804220745v39f2407aj73819198c27223e@mail.gmail.com>
+References: <22f6a8f70804220745v39f2407aj73819198c27223e@mail.gmail.com>
+Message-ID: <22f6a8f70806031511k228671b7uc60ae5223a4e4d2@mail.gmail.com>
+
+On Tue, Apr 22, 2008 at 9:45 AM, brian <brianchina60221 at gmail.com> wrote:
+> The Maven POM for ST 3.1 at
+> http://mirrors.ibiblio.org/pub/mirrors/maven2/org/antlr/stringtemplate/3.1-b1/stringtemplate-3.1-b1.pom
+> seems messed up because it lacks a dependency on ANTLR.
+>
+> Who did that? Could you please upload a fixed one? Thanks.
+
+What's the deal on this? It's been busted for a long time. Thanks.
+
+From parrt at cs.usfca.edu  Tue Jun  3 15:48:16 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Tue, 3 Jun 2008 15:48:16 -0700
+Subject: [stringtemplate-interest] messed up ST 3.1 Maven POM
+In-Reply-To: <22f6a8f70806031511k228671b7uc60ae5223a4e4d2@mail.gmail.com>
+References: <22f6a8f70804220745v39f2407aj73819198c27223e@mail.gmail.com>
+	<22f6a8f70806031511k228671b7uc60ae5223a4e4d2@mail.gmail.com>
+Message-ID: <26EACE25-14FA-4F3D-B0F9-25ACF5918193@cs.usfca.edu>
+
+I know nothing of maven...not sure who uploaded it.
+Ter
+On Jun 3, 2008, at 3:11 PM, brian wrote:
+
+> On Tue, Apr 22, 2008 at 9:45 AM, brian <brianchina60221 at gmail.com>  
+> wrote:
+>> The Maven POM for ST 3.1 at
+>> http://mirrors.ibiblio.org/pub/mirrors/maven2/org/antlr/stringtemplate/3.1-b1/stringtemplate-3.1-b1.pom
+>> seems messed up because it lacks a dependency on ANTLR.
+>>
+>> Who did that? Could you please upload a fixed one? Thanks.
+>
+> What's the deal on this? It's been busted for a long time. Thanks.
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+
+From phil.kursawe at gmail.com  Wed Jun  4 09:24:04 2008
+From: phil.kursawe at gmail.com (Philipp Kursawe)
+Date: Wed, 4 Jun 2008 18:24:04 +0200
+Subject: [stringtemplate-interest] Ability to unregister renderer
+Message-ID: <c3c9ccc20806040924q7dadc0e2w950e34b6503449e5@mail.gmail.com>
+
+Hello,
+
+im using registerRenderer to register my own renderers in an OSGi
+framework and need the ability to remove/unregister the renderer later
+again. This seems not possible currently or am I missing something?
+
+Thanks
+Phil
+
+From parrt at cs.usfca.edu  Wed Jun  4 10:42:57 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Wed, 4 Jun 2008 10:42:57 -0700
+Subject: [stringtemplate-interest] Ability to unregister renderer
+In-Reply-To: <c3c9ccc20806040924q7dadc0e2w950e34b6503449e5@mail.gmail.com>
+References: <c3c9ccc20806040924q7dadc0e2w950e34b6503449e5@mail.gmail.com>
+Message-ID: <C8726717-135A-40B4-AB20-06F3B036076D@cs.usfca.edu>
+
+can you try setting to null?
+Ter
+On Jun 4, 2008, at 9:24 AM, Philipp Kursawe wrote:
+
+> Hello,
+>
+> im using registerRenderer to register my own renderers in an OSGi
+> framework and need the ability to remove/unregister the renderer later
+> again. This seems not possible currently or am I missing something?
+>
+> Thanks
+> Phil
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+
+From parrt at cs.usfca.edu  Wed Jun  4 12:51:33 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Wed, 4 Jun 2008 12:51:33 -0700
+Subject: [stringtemplate-interest] normalize \n to \n in ST
+Message-ID: <9C00F95B-6D3A-44C8-8AFF-573379635894@cs.usfca.edu>
+
+Hi,
+
+I am proposing to normalize the use of \n in templates. If you say \n  
+you get \n or \r\n depending on locale.  Actually, maybe we should  
+make it a parameter you send to the template group? You might have a  
+Web server that should be sensitive to the client locale not the  
+server locale, right?
+
+When you say wrap="\n" it would actually generate \r\n on a PC.
+
+When you have a UNIX file with \n line endings, you would still get \r 
+\n on a PC.
+
+The problem is that I really should fix this inside ST, but I need to  
+send out ANTLR v3.1 shortly. given all of the recent bug fixes, should  
+I add this to ST and then release ST 3.2 for use with ANTLR 3.1?
+
+Ter
+
+From brianchina60221 at gmail.com  Wed Jun  4 12:56:25 2008
+From: brianchina60221 at gmail.com (brian)
+Date: Wed, 4 Jun 2008 14:56:25 -0500
+Subject: [stringtemplate-interest] normalize \n to \n in ST
+In-Reply-To: <9C00F95B-6D3A-44C8-8AFF-573379635894@cs.usfca.edu>
+References: <9C00F95B-6D3A-44C8-8AFF-573379635894@cs.usfca.edu>
+Message-ID: <22f6a8f70806041256w5b56048bw221f6b3dbfa79a7@mail.gmail.com>
+
+On Wed, Jun 4, 2008 at 2:51 PM, Terence Parr <parrt at cs.usfca.edu> wrote:
+> I am proposing to normalize the use of \n in templates. If you say \n
+> you get \n or \r\n depending on locale.  Actually, maybe we should
+> make it a parameter you send to the template group? You might have a
+> Web server that should be sensitive to the client locale not the
+> server locale, right?
+
+Yeah. Sometimes protocols or whatever dictate certain line endings,
+and it doesn't matter where the client/server is running. If you make
+\n autochange, please leave some way to get ST to produce exactly what
+we ask for.
+
+From parrt at cs.usfca.edu  Wed Jun  4 13:09:50 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Wed, 4 Jun 2008 13:09:50 -0700
+Subject: [stringtemplate-interest] normalize \n to \n in ST
+In-Reply-To: <22f6a8f70806041256w5b56048bw221f6b3dbfa79a7@mail.gmail.com>
+References: <9C00F95B-6D3A-44C8-8AFF-573379635894@cs.usfca.edu>
+	<22f6a8f70806041256w5b56048bw221f6b3dbfa79a7@mail.gmail.com>
+Message-ID: <F19B1546-3CDB-481A-9604-44C8FA8201DE@cs.usfca.edu>
+
+It turns out that there is an easy way.  new AutoIndentWriter(buf)  
+uses the default system property for line ending. You can also specify  
+a second parameter which is the newline string. :)
+
+If you tell ST to use a specific writer for all templates and a group,  
+make sure that the constructor for that writer sets theline ending as  
+you wish. A trivial fix, going to start testing it shortly.
+
+  I think that it is best to push out 3.2 ST and use it for ANTLR 3.1
+Ter
+On Jun 4, 2008, at 12:56 PM, brian wrote:
+
+> On Wed, Jun 4, 2008 at 2:51 PM, Terence Parr <parrt at cs.usfca.edu>  
+> wrote:
+>> I am proposing to normalize the use of \n in templates. If you say \n
+>> you get \n or \r\n depending on locale.  Actually, maybe we should
+>> make it a parameter you send to the template group? You might have a
+>> Web server that should be sensitive to the client locale not the
+>> server locale, right?
+>
+> Yeah. Sometimes protocols or whatever dictate certain line endings,
+> and it doesn't matter where the client/server is running. If you make
+> \n autochange, please leave some way to get ST to produce exactly what
+> we ask for.
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+
+From parrt at cs.usfca.edu  Wed Jun  4 13:32:41 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Wed, 4 Jun 2008 13:32:41 -0700
+Subject: [stringtemplate-interest] [antlr-interest] normalize \n to \n
+	in ST
+In-Reply-To: <A7746824D386F947BBC285F6EC4716B0021311D4DB@vmtbosmail01.VMTBOSTON.VAULTUS.COM>
+References: <9C00F95B-6D3A-44C8-8AFF-573379635894@cs.usfca.edu>
+	<A7746824D386F947BBC285F6EC4716B0021311D4DB@vmtbosmail01.VMTBOSTON.VAULTUS.COM>
+Message-ID: <906F0255-246F-43D1-AA6E-4AFE0D1E7C33@cs.usfca.edu>
+
+Here are 3 of my unit tests. Basically, no matter which you used in  
+templates or attributes or options, ST normalizes everything to be the  
+newline field of the output writer AutoIndentWriter and its subclass  
+NoIndentWriter. Pushing. I guess I need to push 3.2 ST soon :)
+
+Ter
+
+	public void testNewlineNormalizationInTemplateString() throws  
+Exception {
+		StringTemplate st = new StringTemplate(
+				"Foo\r\n"+
+				"Bar\n",
+				AngleBracketTemplateLexer.class
+				);
+		StringWriter sw = new StringWriter();
+		st.write(new AutoIndentWriter(sw,"\n")); // force \n as newline
+		String result = st.toString();
+		String expecting ="Foo\nBar\n";     // expect \n in output
+		assertEquals(expecting, result);
+	}
+
+	public void testNewlineNormalizationInTemplateStringPC() throws  
+Exception {
+		StringTemplate st = new StringTemplate(
+				"Foo\r\n"+
+				"Bar\n",
+				AngleBracketTemplateLexer.class
+				);
+		StringWriter sw = new StringWriter();
+		st.write(new AutoIndentWriter(sw,"\r\n")); // force \r\n as newline
+		String result = st.toString();
+		String expecting ="Foo\r\nBar\r\n";     // expect \r\n in output
+		assertEquals(expecting, result);
+	}
+
+	public void testNewlineNormalizationInAttribute() throws Exception {
+		StringTemplate st = new StringTemplate(
+				"Foo\r\n"+
+				"<name>\n",
+				AngleBracketTemplateLexer.class
+				);
+		st.setAttribute("name", "a\nb\r\nc");
+		StringWriter sw = new StringWriter();
+		st.write(new AutoIndentWriter(sw,"\n")); // force \n as newline
+		String result = st.toString();
+		String expecting ="Foo\na\nb\nc\n";     // expect \n in output
+		assertEquals(expecting, result);
+	}
+
+
+On Jun 4, 2008, at 1:13 PM, Doucette, Charles wrote:
+
+> I'm glad you are looking to fix this, as this is affecting me know  
+> (as I reported previously).
+>
+> We prefer to run ANTLR manually only when our grammar changes, and  
+> then commit the latest generated parsers and lexers
+> to our source control system (to be compiled with the rest of the  
+> sources). The problem is that
+> a) our grammar was developed on Windows and has \r\n as line endings
+> b) the rest of the lexer/parser generated code (from StringTemplate  
+> I assume) has only \n as line endings
+> c) our source control system (SVN) will not accept a file with  
+> inconsistent line endings
+>
+> I can work around this in at least these 2 ways:
+> 1)      Permanently change the line endings in the grammar file to  
+> just use \n
+>        (so it will be consistent with the rest of the generated code)
+> 2)      Normalize the line endings of the parser/lexer each time  
+> they are generated
+>        (this is what I am doing now)
+>
+> It could be fixed permanently if I could configure StringTemplate  
+> and/or ANTLR to
+> generate lexer/parser code which matches the line endings of my  
+> grammar.
+>
+> FYI, here's a suggested way to configure this.
+> Subversion has a property called "svn:eol-style" whose value can be:
+> a) native (automatically determined based on the platform)
+> b) CRLF
+> c) LF
+> d) CR
+>
+> Chuck
+>
+>> -----Original Message-----
+>> From: antlr-interest-bounces at antlr.org
+>> [mailto:antlr-interest-bounces at antlr.org] On Behalf Of Terence Parr
+>> Sent: Wednesday, June 04, 2008 3:52 PM
+>> To: stringtemplate-interest
+>> Cc: Antlr Interest
+>> Subject: [antlr-interest] normalize \n to \n in ST
+>>
+>> Hi,
+>>
+>> I am proposing to normalize the use of \n in templates. If
+>> you say \n you get \n or \r\n depending on locale.  Actually,
+>> maybe we should make it a parameter you send to the template
+>> group? You might have a Web server that should be sensitive
+>> to the client locale not the server locale, right?
+>>
+>> When you say wrap="\n" it would actually generate \r\n on a PC.
+>>
+>> When you have a UNIX file with \n line endings, you would
+>> still get \r \n on a PC.
+>>
+>> The problem is that I really should fix this inside ST, but I
+>> need to send out ANTLR v3.1 shortly. given all of the recent
+>> bug fixes, should I add this to ST and then release ST 3.2
+>> for use with ANTLR 3.1?
+>>
+>> Ter
+>>
+
+
+From ivan.lazarte at gmail.com  Mon Jun  9 16:37:35 2008
+From: ivan.lazarte at gmail.com (Ivan Lazarte)
+Date: Mon, 9 Jun 2008 19:37:35 -0400
+Subject: [stringtemplate-interest] Hello!
+Message-ID: <82eb5be40806091637l61193a73l4c1e3acf1ec1677f@mail.gmail.com>
+
+Just starting to get into StringTemplate as I'm looking to move beyond the
+world of Jsp permanently I believe.
+I had worked with Velocity as well, Smarty templates, and took a
+passing glance at HAML, and 4-5 years into my web work, I'm just ready for
+some new ideas in view technology.
+
+I like the nature of StringTemplate and I'm curious to see where I can go
+with it.
+
+Cheers!
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20080609/8391afdd/attachment.html 
+
+From parrt at cs.usfca.edu  Tue Jun 10 04:22:39 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Tue, 10 Jun 2008 13:22:39 +0200
+Subject: [stringtemplate-interest] Hello!
+In-Reply-To: <82eb5be40806091637l61193a73l4c1e3acf1ec1677f@mail.gmail.com>
+References: <82eb5be40806091637l61193a73l4c1e3acf1ec1677f@mail.gmail.com>
+Message-ID: <BAF0E17B-6CAD-45E6-964C-C0D016BA1742@cs.usfca.edu>
+
+Welcome, Ivan. It will be interesting to hear what you think after  
+playing around some more with ST.
+
+Terence
+On Jun 10, 2008, at 1:37 AM, Ivan Lazarte wrote:
+
+> Just starting to get into StringTemplate as I'm looking to move  
+> beyond the world of Jsp permanently I believe.
+> I had worked with Velocity as well, Smarty templates, and took a  
+> passing glance at HAML, and 4-5 years into my web work, I'm just  
+> ready for some new ideas in view technology.
+>
+> I like the nature of StringTemplate and I'm curious to see where I  
+> can go with it.
+>
+> Cheers!
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+
+From aleiby.antlr at gmail.com  Tue Jun 10 11:52:23 2008
+From: aleiby.antlr at gmail.com (Aaron Leiby)
+Date: Tue, 10 Jun 2008 11:52:23 -0700
+Subject: [stringtemplate-interest] StringTemplate parameters
+Message-ID: <621634160806101152v7a8b3aa7we2fa2533b0d44a53@mail.gmail.com>
+
+I wasn't sure if I should post StringTemplate specific questions here, or on
+the ANTLR list (since I'm using StringTemplate within ANTLR as opposed to
+embedding in HTML).
+Anyway, I'm trying to figure out if it's possible to pass additional
+parameters to templates within a group file.
+
+As an example, suppose you are generating a pair of C++ files (header +
+implementation).
+
+The header might look like this:
+
+class(name, methods) ::= <<
+class <name>
+{
+    <methods>
+};
+>>
+
+method(name, rtype, args) ::= <<
+<rtype> <name>(<args; separator=", ");
+
+>>
+
+args(name, type) ::= "<type> <name>"
+
+Then when you go to do the implementation, you realize you need the class
+name in the method template in order to scope it:
+
+class(name, methods) ::= <<
+#include "<name>.h"
+
+<methods>
+
+>>
+
+method(name, rtype, args) ::= <<
+<rtype> <scope>::<name>(<args; separator=", ")
+{
+    ...
+}
+
+>>
+
+args(name, type) ::= "<type> <name>"
+
+Is there any way to pass that in from the class template*, or do you have to
+go back to your grammar and pass it in from there (even though it's not
+needed in other templates)?
+
+* for example:
+
+class(name, methods) ::= <<
+#include "<name>.h"
+
+<methods[scope=<name>]>
+
+>>
+
+method(scope, name, rtype, args) ::= <<
+...
+
+
+Thanks!  Also, please let me know if there's a better source of info for
+this type of stuff beyond what's found here:
+http://www.antlr.org/wiki/display/ST/StringTemplate+3.1+Documentation
+
+Aaron
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20080610/94c556a9/attachment.html 
+
+From parrt at cs.usfca.edu  Wed Jun 11 01:23:29 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Wed, 11 Jun 2008 10:23:29 +0200
+Subject: [stringtemplate-interest] StringTemplate parameters
+In-Reply-To: <621634160806101152v7a8b3aa7we2fa2533b0d44a53@mail.gmail.com>
+References: <621634160806101152v7a8b3aa7we2fa2533b0d44a53@mail.gmail.com>
+Message-ID: <66C4813D-518E-43AD-AE9B-8F5B01DB37AD@cs.usfca.edu>
+
+Hi Aaron,
+
+This is the perfect example of dynamic scoping.  If a method is  
+embedded within a class tempalte, it can see all of class's  
+attributes.  So, use
+
+class(className, methods) ::= ...
+
+and then use <className> in the method (w/o declaring as parameter)  
+and you're golden!
+Ter
+On Jun 10, 2008, at 8:52 PM, Aaron Leiby wrote:
+
+> I wasn't sure if I should post StringTemplate specific questions  
+> here, or on the ANTLR list (since I'm using StringTemplate within  
+> ANTLR as opposed to embedding in HTML).
+>
+> Anyway, I'm trying to figure out if it's possible to pass  
+> additional parameters to templates within a group file.
+>
+> As an example, suppose you are generating a pair of C++ files  
+> (header + implementation).
+>
+> The header might look like this:
+>
+> class(name, methods) ::= <<
+> class <name>
+> {
+>     <methods>
+> };
+> >>
+>
+> method(name, rtype, args) ::= <<
+> <rtype> <name>(<args; separator=", ");
+>
+> >>
+>
+> args(name, type) ::= "<type> <name>"
+>
+> Then when you go to do the implementation, you realize you need the  
+> class name in the method template in order to scope it:
+>
+> class(name, methods) ::= <<
+> #include "<name>.h"
+>
+> <methods>
+>
+> >>
+>
+> method(name, rtype, args) ::= <<
+> <rtype> <scope>::<name>(<args; separator=", ")
+> {
+>     ...
+> }
+>
+> >>
+>
+> args(name, type) ::= "<type> <name>"
+>
+> Is there any way to pass that in from the class template*, or do  
+> you have to go back to your grammar and pass it in from there (even  
+> though it's not needed in other templates)?
+>
+> * for example:
+>
+> class(name, methods) ::= <<
+> #include "<name>.h"
+>
+> <methods[scope=<name>]>
+>
+> >>
+>
+> method(scope, name, rtype, args) ::= <<
+> ...
+>
+>
+> Thanks!  Also, please let me know if there's a better source of  
+> info for this type of stuff beyond what's found here:
+> http://www.antlr.org/wiki/display/ST/StringTemplate+3.1+Documentation
+>
+> Aaron
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+
+From parrt at cs.usfca.edu  Wed Jun 11 03:05:15 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Wed, 11 Jun 2008 12:05:15 +0200
+Subject: [stringtemplate-interest] StringTemplate 3.2 released
+Message-ID: <B4A06396-5175-4B56-B091-F414E33C1E32@cs.usfca.edu>
+
+http://www.antlr.org/wiki/display/ST/3.2+Release+Notes
+
+http://www.stringtemplate.org/download.html
+
+Ter
+
+From rgransberger at gmx.de  Wed Jun 11 04:30:01 2008
+From: rgransberger at gmx.de (Rabea Gransberger)
+Date: Wed, 11 Jun 2008 13:30:01 +0200
+Subject: [stringtemplate-interest] StringTemplate 3.2 released
+In-Reply-To: <B4A06396-5175-4B56-B091-F414E33C1E32@cs.usfca.edu>
+References: <B4A06396-5175-4B56-B091-F414E33C1E32@cs.usfca.edu>
+Message-ID: <001c01c8cbb6$7cd57730$a96aa8c0@engenion.lokal>
+
+Hi Terence,
+
+i tried to use ST3.2 but get an exception:
+java.util.NoSuchElementException
+	at
+java.util.LinkedHashMap$LinkedHashIterator.nextEntry(LinkedHashMap.java:375)
+	at java.util.LinkedHashMap$KeyIterator.next(LinkedHashMap.java:384)
+	at org.antlr.stringtemplate.language.ASTExpr.rest(ASTExpr.java:951)
+	at
+org.antlr.stringtemplate.language.ActionEvaluator.function(ActionEvaluator.j
+ava:515)
+	at
+org.antlr.stringtemplate.language.ActionEvaluator.expr(ActionEvaluator.java:
+148)
+	at
+org.antlr.stringtemplate.language.ActionEvaluator.templateApplication(Action
+Evaluator.java:216)
+	at
+org.antlr.stringtemplate.language.ActionEvaluator.expr(ActionEvaluator.java:
+126)
+	at
+org.antlr.stringtemplate.language.ActionEvaluator.action(ActionEvaluator.jav
+a:84)
+	at org.antlr.stringtemplate.language.ASTExpr.write(ASTExpr.java:148)
+	at
+org.antlr.stringtemplate.StringTemplate.write(StringTemplate.java:700)
+	at
+org.antlr.stringtemplate.StringTemplate.toString(StringTemplate.java:1635)
+	at
+org.antlr.stringtemplate.StringTemplate.toString(StringTemplate.java:1626)
+
+The same code works with 3.1. Do you have an idea what might be the problem?
+
+Rabea 
+
+-----Urspr?ngliche Nachricht-----
+Von: stringtemplate-interest-bounces at antlr.org
+[mailto:stringtemplate-interest-bounces at antlr.org] Im Auftrag von Terence
+Parr
+Gesendet: Mittwoch, 11. Juni 2008 12:05
+An: StringTemplate; Interest Interest
+Betreff: [stringtemplate-interest] StringTemplate 3.2 released
+
+http://www.antlr.org/wiki/display/ST/3.2+Release+Notes
+
+http://www.stringtemplate.org/download.html
+
+Ter
+_______________________________________________
+stringtemplate-interest mailing list
+stringtemplate-interest at antlr.org
+http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+
+From parrt at cs.usfca.edu  Wed Jun 11 05:26:55 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Wed, 11 Jun 2008 14:26:55 +0200
+Subject: [stringtemplate-interest] StringTemplate 3.2 released
+In-Reply-To: <001c01c8cbb6$7cd57730$a96aa8c0@engenion.lokal>
+References: <B4A06396-5175-4B56-B091-F414E33C1E32@cs.usfca.edu>
+	<001c01c8cbb6$7cd57730$a96aa8c0@engenion.lokal>
+Message-ID: <B569EC5E-10A8-40E1-807E-A02B670E3B50@cs.usfca.edu>
+
+Ah.  Is your a attribute in rest(a) an empty but nonnull list?
+Ter
+On Jun 11, 2008, at 1:30 PM, Rabea Gransberger wrote:
+
+> Hi Terence,
+>
+> i tried to use ST3.2 but get an exception:
+> java.util.NoSuchElementException
+> 	at
+> java.util.LinkedHashMap$LinkedHashIterator.nextEntry 
+> (LinkedHashMap.java:375)
+> 	at java.util.LinkedHashMap$KeyIterator.next(LinkedHashMap.java:384)
+> 	at org.antlr.stringtemplate.language.ASTExpr.rest(ASTExpr.java:951)
+> 	at
+> org.antlr.stringtemplate.language.ActionEvaluator.function 
+> (ActionEvaluator.j
+> ava:515)
+> 	at
+> org.antlr.stringtemplate.language.ActionEvaluator.expr 
+> (ActionEvaluator.java:
+> 148)
+> 	at
+> org.antlr.stringtemplate.language.ActionEvaluator.templateApplication( 
+> Action
+> Evaluator.java:216)
+> 	at
+> org.antlr.stringtemplate.language.ActionEvaluator.expr 
+> (ActionEvaluator.java:
+> 126)
+> 	at
+> org.antlr.stringtemplate.language.ActionEvaluator.action 
+> (ActionEvaluator.jav
+> a:84)
+> 	at org.antlr.stringtemplate.language.ASTExpr.write(ASTExpr.java:148)
+> 	at
+> org.antlr.stringtemplate.StringTemplate.write(StringTemplate.java:700)
+> 	at
+> org.antlr.stringtemplate.StringTemplate.toString 
+> (StringTemplate.java:1635)
+> 	at
+> org.antlr.stringtemplate.StringTemplate.toString 
+> (StringTemplate.java:1626)
+>
+> The same code works with 3.1. Do you have an idea what might be the  
+> problem?
+>
+> Rabea
+>
+> -----Urspr?ngliche Nachricht-----
+> Von: stringtemplate-interest-bounces at antlr.org
+> [mailto:stringtemplate-interest-bounces at antlr.org] Im Auftrag von  
+> Terence
+> Parr
+> Gesendet: Mittwoch, 11. Juni 2008 12:05
+> An: StringTemplate; Interest Interest
+> Betreff: [stringtemplate-interest] StringTemplate 3.2 released
+>
+> http://www.antlr.org/wiki/display/ST/3.2+Release+Notes
+>
+> http://www.stringtemplate.org/download.html
+>
+> Ter
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+
+From parrt at cs.usfca.edu  Wed Jun 11 05:39:35 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Wed, 11 Jun 2008 14:39:35 +0200
+Subject: [stringtemplate-interest] StringTemplate 3.2 released
+In-Reply-To: <001c01c8cbb6$7cd57730$a96aa8c0@engenion.lokal>
+References: <B4A06396-5175-4B56-B091-F414E33C1E32@cs.usfca.edu>
+	<001c01c8cbb6$7cd57730$a96aa8c0@engenion.lokal>
+Message-ID: <93B64D34-161F-48D3-92A2-B0558E3FD416@cs.usfca.edu>
+
+Fixed. try grabbing again.
+Ter
+On Jun 11, 2008, at 1:30 PM, Rabea Gransberger wrote:
+
+> Hi Terence,
+>
+> i tried to use ST3.2 but get an exception:
+> java.util.NoSuchElementException
+> 	at
+> java.util.LinkedHashMap$LinkedHashIterator.nextEntry 
+> (LinkedHashMap.java:375)
+> 	at java.util.LinkedHashMap$KeyIterator.next(LinkedHashMap.java:384)
+> 	at org.antlr.stringtemplate.language.ASTExpr.rest(ASTExpr.java:951)
+> 	at
+> org.antlr.stringtemplate.language.ActionEvaluator.function 
+> (ActionEvaluator.j
+> ava:515)
+> 	at
+> org.antlr.stringtemplate.language.ActionEvaluator.expr 
+> (ActionEvaluator.java:
+> 148)
+> 	at
+> org.antlr.stringtemplate.language.ActionEvaluator.templateApplication( 
+> Action
+> Evaluator.java:216)
+> 	at
+> org.antlr.stringtemplate.language.ActionEvaluator.expr 
+> (ActionEvaluator.java:
+> 126)
+> 	at
+> org.antlr.stringtemplate.language.ActionEvaluator.action 
+> (ActionEvaluator.jav
+> a:84)
+> 	at org.antlr.stringtemplate.language.ASTExpr.write(ASTExpr.java:148)
+> 	at
+> org.antlr.stringtemplate.StringTemplate.write(StringTemplate.java:700)
+> 	at
+> org.antlr.stringtemplate.StringTemplate.toString 
+> (StringTemplate.java:1635)
+> 	at
+> org.antlr.stringtemplate.StringTemplate.toString 
+> (StringTemplate.java:1626)
+>
+> The same code works with 3.1. Do you have an idea what might be the  
+> problem?
+>
+> Rabea
+>
+> -----Urspr?ngliche Nachricht-----
+> Von: stringtemplate-interest-bounces at antlr.org
+> [mailto:stringtemplate-interest-bounces at antlr.org] Im Auftrag von  
+> Terence
+> Parr
+> Gesendet: Mittwoch, 11. Juni 2008 12:05
+> An: StringTemplate; Interest Interest
+> Betreff: [stringtemplate-interest] StringTemplate 3.2 released
+>
+> http://www.antlr.org/wiki/display/ST/3.2+Release+Notes
+>
+> http://www.stringtemplate.org/download.html
+>
+> Ter
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+
+From rgransberger at gmx.de  Wed Jun 11 06:26:02 2008
+From: rgransberger at gmx.de (Rabea Gransberger)
+Date: Wed, 11 Jun 2008 15:26:02 +0200
+Subject: [stringtemplate-interest] StringTemplate 3.2 released
+In-Reply-To: <93B64D34-161F-48D3-92A2-B0558E3FD416@cs.usfca.edu>
+References: <B4A06396-5175-4B56-B091-F414E33C1E32@cs.usfca.edu>
+	<001c01c8cbb6$7cd57730$a96aa8c0@engenion.lokal>
+	<93B64D34-161F-48D3-92A2-B0558E3FD416@cs.usfca.edu>
+Message-ID: <001e01c8cbc6$b2240f90$a96aa8c0@engenion.lokal>
+
+That's better. Thanks. 
+
+But have a look at the new archive file again. It contains to much folders I
+think. I had to take the stringtemplate.jar out of the release-3.2/libjar
+folder.
+
+-----Urspr?ngliche Nachricht-----
+Von: Terence Parr [mailto:parrt at cs.usfca.edu] 
+Gesendet: Mittwoch, 11. Juni 2008 14:40
+An: Rabea Gransberger
+Cc: stringtemplate-interest at antlr.org
+Betreff: Re: [stringtemplate-interest] StringTemplate 3.2 released
+
+Fixed. try grabbing again.
+Ter
+On Jun 11, 2008, at 1:30 PM, Rabea Gransberger wrote:
+
+> Hi Terence,
+>
+> i tried to use ST3.2 but get an exception:
+> java.util.NoSuchElementException
+> 	at
+> java.util.LinkedHashMap$LinkedHashIterator.nextEntry
+> (LinkedHashMap.java:375)
+> 	at java.util.LinkedHashMap$KeyIterator.next(LinkedHashMap.java:384)
+> 	at org.antlr.stringtemplate.language.ASTExpr.rest(ASTExpr.java:951)
+> 	at
+> org.antlr.stringtemplate.language.ActionEvaluator.function
+> (ActionEvaluator.j
+> ava:515)
+> 	at
+> org.antlr.stringtemplate.language.ActionEvaluator.expr
+> (ActionEvaluator.java:
+> 148)
+> 	at
+> org.antlr.stringtemplate.language.ActionEvaluator.templateApplication(
+> Action
+> Evaluator.java:216)
+> 	at
+> org.antlr.stringtemplate.language.ActionEvaluator.expr
+> (ActionEvaluator.java:
+> 126)
+> 	at
+> org.antlr.stringtemplate.language.ActionEvaluator.action
+> (ActionEvaluator.jav
+> a:84)
+> 	at org.antlr.stringtemplate.language.ASTExpr.write(ASTExpr.java:148)
+> 	at
+> org.antlr.stringtemplate.StringTemplate.write(StringTemplate.java:700)
+> 	at
+> org.antlr.stringtemplate.StringTemplate.toString
+> (StringTemplate.java:1635)
+> 	at
+> org.antlr.stringtemplate.StringTemplate.toString
+> (StringTemplate.java:1626)
+>
+> The same code works with 3.1. Do you have an idea what might be the 
+> problem?
+>
+> Rabea
+>
+> -----Urspr?ngliche Nachricht-----
+> Von: stringtemplate-interest-bounces at antlr.org
+> [mailto:stringtemplate-interest-bounces at antlr.org] Im Auftrag von 
+> Terence Parr
+> Gesendet: Mittwoch, 11. Juni 2008 12:05
+> An: StringTemplate; Interest Interest
+> Betreff: [stringtemplate-interest] StringTemplate 3.2 released
+>
+> http://www.antlr.org/wiki/display/ST/3.2+Release+Notes
+>
+> http://www.stringtemplate.org/download.html
+>
+> Ter
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+
+From parrt at cs.usfca.edu  Wed Jun 11 07:14:19 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Wed, 11 Jun 2008 16:14:19 +0200
+Subject: [stringtemplate-interest] StringTemplate 3.2 released
+In-Reply-To: <001e01c8cbc6$b2240f90$a96aa8c0@engenion.lokal>
+References: <B4A06396-5175-4B56-B091-F414E33C1E32@cs.usfca.edu>
+	<001c01c8cbb6$7cd57730$a96aa8c0@engenion.lokal>
+	<93B64D34-161F-48D3-92A2-B0558E3FD416@cs.usfca.edu>
+	<001e01c8cbc6$b2240f90$a96aa8c0@engenion.lokal>
+Message-ID: <3864057B-F2F3-4D81-9DD2-8A615EC099A1@cs.usfca.edu>
+
+Thanks. Fixed.
+Ter
+On Jun 11, 2008, at 3:26 PM, Rabea Gransberger wrote:
+
+> That's better. Thanks.
+>
+> But have a look at the new archive file again. It contains to much  
+> folders I
+> think. I had to take the stringtemplate.jar out of the release-3.2/ 
+> libjar
+> folder.
+>
+> -----Urspr?ngliche Nachricht-----
+> Von: Terence Parr [mailto:parrt at cs.usfca.edu]
+> Gesendet: Mittwoch, 11. Juni 2008 14:40
+> An: Rabea Gransberger
+> Cc: stringtemplate-interest at antlr.org
+> Betreff: Re: [stringtemplate-interest] StringTemplate 3.2 released
+>
+> Fixed. try grabbing again.
+> Ter
+> On Jun 11, 2008, at 1:30 PM, Rabea Gransberger wrote:
+>
+>> Hi Terence,
+>>
+>> i tried to use ST3.2 but get an exception:
+>> java.util.NoSuchElementException
+>> 	at
+>> java.util.LinkedHashMap$LinkedHashIterator.nextEntry
+>> (LinkedHashMap.java:375)
+>> 	at java.util.LinkedHashMap$KeyIterator.next(LinkedHashMap.java:384)
+>> 	at org.antlr.stringtemplate.language.ASTExpr.rest(ASTExpr.java:951)
+>> 	at
+>> org.antlr.stringtemplate.language.ActionEvaluator.function
+>> (ActionEvaluator.j
+>> ava:515)
+>> 	at
+>> org.antlr.stringtemplate.language.ActionEvaluator.expr
+>> (ActionEvaluator.java:
+>> 148)
+>> 	at
+>> org.antlr.stringtemplate.language.ActionEvaluator.templateApplication 
+>> (
+>> Action
+>> Evaluator.java:216)
+>> 	at
+>> org.antlr.stringtemplate.language.ActionEvaluator.expr
+>> (ActionEvaluator.java:
+>> 126)
+>> 	at
+>> org.antlr.stringtemplate.language.ActionEvaluator.action
+>> (ActionEvaluator.jav
+>> a:84)
+>> 	at org.antlr.stringtemplate.language.ASTExpr.write(ASTExpr.java:148)
+>> 	at
+>> org.antlr.stringtemplate.StringTemplate.write(StringTemplate.java: 
+>> 700)
+>> 	at
+>> org.antlr.stringtemplate.StringTemplate.toString
+>> (StringTemplate.java:1635)
+>> 	at
+>> org.antlr.stringtemplate.StringTemplate.toString
+>> (StringTemplate.java:1626)
+>>
+>> The same code works with 3.1. Do you have an idea what might be the
+>> problem?
+>>
+>> Rabea
+>>
+>> -----Urspr?ngliche Nachricht-----
+>> Von: stringtemplate-interest-bounces at antlr.org
+>> [mailto:stringtemplate-interest-bounces at antlr.org] Im Auftrag von
+>> Terence Parr
+>> Gesendet: Mittwoch, 11. Juni 2008 12:05
+>> An: StringTemplate; Interest Interest
+>> Betreff: [stringtemplate-interest] StringTemplate 3.2 released
+>>
+>> http://www.antlr.org/wiki/display/ST/3.2+Release+Notes
+>>
+>> http://www.stringtemplate.org/download.html
+>>
+>> Ter
+>> _______________________________________________
+>> stringtemplate-interest mailing list
+>> stringtemplate-interest at antlr.org
+>> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>>
+>> _______________________________________________
+>> stringtemplate-interest mailing list
+>> stringtemplate-interest at antlr.org
+>> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>
+
+
+From jaiatpm at yahoo.com  Sun Jun 15 18:08:19 2008
+From: jaiatpm at yahoo.com (Jeyaram Gurusamy)
+Date: Sun, 15 Jun 2008 18:08:19 -0700 (PDT)
+Subject: [stringtemplate-interest] Conflict with jQuery's $
+Message-ID: <839837.90139.qm@web38202.mail.mud.yahoo.com>
+
+Dear All,
+
+I am just starting with StringTemplate. I am afraid that it could have been answered already but  I wasn't able to search the newsgroup archives.
+
+ST seems to conflict with jQuery's $. The following code
+
+   $("something").something
+
+throws this error
+
+action parse error in group mainGroup line 0; template context is [context_name]
+line 1:20: unexpected token: .
+    at org.antlr.stringtemplate.language.ActionParser.action(ActionParser.java:143)
+    at org.antlr.stringtemplate.StringTemplate.parseAction(StringTemplate.java:879)
+
+Is it a known problem? Is there a solution to it?
+
+I understand that we shall change jQuery's $ to something else as it is just an alias to jQuery itself. But is there any other solution without touching jQuery's $?
+
+
+Thank you very much for your time.
+
+Regards
+Jeyaram
+
+
+      
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20080615/d4e85371/attachment.html 
+
+From parrt at cs.usfca.edu  Sun Jun 15 23:30:56 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Mon, 16 Jun 2008 08:30:56 +0200
+Subject: [stringtemplate-interest] Conflict with jQuery's $
+In-Reply-To: <839837.90139.qm@web38202.mail.mud.yahoo.com>
+References: <839837.90139.qm@web38202.mail.mud.yahoo.com>
+Message-ID: <ADEEF3AE-63DA-4896-88BC-5DA2C74E3DD8@cs.usfca.edu>
+
+hi. try \$ and also can use <...> delimiters :)
+Ter
+On Jun 16, 2008, at 3:08 AM, Jeyaram Gurusamy wrote:
+
+> Dear All,
+>
+> I am just starting with StringTemplate. I am afraid that it could  
+> have been answered already but I wasn't able to search the  
+> newsgroup archives.
+>
+> ST seems to conflict with jQuery's $. The following code
+>
+>    $("something").something
+>
+> throws this error
+>
+> action parse error in group mainGroup line 0; template context is  
+> [context_name]
+> line 1:20: unexpected token: .
+>     at org.antlr.stringtemplate.language.ActionParser.action 
+> (ActionParser.java:143)
+>     at org.antlr.stringtemplate.StringTemplate.parseAction 
+> (StringTemplate.java:879)
+>
+> Is it a known problem? Is there a solution to it?
+>
+> I understand that we shall change jQuery's $ to something else as  
+> it is just an alias to jQuery itself. But is there any other  
+> solution without touching jQuery's $?
+>
+>
+> Thank you very much for your time.
+>
+> Regards
+> Jeyaram
+>
+>
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+
+From bob.foltrigg at gmail.com  Mon Jun 16 07:48:47 2008
+From: bob.foltrigg at gmail.com (bob foltrigg)
+Date: Mon, 16 Jun 2008 16:48:47 +0200
+Subject: [stringtemplate-interest] pystringtemplate 2.2 UnicodeDecodeError
+	-- been fixed?
+Message-ID: <e50835b20806160748x36f21deem8461c57ccbca0f94@mail.gmail.com>
+
+Hi all,
+It seems like I'm affected by the same error as Bohumil Simcik (was)
+as mentioned by him in a posting sent to this list last May (archived
+under http://www.antlr.org:8080/pipermail/stringtemplate-interest/2007-May/001052.html)
+Terence's response was that the source of the bug is caused by PyST
+lagging behind the other versions (see next message by thread after
+the previous one in the archives).
+My question would be whether this failure has been appointed to
+anybody since then, if not, then what steps should I take be allowed
+to submit my solution for it.
+Thank You,
+-Bob.
+
+From pink at odahoda.de  Mon Jun 16 08:04:23 2008
+From: pink at odahoda.de (Benjamin Niemann)
+Date: Mon, 16 Jun 2008 17:04:23 +0200
+Subject: [stringtemplate-interest] pystringtemplate 2.2
+	UnicodeDecodeError -- been fixed?
+In-Reply-To: <e50835b20806160748x36f21deem8461c57ccbca0f94@mail.gmail.com>
+References: <e50835b20806160748x36f21deem8461c57ccbca0f94@mail.gmail.com>
+Message-ID: <543531490806160804h6e84aacbx1140131fa2bd1d96@mail.gmail.com>
+
+Hi Bob,
+
+I upgraded stringtemplate for Python to V3.1. I haven't looked too
+deep into unicode support though.
+Are you still having these problems with 3.1?
+
+-Ben
+
+
+On Mon, Jun 16, 2008 at 4:48 PM, bob foltrigg <bob.foltrigg at gmail.com> wrote:
+> Hi all,
+> It seems like I'm affected by the same error as Bohumil Simcik (was)
+> as mentioned by him in a posting sent to this list last May (archived
+> under http://www.antlr.org:8080/pipermail/stringtemplate-interest/2007-May/001052.html)
+> Terence's response was that the source of the bug is caused by PyST
+> lagging behind the other versions (see next message by thread after
+> the previous one in the archives).
+> My question would be whether this failure has been appointed to
+> anybody since then, if not, then what steps should I take be allowed
+> to submit my solution for it.
+> Thank You,
+> -Bob.
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>
+
+From bob.foltrigg at gmail.com  Mon Jun 16 11:39:17 2008
+From: bob.foltrigg at gmail.com (bob foltrigg)
+Date: Mon, 16 Jun 2008 20:39:17 +0200
+Subject: [stringtemplate-interest] pystringtemplate 2.2
+	UnicodeDecodeError -- been fixed?
+In-Reply-To: <543531490806160804h6e84aacbx1140131fa2bd1d96@mail.gmail.com>
+References: <e50835b20806160748x36f21deem8461c57ccbca0f94@mail.gmail.com>
+	<543531490806160804h6e84aacbx1140131fa2bd1d96@mail.gmail.com>
+Message-ID: <e50835b20806161139g4b5a76eycae0adad0d650bec@mail.gmail.com>
+
+Hi,
+thank you for the quick answer. I'm using V3.1 and have the problems
+described. I can get around the bug right now, because my templates
+are HTMLs and can substitute characters for HTML entites, but in the
+future I'd like to see proper Unicode support in PyST. Haven't
+investigated the problem myself either but I'm ready to contribute
+whatever I can come up with if it can help.
+-Bob.
+
+On Mon, Jun 16, 2008 at 5:04 PM, Benjamin Niemann <pink at odahoda.de> wrote:
+> Hi Bob,
+>
+> I upgraded stringtemplate for Python to V3.1. I haven't looked too
+> deep into unicode support though.
+> Are you still having these problems with 3.1?
+>
+> -Ben
+>
+>
+> On Mon, Jun 16, 2008 at 4:48 PM, bob foltrigg <bob.foltrigg at gmail.com> wrote:
+>> Hi all,
+>> It seems like I'm affected by the same error as Bohumil Simcik (was)
+>> as mentioned by him in a posting sent to this list last May (archived
+>> under http://www.antlr.org:8080/pipermail/stringtemplate-interest/2007-May/001052.html)
+>> Terence's response was that the source of the bug is caused by PyST
+>> lagging behind the other versions (see next message by thread after
+>> the previous one in the archives).
+>> My question would be whether this failure has been appointed to
+>> anybody since then, if not, then what steps should I take be allowed
+>> to submit my solution for it.
+>> Thank You,
+>> -Bob.
+>> _______________________________________________
+>> stringtemplate-interest mailing list
+>> stringtemplate-interest at antlr.org
+>> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>>
+>
+
+From hello at neelo.com  Tue Jun 17 20:31:03 2008
+From: hello at neelo.com (Bilal Bhatti)
+Date: Tue, 17 Jun 2008 23:31:03 -0400
+Subject: [stringtemplate-interest] Conflict with jQuery's $
+In-Reply-To: <ADEEF3AE-63DA-4896-88BC-5DA2C74E3DD8@cs.usfca.edu>
+References: <839837.90139.qm@web38202.mail.mud.yahoo.com>
+	<ADEEF3AE-63DA-4896-88BC-5DA2C74E3DD8@cs.usfca.edu>
+Message-ID: <c4f63d540806172031x2135cacfr2af528d78472304c@mail.gmail.com>
+
+Hi,
+
+I ran into the same issue. Escaping $ with \$ works but it is not an ideal
+solution. Also, using <..> is even worse, as if you are using jQuery you are
+probably in a webapp and then wouldn't that conflict with HTML tags?
+
+I think the way ST delimits an expression could be better. Velocity doesn't
+have any problem with expressions like these or using $ for jQuery. May be
+it ST could ignore a single $ and only attempt to evaluate an expression
+that has a closing $, like $.....$.
+
+Thanks.
+
+BTW: I really like ST :)
+
+On Mon, Jun 16, 2008 at 2:30 AM, Terence Parr <parrt at cs.usfca.edu> wrote:
+
+> hi. try \$ and also can use <...> delimiters :)
+> Ter
+> On Jun 16, 2008, at 3:08 AM, Jeyaram Gurusamy wrote:
+>
+> > Dear All,
+> >
+> > I am just starting with StringTemplate. I am afraid that it could
+> > have been answered already but I wasn't able to search the
+> > newsgroup archives.
+> >
+> > ST seems to conflict with jQuery's $. The following code
+> >
+> >    $("something").something
+> >
+> > throws this error
+> >
+> > action parse error in group mainGroup line 0; template context is
+> > [context_name]
+> > line 1:20: unexpected token: .
+> >     at org.antlr.stringtemplate.language.ActionParser.action
+> > (ActionParser.java:143)
+> >     at org.antlr.stringtemplate.StringTemplate.parseAction
+> > (StringTemplate.java:879)
+> >
+> > Is it a known problem? Is there a solution to it?
+> >
+> > I understand that we shall change jQuery's $ to something else as
+> > it is just an alias to jQuery itself. But is there any other
+> > solution without touching jQuery's $?
+> >
+> >
+> > Thank you very much for your time.
+> >
+> > Regards
+> > Jeyaram
+> >
+> >
+> > _______________________________________________
+> > stringtemplate-interest mailing list
+> > stringtemplate-interest at antlr.org
+> > http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20080617/0e7d196a/attachment.html 
+
+From parrt at cs.usfca.edu  Wed Jun 18 07:43:19 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Wed, 18 Jun 2008 15:43:19 +0100
+Subject: [stringtemplate-interest] Conflict with jQuery's $
+In-Reply-To: <c4f63d540806172031x2135cacfr2af528d78472304c@mail.gmail.com>
+References: <839837.90139.qm@web38202.mail.mud.yahoo.com>
+	<ADEEF3AE-63DA-4896-88BC-5DA2C74E3DD8@cs.usfca.edu>
+	<c4f63d540806172031x2135cacfr2af528d78472304c@mail.gmail.com>
+Message-ID: <7CDED888-E94F-472B-BC53-2999F003688E@cs.usfca.edu>
+
+Howdy.  I'm using ANTLR to parse the expressions and so it likes  
+fixed delimiters. sorry!
+Ter
+On Jun 18, 2008, at 4:31 AM, Bilal Bhatti wrote:
+
+> Hi,
+>
+> I ran into the same issue. Escaping $ with \$ works but it is not  
+> an ideal solution. Also, using <..> is even worse, as if you are  
+> using jQuery you are probably in a webapp and then wouldn't that  
+> conflict with HTML tags?
+>
+> I think the way ST delimits an expression could be better. Velocity  
+> doesn't have any problem with expressions like these or using $ for  
+> jQuery. May be it ST could ignore a single $ and only attempt to  
+> evaluate an expression that has a closing $, like $.....$.
+>
+> Thanks.
+>
+> BTW: I really like ST :)
+>
+> On Mon, Jun 16, 2008 at 2:30 AM, Terence Parr <parrt at cs.usfca.edu>  
+> wrote:
+> hi. try \$ and also can use <...> delimiters :)
+> Ter
+> On Jun 16, 2008, at 3:08 AM, Jeyaram Gurusamy wrote:
+>
+> > Dear All,
+> >
+> > I am just starting with StringTemplate. I am afraid that it could
+> > have been answered already but I wasn't able to search the
+> > newsgroup archives.
+> >
+> > ST seems to conflict with jQuery's $. The following code
+> >
+> >    $("something").something
+> >
+> > throws this error
+> >
+> > action parse error in group mainGroup line 0; template context is
+> > [context_name]
+> > line 1:20: unexpected token: .
+> >     at org.antlr.stringtemplate.language.ActionParser.action
+> > (ActionParser.java:143)
+> >     at org.antlr.stringtemplate.StringTemplate.parseAction
+> > (StringTemplate.java:879)
+> >
+> > Is it a known problem? Is there a solution to it?
+> >
+> > I understand that we shall change jQuery's $ to something else as
+> > it is just an alias to jQuery itself. But is there any other
+> > solution without touching jQuery's $?
+> >
+> >
+> > Thank you very much for your time.
+> >
+> > Regards
+> > Jeyaram
+> >
+> >
+> > _______________________________________________
+> > stringtemplate-interest mailing list
+> > stringtemplate-interest at antlr.org
+> > http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+
+From jdmitchell at gmail.com  Wed Jun 18 08:35:04 2008
+From: jdmitchell at gmail.com (John D. Mitchell)
+Date: Wed, 18 Jun 2008 08:35:04 -0700
+Subject: [stringtemplate-interest] Conflict with jQuery's $
+In-Reply-To: <7CDED888-E94F-472B-BC53-2999F003688E@cs.usfca.edu>
+References: <839837.90139.qm@web38202.mail.mud.yahoo.com>
+	<ADEEF3AE-63DA-4896-88BC-5DA2C74E3DD8@cs.usfca.edu>
+	<c4f63d540806172031x2135cacfr2af528d78472304c@mail.gmail.com>
+	<7CDED888-E94F-472B-BC53-2999F003688E@cs.usfca.edu>
+Message-ID: <BB6AD2FD-ABAB-44D2-9FC2-7B8C866AFB90@gmail.com>
+
+On Wednesday 2008.06.18, at 07:43 , Terence Parr wrote:
+[...]
+> Howdy.  I'm using ANTLR to parse the expressions and so it likes
+> fixed delimiters. sorry!
+
+Given that this bastardization of $ by JavaScript packages like jQuery  
+is *very* prevalent... Perhaps another (couple) of supported  
+alternatives should be added to ST?  E.g., % and ^ come to mind as  
+good options.
+
+John
+
+
+From cpizzi at nis-retail.com  Wed Jun 18 09:55:13 2008
+From: cpizzi at nis-retail.com (Chris Pizzi)
+Date: Wed, 18 Jun 2008 12:55:13 -0400
+Subject: [stringtemplate-interest] problem with simple group inheritance
+Message-ID: <48593DF1.5040907@nis-retail.com>
+
+I am having a problem with simple group inheritance in Python
+stringtemplate 3.1.  It seems that if a template is not found under the
+sub-group's root directory, it never tries to find it in the super-group's.
+
+Given this directory layout:
+
+./super/sup.st
+./sub/sub.st
+
+with super.st containing:
+
+SUPER
+
+and sub.st containing:
+
+SUB $sup()$
+
+I would expect the following to yield "SUB SUPER", however I get an
+error instead:
+
+ >>> from stringtemplate3 import StringTemplateGroup
+ >>> sup = StringTemplateGroup("super","./super")
+ >>> sub = StringTemplateGroup("sub","./sub")
+ >>> sub.superGroup = sup
+ >>> print sub.getInstanceOf("sub")
+ Got IOError writing to writerAutoIndentWriter
+ SUB
+ >>>
+
+Am I misunderstanding inheritance, or is this actually a problem?  For
+now I have patched groups.py to make it behave the way I'm expecting:
+
+--- groups.py   2008-06-18 12:36:30.000000000 -0400
++++ /tmp/groups.py      2008-06-18 12:43:48.000000000 -0400
+@@ -477,6 +477,8 @@
+                     br.close()
+
+             # FIXME: eek, that's ugly
++            except IOError:
++                template = None
+             except Exception, e:
+                 raise
+
+-- 
+Chris Pizzi
+Sr. Programmer
+National In-Store
+
+
+2 N aTamiami Trail, 9th Fl
+Sarasota, FL 34236
+Phone 941-554-2685
+Mobile 941-586-6004
+
+www.nis-retail.com
+
+
+Notice: This communication may contain privileged or other confidential
+information. If you have received it in error, please advise the sender
+by reply email and immediately delete the message and any attachments
+without copying or disclosing the contents. Thank you.
+
+
+
+
+From parrt at cs.usfca.edu  Wed Jun 18 12:10:58 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Wed, 18 Jun 2008 20:10:58 +0100
+Subject: [stringtemplate-interest] Conflict with jQuery's $
+In-Reply-To: <BB6AD2FD-ABAB-44D2-9FC2-7B8C866AFB90@gmail.com>
+References: <839837.90139.qm@web38202.mail.mud.yahoo.com>
+	<ADEEF3AE-63DA-4896-88BC-5DA2C74E3DD8@cs.usfca.edu>
+	<c4f63d540806172031x2135cacfr2af528d78472304c@mail.gmail.com>
+	<7CDED888-E94F-472B-BC53-2999F003688E@cs.usfca.edu>
+	<BB6AD2FD-ABAB-44D2-9FC2-7B8C866AFB90@gmail.com>
+Message-ID: <37CD1CB4-C416-4C20-9073-1BA3DDF9058D@cs.usfca.edu>
+
+I'm not opposed to such, though it means cut-n-paste of a lexer...i  
+wonder if I can factor that.
+ter
+On Jun 18, 2008, at 4:35 PM, John D. Mitchell wrote:
+
+> On Wednesday 2008.06.18, at 07:43 , Terence Parr wrote:
+> [...]
+>> Howdy.  I'm using ANTLR to parse the expressions and so it likes
+>> fixed delimiters. sorry!
+>
+> Given that this bastardization of $ by JavaScript packages like jQuery
+> is *very* prevalent... Perhaps another (couple) of supported
+> alternatives should be added to ST?  E.g., % and ^ come to mind as
+> good options.
+>
+> John
+>
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+
+From zen at freedbms.net  Thu Jun 19 20:41:18 2008
+From: zen at freedbms.net (Zenaan Harkness)
+Date: Fri, 20 Jun 2008 13:41:18 +1000
+Subject: [stringtemplate-interest] problem with simple group inheritance
+In-Reply-To: <48593DF1.5040907@nis-retail.com>
+References: <48593DF1.5040907@nis-retail.com>
+Message-ID: <20080620034118.GD8120@freedbms.net>
+
+On Wed, Jun 18, 2008 at 12:55:13PM -0400, Chris Pizzi wrote:
+> I am having a problem with simple group inheritance in Python
+> stringtemplate 3.1.  It seems that if a template is not found under the
+> sub-group's root directory, it never tries to find it in the super-group's.
+> 
+> Given this directory layout:
+> 
+> ./super/sup.st
+> ./sub/sub.st
+> 
+> with super.st containing:
+> 
+> SUPER
+> 
+> and sub.st containing:
+> 
+> SUB $sup()$
+> 
+> I would expect the following to yield "SUB SUPER", however I get an
+> error instead:
+> 
+>  >>> from stringtemplate3 import StringTemplateGroup
+>  >>> sup = StringTemplateGroup("super","./super")
+>  >>> sub = StringTemplateGroup("sub","./sub")
+>  >>> sub.superGroup = sup
+>  >>> print sub.getInstanceOf("sub")
+>  Got IOError writing to writerAutoIndentWriter
+>  SUB
+>  >>>
+> 
+> Am I misunderstanding inheritance, or is this actually a problem?  For
+> now I have patched groups.py to make it behave the way I'm expecting:
+
+Are you using group files, or separate template-per-st-file template
+files?
+
+My understanding of groups is that they work with group files (bunch of
+templates in a single file), and not with single template files.
+
+I use Java though, and not python...
+
+HTH
+
+-- 
+Homepage: www.SoulSound.net -- Free Australia: www.UPMART.org
+Please respect the confidentiality of this email as sensibly warranted.
+
+From cpizzi at nis-retail.com  Fri Jun 20 05:31:56 2008
+From: cpizzi at nis-retail.com (Chris Pizzi)
+Date: Fri, 20 Jun 2008 08:31:56 -0400
+Subject: [stringtemplate-interest] problem with simple group inheritance
+In-Reply-To: <20080620034118.GD8120@freedbms.net>
+References: <48593DF1.5040907@nis-retail.com>
+	<20080620034118.GD8120@freedbms.net>
+Message-ID: <485BA33C.4090606@nis-retail.com>
+
+Zenaan Harkness wrote:
+> On Wed, Jun 18, 2008 at 12:55:13PM -0400, Chris Pizzi wrote:
+>> I am having a problem with simple group inheritance in Python
+>> stringtemplate 3.1.  It seems that if a template is not found under
+>> the sub-group's root directory, it never tries to find it in the
+>> super-group's.
+>>
+>> Given this directory layout:
+>>
+>> ./super/sup.st ./sub/sub.st
+>>
+>> with super.st containing:
+>>
+>> SUPER
+>>
+>> and sub.st containing:
+>>
+>> SUB $sup()$
+>>
+>> I would expect the following to yield "SUB SUPER", however I get an
+>>  error instead:
+>>
+>>>>> from stringtemplate3 import StringTemplateGroup sup =
+>>>>> StringTemplateGroup("super","./super") sub =
+>>>>> StringTemplateGroup("sub","./sub") sub.superGroup = sup print
+>>>>> sub.getInstanceOf("sub")
+>> Got IOError writing to writerAutoIndentWriter SUB
+>>>>>
+>>
+>> Am I misunderstanding inheritance, or is this actually a problem?
+>> For now I have patched groups.py to make it behave the way I'm
+>> expecting:
+>
+> Are you using group files, or separate template-per-st-file template
+> files?
+
+I'm using groups of separate template-per-st files.
+
+>
+> My understanding of groups is that they work with group files (bunch
+> of templates in a single file), and not with single template files.
+>
+
+Inheritance of directory-based groups seems to be supported.  In the
+(both Java and Python) documentation under Template and Attribute Lookup
+Rules it says:
+
+> If a template t is associated with a group, but was not defined via a
+> group file format, lookup a referenced template in the group's
+> template table. If not there, look for it on the disk under the
+> group's root dir or via the CLASSPATH (it might have appeared
+> dynamically on disk). If not found, recursively look at any
+> supergroup of the group. If not found at all, record this fact and
+> don't look again on the disk until refresh interval.
+
+It's the "recursively look at any supergroup of the group" behavior that
+I'm looking for.
+
+-- 
+Chris Pizzi
+Sr. Programmer
+National In-Store
+
+
+2 N Tamiami Trail, 9th Fl
+Sarasota, FL 34236
+Phone 941-554-2685
+Mobile 941-586-6004
+
+www.nis-retail.com
+
+
+Notice: This communication may contain privileged or other confidential
+information. If you have received it in error, please advise the sender
+by reply email and immediately delete the message and any attachments
+without copying or disclosing the contents. Thank you.
+
+
+
+
+
+
+From pink at odahoda.de  Sat Jun 21 05:45:34 2008
+From: pink at odahoda.de (Benjamin Niemann)
+Date: Sat, 21 Jun 2008 14:45:34 +0200
+Subject: [stringtemplate-interest] Conflict with jQuery's $
+In-Reply-To: <37CD1CB4-C416-4C20-9073-1BA3DDF9058D@cs.usfca.edu>
+References: <839837.90139.qm@web38202.mail.mud.yahoo.com>
+	<ADEEF3AE-63DA-4896-88BC-5DA2C74E3DD8@cs.usfca.edu>
+	<c4f63d540806172031x2135cacfr2af528d78472304c@mail.gmail.com>
+	<7CDED888-E94F-472B-BC53-2999F003688E@cs.usfca.edu>
+	<BB6AD2FD-ABAB-44D2-9FC2-7B8C866AFB90@gmail.com>
+	<37CD1CB4-C416-4C20-9073-1BA3DDF9058D@cs.usfca.edu>
+Message-ID: <543531490806210545l1d9f33f9gb527c65433cb156c@mail.gmail.com>
+
+On Wed, Jun 18, 2008 at 9:10 PM, Terence Parr <parrt at cs.usfca.edu> wrote:
+> I'm not opposed to such, though it means cut-n-paste of a lexer...i
+> wonder if I can factor that.
+
+Perhaps another candidate for grammar inheritance? (and another
+incentive to migrate to antlr3 ;) )
+
+> ter
+> On Jun 18, 2008, at 4:35 PM, John D. Mitchell wrote:
+>
+>> On Wednesday 2008.06.18, at 07:43 , Terence Parr wrote:
+>> [...]
+>>> Howdy.  I'm using ANTLR to parse the expressions and so it likes
+>>> fixed delimiters. sorry!
+>>
+>> Given that this bastardization of $ by JavaScript packages like jQuery
+>> is *very* prevalent... Perhaps another (couple) of supported
+>> alternatives should be added to ST?  E.g., % and ^ come to mind as
+>> good options.
+>>
+>> John
+>>
+>> _______________________________________________
+>> stringtemplate-interest mailing list
+>> stringtemplate-interest at antlr.org
+>> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>
+
+From parrt at cs.usfca.edu  Sat Jun 21 07:10:10 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Sat, 21 Jun 2008 15:10:10 +0100
+Subject: [stringtemplate-interest] Conflict with jQuery's $
+In-Reply-To: <543531490806210545l1d9f33f9gb527c65433cb156c@mail.gmail.com>
+References: <839837.90139.qm@web38202.mail.mud.yahoo.com>
+	<ADEEF3AE-63DA-4896-88BC-5DA2C74E3DD8@cs.usfca.edu>
+	<c4f63d540806172031x2135cacfr2af528d78472304c@mail.gmail.com>
+	<7CDED888-E94F-472B-BC53-2999F003688E@cs.usfca.edu>
+	<BB6AD2FD-ABAB-44D2-9FC2-7B8C866AFB90@gmail.com>
+	<37CD1CB4-C416-4C20-9073-1BA3DDF9058D@cs.usfca.edu>
+	<543531490806210545l1d9f33f9gb527c65433cb156c@mail.gmail.com>
+Message-ID: <799B85F2-4117-4967-BB64-3728315B6411@cs.usfca.edu>
+
+
+On Jun 21, 2008, at 1:45 PM, Benjamin Niemann wrote:
+
+> On Wed, Jun 18, 2008 at 9:10 PM, Terence Parr <parrt at cs.usfca.edu>  
+> wrote:
+>> I'm not opposed to such, though it means cut-n-paste of a lexer...i
+>> wonder if I can factor that.
+>
+> Perhaps another candidate for grammar inheritance? (and another
+> incentive to migrate to antlr3 ;) )
+
+Yep.  My guess is about 9 months from now.
+
+Ter
+
+From canjren at yahoo.com  Thu Jun 26 10:38:44 2008
+From: canjren at yahoo.com (Can Zhen)
+Date: Thu, 26 Jun 2008 10:38:44 -0700 (PDT)
+Subject: [stringtemplate-interest] Get java.lang.NoClassDefFoundError when
+	working with StringTemplate 3.0?
+Message-ID: <655274.5132.qm@web39705.mail.mud.yahoo.com>
+
+
+
+I used the example on page 220 of the book "The Definitive ANTLR Reference" to test Antlr 3.0.1 with StringTemplate 3.0. I put the generated lexer and parser java class into the src folder of my project and created a test program to test it. But it failed with?java.lang.NoClassDefFoundError.? It failed when executing the following codes in the parser:
+protected StringTemplateGroup templateLib =
+new StringTemplateGroup("CMinusParserTemplates", AngleBracketTemplateLexer.class);
+?
+I already added the antlr and stringtemplate jar files as external jar files on Eclipse. Any ideas why it failed?
+?
+Thanks!
+
+
+      
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20080626/f719a0cc/attachment.html 
+
+From rgransberger at gmx.de  Thu Jun 26 10:42:49 2008
+From: rgransberger at gmx.de (Rabea Gransberger)
+Date: Thu, 26 Jun 2008 19:42:49 +0200
+Subject: [stringtemplate-interest] Get java.lang.NoClassDefFoundError
+ when	working with StringTemplate 3.0?
+In-Reply-To: <655274.5132.qm@web39705.mail.mud.yahoo.com>
+References: <655274.5132.qm@web39705.mail.mud.yahoo.com>
+Message-ID: <4863D519.6070407@gmx.de>
+
+Hi,
+
+can you post the full stacktrace? It gives a clue what is exactly missing.
+
+Do you get any compile errors?
+
+Can Zhen schrieb:
+> 
+> I used the example on page 220 of the book "The Definitive ANTLR Reference" to test Antlr 3.0.1 with StringTemplate 3.0. I put the generated lexer and parser java class into the src folder of my project and created a test program to test it. But it failed with java.lang.NoClassDefFoundError.  It failed when executing the following codes in the parser:
+> protected StringTemplateGroup templateLib =
+> new StringTemplateGroup("CMinusParserTemplates", AngleBracketTemplateLexer.class);
+>  
+> I already added the antlr and stringtemplate jar files as external jar files on Eclipse. Any ideas why it failed?
+>  
+> Thanks!
+> 
+> 
+>       
+> 
+> 
+> ------------------------------------------------------------------------
+> 
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+
+From weidagang2046 at gmail.com  Sun Jun 29 18:17:24 2008
+From: weidagang2046 at gmail.com (=?ISO-8859-1?B?VG9kZA==?=)
+Date: Mon, 30 Jun 2008 09:17:24 +0800
+Subject: [stringtemplate-interest] Can StringTemplate do some control based
+	on attribute type or value?
+Message-ID: <tencent_1A600F2F7DD148993FC5AB64@qq.com>
+
+Take the email template example from http://www.cs.usfca.edu/~parrt/course/601/lectures/stringtemplate.html, I want to get "emails" or "email" in different cases, not a "email(s)" in general. If the $email is muti-valued, I'd like to get "Your emails: aaa,bbb;", otherwise "Your email: aaa". Can ST do some text control within the template based on attribute type(muti-valued or single-valued) or attribute value(for 
+example: string length of the attribute value)?
+
+
+
+Example From: http://www.cs.usfca.edu/~parrt/course/601/lectures/stringtemplate.html
+
+==========================================================
+
+
+If your controller sets an attribute more than once, then that attribute is multi-valued.  Imagine the following controller code: 
+StringTemplate t =
+    new StringTemplate("Your email(s): $email; separator=\", \"$;");
+t.setAttribute("email", "parrt at antlr.org");
+t.setAttribute("email", "parrt at cs.usfca.edu");
+
+ 
+where I have specified an optional separator here. 
+
+All elements are converted to text and generated in order. The output would look like: 
+Your email(s): parrt at antlr.org, parrt at cs.usfca.edu;
+
+
+ ==========================================================
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20080630/bf9038b3/attachment.html 
+
+From darach at gmail.com  Mon Jun 30 13:56:12 2008
+From: darach at gmail.com (Darach Ennis)
+Date: Mon, 30 Jun 2008 21:56:12 +0100
+Subject: [stringtemplate-interest] Recursion in anonymous templates. Is it
+	possible with Stringtemplate?
+Message-ID: <4d596d820806301356w881d70l285273aa98fc34f0@mail.gmail.com>
+
+Hi guys,
+
+Is it possible to use StringTemplate recursion with anonymous templates in
+a similar way to how it is achieved in the Hierarchical Menu example in
+Section 9.3 of http://www.cs.usfca.edu/~parrt/papers/mvc.templates.pdf?
+
+Regards,
+
+Darach.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20080630/5b02c56d/attachment.html 
+

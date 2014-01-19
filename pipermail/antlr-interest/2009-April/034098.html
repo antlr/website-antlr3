@@ -1,0 +1,127 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Unexpected CommonTokenStream.Size() result in	CSharp runtime
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Unexpected%20CommonTokenStream.Size%28%29%20result%20in%0A%09CSharp%20runtime&In-Reply-To=%3C86403CA0939415448BCCB83855EFE09AA67E49%40Bloodymary.ironwillgames.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="034097.html">
+   <LINK REL="Next"  HREF="034066.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Unexpected CommonTokenStream.Size() result in	CSharp runtime</H1>
+    <B>Sam Harwell</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Unexpected%20CommonTokenStream.Size%28%29%20result%20in%0A%09CSharp%20runtime&In-Reply-To=%3C86403CA0939415448BCCB83855EFE09AA67E49%40Bloodymary.ironwillgames.com%3E"
+       TITLE="[antlr-interest] Unexpected CommonTokenStream.Size() result in	CSharp runtime">sharwell at pixelminegames.com
+       </A><BR>
+    <I>Fri Apr 17 16:17:27 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="034097.html">[antlr-interest] Unexpected CommonTokenStream.Size() result	in	CSharp runtime
+</A></li>
+        <LI>Next message: <A HREF="034066.html">[antlr-interest] Migrating from V2 to V3
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#34098">[ date ]</a>
+              <a href="thread.html#34098">[ thread ]</a>
+              <a href="subject.html#34098">[ subject ]</a>
+              <a href="author.html#34098">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>A few things to note:
+
+The new unbuffered token stream class (in for version 3.2 I believe) throws a NotSupportedException if you try to get its size.
+
+ITokenStream implements IIntStream, and you can't implement IEnumerable&lt;IToken&gt; and IEnumerable&lt;int&gt; on the same object with reliable results. I looked to the System.IO stream classes for reference, and found that streams are not enumerable. You should create a wrapper you want IEnumerable access to the tokens in the stream.
+
+Sam
+
+-----Original Message-----
+From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Johannes Luber
+Sent: Friday, April 17, 2009 6:06 PM
+To: Chris Lambrou; <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: Re: [antlr-interest] Unexpected CommonTokenStream.Size() resultin CSharp runtime
+
+&gt;<i> Yesterday I was stung by some odd behaviour in CommonTokenStream, whereby
+</I>&gt;<i> I
+</I>&gt;<i> was trying to iterate over the token stream looking for tokens of a
+</I>&gt;<i> specific
+</I>&gt;<i> type. Since ITokenStream doesn't implement IEnumerable, it appears that
+</I>&gt;<i> the
+</I>&gt;<i> way to do this is as follows:
+</I>&gt;<i> 
+</I>&gt;<i> for (int i = 0; i &lt; tokenStream.Size(); i++)
+</I>&gt;<i> {
+</I>&gt;<i>     IToken token = tokenStream.Get(i);
+</I>&gt;<i> 
+</I>&gt;<i>     //... do stuff with token...
+</I>&gt;<i> }
+</I>&gt;<i> 
+</I>&gt;<i> However, I was finding that tokenStream.Size() returned 0, despite my
+</I>&gt;<i> token
+</I>&gt;<i> stream being non-empty. It seems that the underlying stream is lazily
+</I>&gt;<i> populated internally, and CommonTokenStream.Size() doesn't trigger a load.
+</I>&gt;<i> I
+</I>&gt;<i> had to invoke tokenStream.LT(0) to trigger the lazy load prior to looping
+</I>&gt;<i> through the tokens. Is this intended behaviour? Does is happen in all of
+</I>&gt;<i> the
+</I>&gt;<i> different runtimes? If so, it's very counterintuitive.
+</I>
+I believe that this is the general behavior. While a load seems to be sensible here, please be aware that in ANTLR 3.2 the current CommonTokenStream will renamed into BufferedTokenStream, as well providing a new implementation for CommonTokenStream without any buffering. This would result in giving back only the number of already scanned tokens (if the class does count this - didn't check it yet).
+
+Quoting your other email: &quot;FWIW, as a relative newcomer to ANTLR, it seems to me that either CommonTokenStream isn't correctly honouring the ITokenSteam interface, or else perhaps ITokenStream ought to be updated to formalise CommonTokenStream's behaviour (though I'm not familiar enough with the other ITokenStream sub-classes to be sure about this).&quot;
+
+Actually, Size() (which you should change to Count anyway for the newest runtimes) is defined in IIntStream. Looking at the comment I think a change in all runtimes is required.
+&gt;<i> 
+</I>&gt;<i> Incidentally, could ITokenStream be updated to implement
+</I>&gt;<i> IEnumerable&lt;IToken&gt;
+</I>&gt;<i> please? Would others find this useful?
+</I>
+I don't know if there are classes (like the one for ASTs) which wouldn't work with IToken. Because my development machine is being repaired my capabilities are stark limited in checking things out. It may be more more sensible to turn ITokenStream itself generic. But changing interfaces breaks code depending on it directly. Not all people might use the provided implementing classes. In any case using generics requires the use of preprocessor symbols as the runtime has to remain .NET 1.1 compatible until 3.2.
+
+&gt;<i> I don't mind doing the work, but to
+</I>&gt;<i> whom should I submit a patch?
+</I>
+Being the C# target maintainer I'm the right man for discussing things pertaining it, as well for patches, but currently my internet presence will be spotty due to not having an own computer with internet for now.
+
+Johannes
+&gt;<i> 
+</I>&gt;<i> Chris
+</I>
+-- 
+Psssst! Schon vom neuen GMX MultiMessenger geh&#246;rt? Der kann`s mit allen: <A HREF="http://www.gmx.net/de/go/multimessenger01">http://www.gmx.net/de/go/multimessenger01</A>
+
+List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</PRE>
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="034097.html">[antlr-interest] Unexpected CommonTokenStream.Size() result	in	CSharp runtime
+</A></li>
+	<LI>Next message: <A HREF="034066.html">[antlr-interest] Migrating from V2 to V3
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#34098">[ date ]</a>
+              <a href="thread.html#34098">[ thread ]</a>
+              <a href="subject.html#34098">[ subject ]</a>
+              <a href="author.html#34098">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

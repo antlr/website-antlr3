@@ -1,0 +1,277 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Re: Semantic predicates that aren't &amp; hoisting
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20Semantic%20predicates%20that%20aren%27t%20%26%20hoisting&In-Reply-To=1509.172.23.0.3.1110603672.squirrel%40callisto.ornl.gov">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="011385.html">
+   <LINK REL="Next"  HREF="011389.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Re: Semantic predicates that aren't &amp; hoisting</H1>
+    <B>John D. Mitchell</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20Semantic%20predicates%20that%20aren%27t%20%26%20hoisting&In-Reply-To=1509.172.23.0.3.1110603672.squirrel%40callisto.ornl.gov"
+       TITLE="[antlr-interest] Re: Semantic predicates that aren't &amp; hoisting">johnm-antlr at non.net
+       </A><BR>
+    <I>Sat Mar 12 10:01:26 PST 2005</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="011385.html">[antlr-interest] Re: Semantic predicates that aren't &amp; hoisting
+</A></li>
+        <LI>Next message: <A HREF="011389.html">[antlr-interest] Re: Semantic predicates that aren't &amp; hoisting
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#11387">[ date ]</a>
+              <a href="thread.html#11387">[ thread ]</a>
+              <a href="subject.html#11387">[ subject ]</a>
+              <a href="author.html#11387">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>&gt;&gt;&gt;&gt;&gt;<i> &quot;David&quot; == David Jung &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">jungdl at ornl.gov</A>&gt; writes:
+</I>[...]
+
+Ugh.  Well, if you want me to fix your wacky grammar/language, I'll have to
+start charging you my consulting rate.
+
+
+Here's a relatively proper language that deals with statements and
+expressions with the nesting that you seem to want.
+
+Here's a sample input: {if (a() &lt; 0) then {b; c(); {;} dd();} e; f();} g();
+
+Note very clearly that the blocks do NOT require a semi-colon where as a
+bare expression (when used as a statement) does.
+
+
+&lt;&lt;&lt;&lt;&lt; ExprList.g &lt;&lt;&lt;&lt;&lt;
+
+/*
+ * Lex and parse a silly little language showing how to do nesting in a list.
+ */
+
+header
+{
+import java.io.* ;
+import antlr.* ;
+}
+
+class ExprListParser extends Parser;
+
+options
+{
+k = 2;
+buildAST = false;
+}
+
+{
+}
+
+
+program : statementList EOF ;
+
+statementList : ( statement )* ;
+
+statement
+        : SEMI
+        | block
+        | expression SEMI
+        | &quot;if&quot; LPAREN expression RPAREN &quot;then&quot; statement
+          ( options { warnWhenFollowAmbig = false; } : &quot;else&quot; statement )?
+        ;
+
+block : LCURLY statementList RCURLY ;
+
+expression : equalityExpr ;
+
+equalityExpr : relationalExpr ( ( EQUAL | NOT_EQUAL ) relationalExpr )* ;
+
+relationalExpr : postfixExpr ( ( LT | LTE | GT | GTE ) postfixExpr )* ;
+
+postfixExpr : primaryExpr ( postfixSuffix )? ;
+
+primaryExpr
+        : ID
+        | intConst
+        ;
+
+postfixSuffix : ( functionCall )+ ;
+
+functionCall : LPAREN RPAREN ;
+
+protected
+intConst : IntLiteral ;
+
+
+
+{
+import java.io.* ;
+import antlr.* ;
+}
+
+
+class ExprListLexer extends Lexer;
+
+options
+{
+k = 3;
+testLiterals = false;
+}
+
+{
+}
+
+protected
+Vocabulary : '\3'..'\377' ;
+
+SEMI : ';' ;
+
+LCURLY : '{' ;
+RCURLY : '}' ;
+LPAREN : '(' ;
+RPAREN : ')' ;
+
+EQUAL       : &quot;==&quot; ;
+NOT_EQUAL   : &quot;!=&quot; ;
+LTE         : &quot;&lt;=&quot; ;
+LT          : &quot;&lt;&quot; ;
+GTE         : &quot;&gt;=&quot; ;
+GT          : &quot;&gt;&quot; ;
+
+Whitespace
+        : ( ( '\003'..'\010'
+            | '\t'
+            | '\013'
+            | '\f'
+            | '\016'..'\037'
+            | '\177'..'\377'
+            | ' ' )
+          | &quot;\r\n&quot;        { newline(); }
+          | ( '\n' | '\r' )     { newline(); }
+          )                     { _ttype = Token.SKIP;  }
+        ;
+
+protected
+Digit : '0'..'9' ;
+
+IntLiteral : ( Digit )+ ;
+
+ID
+options { testLiterals = true; }
+        : ( 'a'..'z' | 'A'..'Z' | '_' )
+          ( 'a'..'z' | 'A'..'Z' | '_' | '0'..'9' )*
+        ;
+
+&gt;&gt;&gt;&gt;&gt;<i> &gt;&gt;&gt;&gt;&gt;
+</I>
+
+&lt;&lt;&lt;&lt;&lt; ExprListTest.java &lt;&lt;&lt;&lt;&lt;
+/*
+ * This example shows how to do a nested list inside an expression.
+ */
+
+import java.io.* ;
+
+import antlr.* ;
+
+public class ExprListTest
+    {
+    public static void main (String[] args)
+	{
+	if (0 &gt;= args.length)
+	    {
+	    spewLine (&quot;Usage: java ExprListTest file+&quot;);
+	    }
+
+	for (int argNum = 0; argNum &lt; args.length; argNum++)
+	    {
+	    try
+		{
+		DataInputStream input = null;
+
+		String progName = args[argNum];
+
+		if (&quot;--&quot;.equals (progName))
+		    {
+		    input = new DataInputStream (System.in);
+		    }
+		else
+		    {
+		    input = new DataInputStream
+			( new FileInputStream (progName) );
+		    }
+
+		ExprListLexer lexer = new ExprListLexer (input);
+
+		ExprListParser parser = new ExprListParser (lexer);
+		
+		try
+		    {
+		    parser.program();
+		    }
+		catch (TokenStreamException ex)
+		    {
+		    spewLine (&quot;Unable to read data from '&quot; + progName + &quot;'!&quot;,
+			      ex);
+		    }
+		catch (RecognitionException ex)
+		    {
+		    spewLine (&quot;Unable to parse data from '&quot; + progName + &quot;'!&quot;,
+			      ex);
+		    }
+		}
+	    catch (Exception ex)
+		{
+		spewLine (&quot;Unknown exception:&quot;, ex);
+		}
+	    }
+	}
+
+    private static void spewLine (String s, Exception ex)
+	{
+	System.err.println (s);
+	ex.printStackTrace();
+	System.exit (1);
+	}
+    
+    private static void spewLine (String s)
+	{
+	System.err.println (s);
+	System.exit (1);
+	}
+    
+    }
+
+&gt;&gt;&gt;&gt;&gt;<i> &gt;&gt;&gt;&gt;&gt;
+</I>
+Take care,
+	John
+</PRE>
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="011385.html">[antlr-interest] Re: Semantic predicates that aren't &amp; hoisting
+</A></li>
+	<LI>Next message: <A HREF="011389.html">[antlr-interest] Re: Semantic predicates that aren't &amp; hoisting
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#11387">[ date ]</a>
+              <a href="thread.html#11387">[ thread ]</a>
+              <a href="subject.html#11387">[ subject ]</a>
+              <a href="author.html#11387">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

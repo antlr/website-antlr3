@@ -1,0 +1,218 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Re: trees with payloads??
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20trees%20with%20payloads%3F%3F&In-Reply-To=A68A27D6-334C-11D9-88FC-000A95891192%40cs.usfca.edu">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="010101.html">
+   <LINK REL="Next"  HREF="010042.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Re: trees with payloads??</H1>
+    <B>micheal_jor</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20trees%20with%20payloads%3F%3F&In-Reply-To=A68A27D6-334C-11D9-88FC-000A95891192%40cs.usfca.edu"
+       TITLE="[antlr-interest] Re: trees with payloads??">open.zone at virgin.net
+       </A><BR>
+    <I>Wed Nov 10 16:19:07 PST 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="010101.html">[antlr-interest] Re: trees with payloads??
+</A></li>
+        <LI>Next message: <A HREF="010042.html">[antlr-interest] RE: &#196;antlr-interest&#220; Re: Antlr 3.0  spaces between tokens
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#10027">[ date ]</a>
+              <a href="thread.html#10027">[ thread ]</a>
+              <a href="subject.html#10027">[ subject ]</a>
+              <a href="author.html#10027">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+
+--- In <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>, Terence Parr &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">parrt at c...</A>&gt; wrote:
+&gt;<i> Hi,
+</I>&gt;<i> 
+</I>&gt;<i> [i posted this email to <A HREF="http://www.antlr.org/blog/antlr3/trees.tml">http://www.antlr.org/blog/antlr3/trees.tml</A> ]
+</I>&gt;<i> 
+</I>&gt;<i> After Loring bitched at me on the phone yesterday &lt;snicker&gt;, I'm 
+</I>&gt;<i> beginning to think he's right:  if separating the node data from the 
+</I>&gt;<i> navigation is the right concept, then trees should be a single 
+</I>&gt;<i> implementation that simply carry a &quot;payload&quot; object defined by the 
+</I>&gt;<i> user.  This is like Sun's MutableTreeNode.
+</I>
+&lt;SNIP&gt;
+
+&gt;<i> grammar P;
+</I>&gt;<i> 
+</I>&gt;<i> AST {
+</I>&gt;<i> 	Token token; // probably a default field
+</I>&gt;<i> 	String blort;
+</I>&gt;<i> 	...
+</I>&gt;<i> }
+</I>&gt;<i> 
+</I>&gt;<i> Then ANTLR would generate P_AST type for use when building trees.  For 
+</I>&gt;<i> heterogeneous trees
+</I>
+&lt;SNIP&gt;
+
+&gt;<i> If we allow field specifications, that is better than specifying a type 
+</I>&gt;<i> name maybe:
+</I>&gt;<i> 
+</I>&gt;<i> tokens {
+</I>&gt;<i> 	ID&lt;String name, int n&gt;;
+</I>&gt;<i> 	...
+</I>&gt;<i> }
+</I>&gt;<i> 
+</I>&gt;<i> Whatever.  A random idea.
+</I>
+I wasn't planning on discussing this yet so I haven't had a chance to
+think through the integration and grammar syntax issues but since you
+guys won't keep....
+
+I've been thinking about incorporating aspects of the TreeDL approach
+within ANTLR. Basically, we will have our CoolNavigatorAST type that
+handles navigation properly and has setObjectData()/setNodeData()
+method. The &quot;node data&quot; is a System.Object (or void*)
+pointer/reference to whatever the user decides. This is the type we
+use as default.
+
+Now, in grammars users can optionally add entries to describe custom
+tree nodes (including attributes) that ANTLR will generate. These
+would either be subclasses of CoolNavigatorAST or the very similar
+CoolNavigatorWithoutNodeDataStuffAST (users presumably won't need the
+generic data slots since they can specify custom attributes).
+
+Using your grammar example above as a starting point:
+
+grammar P;
+
+AST
+{
+    abstract node Expression
+    {
+    }
+
+    node BinaryExpression : Expression
+    {
+        attribute binop : enum OpEnum { PLUS, MINUS, MULT, DIVIDE };
+        child     left  : Expression;
+        child     right : Expression;
+    }
+}
+
+tokens
+{
+   PLUS&lt;AST=BinaryExpression&gt;
+   MINUS&lt;AST=BinaryExpression&gt;
+}
+
+additiveExpr
+  :  multiplicativeExpr 
+    ( ( p:PLUS^  { #p.operator = OpEnum.PLUS;  } 
+      | m:MINUS^ { #m.operator = OpEnum.MINUS; } 
+      ) 
+      multiplicativeExpr
+    )*
+
+The &quot;additiveExpr&quot; rule will generate a node of type BinaryExpression.
+Haven't figured out an automatic way to specify the value of the
+&quot;operator&quot; field. Or indeed how the two expressions get assigned as
+either left or right  :-(
+
+Actually I think my use of &quot;tokens&quot; here is in error. My general
+inclination is to leave it to the user to specify tree construction
+manually if they decide to use the custom node feature. E.g.
+
+additiveExpr creates [BinaryExpression e]
+  :  e.left=multiplicativeExpr 
+    ( ( PLUS^  { e.operator = OpEnum.PLUS;  } 
+      | MINUS^ { e.operator = OpEnum.MINUS; } 
+      ) 
+      e.right=multiplicativeExpr
+    )*
+
+Of course &quot;creates&quot; would/should probably be &quot;returns&quot; as is the case now.
+
+&gt;<i> As a bonus to the payload strategy, we can enhance the tree 
+</I>&gt;<i> functionality later w/o forcing alterations in people's application; 
+</I>&gt;<i> their payload objects still fit in our nodes.
+</I>
+This still applies here too.
+
+&gt;<i> This all comes at the cost of an additional object creation (payload 
+</I>&gt;<i> creation + node creation).
+</I>
+No additional object creation here.
+
+&gt;<i> Side note: Mitchell suggested Tokens and Tree nodes should have not 
+</I>&gt;<i> only fixed fields like this, but the ability to dynamically acquire 
+</I>&gt;<i> &quot;attributes&quot;; this would basically be a hashmap.  It cuts down on a 
+</I>&gt;<i> bazillion subclasses.  It would be useful when parsing xml for example. 
+</I>&gt;<i>   The TAG token could have a list of tag attributes w/o creating 
+</I>&gt;<i> subclasses etc...
+</I>
+If the user wants this functionality in their AST class, they can
+specify it. Perhaps we can support a &quot;propertybag&quot; atribute type. This
+will create a HashMap (or other dictionary object) and two methods
+getField(string key) and setField(string key, object data). Perhaps a
+restriction that a node can only have one propertybag is required
+(including any inherited bags).
+
+    node XmlElement
+    {
+        propertybag  fields;
+        child        left     : Expression;
+        child        right    : Expression;
+    }
+
+Cheers,
+
+Micheal
+ANTLR/C#
+
+
+
+
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+    <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+    <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+    <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="010101.html">[antlr-interest] Re: trees with payloads??
+</A></li>
+	<LI>Next message: <A HREF="010042.html">[antlr-interest] RE: &#196;antlr-interest&#220; Re: Antlr 3.0  spaces between tokens
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#10027">[ date ]</a>
+              <a href="thread.html#10027">[ thread ]</a>
+              <a href="subject.html#10027">[ subject ]</a>
+              <a href="author.html#10027">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

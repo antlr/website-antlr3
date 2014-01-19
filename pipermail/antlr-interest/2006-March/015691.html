@@ -1,0 +1,215 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Expression parser expecting token at EOF
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Expression%20parser%20expecting%20token%20at%20EOF&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="015688.html">
+   <LINK REL="Next"  HREF="015765.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Expression parser expecting token at EOF</H1>
+    <B>Aaron</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Expression%20parser%20expecting%20token%20at%20EOF&In-Reply-To="
+       TITLE="[antlr-interest] Expression parser expecting token at EOF">crackajaxx at gmail.com
+       </A><BR>
+    <I>Tue Mar 14 11:48:07 PST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="015688.html">[antlr-interest] maven-antlr-plugin compatibility of antlrall.jar
+	and antlr.jar?
+</A></li>
+        <LI>Next message: <A HREF="015765.html">[antlr-interest] Expression parser expecting token at EOF
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#15691">[ date ]</a>
+              <a href="thread.html#15691">[ thread ]</a>
+              <a href="subject.html#15691">[ subject ]</a>
+              <a href="author.html#15691">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I apologize if this is the wrong forum for this message, but I'm still
+new here (so punt me the right direction if need be).  I've written a
+parser for what I think is a relatively simple grammar for
+expressions.  I'm using antlr 2.7.5 with C# as the language.
+
+I noticed that when I provided the input &quot;test&quot; to the expression
+element that it would fail when attempting to do a lookahead(1).  So I
+narrowed the problem down to the variant element that is listed in the
+grammer and reduced the variant element to only allow one expression
+for ease of reading.
+
+I wrote a small C# wrapper around this that calls variant() on the parser.
+
+The sample works for the inputs &quot;test(20)&quot; and &quot;test[20]&quot;, but fails for &quot;test&quot;.
+The problem appears to be in the output code to &quot;variantAtoms&quot; which
+performs a switch(LA(1)) and then requires a token to be present or it
+throws NoViableAltException and my execution is done.
+
+Ironically, if I enter &quot;test)&quot; it works.  variantAtom has a case
+statement for RPAREN and for the life of me I can't understand where
+in the tree it would expect to see RPAREN as the next token.
+
+Thanks in advance...
+
+----------
+
+class KExprParser extends Parser;
+options
+{
+    buildAST = true;
+}
+
+tokens
+{
+    UNARY_MINUS; UNARY_PLUS;
+}
+
+expression
+    :    assignmentExpression
+    ;
+
+assignmentExpression
+    :    logicalOrExpression
+    ;
+
+logicalOrExpression
+    :    logicalAndExpression (&quot;or&quot;^ logicalAndExpression)*
+    ;
+
+logicalAndExpression
+    :    eqExpression (&quot;and&quot;^ eqExpression)*
+    ;
+
+eqExpression
+    :    relationalExpression (EQ^ relationalExpression)*
+    ;
+
+relationalExpression
+    :    additiveExpression ( ( LTNE^ | GTNE^ | LTEQ^ | GTEQ^ )
+additiveExpression)*
+    ;
+
+additiveExpression
+    :    multiplicativeExpression ((PLUS^ | MINUS^) multiplicativeExpression)*
+    ;
+
+multiplicativeExpression
+    :    unaryExpression ((STAR^ | DIV^ | MOD^ ) unaryExpression)*
+    ;
+
+unaryExpression
+    :    MINUS^ {#MINUS.setType(UNARY_MINUS);} unaryExpression
+    |    PLUS^  {#PLUS.setType(UNARY_PLUS);} unaryExpression
+    |    unaryExpressionNotPlusMinus
+    ;
+
+unaryExpressionNotPlusMinus
+    :    (&quot;not&quot;^) unaryExpression
+    |    primaryExpression
+    ;
+
+primaryExpression
+    :    variant
+    |    NUMBER
+    |    &quot;true&quot;^
+    |    &quot;false&quot;^
+    |    LPAREN! assignmentExpression RPAREN!
+    ;
+
+variant
+    :    IDENT variantAtoms
+    ;
+
+variantAtoms
+    :
+    |    LBRACKET! NUMBER RBRACKET!
+    |    LPAREN! expression RPAREN!
+    ;
+
+class KExprLexer extends Lexer;
+
+options
+{
+    caseSensitive = false;
+    testLiterals = false;
+    k = 2;
+}
+
+WS
+    :    (' ' | '\t' | '\n' | '\r')
+    { _ttype = Token.SKIP ; }
+    ;
+
+LBRACKET    :    '[' ;
+RBRACKET    :    ']' ;
+
+LPAREN    :    '('    ;
+RPAREN    :    ')' ;
+STAR    :    '*' ;
+DIV        :    '/' ;
+PLUS    :   '+' ;
+MINUS   :   '-' ;
+MOD        :    '%' ;
+COLON    :    ':' ;
+QUESTION    :    '?' ;
+COMMA    :    ',' ;
+
+ATSIGN    :    '@' ;
+
+GTNE    :   &quot;&gt;&quot; ;
+GTEQ    :   &quot;&gt;=&quot; ;
+LTNE    :   &quot;&lt;&quot; ;
+LTEQ    :    &quot;&lt;=&quot; ;
+EQ      :   &quot;=&quot; ;
+
+STRING_LITERAL
+    :    '&quot;' (~'&quot;')* '&quot;'
+    |    '\'' (~'\'')* '\''
+    ;
+
+IDENT
+    options {testLiterals=true;}
+    :    ('a' .. 'z') ('a' .. 'z' | '0' .. '9' | '_' | '.')*
+    ;
+
+NUMBER
+    :    ('0'..'9')+ ('.' (('0'..'9')+)?)?
+    ;
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="015688.html">[antlr-interest] maven-antlr-plugin compatibility of antlrall.jar
+	and antlr.jar?
+</A></li>
+	<LI>Next message: <A HREF="015765.html">[antlr-interest] Expression parser expecting token at EOF
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#15691">[ date ]</a>
+              <a href="thread.html#15691">[ thread ]</a>
+              <a href="subject.html#15691">[ subject ]</a>
+              <a href="author.html#15691">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

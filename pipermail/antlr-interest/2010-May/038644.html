@@ -1,0 +1,201 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Parser not generating error?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Parser%20not%20generating%20error%3F&In-Reply-To=%3CAANLkTikefyCCVOmkVtpnEQCgt6SsutPuGZdKd7IyyTsN%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="038642.html">
+   <LINK REL="Next"  HREF="038645.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Parser not generating error?</H1>
+    <B>Charles Chan</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Parser%20not%20generating%20error%3F&In-Reply-To=%3CAANLkTikefyCCVOmkVtpnEQCgt6SsutPuGZdKd7IyyTsN%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Parser not generating error?">chancharles at gmail.com
+       </A><BR>
+    <I>Fri May 14 09:05:49 PDT 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="038642.html">[antlr-interest] Looking for gunit that supports TreeAdaptor in generated junit
+</A></li>
+        <LI>Next message: <A HREF="038645.html">[antlr-interest] Parser not generating error?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#38644">[ date ]</a>
+              <a href="thread.html#38644">[ thread ]</a>
+              <a href="subject.html#38644">[ subject ]</a>
+              <a href="author.html#38644">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi, all. I am trying to write a parser for an input similar to the following:
+
+A = 'TEST1' and B = 'TEST2'
+
+The problem I am having is that the parser is not returning error in
+the following scenarios:
+
+1. A dangling left paren:
+
+A = 'TEST1' and B = 'TEST2' (
+
+2. A dangling ID:
+
+A = 'TEST1' and B = 'TEST2' A
+
+Is there some options I need to turn on to get these kinds of errors?
+
+Thanks!
+Charles
+
+
+grammar Script;
+
+options {
+  output=AST;
+}
+
+@parser::header {
+
+import java.util.Map;
+import java.util.HashMap;
+import java.math.BigDecimal;
+}
+
+@parser::members {
+  public Map&lt;String, Object&gt; values = new HashMap&lt;String, Object&gt;();
+
+  public static void main(String[] args) throws Exception {
+    ScriptLexer lexer = new ScriptLexer(new ANTLRFileStream(args[0]));
+    CommonTokenStream tokenStream = new CommonTokenStream(lexer);
+    ScriptParser parser = new ScriptParser(tokenStream);
+    parser.values.put(&quot;A&quot;, &quot;TEST1&quot;);
+    parser.values.put(&quot;B&quot;, &quot;TEST2&quot;);
+    parser.values.put(&quot;C&quot;, &quot;TEST3&quot;);
+    System.out.println(parser.statement().value);
+  }
+
+  protected void mismatch(IntStream input, int ttype, BitSet follow)
+throws RecognitionException {
+    throw new MismatchedTokenException(ttype, input);
+  }
+
+  public Object recoverFromMismatchedSet(IntStream input,
+RecognitionException e, BitSet follow) throws RecognitionException {
+    throw e;
+  }
+}
+
+@rulecatch {
+  catch (RecognitionException ex) {
+    throw ex;
+  }
+}
+
+/*------------------------------------------------------------------
+ * PARSER RULES
+ *------------------------------------------------------------------*/
+
+statement returns [boolean value]: e=orcondition { $value = $e.value; }
+         ;
+
+orcondition returns [boolean value]
+    :   e=andcondition  { $value = $e.value; } (OR^ e=andcondition {
+$value = $value || $e.value; })*
+    ;
+
+andcondition returns [boolean value]
+    : e=expression { $value = $e.value; } (AND^ e=expression { $value
+= $value &amp;&amp; $e.value; })*
+    ;
+
+expression returns [boolean value]
+    : ID operator rhs
+    {
+      Object idValue = (Object)values.get($ID.text);
+	  Object rhsValue = $rhs.value;
+      $value = idValue.equals(rhsValue);
+    }
+    | LEFT_PAREN! orcondition RIGHT_PAREN!
+	{
+	  $value = $orcondition.value;
+	}
+    ;
+
+operator : GTE | LTE | GT | LT | EQ | NOT_EQ
+         ;
+rhs returns [Object value]
+    : e=INTEGER        { $value = Integer.valueOf($e.text); } |
+      e=FLOAT          { $value = new BigDecimal($e.text); } |
+	  e=STRING_LITERAL { $value = $e.text.substring(1, $e.text.length() - 1); } |
+	  TRUE             { $value = Boolean.TRUE; } |
+	  FALSE            { $value = Boolean.FALSE; }
+    ;
+	
+/*------------------------------------------------------------------
+ * LEXER RULES
+ *------------------------------------------------------------------*/
+AND     :       'and'
+        ;
+OR      :       'or'
+        ;
+LT      :       '&lt;'
+        ;
+GT      :       '&gt;'
+        ;
+LTE     :       '&lt;='
+        ;
+GTE     :       '&gt;='
+        ;
+EQ      :       '='
+        ;
+NOT_EQ  :       '!='
+        ;
+TRUE    :       'true'
+        ;
+FALSE   :       'false'
+        ;
+ID      :       ( 'a' .. 'z' | 'A' .. 'Z' | '.' | '_' )+
+        ;
+STRING_LITERAL  : '\'' ( ( '\'' '\'' )=&gt;  '\'' '\'' | ~'\'' )* '\''
+                ;
+LEFT_PAREN      : '('
+                ;
+RIGHT_PAREN     : ')'
+                ;
+WS      : ( '\t' | ' ' | '\r' | '\n'| '\u000C' )+    { $channel = HIDDEN; }
+        ;
+SIGN    : '+' | '-'
+        ;
+
+INTEGER: '0' | SIGN? '1'..'9' '0'..'9'*;
+FLOAT: INTEGER '.' '0'..'9'+;
+</PRE>
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="038642.html">[antlr-interest] Looking for gunit that supports TreeAdaptor in generated junit
+</A></li>
+	<LI>Next message: <A HREF="038645.html">[antlr-interest] Parser not generating error?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#38644">[ date ]</a>
+              <a href="thread.html#38644">[ thread ]</a>
+              <a href="subject.html#38644">[ subject ]</a>
+              <a href="author.html#38644">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

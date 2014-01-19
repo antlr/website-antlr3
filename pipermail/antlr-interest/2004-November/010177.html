@@ -1,0 +1,341 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Translators Should Use Tree Grammars
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Translators%20Should%20Use%20Tree%20Grammars&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="010176.html">
+   <LINK REL="Next"  HREF="010179.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Translators Should Use Tree Grammars</H1>
+    <B>Alexey Demakov</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Translators%20Should%20Use%20Tree%20Grammars&In-Reply-To="
+       TITLE="[antlr-interest] Translators Should Use Tree Grammars">demakov at ispras.ru
+       </A><BR>
+    <I>Tue Nov 16 09:19:06 PST 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="010176.html">[antlr-interest] Re: Translators Should Use Tree Grammars
+</A></li>
+        <LI>Next message: <A HREF="010179.html">[antlr-interest] Translators Should Use Tree Grammars
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#10177">[ date ]</a>
+              <a href="thread.html#10177">[ thread ]</a>
+              <a href="subject.html#10177">[ subject ]</a>
+              <a href="author.html#10177">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+From: &quot;Terence Parr&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">parrt at cs.usfca.edu</A>&gt;
+&gt;<i> Ok, whew!  8 furiously written pages on visitors, tree node classes, 
+</I>&gt;<i> tree grammars, and action execution:
+</I>&gt;<i> 
+</I>&gt;<i> <A HREF="http://www.antlr.org/article/1100569809276/use.tree.grammars.tml">http://www.antlr.org/article/1100569809276/use.tree.grammars.tml</A>
+</I>&gt;<i> 
+</I>&gt;<i> Hopefully, this is clearly written.  Regardless, it summarizes my 
+</I>&gt;<i> position rather thoroughly. ;)  Please send me feedback if you think 
+</I>&gt;<i> the article can be improved etc...
+</I>
+Ok, I'll try to be advocate of hetero-trees. :)
+
+The main point: if we have good description of heterohenous tree
+we can generate all we need. In the article hetero-trees are considered 
+without tool support. Of course, manual maintenance of node classes is
+difficult. But with proper tool you don't need to write get/set
+methods for chilren and attributes, don't need to write additional checks.
+
+It is easy enough to write
+
+node Program
+{
+    child Stmt+ stmtList;
+}
+
+to specify that Program is non-empty list of Statements. 
+TreeDL tool from this description generates class Program
+with get/set methods for child stmtList that is non-empty list of statements.
+Note, that list length checking in set method is generated automatically.
+Moreover, a bunch of other useful methods are generated.
+
+The tree description for Java requires about 150 nodes.
+Usual number of children and attributes: 2-3. So, it's easy enough
+to mainain one file with such tree description, not 150 java classes!
+even they are also in single file (nested in tree description class)
+and have very simple structure.
+
+&gt;<i> 1. tree structure is not validated 
+</I>
+Visitor should not validate tree structure, because it is described separately
+and checked during tree construction. When tree structure is well-designed,
+you can not create tree that doesn't correspond to syntactically correct input program.
+Btw, parser is not right place to check tree correctness because tree can be 
+constructed even without parser :) So, tree should be self-validating.
+
+&gt;<i> Node actions may compute data needed by future actions. 
+</I>&gt;<i> Because each action is isolated (usually as a overridden method in another class),
+</I>&gt;<i> you cannot use the usual programming constructs like local variables, parameters,
+</I>&gt;<i> and return values to pass information. You must use instance variables which are 
+</I>&gt;<i> clumsy and violate data hiding principles.
+</I>
+If data is related to node (for example, cross-references between references and 
+definition), it can be stored in [dynamic] attribute of that node.
+I don't know how to use local variables to pass info to other method :)
+but parameters and return values can be used for visitors. At least in interface methods
+- of course, between visit-methods parameters should be passed using visitor fields.
+
+class ActionVisitor
+{
+    // used by visit-methods
+    Parameters parameters;
+    // set by visit methods
+    // can be used to simulate different return types
+    ReturnValue returnValue;
+
+    public ReturnValue process( Node node, Parameters parameters )
+    {
+        this.parameters = parameters;
+        node.accept( this );
+        return this.returnValue;
+    }
+
+    public void visit( SomeNode node )
+    {
+        // instead of return
+        // unfortunately compiler can't check that all control paths
+        // return value
+        this.returnValue = 
+            // node and parameters can be used
+            F( node, parameters );
+    }
+}
+
+Not very good-looking, but it works. Better if it is generated 
+from some clear description like usual methods.
+
+On the other hand hetero-trees allow easy access to child subtree.
+As far as I know in tree grammar we have access only to entities 
+mentioned in current rule? And another rule is required to return value of 
+
+node.getSomeChild().getAnotherChild().getYetAnotherChild() ?
+
+&gt;<i> Manual Tree Walkers
+</I>&gt;<i> 2. manually built tree walkers have no guarantee that their parsing 
+</I>&gt;<i> logic is complete and consistent 
+</I>
+The same is true for tree parsers - structure of tree built by parser 
+can differ from tree used in tree grammar.
+
+&gt;<i> 3. manually building tree walkers is much more laborious than the visitor pattern 
+</I>
+Visiting and tree walking are independent things.
+The main purpose of visitor pattern is implementation of &quot;external virtual methods&quot;
+for tree nodes. Visitors can use different tree walking strateges (or don't use walking at all):
+
+1. Generated tree walker calls actions for each node. Actions called only from tree walker,
+so only tree walker uses accept() methods of nodes to call correct walk() method of child node.
+Class with action methods need not to implement visitor pattern.
+
+In this case tree walking doesn't require additional work - walker is generated.
+But it is useful only in simple cases when actions can be called before/after subtree walking.
+If you need action/walking mixture, you need manual tree walker (at least some methods overriden).
+
+2. Manual tree walking using child.accept( this ) in visit methods.
+
+Yes, requires additional work and
+&gt;<i> 1. action and tree structure walking code is entangled; you risk breaking action code
+</I>&gt;<i> when altering the walking code 
+</I>is true
+
+3. There are special cases when manual tree walking doesn't require additional work.
+For example, for codegeneration I use library that support such templates
+
+class CodeGeneratorVisitor
+{
+    public void visitBinaryExpr( BinaryExpr node )
+    {
+        // template for output
+        txt( &quot;${left} ${sign} ${right}&quot; );
+    }
+}
+
+visit methods for parameters ${...} are called automatically in library method txt().
+(I know, there is drawback - patterns can not be checked at compile-time, will try 
+to improve code generation library in the future)
+
+I think the last case is the hint of what should be a source for visitor generation
+- I repeat, description should be clear from implementation details, 
+only what we want to express.
+
+&gt;<i> For example, how do you express that a child can be optional? 
+</I>
+node PlusNode : ExprNode
+{
+    child ExprNode left;
+    child ExprNode? right;
+}
+
+In TreeDL types don't allow null value implicitly. You need to write '?' that means 'optional'
+as in BNF notation. As far as I remember in some specification languages (VDM)
+type [T] means 'value of type T or null'. May be if it would be used in programming languages,
+NullPointerException would be rare. 
+Damn, I need to improve my English :) Hope, you can understand me, but I'm 
+sure there is grammatical error. 
+
+&gt;<i> he says that his manually developed Java tree has about 150 nodes.
+</I>&gt;<i> Regardless, you are still looking at lots of files.
+</I>
+No, I'm looking at single file with tree description. :)
+It has about 1200 lines with some comments.
+Parser is about three times longer.
+
+Errata:
+&gt;<i> enapsulating
+</I>-&gt; encapsulating
+
+&gt;<i> For example, why look in n files for n different statement node types? 
+</I>&gt;<i> All StatementList can show is, at most, a typed list: List&lt;StatementNode&gt;. 
+</I>&gt;<i> It says absolutely nothing about what the statements are--the subclasses
+</I>&gt;<i> of StatementNode seem a rather weak and indirect method for specifying 
+</I>&gt;<i> such a close relationship. 
+</I>
+&gt;<i> You cannot list the expression tree types; one must find all subclasses of ExprNode. 
+</I>
+HTML documentation can be generated from TreeDL tree description
+with cross-references between node type and all inherited node types.
+Example: 
+<A HREF="http://treedl.sourceforge.net/treedl/treedl/com/unitesk/atp/treedl/TreeDL.tdl-xref/index.html">http://treedl.sourceforge.net/treedl/treedl/com/unitesk/atp/treedl/TreeDL.tdl-xref/index.html</A>
+
+&gt;<i> Not only is the tree grammar more explicit (i.e., you are saying exactly 
+</I>&gt;<i> what you mean rather than co-opting a type system),
+</I>
+As I mentioned in one of previous messages, it seems that tree grammar and tree description
+are almost equivalent.
+
+&gt;<i>it is smaller,  
+</I>
+Than what? Than generated from tree description Java files? Of course.
+Tree description itself also is longer but mainly because it is written line-per-child
+and uses longer keywords :) But I believe TreeDL is more readable (especially
+for newbies) than ANTLR tree grammar (without actions, but with labels for subrules).
+
+&gt;<i> it is completely self-contained 
+</I>
+The same is true for TreeDL tree description.
+
+&gt;<i> and formally guarantees tree structure 
+</I>
+Again, it's true for TreeDL. But TreeDL checks trees during construction,
+not during processing. 
+
+Btw, repeating tree grammar when writing each action in some sence is like 
+repeating a class declaration in each method that process objects of this class :)
+
+&gt;<i> (as opposed to hand-written walk() methods that might forget to walk down 
+</I>&gt;<i> one of the children). 
+</I>
+But not for generated walkers. And when actions are written manually,
+missing of some child walking usually cause missing action.
+In tree grammar also is possible to miss action.
+So, chances are similar. :)
+
+&gt;<i> I should also point out that Loring Craymer has a 
+</I>&gt;<i> means of automatically generating tree grammars from the text parser grammar 
+</I>&gt;<i> that builds trees (to be released in the 2.8 experimental release). 
+</I>
+Sounds interesting.
+
+&gt;<i> Context Information
+</I>
+I'm also not very happy with visitors. But the way of passing context information
+can be used not only with ANTLR tree grammars. Some notation can be used as source
+for specification of actions over tree. It can be similar to tree grammar in part of
+context information handling, but don't need to describe full tree structure
+because it is described separately. And from it we can generate visitors or what else we need.
+
+Some time ago, I played with preprocessor that generates visitors from something like this:
+
+node SomeNode
+{
+    visit Visitor1
+    {
+        for( int i = 0; i &lt; $#childList; i++ )
+        {
+            F( $childList[i] )
+        }
+    }
+
+    visit Visitor2
+    {
+        anotherNode.$childOfAnotherNode
+    }
+}
+
+visit() methods are grouped by node, like methods. And children can be referenced using $childName
+shorthand notation because I hate Java long getChildName() and like C# properties.
+
+May be now it is time to remember this tool and rethink what should be a source
+and what should be generated. I'm inspired by tree grammars :)
+
+&gt;<i> Multiple Tree Grammars
+</I>
+According to my experience, cut/paste without tool support causes many-many errors.
+&quot;Text editor in skilful hands - an awful weapon&quot; :)
+
+In any case, tree grammars and descriptions - are two approaches to the same problem.
+I believe that both are powerful enough, both have drawbacks and both can be significantly improved.
+May be it will make compiler construction even easier than today :)
+
+Regards,
+Alexey
+
+-----
+Alexey Demakov
+TreeDL: Tree Description Language: <A HREF="http://treedl.sourceforge.net">http://treedl.sourceforge.net</A>
+RedVerst Group: <A HREF="http://www.unitesk.com">http://www.unitesk.com</A>
+
+
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+    <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+    <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+    <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="010176.html">[antlr-interest] Re: Translators Should Use Tree Grammars
+</A></li>
+	<LI>Next message: <A HREF="010179.html">[antlr-interest] Translators Should Use Tree Grammars
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#10177">[ date ]</a>
+              <a href="thread.html#10177">[ thread ]</a>
+              <a href="subject.html#10177">[ subject ]</a>
+              <a href="author.html#10177">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

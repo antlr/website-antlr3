@@ -1,0 +1,235 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [stringtemplate-interest] Managing template parameters
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20Managing%20template%20parameters&In-Reply-To=%3C341F547D07194AECAC7F1509F02F3D03%40nwardlt%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001709.html">
+   <LINK REL="Next"  HREF="001722.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[stringtemplate-interest] Managing template parameters</H1>
+    <B>Nathan Ward</B> 
+    <A HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20Managing%20template%20parameters&In-Reply-To=%3C341F547D07194AECAC7F1509F02F3D03%40nwardlt%3E"
+       TITLE="[stringtemplate-interest] Managing template parameters">nward at resqsoft.com
+       </A><BR>
+    <I>Fri Nov 14 10:10:50 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001709.html">[stringtemplate-interest] Managing template parameters
+</A></li>
+        <LI>Next message: <A HREF="001722.html">[stringtemplate-interest] Managing template parameters
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1713">[ date ]</a>
+              <a href="thread.html#1713">[ thread ]</a>
+              <a href="subject.html#1713">[ subject ]</a>
+              <a href="author.html#1713">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Terence,
+
+I got this working. My code is included below in case it would be of use to
+someone else. I would think this would be a common problem because I would
+think it is pretty common for template parameters to become &quot;tramp data&quot; as
+Meiler Page-Jones defined in the book Structured Systems Design many years
+ago (i.e. passing parameters around for use in code that is called later
+down the line. 
+
+I also think there is an interesting StringTemplate design issue here... The
+solution described in the Meiler Page-Jones book was to use &quot;Information
+Hiding&quot; is similar to using object-oriented design but was before OOD. I had
+done this kind of thing when programming in C where I would group data and
+processing (i.e. C functions) in the same file. The variables defined at the
+top of the file where like object attributes. Not exactly OO, but not bad
+when programming in C. 
+
+Given that StringTemplate is designed with a syntax that encourages good
+template design, I would think that implicit access to variables like I am
+now doing should not be allowed, but an alternative should be provided by
+allowing template groups to accept parameters. This would be similar to an
+object having instance member variables. This makes the intension to share
+data across templates more explicit and help the template designer think
+about if the data really should be shared this way or should be treated as
+formal parameters. This would also eliminate the need for me to create this
+temporary template and template group for testing purposes. 
+
+Shared.stg:
+
+// Implicit variable references: screen
+screenElementResourceBundleKey(screenElement, screenElementType) ::= &lt;&lt;
+&lt;formClassName(screen)&gt;.&lt;screenElementType&gt;.&lt;screenElement.text&gt;.Text
+&gt;&gt;<i>
+</I>
+
+SharedTemplateTestCase.java:
+
+    public void testScreenElementResourceBundleKey() {
+
+        Screen screen = new Screen();
+        screen.setName(&quot;MY_SCREEN&quot;);
+        
+        Button button = new Button();
+        button.setText(&quot;MyButtonText&quot;);
+        
+        super.setTemplateAttribute(&quot;screen&quot;, screen);
+        super.setTemplateAttribute(&quot;screenElement&quot;, button);
+        super.setTemplateAttribute(&quot;screenElementType&quot;, &quot;Button&quot;);
+        String templateString = super.executeTemplateWithImplicitVariables(
+                templateGroup, templateGroup,
+&quot;screenElementResourceBundleKey&quot;);
+        super.logTemplateOutput(templateString);
+        TestCase.assertEquals(&quot;MyScreenForm.Button.MyButtonText.Text&quot;,
+templateString);
+        
+    }
+
+BaseTemplateTestCase.java:
+
+    /**
+     * Use this method to test templates that use one or more &lt;i&gt;implicit
+variables&lt;/i&gt; 
+     * rather than using only formal parameters. Implicit variables should
+be used only
+     * in cases where the immediate template doesn't need the parameter
+other than to 
+     * pass it to other templates d several levels down in the template
+calling chain. 
+     * 
+     * This method execute the template given by the templateName parameter
+from a temporary 
+     * template that this method creates in the template group so that the
+parameters 
+     * previously added by calling setTemplateAttribute() method will be
+accessible to 
+     * the template under test. 
+     * 
+     * If the template under test does not use implicit variables,
+     * (i.e. only uses formal parameters), then the StringTemplate API can
+be used directly
+     * rather than using this method. 
+     * 
+     * @param rootTemplateGroup The rootTemplateGroup in the template group
+inheritance hierarchy
+     * for the template group that the template under test is in. If the
+target template group
+     * does not inherit from another template group, then just pass the
+target template group
+     * as this parameter and also pass the same template group as the
+targetTemplateGroup parameter.
+     * @param targetTemplateGroup The template group in which the template
+under test is defined.
+     * @param templateName The name of the template under test.
+     * @return
+     */
+    public String executeTemplateWithImplicitVariables(StringTemplateGroup
+rootTemplateGroup,
+            StringTemplateGroup targetTemplateGroup, String templateName) {
+
+        StringBuilder temporaryTemplateGroup = new StringBuilder();
+        temporaryTemplateGroup.append(&quot;group temp;&quot;);
+        temporaryTemplateGroup.append(newline);
+        temporaryTemplateGroup.append(&quot;aTemplate(&quot;);
+        boolean notFirst = false;
+        for (final String parmName : parms.keySet()) {
+            if (notFirst) {
+                temporaryTemplateGroup.append(&quot;, &quot;);
+            }
+            else {
+                notFirst = true;
+            }
+            temporaryTemplateGroup.append(parmName);
+        }
+        temporaryTemplateGroup.append(&quot;) ::= &lt;&lt;&quot;);
+        temporaryTemplateGroup.append(newline);
+        temporaryTemplateGroup.append(&quot;&lt;&quot;);
+        temporaryTemplateGroup.append(templateName);
+        temporaryTemplateGroup.append(&quot;(...) &gt;&quot;);
+        temporaryTemplateGroup.append(newline);
+        temporaryTemplateGroup.append(&quot;&gt;&gt;&quot;);
+        
+        String temporaryTemplateGroupString =
+temporaryTemplateGroup.toString();
+        
+        StringTemplateGroup newParentGroup = new StringTemplateGroup(new
+StringReader(
+                temporaryTemplateGroupString));
+        
+        // Make the rootTemplateGroup inherit from the newParentGroup that
+we created
+        // from temporaryTemplateGroupString
+        rootTemplateGroup.setSuperGroup(newParentGroup);
+        
+        // Get an instance of the temporary template that we have created
+named aTemplate
+        // from the targetTemplateGroup. Important that we get the instance
+from the targetTemplateGroup
+        // rather than directly from the newParentGroup template so that the
+template has access to
+        // all other templates in the template group inheritance hierarchy.
+        StringTemplate template =
+targetTemplateGroup.getInstanceOf(&quot;aTemplate&quot;);
+        
+        for (final Map.Entry&lt;String, Object&gt; entry : parms.entrySet()) {
+            template.setAttribute(entry.getKey(), entry.getValue());
+        }
+        String templateString = template.toString();
+        return templateString;
+    }
+    
+    public void setTemplateAttribute(String parmName, Object value) {
+
+        this.parms.put(parmName, value);
+    } 
+
+-----Original Message-----
+From: Terence Parr [mailto:<A HREF="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">parrt at cs.usfca.edu</A>] 
+Sent: Thursday, November 13, 2008 5:58 PM
+To: Nathan Ward
+Cc: <A HREF="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">stringtemplate-interest at antlr.org</A>
+Subject: Re: [stringtemplate-interest] Managing template parameters
+
+
+On Nov 13, 2008, at 11:50 AM, Nathan Ward wrote:
+
+&gt;<i> I'm aware of that, but how can I make a JUnit test for the subtemplate 
+</I>&gt;<i> if it uses an attribute that is not passed as a formal parameter? 
+</I>&gt;<i> Hmmm, I guess I can create a template inline in my test code that uses 
+</I>&gt;<i> the template that I'm testing, which is a string group template file. 
+</I>&gt;<i> I'll try that. Thanks!
+</I>
+That'll work. :)
+Ter
+
+
+</PRE>
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001709.html">[stringtemplate-interest] Managing template parameters
+</A></li>
+	<LI>Next message: <A HREF="001722.html">[stringtemplate-interest] Managing template parameters
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1713">[ date ]</a>
+              <a href="thread.html#1713">[ thread ]</a>
+              <a href="subject.html#1713">[ subject ]</a>
+              <a href="author.html#1713">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">More information about the stringtemplate-interest
+mailing list</a><br>
+</body></html>

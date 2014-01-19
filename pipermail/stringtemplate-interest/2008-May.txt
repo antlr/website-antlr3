@@ -1,0 +1,1450 @@
+From citibob at comcast.net  Sat May  3 11:49:09 2008
+From: citibob at comcast.net (Bob)
+Date: Sat, 03 May 2008 14:49:09 -0400
+Subject: [stringtemplate-interest] Problem with .stg files
+Message-ID: <1209840549.11032.3.camel@localhost.localdomain>
+
+Hello,
+
+I am new to StringTemplate, so maybe this is addressed.  But I could not
+find any solution...
+
+I set up a String Template Group (see below).
+
+
+Then I tried to access it as follows:
+
+	// Get the StringTemplate...
+	InputStream in =
+SummaryReport.class.getClassLoader().getResourceAsStream("offstage/reports/summary.stg");
+	StringTemplateGroup stg = new StringTemplateGroup(new
+InputStreamReader(in));
+	in.close();
+	StringTemplate st = stg.getInstanceOf("summary");
+
+But when I tried to use the resulting string template, the parser chokes
+on the first "/" character in summary.  What am I doing wrong?  Does
+this kind of summar group just not work for HTML templates?
+
+I ultimately switched to putting one template per file (.st files
+instead of .stg files), and it now works.
+
+Thanks,
+-- Bob
+
+===================================================================
+
+group summaryGroup;
+
+summary(person,phones) ::= <<
+<ul>
+<li>Name: $person.firstname$ $person.lastname$</li>
+<li>Email: $person.email$</li>
+</ul>
+
+
+<h3>Phones</h3>
+<table border=1>
+$phones:{
+  <tr>
+    <td>$it.type$</td><td>$it.number$</td>
+  </tr>
+}$
+</table>
+>>
+
+
+
+
+
+From parrt at cs.usfca.edu  Sat May  3 11:52:37 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Sat, 3 May 2008 11:52:37 -0700
+Subject: [stringtemplate-interest] Problem with .stg files
+In-Reply-To: <1209840549.11032.3.camel@localhost.localdomain>
+References: <1209840549.11032.3.camel@localhost.localdomain>
+Message-ID: <8CC5B38A-DE3E-4B11-A977-98919C7B41F7@cs.usfca.edu>
+
+group files use <...> not $...$ by default. you can switch it though.
+Ter
+On May 3, 2008, at 11:49 AM, Bob wrote:
+
+> Hello,
+>
+> I am new to StringTemplate, so maybe this is addressed.  But I could  
+> not
+> find any solution...
+>
+> I set up a String Template Group (see below).
+>
+>
+> Then I tried to access it as follows:
+>
+> 	// Get the StringTemplate...
+> 	InputStream in =
+> SummaryReport.class.getClassLoader().getResourceAsStream("offstage/ 
+> reports/summary.stg");
+> 	StringTemplateGroup stg = new StringTemplateGroup(new
+> InputStreamReader(in));
+> 	in.close();
+> 	StringTemplate st = stg.getInstanceOf("summary");
+>
+> But when I tried to use the resulting string template, the parser  
+> chokes
+> on the first "/" character in summary.  What am I doing wrong?  Does
+> this kind of summar group just not work for HTML templates?
+>
+> I ultimately switched to putting one template per file (.st files
+> instead of .stg files), and it now works.
+>
+> Thanks,
+> -- Bob
+>
+> ===================================================================
+>
+> group summaryGroup;
+>
+> summary(person,phones) ::= <<
+> <ul>
+> <li>Name: $person.firstname$ $person.lastname$</li>
+> <li>Email: $person.email$</li>
+> </ul>
+>
+>
+> <h3>Phones</h3>
+> <table border=1>
+> $phones:{
+>  <tr>
+>    <td>$it.type$</td><td>$it.number$</td>
+>  </tr>
+> }$
+> </table>
+>>>
+>
+>
+>
+>
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+
+From citibob at comcast.net  Sat May  3 12:04:11 2008
+From: citibob at comcast.net (Bob)
+Date: Sat, 03 May 2008 15:04:11 -0400
+Subject: [stringtemplate-interest] Grid Problems
+Message-ID: <1209841451.11032.19.camel@localhost.localdomain>
+
+I have a system that produces data in 2-D grids (rows-and-columns).
+Each column has a name.  This seemed like a perfect match for
+StringTemplate.
+
+I've included at the end of this email a template that I wish to use to
+generate a report from my 2-D grids.  In particular, I wish to:
+
+1. Create a 1-row grid (person) containing one person record.
+2. Create a multi-row grid (phones) containing phone numbers for the
+person.
+3. Format it all together as shown in the template at the end of this
+message.
+
+The basic operation here is to set a StringTemplate attribute to one of
+my grids (StringTableModel).  I want to make a function like:
+
+public static void setAttribute(StringTemplate st, String var,
+StringTableModel val)
+	{ ... }
+
+Then I use code as follows to generate my report:
+
+	StringTemplate st = ....;
+
+	StringTableModel sperson = new StringTableModel(dmod.getPersonSb(), sfmap);
+	setAttribute(st, "person", sperson);
+	
+	StringTableModel sphones = new StringTableModel(dmod.getPhonesSb(), sfmap);
+	setAttribute(st, "phones", sphones);
+
+	return st.toString();
+
+Unfortunately, I came up against several difficulties in figuring out
+what to place in the body of the setAttribute(StringTemplate, String,
+StringTableModel) function:
+
+1. I first tried setting multi-valued attributes as follows.  The parser
+complained that I couldn't have "." in an attribute name:
+	for (int col=0; col<val.getColumnCount(); ++col) {
+		String colName = var + "." + val.getColumnName(col) + "";
+		for (int row=0; row<val.getRowCount(); ++row) {
+			st.setAttribute(colName, val.getValueAt(row, col));
+		}
+	}
+
+2. Then I tried the syntax shown in the docs for 2-5 column multi-valued
+attributes, as follows.  The parser also did not understand this, since
+I'm only setting one column at a time:
+	for (int col=0; col<val.getColumnCount(); ++col) {
+		String colName = var + ".{" + val.getColumnName(col) + "}";
+		for (int row=0; row<val.getRowCount(); ++row) {
+			st.setAttribute(colName, val.getValueAt(row, col));
+		}
+	}
+
+
+3. Then I tried creating a HashMap for each row, and setting the value
+once per row.  This ALMOST worked.  It worked as long as you have 2 or
+more phone numbers.  But if you had just one phone number (and in my
+case 2 columns), the system interpreted the data as two single-valued
+attributes, as opposed to one aggregate attribute.  Thus, it worked if I
+had 2 phone numbers, but threw an exception if I had just one.  Is this
+a bug, or is that the intended behavior?
+	for (int row=0; row<val.getRowCount(); ++row) {
+		HashMap map = new HashMap();
+		for (int col=0; col<val.getColumnCount(); ++col) {
+			map.put(val.getColumnName(col), val.getValueAt(row, col));
+		}
+		st.setAttribute(var, map);
+	}
+
+4. I figured maybe if I make each column as a list of attributes, this
+would work.  No such luck...
+	HashMap map = new HashMap();
+	for (int col=0; col<val.getColumnCount(); ++col) {
+		List list = new ArrayList(val.getRowCount());
+		for (int row=0; row<val.getRowCount(); ++row) {
+			list.add(val.getValueAt(row, col));
+		}
+		map.put(val.getColumnName(col), list);
+	}
+	st.setAttribute(var, map);
+
+5. Finally, I hacked the source code, making StringTemplate.Aggregate
+public, to allow the following.  Since StringTemplate.Aggregate is
+basically a wrapper around HashMap, I'm surprised that behaved
+differently from the HashMap example above.  But it did: this worked,
+whereas the example above did not:
+
+	
+	for (int row=0; row<val.getRowCount(); ++row) {
+		StringTemplate.Aggregate map = new StringTemplate.Aggregate();
+		for (int col=0; col<val.getColumnCount(); ++col) {
+			map.put(val.getColumnName(col), val.getValueAt(row, col));
+		}
+		st.setAttribute(var, map);
+	}
+	
+---------------------
+Current status: at this point, I know of no way to do what I want
+without hacking the source code.  Any suggestions on a solution to this
+problem?
+
+Thanks,
+-- Bob
+
+
+// ===================================================
+// summary.st
+
+<ul>
+<li>Name: $person.firstname$ $person.lastname$</li>
+<li>Email: $person.email$</li>
+</ul>
+
+
+<h3>Phones</h3>
+<table border=1>
+$phones:{it |
+  <tr>
+    <td>$it.groupid$</td><td>$it.phone$</td>
+  </tr>
+}$
+</table>
+
+
+
+From rgransberger at gmx.de  Sat May  3 14:07:42 2008
+From: rgransberger at gmx.de (Rabea Gransberger)
+Date: Sat, 03 May 2008 23:07:42 +0200
+Subject: [stringtemplate-interest] Stringtemplate ANTLR 3
+Message-ID: <481CD41E.80805@gmx.de>
+
+Do you plan to migrate the Stringtemplate grammars from antlr 2.7 to 
+antlr 3? If so, it would be really nice to separate it into grammars 
+which generate an AST and tree grammars which parse the structure to an 
+object like the StringTemplateGroup object.
+
+Than it would be possible to use the parser to generate an AST and use 
+this to implement some syntax highlighting for Stringtemplate files.
+
+Greetings,
+Rabea
+
+From parrt at cs.usfca.edu  Sat May  3 14:38:41 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Sat, 3 May 2008 14:38:41 -0700
+Subject: [stringtemplate-interest] Stringtemplate ANTLR 3
+In-Reply-To: <481CD41E.80805@gmx.de>
+References: <481CD41E.80805@gmx.de>
+Message-ID: <07536AE1-99CF-4673-BD83-E8158BBD89DC@cs.usfca.edu>
+
+yes, it's the plan :)
+Ter
+On May 3, 2008, at 2:07 PM, Rabea Gransberger wrote:
+
+> Do you plan to migrate the Stringtemplate grammars from antlr 2.7 to
+> antlr 3? If so, it would be really nice to separate it into grammars
+> which generate an AST and tree grammars which parse the structure to  
+> an
+> object like the StringTemplateGroup object.
+>
+> Than it would be possible to use the parser to generate an AST and use
+> this to implement some syntax highlighting for Stringtemplate files.
+>
+> Greetings,
+> Rabea
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+
+From parrt at cs.usfca.edu  Tue May  6 10:27:37 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Tue, 6 May 2008 10:27:37 -0700
+Subject: [stringtemplate-interest] Grid Problems
+In-Reply-To: <1209841451.11032.19.camel@localhost.localdomain>
+References: <1209841451.11032.19.camel@localhost.localdomain>
+Message-ID: <699CEBAF-0657-4BBD-9F41-5E4DBD2E0150@cs.usfca.edu>
+
+Hi Bob, i'm racing to get ANTLR v3.1 out the door...I'll get to this  
+as soon as i can.
+T
+On May 3, 2008, at 12:04 PM, Bob wrote:
+
+> I have a system that produces data in 2-D grids (rows-and-columns).
+> Each column has a name.  This seemed like a perfect match for
+> StringTemplate.
+>
+> I've included at the end of this email a template that I wish to use  
+> to
+> generate a report from my 2-D grids.  In particular, I wish to:
+>
+> 1. Create a 1-row grid (person) containing one person record.
+> 2. Create a multi-row grid (phones) containing phone numbers for the
+> person.
+> 3. Format it all together as shown in the template at the end of this
+> message.
+>
+> The basic operation here is to set a StringTemplate attribute to one  
+> of
+> my grids (StringTableModel).  I want to make a function like:
+>
+> public static void setAttribute(StringTemplate st, String var,
+> StringTableModel val)
+> 	{ ... }
+>
+> Then I use code as follows to generate my report:
+>
+> 	StringTemplate st = ....;
+>
+> 	StringTableModel sperson = new StringTableModel(dmod.getPersonSb(),  
+> sfmap);
+> 	setAttribute(st, "person", sperson);
+> 	
+> 	StringTableModel sphones = new StringTableModel(dmod.getPhonesSb(),  
+> sfmap);
+> 	setAttribute(st, "phones", sphones);
+>
+> 	return st.toString();
+>
+> Unfortunately, I came up against several difficulties in figuring out
+> what to place in the body of the setAttribute(StringTemplate, String,
+> StringTableModel) function:
+>
+> 1. I first tried setting multi-valued attributes as follows.  The  
+> parser
+> complained that I couldn't have "." in an attribute name:
+> 	for (int col=0; col<val.getColumnCount(); ++col) {
+> 		String colName = var + "." + val.getColumnName(col) + "";
+> 		for (int row=0; row<val.getRowCount(); ++row) {
+> 			st.setAttribute(colName, val.getValueAt(row, col));
+> 		}
+> 	}
+>
+> 2. Then I tried the syntax shown in the docs for 2-5 column multi- 
+> valued
+> attributes, as follows.  The parser also did not understand this,  
+> since
+> I'm only setting one column at a time:
+> 	for (int col=0; col<val.getColumnCount(); ++col) {
+> 		String colName = var + ".{" + val.getColumnName(col) + "}";
+> 		for (int row=0; row<val.getRowCount(); ++row) {
+> 			st.setAttribute(colName, val.getValueAt(row, col));
+> 		}
+> 	}
+>
+>
+> 3. Then I tried creating a HashMap for each row, and setting the value
+> once per row.  This ALMOST worked.  It worked as long as you have 2 or
+> more phone numbers.  But if you had just one phone number (and in my
+> case 2 columns), the system interpreted the data as two single-valued
+> attributes, as opposed to one aggregate attribute.  Thus, it worked  
+> if I
+> had 2 phone numbers, but threw an exception if I had just one.  Is  
+> this
+> a bug, or is that the intended behavior?
+> 	for (int row=0; row<val.getRowCount(); ++row) {
+> 		HashMap map = new HashMap();
+> 		for (int col=0; col<val.getColumnCount(); ++col) {
+> 			map.put(val.getColumnName(col), val.getValueAt(row, col));
+> 		}
+> 		st.setAttribute(var, map);
+> 	}
+>
+> 4. I figured maybe if I make each column as a list of attributes, this
+> would work.  No such luck...
+> 	HashMap map = new HashMap();
+> 	for (int col=0; col<val.getColumnCount(); ++col) {
+> 		List list = new ArrayList(val.getRowCount());
+> 		for (int row=0; row<val.getRowCount(); ++row) {
+> 			list.add(val.getValueAt(row, col));
+> 		}
+> 		map.put(val.getColumnName(col), list);
+> 	}
+> 	st.setAttribute(var, map);
+>
+> 5. Finally, I hacked the source code, making StringTemplate.Aggregate
+> public, to allow the following.  Since StringTemplate.Aggregate is
+> basically a wrapper around HashMap, I'm surprised that behaved
+> differently from the HashMap example above.  But it did: this worked,
+> whereas the example above did not:
+>
+> 	
+> 	for (int row=0; row<val.getRowCount(); ++row) {
+> 		StringTemplate.Aggregate map = new StringTemplate.Aggregate();
+> 		for (int col=0; col<val.getColumnCount(); ++col) {
+> 			map.put(val.getColumnName(col), val.getValueAt(row, col));
+> 		}
+> 		st.setAttribute(var, map);
+> 	}
+> 	
+> ---------------------
+> Current status: at this point, I know of no way to do what I want
+> without hacking the source code.  Any suggestions on a solution to  
+> this
+> problem?
+>
+> Thanks,
+> -- Bob
+>
+>
+> // ===================================================
+> // summary.st
+>
+> <ul>
+> <li>Name: $person.firstname$ $person.lastname$</li>
+> <li>Email: $person.email$</li>
+> </ul>
+>
+>
+> <h3>Phones</h3>
+> <table border=1>
+> $phones:{it |
+>  <tr>
+>    <td>$it.groupid$</td><td>$it.phone$</td>
+>  </tr>
+> }$
+> </table>
+>
+>
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+
+From mcronk at yahoo.com  Fri May  9 15:05:02 2008
+From: mcronk at yahoo.com (Michael Cronk)
+Date: Fri, 9 May 2008 15:05:02 -0700 (PDT)
+Subject: [stringtemplate-interest] Group files deployed in WAR
+Message-ID: <974715.67110.qm@web50101.mail.re2.yahoo.com>
+
+I have successfully loaded a group (.stg) file when deployed in a WAR file using basically the following logic:
+
+// Get group
+org.antlr.stringtemplate.StringTemplateGroup stringTemplateGroup = null;
+java.io.InputStream inputStream = null;
+java.io.Reader reader = null;
+try {
+  java.lang.ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+  inputStream = classLoader.getResourceAsStream(resourceName);
+  reader = new java.io.InputStreamReader(inputStream);
+  stringTemplateGroup = new org.antlr.stringtemplate.StringTemplateGroup(reader);
+} finally {
+  if (inputStream != null) { inputStream.close(); }
+  if (reader != null) { reader.close(); }
+}
+// Get template
+org.antlr.stringtemplate.StringTemplate stringTemplate = null;
+stringTemplate = stringTemplateGroup .getInstanceOf(templateName);
+
+However, if I try to move some of the common logic into a super group, the parser fails.
+For example (and a very loose example at that): 
+
+ ***** supergroup.stg:
+
+group supergroup;
+
+stringData() ::= "<data>"
+
+ ***** subgroup.stg:
+
+group subgroup : supergroup;
+
+method(data) ::= "<stringData()>"
+
+Basically, the stringData() template is not found.  It also dumps the message "no group loader registered" to the console.
+
+I have all the templates deployed in WEB-INF/classes/tpl.  When I loaded the template, I used "tpl/subgroup.stg" as the resource name.
+"supergroup.stg" is in the same path.
+
+I prefer to place common templates in a supergroup, and don't know if this is even possible when deployed in a WAR file.
+Any help would be greatly appreciated. 
+Thanks in advance, Michael.
+
+
+      ____________________________________________________________________________________
+Be a better friend, newshound, and 
+know-it-all with Yahoo! Mobile.  Try it now.  http://mobile.yahoo.com/;_ylt=Ahu06i62sR8HDtDypao8Wcj9tAcJ
+
+From David.Stenglein at deshaw.com  Mon May 12 11:03:04 2008
+From: David.Stenglein at deshaw.com (Stenglein, David)
+Date: Mon, 12 May 2008 14:03:04 -0400
+Subject: [stringtemplate-interest] Question about MVC separation for code
+	generation.
+Message-ID: <9728D331C7A425489028E60E59B56BA44BB9D5@mailnyc1.nyc.deshaw.com>
+
+Hello all,
+
+I've been using StringTemplate for the last month or so to do some code
+generation in python (I happy to finally get the chance to use it).
+
+My question is a bit more generic in nature. What I am doing is building
+a model out of a subset of XML Schema. My model has some classes to
+represent complex and simple types, attributes and a couple of other
+things from XML schema.
+
+Ex:
+User = ComplexType(name="user")
+User.addAttribute( Attribute(name="username",
+type=SimpleType(name="xsd:string"))
+
+My question regards where to put information about the "kind" of type
+that is being passed to the template for a piece of the schema
+(essentially a data structure class).
+
+I started out with a binary system with either simple or complex types,
+and I just set an attribute readable through iscomplex(). This has
+worked so far, but now I want to treat certain things, like lists,
+differently and subclassing my datatype representation and adding
+is<blah> tests seems a bit redundant.
+
+At the same time, my controller code is pretty simple (just iterate over
+types and call a top level template), and I'm wondering if I should be
+putting more logic in here. I was thinking of having the controller load
+different templates based on class name, but that doesn't solve very
+much, since I just have a simple top-level template "class(type) ::="
+and within that there are statements that are conditional for
+relationships to other types. Having the controller involved any further
+in would seem intrusive and is potentially implementing some of the view
+in the wrong place.
+
+Another thought I've had is to change my model classes (e.g.
+ComplexType, SimpleType, ListType) to have a method for returning the
+name of the class (not the schema element) and have the templates do
+includes based on this, rather than having the if statements at all.
+Combined with some polymorphism, this could solve a fair bit of my
+problems.
+
+Out of this, I have a couple of questions:
+
+  -Is my description of the problem totally confusing? I've tried to be
+careful about using the terms model and 
+   schema, but it seems too easy to switch them around. Is there
+better/standard terminology to use?
+
+  -When I have complete controll over the input model and output view,
+is there much of any reason to put intelligence 
+    in the controller, especially since I am doing a pretty
+straightforward "transformation"? I am generating code code for
+    two different cases and in the second case, things are a little more
+complex which gives rise to this problem.
+
+  -Are there any suggestions for handling this differently?
+
+Thanks,
+Dave
+
+From tgriffiths at liveworld.com  Thu May 15 16:09:53 2008
+From: tgriffiths at liveworld.com (Trevor Griffiths)
+Date: Thu, 15 May 2008 16:09:53 -0700
+Subject: [stringtemplate-interest] Odd even row formatting
+Message-ID: <D8D09C18-72DB-4338-AF12-E59968B3EADE@liveworld.com>
+
+Hi,
+
+The topic is how to change the style of rows in a table based on their  
+odd or even index value.
+Or more generally, given a set of ordered data to iterate over how to  
+make the style dependent upon the data's position in the the set. That  
+is on the index of the data.
+
+The current ST suggestion (at least in the  documentation) is to set  
+up this kind of template structure:
+
+$subjectList: oddRow(), evenRow()$
+
+Where the oddRow template might be:
+
+<tr>
+     <b><td>$it.subject$</td><td>$it.count$</td></b>
+</tr>
+
+And the evenRow template might be:
+
+<tr bgcolor= red>
+     <td>$it.subject$</td><td>$it.count$</td>
+</tr>
+
+The subjectList is iterated over and every even row will have a red  
+background.
+
+One problem I have with this approach is that it seems to violate the  
+DRY principle.
+The oddRow and evenRow have to be virtually copies of each other. I  
+picked a simple row structure, it could well be a lot more complicated  
+than this.
+
+ From a separation of concerns perspective, is there any reason why I  
+shouldn't be able to explicitly key off the index, either through an  
+odd/even boolean of some sort? This would allow this kind of expression:
+
+<tr $if (odd)$ bgcolor= red $endif$ >
+     <td>$it.subject$</td><td>$it.count$</td>
+</tr>
+
+And while odd/even is a fairly common requirement, it begs the general  
+question of why can't I change the presentation of the data based on  
+its index value? I'm not attempting to change the model. I am simply  
+trying to: "operate on a set of incoming read-only data values, called  
+attributes..."
+
+Actually, I did just implement odd/even in the model by computing odd/ 
+even as each subject line bean is loaded in to an array of beans. The  
+additional subject line field, "odd," is empty if the respective line  
+is even. (Each subject line bean has the attributes: subject, count,  
+odd). The "odd" field amounts to meta data for the line's position in  
+the array.
+
+But, now don't  we have a case of the model entangled with the view?  
+there seems something slightly awry here or is it just me :-)
+
+Anyway, I'd be interested in your opinion on this topic:
+
+So, in conclusion, Is it reasonable to have an odd/even attribute, if  
+not the index, available in the presentation layer, or is this the  
+first step on a slippery slope :-)
+
+If the index is made available, then it would obviously need to be  
+compared with some value, which breaks the simplicity of the "does it  
+exist" rule.
+
+Thanks
+
+Trev...
+
+
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20080515/2349ba67/attachment.html 
+
+From parrt at cs.usfca.edu  Thu May 15 17:41:13 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Thu, 15 May 2008 17:41:13 -0700
+Subject: [stringtemplate-interest] Odd even row formatting
+In-Reply-To: <D8D09C18-72DB-4338-AF12-E59968B3EADE@liveworld.com>
+References: <D8D09C18-72DB-4338-AF12-E59968B3EADE@liveworld.com>
+Message-ID: <F0CEDB5C-F7A7-49E7-9742-97A9189086D8@cs.usfca.edu>
+
+Hi guys,Sorry for delays in responding to mail what I'm racing to get  
+antlr v3.1 finished and grade my final exams... answers below. good  
+questions!!
+
+On May 15, 2008, at 4:09 PM, Trevor Griffiths wrote:
+
+> Hi,
+>
+> The topic is how to change the style of rows in a table based on  
+> their odd or even index value.
+> Or more generally, given a set of ordered data to iterate over how  
+> to make the style dependent upon the data's position in the the set.  
+> That is on the index of the data.
+>
+> The current ST suggestion (at least in the  documentation) is to set  
+> up this kind of template structure:
+>
+> $subjectList: oddRow(), evenRow()$
+>
+> Where the oddRow template might be:
+>
+> <tr>
+>     <b><td>$it.subject$</td><td>$it.count$</td></b>
+> </tr>
+>
+> And the evenRow template might be:
+>
+> <tr bgcolor= red>
+>     <td>$it.subject$</td><td>$it.count$</td>
+> </tr>
+>
+> The subjectList is iterated over and every even row will have a red  
+> background.
+>
+> One problem I have with this approach is that it seems to violate  
+> the DRY principle.
+
+Well, as you say, this one is pretty simple, but the principle is  
+correct. There will be repetition. In that case I suggest that you  
+simply use another template to factor out there, and elements like
+
+row2col(left,right,color) ::= ...
+
+then do
+
+oddRow() ::= "<row2col(a=it.subject,b=it.count)>"
+evenRow() ::= << <row2col(a=it.subject,b=it.count, color=red)> >>
+
+> From a separation of concerns perspective, is there any reason why I  
+> shouldn't be able to explicitly key off the index, either through an  
+> odd/even boolean of some sort? This would allow this kind of  
+> expression:
+>
+> <tr $if (odd)$ bgcolor= red $endif$ >
+>     <td>$it.subject$</td><td>$it.count$</td>
+> </tr>
+
+>
+> And while odd/even is a fairly common requirement, it begs the  
+> general question of why can't I change the presentation of the data  
+> based on its index value? I'm not attempting to change the model. I  
+> am simply trying to: "operate on a set of incoming read-only data  
+> values, called attributes..."
+
+switch on iteration is something that is fine; the only problem is  
+finding a construct that allows only that and not generic testing of  
+integers etc. I wonder if something could be done with a map and using  
+the index as keys or something.
+
+> Actually, I did just implement odd/even in the model by computing  
+> odd/even as each subject line bean is loaded in to an array of beans.
+
+also, can use implicitly created aggregates
+
+st.setAttribute("aRow.{odd,data}", false, mydataobject);
+
+  this makes it much easier then you can simply test $it.odd$ and use  
+$it.data$ to get your data element.
+
+> But, now don't  we have a case of the model entangled with the view?  
+> there seems something slightly awry here or is it just me :-)
+
+Not really in that the model can know whether something has an even or  
+odd value ;)
+
+> So, in conclusion, Is it reasonable to have an odd/even attribute,  
+> if not the index, available in the presentation layer, or is this  
+> the first step on a slippery slope :-)
+
+Perhaps a switch or something I was limited to the iteration?
+
+> If the index is made available, then it would obviously need to be  
+> compared with some value, which breaks the simplicity of the "does  
+> it exist" rule.
+
+yeah, we would have to hide it so did not look like a comparison ;)
+
+Ter
+
+From parrt at cs.usfca.edu  Thu May 15 17:42:00 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Thu, 15 May 2008 17:42:00 -0700
+Subject: [stringtemplate-interest] isName/ getIsName property lookup ?
+In-Reply-To: <20080421070159.GI7671@freedbms.net>
+References: <20080421070159.GI7671@freedbms.net>
+Message-ID: <22A9BFD5-4B1C-426B-B70B-C2D384E11685@cs.usfca.edu>
+
+
+On Apr 21, 2008, at 12:01 AM, Zenaan Harkness wrote:
+
+> On the ST3.1 Expressions doco, it says, regarding attribute lookup,  
+> for
+> Java:
+>
+> A method named isName() - StringTemplate accepts isName() if it  
+> returns
+> a Boolean If found, a return value is obtained via reflection.
+>
+>
+> This does not seem to work. Only getIsName works, AFAICT.
+
+weird...I could swear it worked for me but perhaps I have not tried it  
+and while. Is there a test case in the unit tests?
+Ter
+>
+>
+> Can anyone point me to an example of how this works in Java ST?
+> Or is there a bug for this?
+>
+> tia
+> zen
+>
+> -- 
+> Homepage: www.SoulSound.net -- Free Australia: www.UPMART.org
+> Please respect the confidentiality of this email as sensibly  
+> warranted.
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+
+From simon_may at bridleway.freeserve.co.uk  Sun May 18 10:51:51 2008
+From: simon_may at bridleway.freeserve.co.uk (Simon May)
+Date: Sun, 18 May 2008 18:51:51 +0100
+Subject: [stringtemplate-interest] SttingTemplate language editor
+Message-ID: <A0E9EF9B19204441BBB537A6E5225A9F@MERIDIAN5>
+
+I have been using ST for a code generation for a couple of years now and have amassed many hundreds of templates in groups running to thousands of lines. Best thing since sliced bread compared with the old ways of doing things (asp model generators like codsmith). These group files are big and complicated and editing with the equivilent of notepad sucks. Often a small syntax error can really mess me up for hours trying to find it. Does anyone have or know of an editor with some intelligence that can help me out. 
+
+Thanks in advance
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20080518/2e719a2e/attachment.html 
+
+From rgransberger at gmx.de  Sun May 18 11:04:18 2008
+From: rgransberger at gmx.de (Rabea Gransberger)
+Date: Sun, 18 May 2008 20:04:18 +0200
+Subject: [stringtemplate-interest] SttingTemplate language editor
+In-Reply-To: <A0E9EF9B19204441BBB537A6E5225A9F@MERIDIAN5>
+References: <A0E9EF9B19204441BBB537A6E5225A9F@MERIDIAN5>
+Message-ID: <48306FA2.90704@gmx.de>
+
+Hi,
+
+I started writing an eclipse plugin for ST syntax highlighting, outline 
+and maybe more. But I would like to wait for a release of ST which uses 
+two grammars instead of one 
+(http://www.antlr.org:8080/pipermail/stringtemplate-interest/2008-May/001465.html), 
+so that it is possible to have an AST for a file. It's to difficult to 
+continue with the plugin without an AST. Until now it has some basic 
+highlighting and an outline (which works not so very well at all).
+
+Have you tried out this one? 
+http://www.antlr.org:8080/pipermail/stringtemplate-interest/2007-October/001227.html
+
+Rabea
+
+Simon May schrieb:
+> I have been using ST for a code generation for a couple of years now and have amassed many hundreds of templates in groups running to thousands of lines. Best thing since sliced bread compared with the old ways of doing things (asp model generators like codsmith). These group files are big and complicated and editing with the equivilent of notepad sucks. Often a small syntax error can really mess me up for hours trying to find it. Does anyone have or know of an editor with some intelligence that can help me out. 
+> 
+> Thanks in advance
+
+From rgransberger at gmx.de  Sun May 18 11:13:20 2008
+From: rgransberger at gmx.de (Rabea Gransberger)
+Date: Sun, 18 May 2008 20:13:20 +0200
+Subject: [stringtemplate-interest] List of used StringTemplates
+Message-ID: <483071C0.2030806@gmx.de>
+
+Is it somehow possible to write out a list of Stringtemplate rules 
+which are used in an ANTLR 3 grammar to an separate file?
+
+This would be nice for automatic testing to find out if all of the used 
+Stringtemplate rules are available. It could minimize the problem of 
+running into runtime exceptions if a referenced template does not exist.
+
+Have a nice weekend,
+Rabea
+
+
+From gerald at certiv.net  Sun May 18 11:20:05 2008
+From: gerald at certiv.net (Gerald Rosenberg)
+Date: Sun, 18 May 2008 11:20:05 -0700
+Subject: [stringtemplate-interest] SttingTemplate language editor
+In-Reply-To: <A0E9EF9B19204441BBB537A6E5225A9F@MERIDIAN5>
+References: <A0E9EF9B19204441BBB537A6E5225A9F@MERIDIAN5>
+Message-ID: <200805181821.m4IILwjV018931@tach.newtechlaw.com>
+
+AntlrDT includes a StringTemplate editor with some context-sensitive 
+capabilities.
+
+http://www.certiv.net/projects/antlrdt.html
+
+At 10:51 AM 5/18/2008, Simon May wrote:
+>I have been using ST for a code generation for a couple of years now 
+>and have amassed many hundreds of templates in groups running to 
+>thousands of lines. Best thing since sliced bread compared with the 
+>old ways of doing things (asp model generators like codsmith). These 
+>group files are big and complicated and editing with the equivilent 
+>of notepad sucks. Often a small syntax error can really mess me up 
+>for hours trying to find it. Does anyone have or know of an editor 
+>with some intelligence that can help me out.
+>
+>Thanks in advance
+>_______________________________________________
+>stringtemplate-interest mailing list
+>stringtemplate-interest at antlr.org
+>http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20080518/00575fa6/attachment.html 
+
+From simon_may at bridleway.freeserve.co.uk  Sun May 18 11:40:07 2008
+From: simon_may at bridleway.freeserve.co.uk (Simon May)
+Date: Sun, 18 May 2008 19:40:07 +0100
+Subject: [stringtemplate-interest] SttingTemplate language editor
+References: <A0E9EF9B19204441BBB537A6E5225A9F@MERIDIAN5>
+	<48306FA2.90704@gmx.de>
+Message-ID: <187447158C134A7A8090B36CA4417B36@MERIDIAN5>
+
+Hi. I should have mentioned that I work in Visual Studio. I have also 
+thought about writing an editor based on a Syntax Editor Control, there are 
+a few out there.  But I a) have not experience in this area and b) know that 
+without an AST (or similar - as I say I am on foreign ground here) it would 
+be hopeless.
+
+Still here's hoping we can resolve it soon.
+
+Simon
+
+----- Original Message ----- 
+From: "Rabea Gransberger" <rgransberger at gmx.de>
+Cc: <stringtemplate-interest at antlr.org>
+Sent: Sunday, May 18, 2008 7:04 PM
+Subject: Re: [stringtemplate-interest] SttingTemplate language editor
+
+
+> Hi,
+>
+> I started writing an eclipse plugin for ST syntax highlighting, outline
+> and maybe more. But I would like to wait for a release of ST which uses
+> two grammars instead of one
+> (http://www.antlr.org:8080/pipermail/stringtemplate-interest/2008-May/001465.html),
+> so that it is possible to have an AST for a file. It's to difficult to
+> continue with the plugin without an AST. Until now it has some basic
+> highlighting and an outline (which works not so very well at all).
+>
+> Have you tried out this one?
+> http://www.antlr.org:8080/pipermail/stringtemplate-interest/2007-October/001227.html
+>
+> Rabea
+>
+> Simon May schrieb:
+>> I have been using ST for a code generation for a couple of years now and 
+>> have amassed many hundreds of templates in groups running to thousands of 
+>> lines. Best thing since sliced bread compared with the old ways of doing 
+>> things (asp model generators like codsmith). These group files are big 
+>> and complicated and editing with the equivilent of notepad sucks. Often a 
+>> small syntax error can really mess me up for hours trying to find it. 
+>> Does anyone have or know of an editor with some intelligence that can 
+>> help me out.
+>>
+>> Thanks in advance
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+> 
+
+
+
+From parrt at cs.usfca.edu  Mon May 19 09:25:22 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Mon, 19 May 2008 09:25:22 -0700
+Subject: [stringtemplate-interest] List of used StringTemplates
+In-Reply-To: <483071C0.2030806@gmx.de>
+References: <483071C0.2030806@gmx.de>
+Message-ID: <6C2DDACD-94AC-41D3-ACC9-B8989B6583C1@cs.usfca.edu>
+
+Hi. Try grep from the cmd-line.  You should be able to get an exact  
+answer by looking for -> ID '(' or somethig.
+Ter
+On May 18, 2008, at 11:13 AM, Rabea Gransberger wrote:
+
+> Is it somehow possible to write out a list of Stringtemplate rules
+> which are used in an ANTLR 3 grammar to an separate file?
+>
+> This would be nice for automatic testing to find out if all of the  
+> used
+> Stringtemplate rules are available. It could minimize the problem of
+> running into runtime exceptions if a referenced template does not  
+> exist.
+>
+> Have a nice weekend,
+> Rabea
+>
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+
+From tgriffiths at liveworld.com  Tue May 20 14:02:12 2008
+From: tgriffiths at liveworld.com (Trevor Griffiths)
+Date: Tue, 20 May 2008 14:02:12 -0700
+Subject: [stringtemplate-interest] Scala/Lift and stringTemplate...damned
+	with faint praise
+Message-ID: <3F8CA93E-6E27-4293-9EC4-02A7B1B79C38@liveworld.com>
+
+Hi,
+
+You have probably already seen this from: http://liftweb.net/index.php/Lift_View_First
+
+First comment:
+
+"I think the best paper on the subject is Terrence Parr's work on  
+StringTemplate."
+
+Followed a little further down by:
+
+"First, I rejected using StringTemplate (or something like it) because  
+it introduced some programming into the templating mechanism and it  
+would have taken a lot of work to make it XMLTemplate (and all of  
+lift's templating is XHTML and makes use of Scala's excellent support  
+of XML.)"
+
+I wonder how they plan on being able to conditionally include  
+alternative chunks of content, etc.
+
+Anyway i thought it was interesting.
+
+Trev...
+
+
+From parrt at cs.usfca.edu  Tue May 20 14:09:12 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Tue, 20 May 2008 14:09:12 -0700
+Subject: [stringtemplate-interest] Scala/Lift and
+	stringTemplate...damned with faint praise
+In-Reply-To: <3F8CA93E-6E27-4293-9EC4-02A7B1B79C38@liveworld.com>
+References: <3F8CA93E-6E27-4293-9EC4-02A7B1B79C38@liveworld.com>
+Message-ID: <F9B4D265-167E-4959-BF4A-10C8FD08289F@cs.usfca.edu>
+
+Heh, cool.  Yeah,Conditionals are potentially embedding logic but  
+necessary.
+Ter
+On May 20, 2008, at 2:02 PM, Trevor Griffiths wrote:
+
+> Hi,
+>
+> You have probably already seen this from: http://liftweb.net/index.php/Lift_View_First
+>
+> First comment:
+>
+> "I think the best paper on the subject is Terrence Parr's work on
+> StringTemplate."
+>
+> Followed a little further down by:
+>
+> "First, I rejected using StringTemplate (or something like it) because
+> it introduced some programming into the templating mechanism and it
+> would have taken a lot of work to make it XMLTemplate (and all of
+> lift's templating is XHTML and makes use of Scala's excellent support
+> of XML.)"
+>
+> I wonder how they plan on being able to conditionally include
+> alternative chunks of content, etc.
+>
+> Anyway i thought it was interesting.
+>
+> Trev...
+>
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+
+From sasha.crosland at gmail.com  Fri May 30 20:22:46 2008
+From: sasha.crosland at gmail.com (Sasha Crosland)
+Date: Fri, 30 May 2008 20:22:46 -0700
+Subject: [stringtemplate-interest] "rest" and template recursion
+Message-ID: <8c9befbf0805302022x1c09d1cdw4da788fc5d2885de@mail.gmail.com>
+
+Hi everyone,
+
+I had been having difficulty getting template recursion to work as I had
+hoped it would, and when I searched briefly for anything addressing this
+topic in the list archives, I found that others had apparently had a similar
+problem to mine.  From what I gathered, the problem is not to do with
+recursion itself, but with use of the "rest" operator on a multi-valued
+attribute, which I have been trying to use in the implementation of my
+recursive template.  Something to do with "rest" returning an iterator
+instead of a list?
+
+What I want to do is to generate the names of Java types such as "Fn<P1,
+Fn<P2, Fn<P3, R>>>," which I am using as a "curried" representation of a
+three-argument function with type P1 x P2 x P3 -> R.  I tried to define a
+template called curriedFnType taking a single attribute called arity, which
+is a list of integers such that arity[i] = i for i from 1 to length(arity).
+
+curriedFnType(arity) ::= <<
+<if(arity)>
+Fn\<P<first(arity)>, <curriedFnType(arity=rest(arity))>\>
+<else>
+R
+<endif>
+>>
+
+The problem is that for an arity of four ([1,2,3,4]), for example, the
+template is instantiated to "Fn<P1, Fn<P2, Fn<P4, R>>>", which somehow skips
+over P3.  I encounter similar quirkiness with whatever sort of recursive
+template I try to implement in this manner.  And I don't think that using
+the colon operator to apply a template to the multi-valued arity attribute
+will work directly, will it?, since we aren't dealing with tail-recursion.
+The alternative
+
+curriedFnType2(arity) ::= "<arity:{Fn\<P<it>, }>R<arity:{\>}>
+
+seems to work, but, to be honest, it feels rather lame that I should have to
+resort to this.  Can anybody shed any light on the issue?  Is this indeed a
+bug, or am I overlooking something?  I am using StringTemplate 3.1.
+
+
+Sasha
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20080530/8921f976/attachment.html 
+
+From parrt at cs.usfca.edu  Fri May 30 22:28:37 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Fri, 30 May 2008 22:28:37 -0700
+Subject: [stringtemplate-interest] "rest" and template recursion
+In-Reply-To: <8c9befbf0805302022x1c09d1cdw4da788fc5d2885de@mail.gmail.com>
+References: <8c9befbf0805302022x1c09d1cdw4da788fc5d2885de@mail.gmail.com>
+Message-ID: <9AC3565A-96BB-4A61-AF08-CB5D41D6D824@cs.usfca.edu>
+
+Yeah, I use an iterator rather than making a copy of the list, which  
+of course causes trouble with recursion.  rest() returns something  
+with a side-effect...seems you're right...perhaps we should make it  
+copy the list (well, minus first element).
+
+Anybody vote yes or no?
+
+Ter
+On May 30, 2008, at 8:22 PM, Sasha Crosland wrote:
+
+> Hi everyone,
+>
+> I had been having difficulty getting template recursion to work as I  
+> had hoped it would, and when I searched briefly for anything  
+> addressing this topic in the list archives, I found that others had  
+> apparently had a similar problem to mine.  From what I gathered, the  
+> problem is not to do with recursion itself, but with use of the  
+> "rest" operator on a multi-valued attribute, which I have been  
+> trying to use in the implementation of my recursive template.   
+> Something to do with "rest" returning an iterator instead of a list?
+>
+> What I want to do is to generate the names of Java types such as  
+> "Fn<P1, Fn<P2, Fn<P3, R>>>," which I am using as a "curried"  
+> representation of a three-argument function with type P1 x P2 x P3 - 
+> > R.  I tried to define a template called curriedFnType taking a  
+> single attribute called arity, which is a list of integers such that  
+> arity[i] = i for i from 1 to length(arity).
+>
+> curriedFnType(arity) ::= <<
+> <if(arity)>
+> Fn\<P<first(arity)>, <curriedFnType(arity=rest(arity))>\>
+> <else>
+> R
+> <endif>
+> >>
+>
+> The problem is that for an arity of four ([1,2,3,4]), for example,  
+> the template is instantiated to "Fn<P1, Fn<P2, Fn<P4, R>>>", which  
+> somehow skips over P3.  I encounter similar quirkiness with whatever  
+> sort of recursive template I try to implement in this manner.  And I  
+> don't think that using the colon operator to apply a template to the  
+> multi-valued arity attribute will work directly, will it?, since we  
+> aren't dealing with tail-recursion.  The alternative
+>
+> curriedFnType2(arity) ::= "<arity:{Fn\<P<it>, }>R<arity:{\>}>
+>
+> seems to work, but, to be honest, it feels rather lame that I should  
+> have to resort to this.  Can anybody shed any light on the issue?   
+> Is this indeed a bug, or am I overlooking something?  I am using  
+> StringTemplate 3.1.
+>
+>
+> Sasha
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+
+From sasha.crosland at gmail.com  Fri May 30 23:05:22 2008
+From: sasha.crosland at gmail.com (Sasha Crosland)
+Date: Fri, 30 May 2008 23:05:22 -0700
+Subject: [stringtemplate-interest] "rest" and template recursion
+In-Reply-To: <9AC3565A-96BB-4A61-AF08-CB5D41D6D824@cs.usfca.edu>
+References: <8c9befbf0805302022x1c09d1cdw4da788fc5d2885de@mail.gmail.com>
+	<9AC3565A-96BB-4A61-AF08-CB5D41D6D824@cs.usfca.edu>
+Message-ID: <8c9befbf0805302305u344c2d6h6d00f78c1f789cc9@mail.gmail.com>
+
+Thanks for the explanation, Terence.  A side-effect-free rest() does seem
+more in the spirit of StringTemplate, doesn't it?  I vote yes, for what it's
+worth.
+
+But would you actually need to make a copy of the list data?  If lists are
+immutable within a template, then couldn't you easily return a lightweight
+view of the sublist that reads through to the original list, just like with
+an iterator?
+
+On Fri, May 30, 2008 at 10:28 PM, Terence Parr <parrt at cs.usfca.edu> wrote:
+
+> Yeah, I use an iterator rather than making a copy of the list, which of
+> course causes trouble with recursion.  rest() returns something with a
+> side-effect...seems you're right...perhaps we should make it copy the list
+> (well, minus first element).
+>
+> Anybody vote yes or no?
+>
+> Ter
+>
+> On May 30, 2008, at 8:22 PM, Sasha Crosland wrote:
+>
+>  Hi everyone,
+>>
+>> I had been having difficulty getting template recursion to work as I had
+>> hoped it would, and when I searched briefly for anything addressing this
+>> topic in the list archives, I found that others had apparently had a similar
+>> problem to mine.  From what I gathered, the problem is not to do with
+>> recursion itself, but with use of the "rest" operator on a multi-valued
+>> attribute, which I have been trying to use in the implementation of my
+>> recursive template.  Something to do with "rest" returning an iterator
+>> instead of a list?
+>>
+>> What I want to do is to generate the names of Java types such as "Fn<P1,
+>> Fn<P2, Fn<P3, R>>>," which I am using as a "curried" representation of a
+>> three-argument function with type P1 x P2 x P3 -> R.  I tried to define a
+>> template called curriedFnType taking a single attribute called arity, which
+>> is a list of integers such that arity[i] = i for i from 1 to length(arity).
+>>
+>> curriedFnType(arity) ::= <<
+>> <if(arity)>
+>> Fn\<P<first(arity)>, <curriedFnType(arity=rest(arity))>\>
+>> <else>
+>> R
+>> <endif>
+>> >>
+>>
+>> The problem is that for an arity of four ([1,2,3,4]), for example, the
+>> template is instantiated to "Fn<P1, Fn<P2, Fn<P4, R>>>", which somehow skips
+>> over P3.  I encounter similar quirkiness with whatever sort of recursive
+>> template I try to implement in this manner.  And I don't think that using
+>> the colon operator to apply a template to the multi-valued arity attribute
+>> will work directly, will it?, since we aren't dealing with tail-recursion.
+>>  The alternative
+>>
+>> curriedFnType2(arity) ::= "<arity:{Fn\<P<it>, }>R<arity:{\>}>
+>>
+>> seems to work, but, to be honest, it feels rather lame that I should have
+>> to resort to this.  Can anybody shed any light on the issue?  Is this indeed
+>> a bug, or am I overlooking something?  I am using StringTemplate 3.1.
+>>
+>>
+>> Sasha
+>> _______________________________________________
+>> stringtemplate-interest mailing list
+>> stringtemplate-interest at antlr.org
+>> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>>
+>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20080530/d42e2df3/attachment.html 
+
+From zen at freedbms.net  Fri May 30 23:30:39 2008
+From: zen at freedbms.net (Zenaan Harkness)
+Date: Sat, 31 May 2008 16:30:39 +1000
+Subject: [stringtemplate-interest] "rest" and template recursion
+In-Reply-To: <8c9befbf0805302305u344c2d6h6d00f78c1f789cc9@mail.gmail.com>
+References: <8c9befbf0805302022x1c09d1cdw4da788fc5d2885de@mail.gmail.com>
+	<9AC3565A-96BB-4A61-AF08-CB5D41D6D824@cs.usfca.edu>
+	<8c9befbf0805302305u344c2d6h6d00f78c1f789cc9@mail.gmail.com>
+Message-ID: <20080531063038.GE8646@freedbms.net>
+
+On Fri, May 30, 2008 at 11:05:22PM -0700, Sasha Crosland wrote:
+> Thanks for the explanation, Terence.  A side-effect-free rest() does seem
+> more in the spirit of StringTemplate, doesn't it?  I vote yes, for what it's
+> worth.
+> 
+> But would you actually need to make a copy of the list data?  If lists are
+> immutable within a template, then couldn't you easily return a lightweight
+> view of the sublist that reads through to the original list, just like with
+> an iterator?
+
+Vote thirded.
+
+Recursion ought to Just Work (TM).
+
+I additionally vote for an addition to first,last,rest to fill the gap,
+perhaps "front" (all but last).
+
+Lightweight container wrapper is definitely the go here.
+ArrayList.clone(), or Collection.clone() should do what's needed.
+
+zen
+
+-- 
+Homepage: www.SoulSound.net -- Free Australia: www.UPMART.org
+Please respect the confidentiality of this email as sensibly warranted.
+
+From contact at moonbase.com.au  Sat May 31 02:24:08 2008
+From: contact at moonbase.com.au (Mark Wharton)
+Date: Sat, 31 May 2008 18:24:08 +0900
+Subject: [stringtemplate-interest] "rest" and template recursion
+In-Reply-To: <20080531063038.GE8646@freedbms.net>
+References: <8c9befbf0805302022x1c09d1cdw4da788fc5d2885de@mail.gmail.com>	
+	<9AC3565A-96BB-4A61-AF08-CB5D41D6D824@cs.usfca.edu>	
+	<8c9befbf0805302305u344c2d6h6d00f78c1f789cc9@mail.gmail.com>	 
+	<20080531063038.GE8646@freedbms.net>
+Message-ID: <1212225848.7608.1256010601@webmail.messagingengine.com>
+
+Hi Zen,
+
+Actually there is a "Trunc" method in the ASTExpr class (ASTExpr.java) which looks - almost - like what you're asking for:
+
+	/** Return all but the last element.  trunc(x)=null if x is single-valued. */
+	public Object trunc(Object attribute) {
+		return null; // not impl.
+	}
+
+Maybe it can be implemented while "rest" is worked out?
+
+Cheers,
+
+Mark
+
+On Sat, 31 May 2008 16:30:39 +1000, "Zenaan Harkness" <zen at freedbms.net> said:
+> On Fri, May 30, 2008 at 11:05:22PM -0700, Sasha Crosland wrote:
+> > Thanks for the explanation, Terence.  A side-effect-free rest() does seem
+> > more in the spirit of StringTemplate, doesn't it?  I vote yes, for what it's
+> > worth.
+> > 
+> > But would you actually need to make a copy of the list data?  If lists are
+> > immutable within a template, then couldn't you easily return a lightweight
+> > view of the sublist that reads through to the original list, just like with
+> > an iterator?
+> 
+> Vote thirded.
+> 
+> Recursion ought to Just Work (TM).
+> 
+> I additionally vote for an addition to first,last,rest to fill the gap,
+> perhaps "front" (all but last).
+> 
+> Lightweight container wrapper is definitely the go here.
+> ArrayList.clone(), or Collection.clone() should do what's needed.
+> 
+> zen
+> 
+> -- 
+> Homepage: www.SoulSound.net -- Free Australia: www.UPMART.org
+> Please respect the confidentiality of this email as sensibly warranted.
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+Mark Wharton
++ 8190 9834 2559
+contact at moonbase.com.au
+
+
+From parrt at cs.usfca.edu  Sat May 31 16:39:16 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Sat, 31 May 2008 16:39:16 -0700
+Subject: [stringtemplate-interest] "rest" and template recursion
+In-Reply-To: <8c9befbf0805302305u344c2d6h6d00f78c1f789cc9@mail.gmail.com>
+References: <8c9befbf0805302022x1c09d1cdw4da788fc5d2885de@mail.gmail.com>
+	<9AC3565A-96BB-4A61-AF08-CB5D41D6D824@cs.usfca.edu>
+	<8c9befbf0805302305u344c2d6h6d00f78c1f789cc9@mail.gmail.com>
+Message-ID: <02D691ED-23D3-4B5C-8B49-B54D2CB97578@cs.usfca.edu>
+
+
+On May 30, 2008, at 11:05 PM, Sasha Crosland wrote:
+
+> Thanks for the explanation, Terence.  A side-effect-free rest() does  
+> seem more in the spirit of StringTemplate, doesn't it?  I vote yes,  
+> for what it's worth.
+>
+> But would you actually need to make a copy of the list data?  If  
+> lists are immutable within a template, then couldn't you easily  
+> return a lightweight view of the sublist that reads through to the  
+> original list, just like with an iterator?
+
+Well, I'd make a shallow copy of the list, but that's n^2/2 to walk a  
+list that way, right?  n copies of n-1.  Expensive but should work.   
+Sometimes we need nested output.  Sorry about this!!! Shame on me  
+making a side effect :(
+
+Ter
+
+From parrt at cs.usfca.edu  Sat May 31 16:39:53 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Sat, 31 May 2008 16:39:53 -0700
+Subject: [stringtemplate-interest] "rest" and template recursion
+In-Reply-To: <20080531063038.GE8646@freedbms.net>
+References: <8c9befbf0805302022x1c09d1cdw4da788fc5d2885de@mail.gmail.com>
+	<9AC3565A-96BB-4A61-AF08-CB5D41D6D824@cs.usfca.edu>
+	<8c9befbf0805302305u344c2d6h6d00f78c1f789cc9@mail.gmail.com>
+	<20080531063038.GE8646@freedbms.net>
+Message-ID: <91DF7AC2-AD1F-4963-A9EB-77861BA1BF51@cs.usfca.edu>
+
+
+On May 30, 2008, at 11:30 PM, Zenaan Harkness wrote:
+
+> On Fri, May 30, 2008 at 11:05:22PM -0700, Sasha Crosland wrote:
+>> Thanks for the explanation, Terence.  A side-effect-free rest()  
+>> does seem
+>> more in the spirit of StringTemplate, doesn't it?  I vote yes, for  
+>> what it's
+>> worth.
+>>
+>> But would you actually need to make a copy of the list data?  If  
+>> lists are
+>> immutable within a template, then couldn't you easily return a  
+>> lightweight
+>> view of the sublist that reads through to the original list, just  
+>> like with
+>> an iterator?
+>
+> Vote thirded.
+>
+> Recursion ought to Just Work (TM).
+>
+> I additionally vote for an addition to first,last,rest to fill the  
+> gap,
+> perhaps "front" (all but last).
+
+I think i have trunc for that.
+
+> Lightweight container wrapper is definitely the go here.
+> ArrayList.clone(), or Collection.clone() should do what's needed.
+
+kewl. thanks.
+Ter
+

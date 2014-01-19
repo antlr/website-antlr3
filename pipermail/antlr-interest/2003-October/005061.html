@@ -1,0 +1,173 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] MSVC 7.0
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20MSVC%207.0&In-Reply-To=001101c388fe%244f516170%241ac8090a%40oddi.is">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005059.html">
+   <LINK REL="Next"  HREF="005062.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] MSVC 7.0</H1>
+    <B>Arnar Birgisson</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20MSVC%207.0&In-Reply-To=001101c388fe%244f516170%241ac8090a%40oddi.is"
+       TITLE="[antlr-interest] MSVC 7.0">arnarb at oddi.is
+       </A><BR>
+    <I>Thu Oct  2 10:18:04 PDT 2003</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005059.html">[antlr-interest] MSVC 7.0
+</A></li>
+        <LI>Next message: <A HREF="005062.html">[antlr-interest] Re: MSVC 7.0
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5061">[ date ]</a>
+              <a href="thread.html#5061">[ thread ]</a>
+              <a href="subject.html#5061">[ subject ]</a>
+              <a href="author.html#5061">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Allright, I think I've found the source of that assert-failure.
+
+In my lexer, I have a rule for a keyword:
+
+STADVAER : &quot;sta&#240;v&#230;r&quot;;
+
+The problem here seems to be the '&#240;' character (eth). What you need to
+know is that it is 0xf0 in ISO-8859-1. Now, my lexer.g file is saved in
+iso8859-1 so that this character is correct in that file.
+
+I recall that the ANTLR documentation states that the inputCharset for
+it's metalanguage is 7-bit ascii, so according to that, ANTLR should
+have yielded an error for this rule. However, this was translated
+directly to a string constant in the C++ file. (Note: this works fine in
+Java)
+
+Then, somewhere along the way, the expected character becomes an int,
+and should be 0x000000f0, but is generated as 0xfffffff0. When 0xf0 is
+seen on the input, this causes a MismatchedCharException and it tries to
+generate it's message, it calls charName for 0xfffffff0 (the expected
+char), which in turn calls isprint and since 0xfffffff0 is negative, it
+blows up.
+
+I guess this is partly my fault since I didn't follow ANTLR's
+documentation carefully enough. Changing the rule to
+
+STADVAER	:	&quot;sta\360v\346r&quot;;
+
+seems to fix this (it's butt-ugly though :o). However, I would like to
+point out that this worked in Java, with it's multibyte string
+constants, and along they way, antlr.Tool never complained about it's
+input.
+
+I'm sending this in here mostly to be of reference to others lexing
+non-7bit ascii data with a c++ lexer, in case the hit the same walls I
+did.
+
+cheers!
+
+Arnar
+
+&gt;<i> -----Original Message-----
+</I>&gt;<i> From: Arnar Birgisson [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">arnarb at oddi.is</A>] 
+</I>&gt;<i> Sent: 2. okt&#243;ber 2003 16:01
+</I>&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>
+</I>&gt;<i> Subject: RE: [antlr-interest] MSVC 7.0
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> I'm sorry, this was resolved as soon as I changed my projects
+</I>&gt;<i> compilation to use a Multithreaded DLL runtime.
+</I>&gt;<i> 
+</I>&gt;<i> That left me with other problems, now, the &quot;if (isprint(ch))&quot; statment
+</I>&gt;<i> in charName(int) in string.cpp fails an assertion in the runtime's
+</I>&gt;<i> isctype.c, line 68:
+</I>&gt;<i> 
+</I>&gt;<i> Expression: (unsigned)(c+1) &lt;= 256.
+</I>&gt;<i> 
+</I>&gt;<i> If this doesn't ring any bells, please ignore this post, I need to
+</I>&gt;<i> investigate this further. I just wanted to let  you know that 
+</I>&gt;<i> the other
+</I>&gt;<i> issue is resolved.
+</I>&gt;<i> 
+</I>&gt;<i> Arnar
+</I>&gt;<i> 
+</I>&gt;<i> &gt; -----Original Message-----
+</I>&gt;<i> &gt; From: Arnar Birgisson [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">arnarb at oddi.is</A>] 
+</I>&gt;<i> &gt; Sent: 2. okt&#243;ber 2003 15:50
+</I>&gt;<i> &gt; To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>
+</I>&gt;<i> &gt; Subject: [antlr-interest] MSVC 7.0
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Hello there.
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; I downloaded Ric's modified ANTLR 2.7.2, dated 2003-09-11, 
+</I>&gt;<i> &gt; and am trying
+</I>&gt;<i> &gt; to compile the cpp runtime to a dll with MSVC 7.0. I followed the
+</I>&gt;<i> &gt; instructions in lib/cpp/README on how to create the project, 
+</I>&gt;<i> &gt; except that
+</I>&gt;<i> &gt; I skipped using a precompiled header (I checked &quot;Empty 
+</I>&gt;<i> project&quot; in the
+</I>&gt;<i> &gt; project wizard).
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Everything compiled without a problem (leave warnings). However when
+</I>&gt;<i> &gt; running a lexer, very similar to the MultiLexer example, I 
+</I>&gt;<i> get access
+</I>&gt;<i> &gt; violations right at the beginning, related to IO.
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; More specifically, I get an access violation error at the 
+</I>&gt;<i> &gt; &quot;input.get()&quot;
+</I>&gt;<i> &gt; statement in antlr::CharBuffer::getChar(), trying to read memory
+</I>&gt;<i> &gt; 0x00000014.
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Any ideas?
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Arnar
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt;  
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Your use of Yahoo! Groups is subject to 
+</I>&gt;<i> &gt; <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i>  
+</I>&gt;<i> 
+</I>&gt;<i> Your use of Yahoo! Groups is subject to 
+</I>&gt;<i> <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005059.html">[antlr-interest] MSVC 7.0
+</A></li>
+	<LI>Next message: <A HREF="005062.html">[antlr-interest] Re: MSVC 7.0
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5061">[ date ]</a>
+              <a href="thread.html#5061">[ thread ]</a>
+              <a href="subject.html#5061">[ subject ]</a>
+              <a href="author.html#5061">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,195 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] [C Runtime] Token issues (predicates and indices)	and composition tree grammars
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5BC%20Runtime%5D%20Token%20issues%20%28predicates%20and%20indices%29%0A%09and%20composition%20tree%20grammars&In-Reply-To=%3C27766db30808251453p263c3cd6q893ae4e94a0c1cf%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="030340.html">
+   <LINK REL="Next"  HREF="030344.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] [C Runtime] Token issues (predicates and indices)	and composition tree grammars</H1>
+    <B>Kurt Otte</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5BC%20Runtime%5D%20Token%20issues%20%28predicates%20and%20indices%29%0A%09and%20composition%20tree%20grammars&In-Reply-To=%3C27766db30808251453p263c3cd6q893ae4e94a0c1cf%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] [C Runtime] Token issues (predicates and indices)	and composition tree grammars">kurtotte at gmail.com
+       </A><BR>
+    <I>Mon Aug 25 14:53:09 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="030340.html">[antlr-interest] ANTLR 3.1 incompatible change for tree parser	labels?
+</A></li>
+        <LI>Next message: <A HREF="030344.html">[antlr-interest] [C Runtime] Token issues (predicates and	indices) and	composition tree grammars
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30341">[ date ]</a>
+              <a href="thread.html#30341">[ thread ]</a>
+              <a href="subject.html#30341">[ subject ]</a>
+              <a href="author.html#30341">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Jim,
+
+I have hit a series of issues which I think may be bugs in the c runtime.  I
+have extracted simple examples from my grammar to make it easier to show the
+problem and have attached them with this email.
+
+Is there a high level doc explaining the architecture/design of the runtime
+files?  Is there a good way to ramp up on how it works besides simply
+looking through the code?  I was going to try to help you debug this, but I
+am finding it a bit daunting.
+
+The examples attached should compile and run for you although you will
+probably need to tweak the makefile with you paths and/or compilers.  The
+examples are a quick and dirty solution to show the problem so they don't
+have a lot of polish to work in an arbitrary environment.  If they won't
+work for you let me know and I can polish them up a bit more.  Thanks in
+advance for any thoughts you have or any help you can provide.
+
+Thanks,
+
+Kurt
+
+
+-------------------------------------------------------
+
+*Validating predicates in the tree grammars return incorrect token info*
+
+To reproduce this run: ex1.exe test/tree_validating_error.txt
+
+This produces the following output:
+=====
+(BAR (CNAME (VAR (CNAME a) (CNAME b) c) (CNAME _a)) foo)
+-Imaginary-(0)  : error 6 : (0), at offset 0, near UP : syntax not
+recognized...
+
+tree_validating_error.txt(4)  : error 3 : , at offset 11, near foo : cannot
+match to any predicted input...
+=====
+
+Looking at the grammar in ex1walker.g, I have the following validation
+predicate:
+
+// force this false to trigger an error
+var_cname
+ : ^(CNAME NAME {(0)}? cname?)
+;
+
+This forces a token to fail due to the predicate returning false (hard-coded
+in this example).  What token should the error be on?  I think there is some
+confusion here between a disambiguating semantic predicate and a validating
+semantic predicate.  It seems the disambiguating semantic predicate wants
+the error to be on the next token, but the validating semantic predicate
+want the error on the previous token.  However, when walking through the
+code, the function antlr3RecognitionExceptionNew seems to always grab the
+next token.  In my example, this token ends up being the imaginary UP token.
+ This leads to a confusing non-helpful error message.  Is it possible to
+look up different tokens in the error handler?
+
+Changing antlr3RecognitionExceptionNew to call _LT(tns,-1) for the
+ANTLR3_COMMONTREENODE case (change 1 to -1 to get previous token) seems to
+fix the problem for this particular example, but won't work for the general
+case.  This change causes the following expected output:
+
+test/tree_validating_error.txt(4)  : error 6 : (0), at offset 2, near a :
+syntax not recognized...
+
+It seems there needs to be a way to change the error handling depending on
+whether we are in a disambiguating predicate or a validating predicate, but
+I am not sure how that would be done.
+
+-------------------------------------------------------
+
+*Tokens have incorrect start and stop positions*
+
+To reproduce this, run: ex1.exe test/start_stop_error.txt
+
+For example, if I force a syntax error in the file, I get the follow error
+=====
+start_stop_error.txt(3)  : error 3 : , at offset 0
+   near [Index: 0 (Start: 3497941-Stop: 3497941) ='a', type&lt;10&gt; Line: 3
+LinePos:0]
+=====
+
+Note the start and stop positions are way off.  I think there were some
+similar posts to the list about this problem, but I did not see a conclusion
+to the thread so I included an example to reproduce it.
+
+-------------------------------------------------------
+
+*Composition Tree Grammars won't compile
+*
+This looks like a simple string template issues of getting pParser rather
+than pTreeParser.
+
+Here is the error:
+=====
+gen/ex1walker.c(314) : error C2039: 'pParser' : is not a member of
+'ex1walker_tree_helper_Ctx_struct'
+       gen\ex1walker_tree_helper.h(84) : see declaration of
+'ex1walker_tree_helper_Ctx_struct'
+=====
+
+To reproduce, uncomment this line in ex1walker.g
+
+// uncomment this line to see the problem with imported tree grammars
+import tree_helper;
+
+This was the issue I emailed you about previously and you asked for an
+example.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20080825/d14f897e/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20080825/d14f897e/attachment.html</A> 
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: c_runtime_issues.zip
+Type: application/zip
+Size: 3453 bytes
+Desc: not available
+Url : <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20080825/d14f897e/attachment.zip">http://www.antlr.org/pipermail/antlr-interest/attachments/20080825/d14f897e/attachment.zip</A> 
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="030340.html">[antlr-interest] ANTLR 3.1 incompatible change for tree parser	labels?
+</A></li>
+	<LI>Next message: <A HREF="030344.html">[antlr-interest] [C Runtime] Token issues (predicates and	indices) and	composition tree grammars
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30341">[ date ]</a>
+              <a href="thread.html#30341">[ thread ]</a>
+              <a href="subject.html#30341">[ subject ]</a>
+              <a href="author.html#30341">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

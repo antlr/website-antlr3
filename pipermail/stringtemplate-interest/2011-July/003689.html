@@ -1,0 +1,207 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [stringtemplate-interest] Specialised STGroup Implementation
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20Specialised%20STGroup%20Implementation&In-Reply-To=%3C4E21DE49.1030201%40lancaster.ac.uk%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003682.html">
+   <LINK REL="Next"  HREF="003683.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[stringtemplate-interest] Specialised STGroup Implementation</H1>
+    <B>Sam Barnett-Cormack</B> 
+    <A HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20Specialised%20STGroup%20Implementation&In-Reply-To=%3C4E21DE49.1030201%40lancaster.ac.uk%3E"
+       TITLE="[stringtemplate-interest] Specialised STGroup Implementation">s.barnett-cormack at lancaster.ac.uk
+       </A><BR>
+    <I>Sat Jul 16 11:54:01 PDT 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003682.html">[stringtemplate-interest] Specialised STGroup Implementation
+</A></li>
+        <LI>Next message: <A HREF="003683.html">[stringtemplate-interest] Specialised STGroup Implementation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3689">[ date ]</a>
+              <a href="thread.html#3689">[ thread ]</a>
+              <a href="subject.html#3689">[ subject ]</a>
+              <a href="author.html#3689">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>The issue with the wildcards is more that I will have stored (by 
+whatever means) a template as if it were in a file called (for the sake 
+of argument) /a/*/c/*.st (obviously wouldn't work exactly like that on a 
+filesystem) with the template header in the file also specifying the 
+name with a wildcard as the final element (if that's how it happens to 
+be specified), but it would (as I'm currently thinking) be supplied to 
+the group when /a/f/c/o was requested (for example) so it would be 
+stored as that template. So, assuming that I use loadTemplateFile() to 
+get the CompiledST, would that be thrown off by the name not matching. 
+Let's ignore the * - let's assume that there's some other wildcard that 
+could be parsed as the name of a template when not as an expression in a 
+template. Would that throw off the compilation if the group thinks the 
+name of the template is X and the template file says it's Z, to get the 
+question down to its most essential element.
+
+Template code should never have wildcards in it. Any time a template is 
+being invoked, there'd be no wildcards.
+
+In terms of multiple matches, I'm making sure there's a defined 
+precedence, with the highest-precedence match being used. Also not 
+planning to use import, so not considering it a high priority to figure 
+out the mechanics of. A helper class tied in to the engine of the 
+application (pulling together different sources of data being a main 
+role of the application) would act as a resolver for the requests for 
+specific templates not yet known to the group, and return the string of 
+the 'template file' that's the best match.
+
+So, all in all, yes, sounds like STGroupDir is the best bet to override, 
+though I'm a little unsure still about the best method of getting the 
+CompiledST for load(String). It feels like it's 
+loadTemplateFile(String,String,CharStream), but then there's the 
+question of whether the unqualifiedFileName and the name in the 
+CharStream have to match, and if either have to match what the Group 
+thinks the template is called (as it will always be looking up a defined 
+name, while the stored templates will have wildcards in). Is it 
+important to have these match? If so, some substitution magic can be 
+done prior to supplying the data, while otherwise that substitution is 
+some coding and processing that would add nothing.
+
+As far as the group is concerned, it will have a fully-defined template 
+name (no wildcards) and it will ask this outside source for a template 
+file (might not really be a file) to satisfy it. My two concerns are 
+with the fact the declaration in the file might not match the expected 
+name, and wondering about the memory and processing inefficiencies of 
+having the same template under potenitally dozens of names. Depending on 
+how important the name is when loadTemplateFile processes it. Looking at 
+it, it seems that I may want to move the name-matching into the group, 
+because the names would seem to matter, thanks to rawGetTemplate... I 
+presume that parser.templateDef(prefix) calls a method in the group to 
+store the template, which is then retrieved and returned in 
+loadTemplateFile, and the names used are derived from both the supplied 
+filename and the file content... so maybe it needs peeling back a layer 
+further, or I can do substitution. I don't know. I'll have to give this 
+more thought. The question really, that I have to answer myself, is 
+where to put the resolution in and how the group should store things. It 
+could be pre-populated with templates, except I want it to be possible 
+to extend at run-time. I see now more options than I first thought.
+
+Sam
+
+On 16/07/2011 17:41, Sam Harwell wrote:
+&gt;<i> If you derive a new STGroup implementation (say MySTGroup), you'll need to
+</I>&gt;<i> take special precautions if you use the &quot;import&quot; statement in any of your
+</I>&gt;<i> group files. If you also want the automatically imported groups to be
+</I>&gt;<i> instances of MySTGroup, you'll need to copy the implementation of
+</I>&gt;<i> STGroup.importTemplates(Token) and modify it to create instances of
+</I>&gt;<i> MySTGroup instead of STGroup, STGroupFile, and STGroupDir. Unfortunately
+</I>&gt;<i> there's no cleaner way of changing this functionality aside from just
+</I>&gt;<i> avoiding import statements. You can still use the function
+</I>&gt;<i> STGroup.importTemplates(STGroup) in code because it doesn't create any new
+</I>&gt;<i> groups.
+</I>&gt;<i>
+</I>&gt;<i> Regarding the wildcards: you'd be restricted to passing wildcards to
+</I>&gt;<i> STGroup.getInstanceOf because STLexer doesn't support the asterisk as part
+</I>&gt;<i> of a template name (as part of an expression in a template). Due to this
+</I>&gt;<i> restriction, you don't need to override getEmbeddedInstanceOf. To allow
+</I>&gt;<i> wildcards as part of a name within the template code, you'd need to
+</I>&gt;<i> reimplement STLexer.java, Group.g, and STLexerNoNewlines, plus derive
+</I>&gt;<i> classes from STCompiler to override the compile(string, string, List,
+</I>&gt;<i> string, Token) method, CompiledST to override
+</I>&gt;<i> defineArgumentDefaultValueTemplates(...), STGroup to override compile(...),
+</I>&gt;<i> and the list goes on (anything that constructs CompiledST). It'd be easier
+</I>&gt;<i> to just make a custom build of the ST4 library.
+</I>&gt;<i>
+</I>&gt;<i> If you have the templates specified individually (as opposed to a single
+</I>&gt;<i> string with the entire group), then STGroupDir is closest. You'll want to
+</I>&gt;<i> create your own versions of the functions load(String) and
+</I>&gt;<i> loadTemplateFile(String, String) that use a different method of &quot;file name
+</I>&gt;<i> resolution&quot; and &quot;reading from disk&quot;.
+</I>&gt;<i>
+</I>&gt;<i> If a wildcard resolves to more than one template, then I'd expect
+</I>&gt;<i> getInstanceOf to either return List&lt;ST&gt;  or throw an exception.
+</I>&gt;<i>
+</I>&gt;<i> Sam
+</I>&gt;<i>
+</I>&gt;<i> -----Original Message-----
+</I>&gt;<i> From: <A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">stringtemplate-interest-bounces at antlr.org</A>
+</I>&gt;<i> [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">stringtemplate-interest-bounces at antlr.org</A>] On Behalf Of Sam
+</I>&gt;<i> Barnett-Cormack
+</I>&gt;<i> Sent: Saturday, July 16, 2011 7:39 AM
+</I>&gt;<i> To: Terence Parr
+</I>&gt;<i> Cc: stringtemplate-interest Template
+</I>&gt;<i> Subject: Re: [stringtemplate-interest] Specialised STGroup Implementation
+</I>&gt;<i>
+</I>&gt;<i> Would really appreciate some guidance on at least the simple, direct
+</I>&gt;<i> questions asked in this previous email... I'd've thought they'd be quite
+</I>&gt;<i> simple for people familiar with the internals. I've trimmed out everything
+</I>&gt;<i> but the questions, most of which are pretty direct.
+</I>&gt;<i>
+</I>&gt;<i> Sam
+</I>&gt;<i>
+</I>&gt;<i> On 03/07/2011 17:45, Sam Barnett-Cormack wrote:
+</I>&gt;&gt;<i> Say I have a repository of template definitions that are in-memory
+</I>&gt;&gt;<i> (for argument's sake) but otherwise identical to template files as
+</I>&gt;&gt;<i> used in group directories. I can have an internal lookup to find the right
+</I>&gt;<i> one.
+</I>&gt;&gt;<i> Couple of problems - first, and not necessarily very important, the
+</I>&gt;&gt;<i> names I'd expect them to have would still have some sort of wildcard
+</I>&gt;&gt;<i> in, and thus not match the string fed to the load() method (though
+</I>&gt;&gt;<i> obviously this could be fixed by substitution). Would this matter (I'm
+</I>&gt;<i> guessing yes)?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> How would I get a CompiledST from this? Using compile() or one of the
+</I>&gt;&gt;<i> defineTemplate()s? With those, apart from the error-locating Tokens,
+</I>&gt;&gt;<i> it looks like I'd be better with my representation already having
+</I>&gt;&gt;<i> separated the name, arguments (and parsing them), and the template
+</I>&gt;&gt;<i> text. Have I missed a method (or roundabout way) of simplifying that?
+</I>&gt;&gt;<i> Actualy, loadTemplateFile looks like it might be very much suited to
+</I>&gt;&gt;<i> this, despite the 'file' in its name, though the question of name is
+</I>&gt;&gt;<i> still there from the last question. So... which of these would work
+</I>&gt;&gt;<i> most straightforwardly?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Finally, whatever the answers to the above, one possible problem I can
+</I>&gt;&gt;<i> forsee is this - say I have a base template with name 'pattern'
+</I>&gt;&gt;<i> /a/*/c, and it ends up being matched when the names /a/b/c, /a/d/c and
+</I>&gt;&gt;<i> /a/foo/c were used. I'd end up with effective duplication of the
+</I>&gt;&gt;<i> template, with three CompiledST instances with three different
+</I>&gt;&gt;<i> concrete names and otherwise identical. Is there any way to avoid
+</I>&gt;&gt;<i> this? For that matter, how much of a problem is it likely to be, if
+</I>&gt;&gt;<i> there are say a dozen templates that suffer from the duplication and
+</I>&gt;&gt;<i> these are each duplicated
+</I>&gt;&gt;<i> 4 times (and there being another couple of dozen templates that aren't
+</I>&gt;&gt;<i> duplicated at all) - what order of magnitude of extra memory or
+</I>&gt;&gt;<i> processing burden is there likely to be? My instinct is it wouldn't be
+</I>&gt;&gt;<i> too bad.
+</I>&gt;<i>
+</I>&gt;<i> _______________________________________________
+</I>&gt;<i> stringtemplate-interest mailing list
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">stringtemplate-interest at antlr.org</A>
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">http://www.antlr.org/mailman/listinfo/stringtemplate-interest</A>
+</I>&gt;<i>
+</I>
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003682.html">[stringtemplate-interest] Specialised STGroup Implementation
+</A></li>
+	<LI>Next message: <A HREF="003683.html">[stringtemplate-interest] Specialised STGroup Implementation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3689">[ date ]</a>
+              <a href="thread.html#3689">[ thread ]</a>
+              <a href="subject.html#3689">[ subject ]</a>
+              <a href="author.html#3689">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">More information about the stringtemplate-interest
+mailing list</a><br>
+</body></html>

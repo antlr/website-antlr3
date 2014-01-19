@@ -1,0 +1,176 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] tree transformation in Parser 
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20tree%20transformation%20in%20Parser%20&In-Reply-To=D99564D9-7C7A-4302-BDE8-464EE12492AD%40cs.usfca.edu">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="013575.html">
+   <LINK REL="Next"  HREF="013579.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] tree transformation in Parser </H1>
+    <B>Gregor Pardella</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20tree%20transformation%20in%20Parser%20&In-Reply-To=D99564D9-7C7A-4302-BDE8-464EE12492AD%40cs.usfca.edu"
+       TITLE="[antlr-interest] tree transformation in Parser ">pardella at informatik.uni-bonn.de
+       </A><BR>
+    <I>Mon Sep 12 01:26:53 PDT 2005</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="013575.html">[antlr-interest] tree transformation in Parser PLEASE
+</A></li>
+        <LI>Next message: <A HREF="013579.html">[antlr-interest] Parser rule writing question
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#13592">[ date ]</a>
+              <a href="thread.html#13592">[ thread ]</a>
+              <a href="subject.html#13592">[ subject ]</a>
+              <a href="author.html#13592">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>hello ter,
+
+On Sat, Sep 10, 2005 at 10:45:47AM -0700, Terence Parr wrote:
+&gt;<i> Hi Gregor,
+</I>&gt;<i> 
+</I>&gt;<i> What does your construction rule look like?  It should be:
+</I>&gt;<i> 
+</I>&gt;<i> assignment: ID EQUALS^ expr ;
+</I>&gt;<i> 
+</I>&gt;<i> or some such thing.
+</I>
+My expression rules are standard rules for expression, mean:
+expression:
+  assignment_expr (ASSIGN^ assignment_expr)? ;
+
+assignment_expr:
+  next_expr (NEXT_OP^ next_expr)?
+
+etc....
+
+in the last expression definition ID is declared.
+
+But I solved it the hard way:
+I count the ASSIGNs and if I match 2 or more I flat the tree by hand 
+after the expression rule and return my flattened tree.
+
+I think it is not the best solution (so if anybody has some ideas :)) 
+but it works.
+
+CODE:
+else if (assignCount &gt; 1) {
+CommonAST child = null, sibling = e_AST;
+Stack assignStack = new Stack();
+assignStack.Push(e_AST);
+
+CommonAST prep = (CommonAST) astFactory.dupTree(e_AST);
+prep.removeChildren();
+
+CommonAST constant = (CommonAST) astFactory.create(new Token(INT));
+constant.setText(&quot;1&quot;);
+
+CommonAST plusnode = (CommonAST) astFactory.create(new Token(PLUS));
+plusnode.setText(&quot;+&quot;);
+	
+CommonAST minusnode = (CommonAST) astFactory.create(new Token(MINUS));
+minusnode.setText(&quot;-&quot;);
+
+CommonAST changeNode;
+CommonAST workingNode;
+
+while (((child = (CommonAST) sibling.getFirstChild()) != null)
+&amp;&amp; ((sibling = (CommonAST) child.getNextSibling()) != null))
+{
+	if (sibling.getText().Equals(&quot;++&quot;))
+	{
+	workingNode = (CommonAST) astFactory.dupTree(plusnode);
+	changeNode = (CommonAST) astFactory.dupTree(sibling.getFirstChild());
+	sibling = (CommonAST) astFactory.dupTree(prep);
+	sibling.setFirstChild(astFactory.dupTree(changeNode));
+	workingNode.setFirstChild(astFactory.dupTree(changeNode));
+	workingNode.addChild(constant);
+	sibling.getFirstChild().setNextSibling(workingNode);
+	}
+	if (sibling.getText().Equals(&quot;--&quot;))
+	{
+	workingNode = (CommonAST) astFactory.dupTree(minusnode);
+	changeNode = (CommonAST) astFactory.dupTree(sibling.getFirstChild());
+	sibling = (CommonAST) astFactory.dupTree(prep);
+	sibling.setFirstChild(astFactory.dup(changeNode));
+	workingNode.setFirstChild(astFactory.dup(changeNode));
+	workingNode.addChild(constant);
+	sibling.getFirstChild().setNextSibling(workingNode);
+	}
+	if (sibling.getText().Equals(&quot;=&quot;))
+		assignStack.Push(sibling);
+}
+CommonAST multiassign = (CommonAST) astFactory.create(new Token(MULTIASSIGN));
+multiassign.setText(&quot;===&quot;);
+astFactory.makeASTRoot(currentAST, (AST) multiassign);
+
+Stack fertig = new Stack();
+CommonAST _null = (CommonAST) assignStack.Pop();
+CommonAST node;
+
+fertig.Push(astFactory.dupTree(_null));
+_null = null;
+
+while (assignStack.Count &gt; 0)
+{
+node = (CommonAST) astFactory.dupTree(((CommonAST) fertig.Peek()).getFirstChild());
+_null = (CommonAST) assignStack.Pop();
+_null.getFirstChild().setNextSibling(node);
+fertig.Push(astFactory.dupTree(_null));
+_null = null;
+}
+		
+multiassign.setFirstChild((CommonAST)fertig.Pop());
+while (fertig.Count &gt; 0)
+	multiassign.addChild((CommonAST) fertig.Pop());
+
+returnAST = currentAST.root;
+}
+
+
+Gregor
+
+-- 
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="013575.html">[antlr-interest] tree transformation in Parser PLEASE
+</A></li>
+	<LI>Next message: <A HREF="013579.html">[antlr-interest] Parser rule writing question
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#13592">[ date ]</a>
+              <a href="thread.html#13592">[ thread ]</a>
+              <a href="subject.html#13592">[ subject ]</a>
+              <a href="author.html#13592">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

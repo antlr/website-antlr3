@@ -1,0 +1,257 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Full error reporting with the simplest grammar
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Full%20error%20reporting%20with%20the%20simplest%20grammar&In-Reply-To=%3Cfgtorf%249gk%241%40ger.gmane.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="024589.html">
+   <LINK REL="Next"  HREF="024615.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Full error reporting with the simplest grammar</H1>
+    <B>Curtis Clauson</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Full%20error%20reporting%20with%20the%20simplest%20grammar&In-Reply-To=%3Cfgtorf%249gk%241%40ger.gmane.org%3E"
+       TITLE="[antlr-interest] Full error reporting with the simplest grammar">NOSPAM at TheSnakePitDev.com
+       </A><BR>
+    <I>Wed Nov  7 17:29:46 PST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="024589.html">[antlr-interest] Source code repository?
+</A></li>
+        <LI>Next message: <A HREF="024615.html">[antlr-interest] Full error reporting with the simplest grammar
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24581">[ date ]</a>
+              <a href="thread.html#24581">[ thread ]</a>
+              <a href="subject.html#24581">[ subject ]</a>
+              <a href="author.html#24581">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I am trying to create what should be the simplest grammar possible (with 
+EOF) that provides full error reporting, since a grammar without full 
+error reporting is worthless. I have solved some undocumented 
+peculiarities, but I do not know if I have done so in a manner 
+consistent with the intended design of AntLR. I describe 3 problems 
+below, the first two with possible solutions and the third still unsolved.
+
+What I need to know is:
+   1 Are the solutions I used for problems 1 and 2 consistent with the 
+intended design of AntLR, or are there better ways?
+   2 How do I deal with problem 3?
+
+The grammar is:
+----------
+grammar SingleCharacter;
+
+@header {
+import static java.lang.System.out;
+}
+
+
+/* Parser Rules */
+singleCharacter
+returns [boolean succeeded = false]
+     :   Character {
+             out.println(
+                 &quot;Parsed token Character '&quot; + $Character.text + &quot;'&quot;
+             );
+         }
+         EOF {
+             out.println(&quot;Parsed token EOF&quot;);
+         }
+         {
+             out.println(&quot;Parsed singleCharacter&quot;);
+             $succeeded = true;
+         }
+     ;
+
+/* Lexer Rules */
+Character: 'a';
+// Invalid added for problem #2
+Invalid  :  .  {$type = Token.INVALID_TOKEN_TYPE;};
+
+----------
+Problem #1
+
+There is a serious bug in the lexer that causes it, during error 
+recovery, to skip two characters instead of just the unexpected 
+character. When a character is not matched, match() creates an exception 
+object 'mte', calls recover(mte) which consumes the unexpected 
+character, and then throws the exception. However, nextToken() catches 
+that exception, reports the error, and then calls recover(mte) again, 
+erroneously consuming the token after the already consumed unexpected token.
+
+In my simple example, the source &quot;ba&quot; produces the following results:
+Note: The Invalid token did not exist at this point.
+&lt;&lt;
+Parsing: &quot;ba&quot;
+Token stream
+     &lt;No tokens&gt;
+
+Parser output
+line 1:0 mismatched character 'b' expecting 'a'
+BR.recoverFromMismatchedToken
+line 0:-1 mismatched input '&lt;EOF&gt;' expecting Character
+
+Returned false
+ &gt;&gt;
+
+The lexer does not provide any tokens to the token stream.
+This is what actually happens in the lexer:
+   1 A call to match('a') is is made by mCharacter()
+   2 The first character seen is an invalid 'b'
+   2 A MismatchedTokenException object is created
+   4 The recover(mte) method is called that consumes the current invalid 
+character 'b'
+   4 The exception object is thrown
+   5 The exception is caught by nextToken()
+   6 A call to reportError(re) is made that displays the lexer error
+   7 Another call to recover(re) is made that consumes the next 
+character, the valid character 'a'
+   8 nextToken() loops back to try to get a token again, sees EOF, and 
+returns Token.EOF_TOKEN
+   9 The parser has no tokens in the stream and reports it saw &lt;EOF&gt;
+
+Given the flow of the code and the use of nextToken(), it seems the 
+solution is to eliminate the call to recover(re) in the exception 
+handler of nextToken(). It works fine for my simple example, but I'm not 
+sure if this is consistent with the intended design of AntLR.
+
+----------
+Problem #2
+
+I originally did not have the &quot;Invalid&quot; token. I quickly discovered that 
+CommonTokenStream parses *ALL* of the tokens in the source on the first 
+call for a token. I had expected that it would only buffer the consumed 
+and look-ahead tokens so that any lexer exception would be caught by the 
+parser and could be reported in parser context. I do not understand and 
+it is undocumented for what purpose CommonTokenStream does this.
+
+I also found that the lexer is not capable of propagating a 
+RecognitionException since nextToken has a catch hard-coded in. There 
+seems to be no way in the grammar to configure this outside of 
+overriding the nextToken() method.
+
+The idea is to use AntLR &quot;as is&quot; as much as possible, so implementing a 
+new TokenStream that only buffers consumed or look-ahead tokens is out. 
+It seems that the only solution is to record lexer errors in the token 
+stream as &lt;invalid&gt; tokens. This could be done by defining &lt;invalid&gt; 
+tokens in the grammar with a type assigning action, or overriding the 
+nextToken() method and altering the exception handler.
+
+Both of these solutions work for my simple example. Also, since they 
+both eliminate the possibility of a RecognitionException being thrown, 
+they mask problem #1.
+
+I chose the grammar solution for this example, but it might not be 
+possible for a more complex lexer, and I do not know if this is a 
+solution that is consistent with the intended design.
+
+----------
+Problem #3
+
+For this problem, I do not have a solution, and it is a show-stopper.
+
+The parser, when it sees an unexpected token, reports the error and 
+tries two kinds of recovery. If the following token is of the expected 
+type, it consumes the current token and returns a match, skipping the 
+unexpected token. If the current token can follow the expected token, it 
+returns a match and does not consume a token, continuing with the 
+current token as if it had seen the missing token.
+
+This means that match() might match the next or a non-existing token 
+instead of the current. However, when a rule action uses a token 
+reference, like in my grammar where the action in singleCharacter that 
+follows Character uses the $Character.text field to report the string 
+that was matched, that reference is obtained by AntLR before the call to 
+match() from the input stream like so:
+     Character1=(Token)input.LT(1);
+     match(input,Character,FOLLOW_Character_in_singleCharacter33);
+     out.println(&quot;Parsed token Character '&quot; + Character1.getText() + &quot;'&quot;);
+
+If the call to match() performs error recovery, that token reference 
+will *NOT* be the one that matched. The matched token might be the next 
+token if the current one was skipped, or might be no token if the 
+current one was a valid follow token.
+
+Since the code that gets the reference is automatically generated by 
+AntLR, and since match() does not record or return the matched token, I 
+see no way to tell AntLR to handle this correctly.
+
+In my simple example, if the source text is &quot;ba&quot;, I get the following 
+result:
+
+&lt;&lt;
+Parsing: &quot;ba&quot;
+Token stream
+     0; channel[0] &lt;invalid&gt;, &quot;b&quot; at 1:0
+     1; channel[0] Character, &quot;a&quot; at 1:1
+
+Parser output
+BR.recoverFromMismatchedToken
+line 1:0 mismatched input 'b' expecting Character
+Parsed token Character 'b'
+Parsed token EOF
+Parsed singleCharacter
+
+Returned true
+ &gt;&gt;
+
+The problem is demonstrated by the first action output:
+   1 The &lt;invalid&gt; 'b' token is parsed
+   2 Error recovery is performed that skips the current token since the 
+next is the expected Character 'a'
+   3 The Character match() returns successfully
+   4 The Character action prints the result
+
+However, the $Character reference is still the skipped &lt;invalid&gt; 'b' 
+token instead of the now current Character 'a' token. So the message 
+says it &quot;Parsed token Character 'b'&quot; instead of &quot;Parsed token Character 
+'a'&quot;.
+
+As this problem creates incorrect data within the action, it is data 
+corruption and a show-stopper in any environment. Is there a way to deal 
+with this in AntLR, or is this an unresolved bug?
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="024589.html">[antlr-interest] Source code repository?
+</A></li>
+	<LI>Next message: <A HREF="024615.html">[antlr-interest] Full error reporting with the simplest grammar
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24581">[ date ]</a>
+              <a href="thread.html#24581">[ thread ]</a>
+              <a href="subject.html#24581">[ subject ]</a>
+              <a href="author.html#24581">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,170 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Extracting autocompletion rules from antlr	grammar
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Extracting%20autocompletion%20rules%20from%20antlr%0A%09grammar&In-Reply-To=%3C86403CA0939415448BCCB83855EFE09A64E86C%40Bloodymary.ironwillgames.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="031572.html">
+   <LINK REL="Next"  HREF="031547.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Extracting autocompletion rules from antlr	grammar</H1>
+    <B>Sam Harwell</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Extracting%20autocompletion%20rules%20from%20antlr%0A%09grammar&In-Reply-To=%3C86403CA0939415448BCCB83855EFE09A64E86C%40Bloodymary.ironwillgames.com%3E"
+       TITLE="[antlr-interest] Extracting autocompletion rules from antlr	grammar">sharwell at pixelminegames.com
+       </A><BR>
+    <I>Fri Nov 14 11:12:26 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="031572.html">[antlr-interest] Extracting autocompletion rules from antlr grammar
+</A></li>
+        <LI>Next message: <A HREF="031547.html">[antlr-interest] A useful unit test for dependent grammars
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#31576">[ date ]</a>
+              <a href="thread.html#31576">[ thread ]</a>
+              <a href="subject.html#31576">[ subject ]</a>
+              <a href="author.html#31576">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>ANTLR itself is not the correct method for implementing autocompletion
+features. Our IntelliSense engine (our support for Visual Studio's
+autocompletion &amp; code navigation features) does involve ANTLR, but maybe
+not in the way you expect.
+
+Autocomplete is not a syntactical analysis process; it is a semantic
+analysis process. For example, public and protected members of base
+classes are available in derived classes in C++. There is no way for
+ANTLR to understand this type of dependence. I'll start with some
+reasons why you shouldn't even attempt to use ANTLR for the full
+autocompletion implementation. Then I'll cover the various tasks that
+ANTLR is slated for in the process.
+
+1. Performance. In order to gather context information for a file, ANTLR
+processes a file-at-a-time. When providing editor features such as
+autocomplete, you have 20ms to process and provide the correct
+information in a list. If you don't address this, you'll end up with a
+product like Eclipse, and no one wants that. Even if you have a fast
+grammar (LL(k) for low k, few or no synpreds or sempreds, no
+backtracking), large files will take more than that amount of time to
+process.
+2. Robustness. As users are typing, they constantly introduce syntax
+errors. These errors throw wrenches in the tracks of ANTLR's lookahead
+decision making process. Incomplete statements are extremely likely to
+cause ANTLR to either stop processing in the context of these errors, or
+provide misleading context information if it made bad decisions. Since
+the users watching this process are unaware of what ANTLR is trying to
+do behind the scenes, the only conclusion they can draw from the
+misleading information is &quot;this product has no idea what is going on?!&quot;
+
+The largest task ANTLR *is* appropriate for is gathering source
+information for an entire project. We take the parse results from all
+the files in the project and build an IntelliSense-appropriate cache
+that is directly used for later lookups in auto-completion or code
+navigation. IntelliSense engines have many unique demands on the cached
+information. One example I have is for C++: cached classes cannot point
+directly to the class information of a base class, but instead must do
+so via a unique ID derived from the name of the base class. That way, if
+the programmer changes the base class and that class is reparsed, the
+derived class is automatically able to use the new information for
+auto-complete.
+
+Another task we use ANTLR for is expression parsing. We have a small
+ANTLR rule that builds a tree for a single postfix-expression in source
+code, and is specially designed handle malformed expressions (they're
+really just incomplete expressions but ANTLR doesn't know that). The
+expression parser was easy to prevent ambiguities because we strictly
+limited it to postfix operations. The operators in that parse tree are
+replaced with functors that access the cache, and the end result is an
+enumeration of the desired auto-complete items. If the user requested a
+&quot;goto declaration&quot; operation, the functors result in a location in
+source code. Here's an example of these operations:
+
+User enters: myVariable.
+ANTLR tree: (MEMBER myVariable ?)
+Operation autocomplete: (get-members (resolve myVariable (source-context
+(cursor-position))))
+Operation goto-declaration: (resolve ? (get-members (resolve myVariable
+(source-context (cursor-position)))))
+
+User enters: myVariable.f().yourVariable
+ANTLR tree: (MEMBER (CALL (MEMBER myVariable f) ()) yourVariable)
+Operation goto-declaration: (resolve yourVariable (get-members
+(return-value f () (resolve myVariable (source-context
+(cursor-position))))))
+
+Sam
+
+-----Original Message-----
+From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>
+[mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Bo Ba
+Sent: Friday, November 14, 2008 11:07 AM
+To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: [antlr-interest] Extracting autocompletion rules from antlr
+grammar
+
+Hello,
+
+Since autocompletion is not yet supported by ANTLR
+(<A HREF="http://groups.google.com/group/il-antlr-interest/browse_thread/thread/7">http://groups.google.com/group/il-antlr-interest/browse_thread/thread/7</A>
+c6d05a35046854d), I am thinking of implementing this simple reverse
+engineering approach.
+
+1. Take a programm, which is complete in terms of the grammar.
+2. Parse it in antlr parser.
+3. During parsing of this &quot;complete program&quot;, every current token type
+will get a set of token types, which can follow this current token.
+4. As user types his program, the latter will be parsed on every key
+stroke (incrementally or not), and a current token will be extracted,
+which then will be used to get a corresponding set of possible
+predictions.
+5. Optionally, the predictions will be filtered by their semantic
+validity, before presented to the user.
+
+Am I overlooking something obvious feature of ANTLR, which could
+simplify this procedure? Specifically, are items 1 to 3 above the best
+way to obtain the raw predictions for every token type?
+
+Thanks.
+
+V
+
+List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+Unsubscribe:
+<A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-addr">http://www.antlr.org/mailman/options/antlr-interest/your-email-addr</A>
+ess
+
+</PRE>
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="031572.html">[antlr-interest] Extracting autocompletion rules from antlr grammar
+</A></li>
+	<LI>Next message: <A HREF="031547.html">[antlr-interest] A useful unit test for dependent grammars
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#31576">[ date ]</a>
+              <a href="thread.html#31576">[ thread ]</a>
+              <a href="subject.html#31576">[ subject ]</a>
+              <a href="author.html#31576">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

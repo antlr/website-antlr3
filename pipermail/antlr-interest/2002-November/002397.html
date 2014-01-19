@@ -1,0 +1,229 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] submitted AST factory changes to repository
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20submitted%20AST%20factory%20changes%20to%20repository&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002392.html">
+   
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] submitted AST factory changes to repository</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20submitted%20AST%20factory%20changes%20to%20repository&In-Reply-To="
+       TITLE="[antlr-interest] submitted AST factory changes to repository">parrt at jguru.com
+       </A><BR>
+    <I>Fri Nov 29 15:40:06 PST 2002</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002392.html">[antlr-interest] Small Poll: Does your C++ compiler support member templates?
+</A></li>
+        
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2397">[ date ]</a>
+              <a href="thread.html#2397">[ thread ]</a>
+              <a href="subject.html#2397">[ subject ]</a>
+              <a href="author.html#2397">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Folks,
+
+I think I have fixed up the Java heterogeneous tree stuff and wonder of  
+all wondes, I have added a TestASTFactory class in the examples area!   
+My previous email + comments:
+
+&gt;<i> 1. #[FOO] always builds an AST node of the default type because
+</I>&gt;<i>      the ASTFactory only knows about the default.  In future if you say
+</I>&gt;<i>
+</I>&gt;<i>      tokens {
+</I>&gt;<i>          PLUS&lt;AST=PLUSNode&gt;;
+</I>&gt;<i>          ...
+</I>&gt;<i>      }
+</I>&gt;<i>      then I'll make action #[PLUS] create the right node.  You can also
+</I>&gt;<i> say
+</I>&gt;<i>      #[ID,&quot;foo&quot;,&quot;VarNode&quot;] (3rd arg is the type of node to create).
+</I>
+I have modified action.g to handle the 3rd arg.
+
+For 1 and 2 arg #[...] constructors, JavaCodeGenerator has been  
+modified to handle snooping the first argument, ID in this case, and  
+asking for any specified AST node type.  If a node type is known, it is  
+passed as a third arg to create(...).
+
+&gt;<i> 2. dup methods of ASTFactory don't respect the type of the nodes; it
+</I>&gt;<i>      uses default node type.  In future, i'll use
+</I>&gt;<i> t.getClass().newInstance()
+</I>&gt;<i>      to do the dup.
+</I>
+ASTFactory.dup(AST t) now makes sure that the resulting node has the  
+same type, t.getClass(), as t.
+
+&gt;<i> 3. hetero tree construction does not call the factory.  E.g.,
+</I>&gt;<i>
+</I>&gt;<i>      anIntRule : INT&lt;AST=INTNode&gt; ;
+</I>&gt;<i>
+</I>&gt;<i>      generates
+</I>&gt;<i>
+</I>&gt;<i>      INTNode v = new INTNode(LT(1));
+</I>&gt;<i>
+</I>&gt;<i>      but we need to instead generate:
+</I>&gt;<i>
+</I>&gt;<i>      AST v = (AST)astFactory.create(LT(1),&quot;INTNode&quot;);
+</I>&gt;<i>
+</I>&gt;<i>      where the create(...) method is new and specifies the type to
+</I>&gt;<i>      create.  This will use newInstance() instead of &quot;new&quot; by default.
+</I>
+Every reference to INT now generates
+
+INTNode tmp1_AST = null;
+tmp1_AST = (INTNode)astFactory.create(LT(1),&quot;INTNode&quot;);
+
+not
+
+INTNode tmp1_AST = null;
+tmp1_AST = new INTNode(LT(1));
+
+and so does stuff like X&lt;AST=XNode&gt;.
+
+&gt;<i> 4. If you define ID&lt;AST=T&gt; in tokens section then all code in grammar
+</I>&gt;<i> &quot;id:ID&quot; should
+</I>&gt;<i>      define labels as &quot;T id&quot; not &quot;AST id&quot; nor labelASTType id.
+</I>
+I think it was this way before, but ANTLR definitely uses the most  
+specific type it can now.
+
+tokens {
+     A&lt;AST=X&gt;;
+}
+
+a : A A&lt;AST=Y&gt; ;
+
+generates
+
+             X tmp1_AST = null;
+             tmp1_AST = (X)astFactory.create(LT(1),&quot;X&quot;);
+             ...
+             Y tmp2_AST = null;
+             tmp2_AST = (Y)astFactory.create(LT(1),&quot;Y&quot;);
+
+I have modified the following files:  
+----------------------------------------------
+
+         //depot/code/org.antlr/main/main/antlr/ASTFactory.java  # edit
+
+Added mapping from token type to classname for dynamic node  
+specification.
+ANTLR doesn't use this as it only handles static stuff like #[ID] not  
+#[LT(1)].
+
+        public void setTokenTypeASTNodeType(int tokenType, String  
+className)
+
+modified all of the create/dup routines to respect type.  Added
+
+        public AST create(int type, String txt, String className)
+
+to handle #[ID,&quot;v&quot;,&quot;MyNodeType&quot;].
+
+         //depot/code/org.antlr/main/main/antlr/BaseAST.java     # edit
+
+Just edited comment.
+
+         //depot/code/org.antlr/main/main/antlr/JavaCodeGenerator.java    
+# edit
+
+Altered the getASTCreateString(...) routines to check for AST node type  
+stuff
+
+         //depot/code/org.antlr/main/main/antlr/Parser.java      # edit
+
+Changed a comment
+
+         //depot/code/org.antlr/main/main/antlr/Version.java     # edit
+          
+//depot/code/org.antlr/main/main/antlr/actions/java/ActionLexer.java     
+# edit
+          
+//depot/code/org.antlr/main/main/antlr/actions/java/ 
+ActionLexerTokenTypes.java  # edit
+         //depot/code/org.antlr/main/main/antlr/actions/java/action.g     
+# edit
+
+Added #[a,b,c] format
+
+          
+//depot/code/org.antlr/main/main/examples/java/ASTsupport/ 
+ASTType49.java        # add
+          
+//depot/code/org.antlr/main/main/examples/java/ASTsupport/MyAST.java     
+# add
+          
+//depot/code/org.antlr/main/main/examples/java/ASTsupport/ 
+TestASTFactory.java   # add
+
+unit test
+
+          
+//depot/code/org.antlr/main/main/examples/java/heteroAST/ 
+BinaryOperatorAST.java # edit
+          
+//depot/code/org.antlr/main/main/examples/java/heteroAST/CalcAST.java    
+# edit
+          
+//depot/code/org.antlr/main/main/examples/java/heteroAST/INTNode.java    
+# edit
+          
+//depot/code/org.antlr/main/main/examples/java/heteroAST/MULTNode.java   
+# edit
+          
+//depot/code/org.antlr/main/main/examples/java/heteroAST/Main.java       
+# edit
+          
+//depot/code/org.antlr/main/main/examples/java/heteroAST/PLUSNode.java   
+# edit
+
+Factored some init methods out of specific AST types.
+
+I have uploaded this antlr-2.7.2a6_11-29-2002.jar file to the download  
+area if you want to check it out on your grammars.  I think C++, C#,  
+Java are now more similar in their treatment of hetero trees; for sure,  
+the java hetero tree stuff was just plain broken before.
+
+Next step is C# integration into the main line.
+
+Ter
+--
+Co-founder, <A HREF="http://www.jguru.com">http://www.jguru.com</A>
+Creator, ANTLR Parser Generator: <A HREF="http://www.antlr.org">http://www.antlr.org</A>
+Lecturer in Comp. Sci., University of San Francisco
+
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002392.html">[antlr-interest] Small Poll: Does your C++ compiler support member templates?
+</A></li>
+	
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2397">[ date ]</a>
+              <a href="thread.html#2397">[ thread ]</a>
+              <a href="subject.html#2397">[ subject ]</a>
+              <a href="author.html#2397">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,173 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] v2-&gt;v3 Skip chars in Lexer? For C-target	[SOLVED]
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20v2-%3Ev3%20Skip%20chars%20in%20Lexer%3F%20For%20C-target%0A%09%5BSOLVED%5D&In-Reply-To=%3CC9CFA043.E9AF9%25ruslan_zasukhin%40valentina-db.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="041410.html">
+   <LINK REL="Next"  HREF="041417.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] v2-&gt;v3 Skip chars in Lexer? For C-target	[SOLVED]</H1>
+    <B>Ruslan Zasukhin</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20v2-%3Ev3%20Skip%20chars%20in%20Lexer%3F%20For%20C-target%0A%09%5BSOLVED%5D&In-Reply-To=%3CC9CFA043.E9AF9%25ruslan_zasukhin%40valentina-db.com%3E"
+       TITLE="[antlr-interest] v2-&gt;v3 Skip chars in Lexer? For C-target	[SOLVED]">ruslan_zasukhin at valentina-db.com
+       </A><BR>
+    <I>Sat Apr 16 09:36:35 PDT 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="041410.html">[antlr-interest] v2-&gt;v3 Skip chars in Lexer? // FAQ only for Java. What about C? :-)
+</A></li>
+        <LI>Next message: <A HREF="041417.html">[antlr-interest] v2-&gt;v3 Skip chars in Lexer? For C-target [SOLVED 2.5]
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#41411">[ date ]</a>
+              <a href="thread.html#41411">[ thread ]</a>
+              <a href="subject.html#41411">[ subject ]</a>
+              <a href="author.html#41411">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 4/16/11 1:18 PM, &quot;Bart Kiers&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">bkiers at gmail.com</A>&gt; wrote:
+
+Hi All,
+
+Just for archive  I will show solution I was able built so far for our
+Valentina SQL  couple of LEXER rules.
+
+The only not clear yet to me is:
+    if I must destroy temporary strings to avoid leaks?
+
+Also I still wonder, if exists more compact and elegant and effective
+solution
+&gt;<i>From point of view of C &#173; developer? :-)
+</I>
+
+//--------------------------------------------------------------------------
+----
+// an identifier. Note that testLiterals is set to true!  This means
+// that after we match the rule, we look in the literals table to see
+// if it's a literal or really an identifier
+IDENT
+    :    ( LETTER | '_' ) ( LETTER | '_' | DIGIT )*
+    ;
+
+DELIMITED       // delimited_identifier
+    :
+    (    DQUOTE ( ~(DQUOTE) | DQUOTE DQUOTE )+ DQUOTE
+    |    BQUOTE ( ~(BQUOTE) | BQUOTE BQUOTE )+ BQUOTE
+            
+    |    LBRACK ( ~(']') )+ RBRACK     // valentina extension   [asasas '' &quot;
+sd &quot;]    
+    )    
+        {
+            // Remove the first and the last chars:
+            pANTLR3_STRING pQuotedStr = GETTEXT();
+            pANTLR3_STRING pStr = pQuotedStr-&gt;subString( pQuotedStr, 1,
+pQuotedStr-&gt;len - 1 );
+            
+            SETTEXT( pStr );
+        }
+        { $type = IDENT; }
+    ;
+
+
+And this is the second rule, more complex, because can be quotes inside:
+
+//--------------------------------------------------------------------------
+----
+STRING_LITERAL
+@init
+{
+    int dquotes_count = 0;
+}
+    :    QUOTE 
+        (    ESCAPE_SEQUENCE
+        |    ~('\'' | '\\')
+        |    QUOTE QUOTE            { ++dquotes_count; }
+        )* 
+        QUOTE 
+        
+        {
+            // Remove the first and the last chars:
+            pANTLR3_STRING pQuotedStr = GETTEXT();
+            pANTLR3_STRING pStr = pQuotedStr-&gt;subString( pQuotedStr, 1,
+pQuotedStr-&gt;len - 1 );
+            
+            char* pStart = (char*) pStr-&gt;chars;
+            
+            while( dquotes_count-- )
+            {
+                char* pFirstQuote = strchr( pStart, '\'' );
+                
+                if( *(pFirstQuote + 1) != '\'' ) // second quote?
+                    continue;
+                   
+                // Example: 'aabbcc''def'
+                int CharsOnLeft = pFirstQuote - pStart + 1;
+                int CharsToMove = pStr-&gt;len - CharsOnLeft;
+                   
+                ANTLR3_MEMMOVE( pFirstQuote + 1, pFirstQuote + 2,
+CharsToMove );
+
+                // prepare for possible next loop:
+                pStart = pFirstQuote + 1;
+                pStr-&gt;len--;
+            }
+            
+            SETTEXT( pStr );
+        }
+    ;
+
+
+
+-- 
+Best regards,
+
+Ruslan Zasukhin
+VP Engineering and New Technology
+Paradigma Software, Inc
+
+Valentina - Joining Worlds of Information
+<A HREF="http://www.paradigmasoft.com">http://www.paradigmasoft.com</A>
+
+[I feel the need: the need for speed]
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="041410.html">[antlr-interest] v2-&gt;v3 Skip chars in Lexer? // FAQ only for Java. What about C? :-)
+</A></li>
+	<LI>Next message: <A HREF="041417.html">[antlr-interest] v2-&gt;v3 Skip chars in Lexer? For C-target [SOLVED 2.5]
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#41411">[ date ]</a>
+              <a href="thread.html#41411">[ thread ]</a>
+              <a href="subject.html#41411">[ subject ]</a>
+              <a href="author.html#41411">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

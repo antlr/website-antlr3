@@ -1,0 +1,150 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Re: Lexer - length/position as token delimiter?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20Lexer%20-%20length/position%20as%20token%20delimiter%3F&In-Reply-To=5FA61E60-9A19-11D8-88E7-000393A56BB6%40glyphic.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   
+   <LINK REL="Next"  HREF="007718.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Re: Lexer - length/position as token delimiter?</H1>
+    <B>angrymongoose</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20Lexer%20-%20length/position%20as%20token%20delimiter%3F&In-Reply-To=5FA61E60-9A19-11D8-88E7-000393A56BB6%40glyphic.com"
+       TITLE="[antlr-interest] Re: Lexer - length/position as token delimiter?">angrymongoose at yahoo.com
+       </A><BR>
+    <I>Sat May  1 05:41:04 PDT 2004</I>
+    <P><UL>
+        
+        <LI>Next message: <A HREF="007718.html">[antlr-interest] Re: Lexer - length/position as token delimiter?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#7717">[ date ]</a>
+              <a href="thread.html#7717">[ thread ]</a>
+              <a href="subject.html#7717">[ subject ]</a>
+              <a href="author.html#7717">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello Mark,
+
+The fields making up a tag are defined in the grammar so I am following your suggestion 
+and having some of the `lexical analysis' performed by the parser.
+
+I implemented a subset of the grammar in order to parse one message as proof of concept 
+and I am pretty happy with the results. However, because the parser is doing a lot of the 
+work, which ideally would be done by the lexical analyzer, we are concerned about 
+performance overhead.
+
+I will complete the grammar for our sample message type and run a batch of messages 
+through it to get an idea of the performance.
+
+Thanks for your help,
+
+Norman
+
+
+--- In <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>, Mark Lentczner &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">markl at g...</A>&gt; wrote:
+&gt;<i> As offen is the case, the problems are with your grammar, not the 
+</I>&gt;<i> ability to lex or parse it.
+</I>&gt;<i> 
+</I>&gt;<i> &gt; :23B:CRED
+</I>&gt;<i> &gt; :32A:000612USD5443,99
+</I>&gt;<i> &gt; :33B:USD5443,99
+</I>&gt;<i> 
+</I>&gt;<i> Does the grammar know from the tag what the format of the tag body 
+</I>&gt;<i> should be?  Or can any tag have any tag _body format?  If the later is 
+</I>&gt;<i> the case, then the grammar is almost certainly inherently ambiguous and 
+</I>&gt;<i> you won't be able to get far.  (Unless the tag_body formats are far 
+</I>&gt;<i> more restricted than I'm guessing from your example.)
+</I>&gt;<i> 
+</I>&gt;<i> Here's an example:
+</I>&gt;<i> 
+</I>&gt;<i> :33X:12040678,99
+</I>&gt;<i> 
+</I>&gt;<i> Unless the grammar says something about tag &quot;33X&quot;, there is no way to 
+</I>&gt;<i> know if this is should be parsed as:
+</I>&gt;<i>      1) a date, &quot;120406&quot; and an amount &quot;78,99&quot;
+</I>&gt;<i> or  2) an amount &quot;12040678,99&quot;
+</I>&gt;<i> 
+</I>&gt;<i> Assuming there is a way to know from the tag what to expect from the 
+</I>&gt;<i> tag_body, then I'd approach this by putting most of the work in the 
+</I>&gt;<i> parser, not the lexer.
+</I>&gt;<i> 
+</I>&gt;<i> In the lexer I'd have:
+</I>&gt;<i> 
+</I>&gt;<i> class ScriptLexer extends Lexer;
+</I>&gt;<i>      options { testLiterals = false; }
+</I>&gt;<i> 
+</I>&gt;<i> TAG options{testLiterals=true;}: ':' DIGIT DIGIT LETTER ':';
+</I>&gt;<i> DIGIT: '0'..'9';
+</I>&gt;<i> COMMA: ',';
+</I>&gt;<i> LETTER: 'A'..'Z';
+</I>&gt;<i> 
+</I>&gt;<i> In the parser I'd define rules for each tag_body format:
+</I>&gt;<i> 
+</I>&gt;<i> transaction: (LETTER)+;
+</I>&gt;<i> date: DIGIT DIGIT DIGIT DIGIT DIGIT DIGIT;
+</I>&gt;<i> currency: LETTER LETTER LETTER;
+</I>&gt;<i> value: (DIGIT)+ (COMMA (DIGIT)+)?;
+</I>&gt;<i> amount: currency value;
+</I>&gt;<i> dated_amount: date amount;
+</I>&gt;<i> 
+</I>&gt;<i> Then each I'd run the rest of the parser like:
+</I>&gt;<i> 
+</I>&gt;<i> message : headers entry+ trailer;
+</I>&gt;<i> line : (
+</I>&gt;<i>        &quot;:23B:&quot; transaction
+</I>&gt;<i>      | &quot;:32A:&quot; dated_amount
+</I>&gt;<i>      | &quot;:33B:&quot; amount
+</I>&gt;<i>      );
+</I>&gt;<i> 
+</I>&gt;<i> Notice the trick of allowing the literal test in the TAG rule, and then 
+</I>&gt;<i> using all the tag names as literals in the parser.
+</I>&gt;<i> 
+</I>&gt;<i> 	- Mark
+</I>&gt;<i> 
+</I>&gt;<i> Mark Lentczner
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">markl at w...</A>
+</I>&gt;<i> <A HREF="http://www.wheatfarm.org/">http://www.wheatfarm.org/</A>
+</I>
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+     <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+     <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+     <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	
+	<LI>Next message: <A HREF="007718.html">[antlr-interest] Re: Lexer - length/position as token delimiter?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#7717">[ date ]</a>
+              <a href="thread.html#7717">[ thread ]</a>
+              <a href="subject.html#7717">[ subject ]</a>
+              <a href="author.html#7717">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

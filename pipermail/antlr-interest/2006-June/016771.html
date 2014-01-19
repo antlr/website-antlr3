@@ -1,0 +1,188 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> Fwd: [antlr-interest] parsing incomplete syntax
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Fwd%3A%20%5Bantlr-interest%5D%20parsing%20incomplete%20syntax&In-Reply-To=626f78830606300628w13803002u3fb04e815a5fe331%40mail.gmail.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="016770.html">
+   <LINK REL="Next"  HREF="016772.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>Fwd: [antlr-interest] parsing incomplete syntax</H1>
+    <B>Bans VGLab</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Fwd%3A%20%5Bantlr-interest%5D%20parsing%20incomplete%20syntax&In-Reply-To=626f78830606300628w13803002u3fb04e815a5fe331%40mail.gmail.com"
+       TITLE="Fwd: [antlr-interest] parsing incomplete syntax">bans.vglab at gmail.com
+       </A><BR>
+    <I>Fri Jun 30 06:33:57 PDT 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="016770.html">Fwd: [antlr-interest] New User help!
+</A></li>
+        <LI>Next message: <A HREF="016772.html">[antlr-interest] Reuse of tokens and rules
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#16771">[ date ]</a>
+              <a href="thread.html#16771">[ thread ]</a>
+              <a href="subject.html#16771">[ subject ]</a>
+              <a href="author.html#16771">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>From: Bans VGLab &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">bans.vglab at gmail.com</A>&gt;
+To: Michiel Vermandel &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">Michiel_Vermandel at axi.be</A>&gt;
+
+Hello Michiel
+
+I have no definite solution. But I can give some views, which might be of
+some help.
+
+For this particular problem of showing columns (of course, this is not
+always applicable for a general problem of this kind), We can have a
+coarse-grain grammar, that is more forgiving in nature.
+
+For instance, in your case, accept anything that conforms to something like
+this:
+
+&quot;SELECT&quot; select_list &quot;FROM&quot; table_list &quot;WHERE&quot; condition
+
+Now, don't force select_list, table_list and condition to conform to their
+(respective) exact format. Instead allow them to be a generic string-token.
+This will accept any crappy input like:
+
+SELECT  i have a black pen FROM tt pp qq uu WHERE i am good
+
+But you see a good thing about this. That is, you can walk this tree using a
+coarse-grain tree-parser and then subject the strings &quot;i have a black pen&quot;,
+&quot;tt pp qq uu&quot; and &quot;i am good&quot; for further parsing, specific to the form
+expected. I'd term this as fine-grained parsing.
+
+The best part of it is, you can now pin-point the error-message to the user.
+For example, when you try parsing &quot;i have a black pen&quot; to obtain
+column-list, you can easily print an error like:
+   &quot;Expecting ',' but found 'a' &quot;
+
+Similarly, when you parse the string &quot;i am good&quot; to obtain the condition
+AST, you can easily pin-point the error like:
+    &quot;Unexpected token 'am' &quot;
+
+You see, this kind of hierarchical (multi-level parsing, with next lower
+level being finer and finer) allows you to parse ahead, even if there is an
+error in the beginning.
+
+Now, how can this help you in the problem you have - text-completion? This
+can be outlined as:
+
+1. Say the user inputs:
+     SELECT * FROM customer T, employee E WHERE T.
+
+2. You can easily parse it using level-1 grammar to obtain strings
+       &quot;*&quot;,
+      &quot;customer T, employee E&quot; and
+      &quot;T.&quot;
+
+3. parse &quot;*&quot;. This is a valid input.
+
+4. parse &quot;customer T, employee E&quot;. This is a valid input and parsing results
+into two tables aliased as T and E. Now, behind the scenes, you can run a
+separate thread to fetch and cache the colums of T and E from their schemas.
+
+5. parse &quot;T.&quot;. Now here's the tricky part. You now have the option to build
+some AI that looks up the list of tables and their columns. Display the
+cached columns of the table T.
+
+Hmmmmm...looks like a very specific solution. But it indeed can be applied
+in general to any problem of similar kind.
+
+Another consideration is of performance. Bringing in more hierarchy in
+grammar might slow things down, if not programmed with anticipation. Need to
+strike a proper deal!
+
+Cheers
+Sujeet
+---------------------
+PS: My real name is Sujeet Banerjee. I can be reached at
+<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">sujeet.banerjee at gmail.com</A>
+I have deep interest in lexers/parsers. I have worked for BEA systems, in
+getting their Liquiddata JDBC driver out in the market. Refer to the
+publication:
+<A HREF="http://doi.ieeecomputersociety.org/10.1109/ICDE.2006.147">http://doi.ieeecomputersociety.org/10.1109/ICDE.2006.147</A>
+---------------------
+
+
+
+On 6/30/06, Michiel Vermandel &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">Michiel_Vermandel at axi.be</A>&gt; wrote:
+&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Hi,
+</I>&gt;<i>
+</I>&gt;<i> We have our own Oracle Designer/developer environment and I have written a
+</I>&gt;<i> Sql/Plsql/Forms Plsql code parser which is linked to our repository.
+</I>&gt;<i> The parser looks up all used objects in the repository. This part works
+</I>&gt;<i> just fine.
+</I>&gt;<i> But ( as in many other dev tools) the user wants to lookup data while
+</I>&gt;<i> typing: eg: &quot;select  * from  drtable t where t*.*&quot; and then pressing a key
+</I>&gt;<i> combination to lookup the available columns of table drtable.
+</I>&gt;<i> The problem is that at this point the statement is incomplete and no
+</I>&gt;<i> grammer rule can be applied.
+</I>&gt;<i> What should be the best approach to solve these kinds of issues (not only
+</I>&gt;<i> for looking up fields of tables but in general).
+</I>&gt;<i> If the AST should say (simplified)
+</I>&gt;<i>
+</I>&gt;<i> select_statement
+</I>&gt;<i>    select_list
+</I>&gt;<i>      *
+</I>&gt;<i>    from
+</I>&gt;<i>     table_list
+</I>&gt;<i>        table
+</I>&gt;<i>          drtable
+</I>&gt;<i>          t
+</I>&gt;<i>     where_condition
+</I>&gt;<i>         t
+</I>&gt;<i>        dot
+</I>&gt;<i>
+</I>&gt;<i> then I would be saved.
+</I>&gt;<i>
+</I>&gt;<i> I need the AST tree completely up to the last token.
+</I>&gt;<i> (of course other statements can follow this one)
+</I>&gt;<i>
+</I>&gt;<i> Any suggestions, best practices?
+</I>&gt;<i> Anyone done this before (in other language)?
+</I>&gt;<i>
+</I>&gt;<i> Thanks!
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20060630/2e91dd74/attachment-0001.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20060630/2e91dd74/attachment-0001.html</A>
+</PRE>
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="016770.html">Fwd: [antlr-interest] New User help!
+</A></li>
+	<LI>Next message: <A HREF="016772.html">[antlr-interest] Reuse of tokens and rules
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#16771">[ date ]</a>
+              <a href="thread.html#16771">[ thread ]</a>
+              <a href="subject.html#16771">[ subject ]</a>
+              <a href="author.html#16771">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

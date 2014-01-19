@@ -1,0 +1,240 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] tool for left recursion removal
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20tool%20for%20left%20recursion%20removal&In-Reply-To=c26541e00510291500n7afddbbcu5c642a67a16a7524%40mail.gmail.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="014150.html">
+   <LINK REL="Next"  HREF="014154.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] tool for left recursion removal</H1>
+    <B>Eric Mahurin</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20tool%20for%20left%20recursion%20removal&In-Reply-To=c26541e00510291500n7afddbbcu5c642a67a16a7524%40mail.gmail.com"
+       TITLE="[antlr-interest] tool for left recursion removal">eric_mahurin at yahoo.com
+       </A><BR>
+    <I>Sun Oct 30 06:58:34 PST 2005</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="014150.html">[antlr-interest] tool for left recursion removal
+</A></li>
+        <LI>Next message: <A HREF="014154.html">[antlr-interest] tool for left recursion removal
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#14152">[ date ]</a>
+              <a href="thread.html#14152">[ thread ]</a>
+              <a href="subject.html#14152">[ subject ]</a>
+              <a href="author.html#14152">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Before I continue too far off topic (and give another plug for
+my own LL parser), I'll ask again: anybody know of any software
+for doing left-recursion removal?
+
+--- Suman Karumuri &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">mansuk at gmail.com</A>&gt; wrote:
+
+&gt;<i> Hi Eric,
+</I>&gt;<i> 
+</I>&gt;<i> Why not create a ruby code generation for antlr?
+</I>
+Here are my initial reason for making my own in ruby:
+
+1. My holy grail was to be able to specify a language grammar
+directly in  the target language hopefully with BNF-like
+syntax.  When you do this, you avoid these problems:
+
+   A. a grammar language to learn (and for the parser to parse)
+   B. funny $/macros in your actions
+   C. parser may need to parse a subset of the target language
+      to handle the actions - at least a lexer?
+   D. limitations on the actions for various reasons
+
+2. Even more symmetry between lexer and parser.  With what I
+came up with, they are *identical*.  The difference is what
+their input and output is.  lexer - input: char stream, output:
+token stream; parser - input: token stream, output: AST stream.
+ I created a separate package (cursor) to give something like
+java streams and C++ iterators but with more abstraction and
+power.  One of the results of the symmetry of lexer/parser is
+that you can define tokens however you like (they just needs to
+respond to the === method).  Ah, the joys of a dynamically
+typed language.
+
+3. Wanted to be able to naturally handle arbitrary lookahead. 
+ANTLR can handle it, but not very pretty/efficiently last time
+I checked - you replicate the grammar in a syntactic predicate.
+ With mine, you simply call &quot;lookahead&quot; on a grammar to to
+create a grammar with arbitrary lookahead.  No need to specify
+a global lookahead for the language.  The default is 1 and if
+you need more you just apply this lookahead method where
+needed.
+
+4. Wanted the concept that every grammar rule/subrule is an
+object.  Thus the project/class name is Grammar.  A rule is
+basically an assignment.
+
+5. Very easily add flexibility/power by adding more methods
+that can be applied to grammar objects.
+
+6. Users can easily add their own generic grammar
+transformations (simply a lambda that takes grammar objects or
+whatever as arguments and generates a new grammar object).
+
+7. No need for a parser generation stage.  Effectively, the
+parser is made at run-time.  This will result in a slight
+startup penalty, but really helps ease of use.  No need to
+figure out how to integrate generated files.
+
+8. Well defined way of handling &quot;ambiguities&quot; such that there
+are none similar to regular expressions.  Some may consider
+this a disadvantage because there are no &quot;ambiguity&quot; warnings. 
+In many of the cases where ANTLR gave me these warnings, it was
+mainly a matter a figuring out how to turn them off - setting
+greedy/non-greedy, etc.  Like regular expression alternations,
+mine are also prioritized - first match wins.  This removes the
+ambiguities and makes it easier to specify some things.
+
+Later, here are the other advantages I added/found:
+
+9. Instead of a lexer just parsing one token at a time and
+possibly retaining state, I define a lexer as a grammar object
+that parses the entire stream of characters and generates a
+stream of tokens.  For simple lexers, this would just be a
+repetition of simple token grammars, but for more complex ones,
+each of these tokens might actually be a series of tokens
+instead.  Doing it this way makes it so most lexer state is not
+needed.  The only lexer state that may be absolutely needed
+would be state controlled by the parser.  Doing a lexer this
+way also forces it to be in a separate thread from the parser
+(unless you want to use continuations).  So we may get a
+performance boost from it being multi-threaded.  I could also
+make a conventional-style lexer where you only specify one
+token, but I haven't made the Cursor class to do it - don't see
+the advantage of doing it either.
+
+10. Code flattening.  Instead of each rule generating its own
+method and having the run-time/stack penalty of a method call,
+I flattened the code so that only when you have recursion do
+you need to go to another method.  Intially, I wasn't doing any
+code generation and each grammar transformation (sequence,
+alternation) was another level on the stack.  For the sake of
+performance, I'm now doing code generation with flattening with
+&quot;eval&quot;.
+
+11. Tail recursion (only in my development version).  Before I
+had specific methods for handling various types of grammar
+loops.  Now all of those are aliases for tail recursion.  And
+you can specify any tail recursion and it will become a loop
+instead of actual recursion.  But, you do have to be explicit
+about when you want this tail recursion optimization - I'm not
+detecting it automatically.
+
+
+
+&gt;<i> However, developing a backend for antlr  is still worth it
+</I>&gt;<i> because, it
+</I>&gt;<i> gives you the flexibility to move across languages. For
+</I>&gt;<i> example i am
+</I>&gt;<i> generating python code for the prototype, but for the
+</I>&gt;<i> production code
+</I>&gt;<i> i would be generating c/c++ for the same grammar which is a
+</I>&gt;<i> nice thing
+</I>&gt;<i> to have.
+</I>
+I've been thinking about making various classes with the same
+API (or extend the API) to do things like that:
+
+- generate ruby code to a file so like most other parser
+generators
+
+- generate code for other languages - actions would be
+specified in strings instead of a simple ruby block
+
+- generate code for C/C++ and Inline it in ruby to make the
+parser faster.  This could be done transparently with current
+grammars with ruby actions (C code would call the ruby
+methods).
+
+- generate syntax diagrams of the grammar
+
+- port this library to other OO languages.  The ideal
+candidates would be those with operator overloading,
+closures/anonymous functions, and dynamic typing, but I think
+these could be overcome with some ugliness in the grammar
+specification.
+
+Right now, probably the most portable thing to use would be a
+variation of yacc since a variant of it exists in almost every
+language.
+
+&gt;<i> -Suman
+</I>&gt;<i> On 10/30/05, Eric Mahurin &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">eric_mahurin at yahoo.com</A>&gt; wrote:
+</I>&gt;<i> &gt; Hey all, even though I haven't used ANTLR in about a year
+</I>&gt;<i> or
+</I>&gt;<i> &gt; so, I still take inspiration from it.  I ended up designing
+</I>&gt;<i> my
+</I>&gt;<i> &gt; own LL(1/infinite) parser in Ruby and I started with ideas
+</I>&gt;<i> from
+</I>&gt;<i> &gt; ANTLR.  Unlike other parsers, you specify the grammar
+</I>&gt;<i> directly
+</I>&gt;<i> &gt; in the target language so that integration with logic
+</I>&gt;<i> outside
+</I>&gt;<i> &gt; the grammar is easy.  The same techniques could be applied
+</I>&gt;<i> to
+</I>&gt;<i> &gt; any other OO language, but it would be better if the
+</I>&gt;<i> language
+</I>&gt;<i> &gt; had operator overloading and closures (Java has neither).
+</I>&gt;<i> &gt; Here's a link if anyone is interested:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; <A HREF="http://rubyforge.org/projects/cursor/">http://rubyforge.org/projects/cursor/</A>
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Anyways, back to my real question.  Like other LL parsers,
+</I>&gt;<i> the
+</I>&gt;<i> &gt; big problem is dealing with grammars that have
+</I>&gt;<i> left-recursion.
+</I>&gt;<i> &gt; I found many links on the techniques to remove
+</I>&gt;<i> left-recursion.
+</I>&gt;<i> &gt; But, what I would really like is some tool that took a
+</I>&gt;<i> grammar
+</I>&gt;<i> &gt; (.y file maybe), removed the left-recursion, and spit out a
+</I>&gt;<i> new
+</I>&gt;<i> &gt; grammar (also a .y file).  Maybe also did left factoring.
+</I>&gt;<i> &gt; Anybody know of something that does this?
+</I>
+
+
+		
+__________________________________ 
+Yahoo! FareChase: Search multiple travel sites in one click.
+<A HREF="http://farechase.yahoo.com">http://farechase.yahoo.com</A>
+</PRE>
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="014150.html">[antlr-interest] tool for left recursion removal
+</A></li>
+	<LI>Next message: <A HREF="014154.html">[antlr-interest] tool for left recursion removal
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#14152">[ date ]</a>
+              <a href="thread.html#14152">[ thread ]</a>
+              <a href="subject.html#14152">[ subject ]</a>
+              <a href="author.html#14152">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

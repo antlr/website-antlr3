@@ -1,0 +1,203 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Tree grammars &amp; optional AST nodes
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Tree%20grammars%20%26%20optional%20AST%20nodes&In-Reply-To=loom.20061020T002909-189%40post.gmane.org">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="018021.html">
+   <LINK REL="Next"  HREF="018026.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Tree grammars &amp; optional AST nodes</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Tree%20grammars%20%26%20optional%20AST%20nodes&In-Reply-To=loom.20061020T002909-189%40post.gmane.org"
+       TITLE="[antlr-interest] Tree grammars &amp; optional AST nodes">parrt at cs.usfca.edu
+       </A><BR>
+    <I>Thu Oct 19 16:30:47 PDT 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="018021.html">[antlr-interest] Tree grammars &amp; optional AST nodes
+</A></li>
+        <LI>Next message: <A HREF="018026.html">[antlr-interest] Tree grammars &amp; optional AST nodes
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#18023">[ date ]</a>
+              <a href="thread.html#18023">[ thread ]</a>
+              <a href="subject.html#18023">[ subject ]</a>
+              <a href="author.html#18023">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+On Oct 19, 2006, at 3:49 PM, Nicolas Rouquette wrote:
+
+&gt;<i> When using ANTLR3 for tree grammars, I've noticed some annoying  
+</I>&gt;<i> behavior.
+</I>&gt;<i>
+</I>&gt;<i> Suppose that we take a grammar like Java1.5:
+</I>&gt;<i>
+</I>&gt;<i> expression
+</I>&gt;<i>  : conditionalExpression (assignmentOperator expression)?
+</I>&gt;<i>  ;
+</I>&gt;<i>
+</I>&gt;<i> conditionalExpression
+</I>&gt;<i>  : conditionalOrExpression ( '?' expression ':' expression )?
+</I>&gt;<i>  ;
+</I>&gt;<i>
+</I>&gt;<i> ...
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> As a tree grammar, it would make sense to write:
+</I>
+Hi :)
+
+You mean a parser grammar that builds trees, right?
+
+&gt;<i> expression
+</I>&gt;<i>  : conditionalExpression
+</I>&gt;<i>  | e1=conditionalExpression op=assignmentOperator e2=expression
+</I>&gt;<i>    -&gt; ^($op $e1 $e2)
+</I>&gt;<i>  ;
+</I>
+Yes, but that is hard for ANTLRto deal with because conditional  
+expression is recursive and ANTLR cannot decide which alternative to  
+take. you could turn on the backtrack mode:
+
+expression
+options {backtrack=true;}
+  : conditionalExpression
+  | e1=conditionalExpression op=assignmentOperator e2=expression
+    -&gt; ^($op $e1 $e2)
+  ;
+
+  but that won't work either because it will always match the first  
+alternative--you would have to reverse the alternatives.
+
+expression
+options {backtrack=true;}
+  : e1=conditionalExpression op=assignmentOperator e2=expression
+    -&gt; ^($op $e1 $e2)
+  | conditionalExpression
+  ;
+
+OR, do this:
+
+expression
+  : conditionalExpression (assignmentOperator^^ expression)?
+  ;
+
+:<i>)
+</I>
+Hard to beat tree operators for expression stuff.
+
+Ter
+
+&gt;<i>
+</I>&gt;<i> conditionalExpression
+</I>&gt;<i>  : conditionalOrExpression
+</I>&gt;<i>  | c=conditionalOrExpression '?' e1=expression ':' e2=expression
+</I>&gt;<i>    -&gt; ^(IF_THEN_ELSE $c $e1 $e2)
+</I>&gt;<i>  ;
+</I>&gt;<i>
+</I>&gt;<i> ...
+</I>&gt;<i>
+</I>&gt;<i> I get a bunch of errors:
+</I>&gt;<i>
+</I>&gt;<i> internal eror:
+</I>&gt;<i> org.antlr.tool.Grammar.createLookaheadDFA(Grammar.java:778):
+</I>&gt;<i> could not even do k=1 for decision &lt;N&gt;
+</I>&gt;<i>
+</I>&gt;<i> for some value of &lt;N&gt;
+</I>&gt;<i>
+</I>&gt;<i> When I run Antlr with the -Xwatchconversion option,
+</I>&gt;<i> I see that the culprit is in 'expression' and 'conditionalExpression'.
+</I>&gt;<i>
+</I>&gt;<i> To get rid of these errors, I changed the grammar like this:
+</I>&gt;<i>
+</I>&gt;<i> expression
+</I>&gt;<i>  : e1=conditionalExpression (op=assignmentOperator e2=expression)?
+</I>&gt;<i>    -&gt; ^(COND_EXPR $e1 $op? $e2?)
+</I>&gt;<i>  ;
+</I>&gt;<i>
+</I>&gt;<i> conditionalExpression
+</I>&gt;<i>  : c=conditionalOrExpression ('?' e1=expression ':' e2=expression)?
+</I>&gt;<i>    -&gt; ^(IF_THEN_ELSE $c $e1? $e2?)
+</I>&gt;<i>  ;
+</I>&gt;<i>
+</I>&gt;<i> ...
+</I>&gt;<i>
+</I>&gt;<i> This would be OK except that when parsing the mother-of-all  
+</I>&gt;<i> expressions, 42,
+</I>&gt;<i> we'd get something like this:
+</I>&gt;<i>
+</I>&gt;<i> COND_EXPR -&gt; IF_THEN_ELSE -&gt; .... -&gt; (INTEGER 42)
+</I>&gt;<i>
+</I>&gt;<i> when instead I'd like to have just:
+</I>&gt;<i>
+</I>&gt;<i> (INTEGER 42)
+</I>&gt;<i>
+</I>&gt;<i> So here are my universal questions:
+</I>&gt;<i>
+</I>&gt;<i> a) is there a better way to write the tree grammar
+</I>&gt;<i>    to avoid non-essential AST nodes?
+</I>&gt;<i> b) if not, can someone point me to an example of a &quot;cleanup&quot; tree  
+</I>&gt;<i> phase
+</I>&gt;<i>    that eliminate all but the essential AST nodes?
+</I>&gt;<i>
+</I>&gt;<i> -- Nicolas.
+</I>&gt;<i>
+</I>&gt;<i> P.S. Yes, Antlr3 is really cool; ANTLRWorks makes lazy look cool.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="018021.html">[antlr-interest] Tree grammars &amp; optional AST nodes
+</A></li>
+	<LI>Next message: <A HREF="018026.html">[antlr-interest] Tree grammars &amp; optional AST nodes
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#18023">[ date ]</a>
+              <a href="thread.html#18023">[ thread ]</a>
+              <a href="subject.html#18023">[ subject ]</a>
+              <a href="author.html#18023">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

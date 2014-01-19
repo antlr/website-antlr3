@@ -1,0 +1,1013 @@
+From jose.sanleandro at ventura24.es  Tue Sep  6 08:45:42 2005
+From: jose.sanleandro at ventura24.es (Jose San Leandro)
+Date: Tue Sep  6 08:45:46 2005
+Subject: [stringtemplate-interest] counter in anonymous templates with
+	multi-valued attributes
+Message-ID: <200509061745.42393.jose.sanleandro@ventura24.es>
+
+Hi,
+
+It seems the default counter, $i$ (or <i>), is only available on templates 
+which accept one multi-valued attribute, such as
+
+users:{ User $i$: $it.name$ }
+
+I get an error when trying to access such element on templates with more than 
+one formal parameter:
+
+users,jobs:{ u,j | User $i$: $u.name$, $j.name$ }
+
+Is there any way to access the counter in these cases?
+
+Thank you.
+From jose.sanleandro at ventura24.es  Fri Sep  2 03:22:20 2005
+From: jose.sanleandro at ventura24.es (Jose San Leandro)
+Date: Tue Sep  6 09:04:15 2005
+Subject: [stringtemplate-interest] StringTemplate rules
+Message-ID: <200509021222.21982.jose.sanleandro@ventura24.es>
+
+Hi,
+
+I have some questions regarding template groups and rules.
+I'm trying to define a template to generate some kind of Java source files.
+
+type1.st :
+
+//;-*- mode: antlr-*-
+group javaSourceType1Group;
+
+source(year, name, package) ::= <<
+<header_declaration()>
+<package_declaration(package)>
+>>
+
+header_declaration() ::= <<
+/*
+  (GPL License) Copyright <year>
+  Description: <name> does whatever.
+ */
+>>
+
+package_declaration(package) ::= <<
+package <package>;
+>>
+
+I test it through a beanshell script.
+type1.bsh:
+
+import org.antlr.stringtemplate.*;
+import org.antlr.stringtemplate.language.*;
+import java.util.*;
+import java.io.*;
+StringTemplateGroup group =
+  new StringTemplateGroup(
+      new FileReader("path-to/type1.st"), AngleBracketTemplateLexer.class);
+StringTemplate template = group.getInstanceOf("source");
+template.setAttribute("year", "2005");
+template.setAttribute("name", "Euler");
+template.setAttribute("package", "com.foo.bar");
+print(template.toString());
+
+The template below works. However, I'd rather use something like:
+
+type1.st :
+
+//;-*- mode: antlr-*-
+group javaSourceType1Group;
+
+source(year, name, package) ::= <<
+<header_declaration(year,name)>
+<package_declaration(package)>
+>>
+
+header_declaration(year,name) ::= <<
+/*
+  (GPL License) Copyright <year>
+  Description: <name> does whatever.
+ */
+>>
+
+package_declaration(package) ::= <<
+package <package>;
+>>
+
+
+My questions are:
+1) I cannot define "header_declaration" rule parameters, since, if I use
+header_declaration(year,name) ::= <<
+...
+>>
+the parameters are not being passed by the "source" rule (which is the one I 
+want to use to trigger the whole generation process), and they're not 
+printed. If "source" rule passes them explicitly
+
+source(year, name, package) ::= <<
+<header_declaration(year,name)>
+<package_declaration(package)>
+>>
+
+I get an ANTLR saying
+
+StringTemplate: error: template parse error: line 1:1: unexpected token: 
+header_declaration
+StringTemplate: error: template parse error: line 1:24: unexpected token: ,
+StringTemplate: error: problem parsing template 'source': 
+java.lang.NullPointerException
+
+Also, if I pass only "year" parameter to "header_declaration", I get
+
+StringTemplate: error: template header_declaration must have exactly one 
+formal arg in template context [source <invoke header_declaration arg 
+context>]
+
+I wonder if I can define more than one parameter on nested rules, without 
+taking it from the context. That would allow me to use "header_declaration" 
+directly or not without having to define two identical rules. If I use
+<header_declaration()> inside "source" rule, and define
+header_declaration(year,name) ::= << ..., the rule cannot see the parameters.
+
+2) My "source" rule will act as the entry point in the generation process for 
+each type. I don't know in advance the parameters its nested rules will 
+require. Do I have to declare them all in its declaration?
+
+Thank you for you time!
+Jose.
+From Andrew.Goodnough at wicourts.gov  Thu Sep 22 08:38:25 2005
+From: Andrew.Goodnough at wicourts.gov (Andrew Goodnough)
+Date: Thu Sep 22 08:38:34 2005
+Subject: [stringtemplate-interest] Problem with newline chars
+Message-ID: <s33289a8.001@gwmta.wicourts.gov>
+
+First of all, let me say that I am able to get my desired output with StringTemplate so I'm basically happy, but...(there's always a but)...
+ 
+I'm unable to create a test which verifies my output in an automated way.  The test is included below along with the template files.  The problem comes in the testDouble() method where I am creating two "userTypes".  The expected and actual string output is visually identical but the test fails due to a difference in newline characters.  It appears that StringTemplate is returning an ASCII '10' which is CR, while my test is expecting a '13' or LF just after the first output of the printUserType template.
+ 
+Any ideas?  Maybe there's a simpler way to accomplish what I want too, I don't know.
+ 
+Andy
+ 
+==test.st=====
+<userTypes; separator="\n\n">
+ 
+GO
+
+==end test.st==
+ 
+==printUserType.st=====
+--USERTYPE <userType>
+EXEC sp_addtype '<userType>' char(5)
+==end printUserType.st==
+ 
+==Test.java==
+import java.io.IOException;
+import java.io.StringReader;
+ 
+import junit.framework.TestCase;
+ 
+import org.antlr.stringtemplate.StringTemplate;
+import org.antlr.stringtemplate.StringTemplateGroup;
+import org.antlr.stringtemplate.language.AngleBracketTemplateLexer;
+ 
+public class Test extends TestCase {
+ 
+    private static final String NEWLINE = System.getProperty("line.separator");
+    //private static final String NEWLINE = "\n";
+    
+    
+    protected void setUp() throws Exception {
+        super.setUp();
+    }
+ 
+    protected void tearDown() throws Exception {
+        super.tearDown();
+    }
+ 
+    /*
+     * Test method testSingle
+     */
+    public void testSingle() throws Exception {
+        StringTemplateGroup templates = new StringTemplateGroup("myGroup", ".", AngleBracketTemplateLexer.class);
+        StringTemplate fileTpl = templates.getInstanceOf("test");
+                
+        StringTemplate userTypeTpl = templates.getInstanceOf("printUserType");
+        userTypeTpl.setAttribute("userType", "NewTypeT");
+        fileTpl.setAttribute("userTypes", userTypeTpl);
+        
+        String expected = 
+            "--USERTYPE NewTypeT" + NEWLINE +
+            "EXEC sp_addtype 'NewTypeT' char(5)" + NEWLINE +
+            NEWLINE +
+            "GO";
+        
+        String actual = fileTpl.toString();
+ 
+        assertEquals(expected, actual);
+    }
+    
+    /*
+     * Test method testDouble
+     */
+    public void testDouble() throws Exception {
+        StringTemplateGroup templates = new StringTemplateGroup("myGroup", ".", AngleBracketTemplateLexer.class);
+        StringTemplate fileTpl = templates.getInstanceOf("test");
+            
+        StringTemplate userTypeTpl = templates.getInstanceOf("printUserType");
+        userTypeTpl.setAttribute("userType", "NewTypeT");
+        fileTpl.setAttribute("userTypes", userTypeTpl);
+        
+        userTypeTpl = templates.getInstanceOf("printUserType");
+        userTypeTpl.setAttribute("userType", "AnotherTypeT");
+        fileTpl.setAttribute("userTypes", userTypeTpl);
+        
+        String expected = 
+            "--USERTYPE NewTypeT" + NEWLINE +
+            "EXEC sp_addtype 'NewTypeT' char(5)" + NEWLINE +
+            NEWLINE +
+            "--USERTYPE AnotherTypeT" + NEWLINE +
+            "EXEC sp_addtype 'AnotherTypeT' char(5)" + NEWLINE +
+            NEWLINE +
+            "GO";
+        
+        String actual = fileTpl.toString();
+        
+        /* Shows that newline is the culprit
+        char[] expectedchars = expected.toCharArray();
+        char[] actualchars = actual.toCharArray();
+        for (int i = 0; i < expectedchars.length; i++) {
+            System.out.println("Comparing " + expectedchars[i] + " to " + actualchars[i]);
+            assertEquals(expectedchars[i],actualchars[i]);
+        }
+        */
+        
+        /* Shows ASCII 13 vs. ASCII 10
+        StringReader expectedReader = new StringReader(expected);
+        StringReader actualReader = new StringReader(actual);
+        int exp = 0;
+        int act = 0;
+        while ((exp = expectedReader.read()) != -1) {
+            act = actualReader.read();
+            System.out.println("Comparing " + exp + " to " + act);
+            assertEquals(exp,act);
+        }
+        */
+        
+        assertEquals(expected, actual);
+    }
+ 
+}
+==End Test.java==
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20050922/8e39d880/attachment.html
+From stefan at amiq.ro  Thu Sep 22 09:11:15 2005
+From: stefan at amiq.ro (stefan)
+Date: Thu Sep 22 09:10:47 2005
+Subject: [stringtemplate-interest] Problem with newline chars
+In-Reply-To: <s33289a8.001@gwmta.wicourts.gov>
+References: <s33289a8.001@gwmta.wicourts.gov>
+Message-ID: <200509221911.16813.stefan@amiq.ro>
+
+Hello,
+
+      I haven't run the test yet, but my verification experience tells me that 
+you can do some string filtering before compare the two strings. The ideea is 
+to bring the two strings to common acceptable form, as long as it doesn't 
+affects the test. 
+     There are noises that can be ignored like the newline character or number 
+of new lines, number of spaces etc, as long as you DO NOT TEST THEM.
+
+For example the assertEquals method would be applied for filtered 
+...........................
+          assertEquals(SomeFilter.filterNewLine(expected)
+                             ,SomeFilter.filterNewLine(actual));
+...........................
+
+And the class would look like :
+...............................
+public class SomeFilter {
+
+      public static String filterNewLine(String input) {
+	       // code to replace newlines with some other character or a LF
+               // eventually code to reduce *spaces to 1 space if you need 
+such  reduction
+               return res;
+      }  
+}
+...............................
+A similar filtering is implemented in http://sourceforge.net/projects/fasper.
+
+I hope it helps,
+                    Stefan.
+
+On Thursday 22 September 2005 18:38, Andrew Goodnough wrote:
+> First of all, let me say that I am able to get my desired output with
+> StringTemplate so I'm basically happy, but...(there's always a but)...
+>
+> I'm unable to create a test which verifies my output in an automated way. 
+> The test is included below along with the template files.  The problem
+> comes in the testDouble() method where I am creating two "userTypes".  The
+> expected and actual string output is visually identical but the test fails
+> due to a difference in newline characters.  It appears that StringTemplate
+> is returning an ASCII '10' which is CR, while my test is expecting a '13'
+> or LF just after the first output of the printUserType template.
+>
+> Any ideas?  Maybe there's a simpler way to accomplish what I want too, I
+> don't know.
+>
+> Andy
+>
+> ==test.st=====
+> <userTypes; separator="\n\n">
+>
+> GO
+>
+> ==end test.st==
+>
+> ==printUserType.st=====
+> --USERTYPE <userType>
+> EXEC sp_addtype '<userType>' char(5)
+> ==end printUserType.st==
+>
+> ==Test.java==
+> import java.io.IOException;
+> import java.io.StringReader;
+>
+> import junit.framework.TestCase;
+>
+> import org.antlr.stringtemplate.StringTemplate;
+> import org.antlr.stringtemplate.StringTemplateGroup;
+> import org.antlr.stringtemplate.language.AngleBracketTemplateLexer;
+>
+> public class Test extends TestCase {
+>
+>     private static final String NEWLINE =
+> System.getProperty("line.separator"); //private static final String NEWLINE
+> = "\n";
+>
+>
+>     protected void setUp() throws Exception {
+>         super.setUp();
+>     }
+>
+>     protected void tearDown() throws Exception {
+>         super.tearDown();
+>     }
+>
+>     /*
+>      * Test method testSingle
+>      */
+>     public void testSingle() throws Exception {
+>         StringTemplateGroup templates = new StringTemplateGroup("myGroup",
+> ".", AngleBracketTemplateLexer.class); StringTemplate fileTpl =
+> templates.getInstanceOf("test");
+>
+>         StringTemplate userTypeTpl =
+> templates.getInstanceOf("printUserType");
+> userTypeTpl.setAttribute("userType", "NewTypeT");
+>         fileTpl.setAttribute("userTypes", userTypeTpl);
+>
+>         String expected =
+>             "--USERTYPE NewTypeT" + NEWLINE +
+>             "EXEC sp_addtype 'NewTypeT' char(5)" + NEWLINE +
+>             NEWLINE +
+>             "GO";
+>
+>         String actual = fileTpl.toString();
+>
+>         assertEquals(expected, actual);
+>     }
+>
+>     /*
+>      * Test method testDouble
+>      */
+>     public void testDouble() throws Exception {
+>         StringTemplateGroup templates = new StringTemplateGroup("myGroup",
+> ".", AngleBracketTemplateLexer.class); StringTemplate fileTpl =
+> templates.getInstanceOf("test");
+>
+>         StringTemplate userTypeTpl =
+> templates.getInstanceOf("printUserType");
+> userTypeTpl.setAttribute("userType", "NewTypeT");
+>         fileTpl.setAttribute("userTypes", userTypeTpl);
+>
+>         userTypeTpl = templates.getInstanceOf("printUserType");
+>         userTypeTpl.setAttribute("userType", "AnotherTypeT");
+>         fileTpl.setAttribute("userTypes", userTypeTpl);
+>
+>         String expected =
+>             "--USERTYPE NewTypeT" + NEWLINE +
+>             "EXEC sp_addtype 'NewTypeT' char(5)" + NEWLINE +
+>             NEWLINE +
+>             "--USERTYPE AnotherTypeT" + NEWLINE +
+>             "EXEC sp_addtype 'AnotherTypeT' char(5)" + NEWLINE +
+>             NEWLINE +
+>             "GO";
+>
+>         String actual = fileTpl.toString();
+>
+>         /* Shows that newline is the culprit
+>         char[] expectedchars = expected.toCharArray();
+>         char[] actualchars = actual.toCharArray();
+>         for (int i = 0; i < expectedchars.length; i++) {
+>             System.out.println("Comparing " + expectedchars[i] + " to " +
+> actualchars[i]); assertEquals(expectedchars[i],actualchars[i]);
+>         }
+>         */
+>
+>         /* Shows ASCII 13 vs. ASCII 10
+>         StringReader expectedReader = new StringReader(expected);
+>         StringReader actualReader = new StringReader(actual);
+>         int exp = 0;
+>         int act = 0;
+>         while ((exp = expectedReader.read()) != -1) {
+>             act = actualReader.read();
+>             System.out.println("Comparing " + exp + " to " + act);
+>             assertEquals(exp,act);
+>         }
+>         */
+>
+>         assertEquals(expected, actual);
+>     }
+>
+> }
+> ==End Test.java==
+From Andrew.Goodnough at wicourts.gov  Thu Sep 22 09:49:49 2005
+From: Andrew.Goodnough at wicourts.gov (Andrew Goodnough)
+Date: Thu Sep 22 09:50:04 2005
+Subject: [stringtemplate-interest] Problem with newline chars
+Message-ID: <s3329a6a.025@gwmta.wicourts.gov>
+
+Thanks, that is a good idea.  I could look for any newline char and replace them with a known char for the assert.
+ 
+Andy
+
+>>> stefan <stefan@amiq.ro> 9/22/2005 11:11:15 AM >>>
+
+Hello,
+
+      I haven't run the test yet, but my verification experience tells me that 
+you can do some string filtering before compare the two strings. The ideea is 
+to bring the two strings to common acceptable form, as long as it doesn't 
+affects the test. 
+     There are noises that can be ignored like the newline character or number 
+of new lines, number of spaces etc, as long as you DO NOT TEST THEM.
+
+For example the assertEquals method would be applied for filtered 
+...........................
+          assertEquals(SomeFilter.filterNewLine(expected)
+                             ,SomeFilter.filterNewLine(actual));
+...........................
+
+And the class would look like :
+...............................
+public class SomeFilter {
+
+      public static String filterNewLine(String input) {
+           // code to replace newlines with some other character or a LF
+               // eventually code to reduce *spaces to 1 space if you need 
+such  reduction
+               return res;
+      }  
+}
+...............................
+A similar filtering is implemented in http://sourceforge.net/projects/fasper.
+
+I hope it helps,
+                    Stefan.
+
+On Thursday 22 September 2005 18:38, Andrew Goodnough wrote:
+> First of all, let me say that I am able to get my desired output with
+> StringTemplate so I'm basically happy, but...(there's always a but)...
+>
+> I'm unable to create a test which verifies my output in an automated way. 
+> The test is included below along with the template files.  The problem
+> comes in the testDouble() method where I am creating two "userTypes".  The
+> expected and actual string output is visually identical but the test fails
+> due to a difference in newline characters.  It appears that StringTemplate
+> is returning an ASCII '10' which is CR, while my test is expecting a '13'
+> or LF just after the first output of the printUserType template.
+>
+> Any ideas?  Maybe there's a simpler way to accomplish what I want too, I
+> don't know.
+>
+> Andy
+>
+> ==test.st=====
+> <userTypes; separator="\n\n">
+>
+> GO
+>
+> ==end test.st==
+>
+> ==printUserType.st=====
+> --USERTYPE <userType>
+> EXEC sp_addtype '<userType>' char(5)
+> ==end printUserType.st==
+>
+> ==Test.java==
+> import java.io.IOException;
+> import java.io.StringReader;
+>
+> import junit.framework.TestCase;
+>
+> import org.antlr.stringtemplate.StringTemplate;
+> import org.antlr.stringtemplate.StringTemplateGroup;
+> import org.antlr.stringtemplate.language.AngleBracketTemplateLexer;
+>
+> public class Test extends TestCase {
+>
+>     private static final String NEWLINE =
+> System.getProperty("line.separator"); //private static final String NEWLINE
+> = "\n";
+>
+>
+>     protected void setUp() throws Exception {
+>         super.setUp();
+>     }
+>
+>     protected void tearDown() throws Exception {
+>         super.tearDown();
+>     }
+>
+>     /*
+>      * Test method testSingle
+>      */
+>     public void testSingle() throws Exception {
+>         StringTemplateGroup templates = new StringTemplateGroup("myGroup",
+> ".", AngleBracketTemplateLexer.class); StringTemplate fileTpl =
+> templates.getInstanceOf("test");
+>
+>         StringTemplate userTypeTpl =
+> templates.getInstanceOf("printUserType");
+> userTypeTpl.setAttribute("userType", "NewTypeT");
+>         fileTpl.setAttribute("userTypes", userTypeTpl);
+>
+>         String expected =
+>             "--USERTYPE NewTypeT" + NEWLINE +
+>             "EXEC sp_addtype 'NewTypeT' char(5)" + NEWLINE +
+>             NEWLINE +
+>             "GO";
+>
+>         String actual = fileTpl.toString();
+>
+>         assertEquals(expected, actual);
+>     }
+>
+>     /*
+>      * Test method testDouble
+>      */
+>     public void testDouble() throws Exception {
+>         StringTemplateGroup templates = new StringTemplateGroup("myGroup",
+> ".", AngleBracketTemplateLexer.class); StringTemplate fileTpl =
+> templates.getInstanceOf("test");
+>
+>         StringTemplate userTypeTpl =
+> templates.getInstanceOf("printUserType");
+> userTypeTpl.setAttribute("userType", "NewTypeT");
+>         fileTpl.setAttribute("userTypes", userTypeTpl);
+>
+>         userTypeTpl = templates.getInstanceOf("printUserType");
+>         userTypeTpl.setAttribute("userType", "AnotherTypeT");
+>         fileTpl.setAttribute("userTypes", userTypeTpl);
+>
+>         String expected =
+>             "--USERTYPE NewTypeT" + NEWLINE +
+>             "EXEC sp_addtype 'NewTypeT' char(5)" + NEWLINE +
+>             NEWLINE +
+>             "--USERTYPE AnotherTypeT" + NEWLINE +
+>             "EXEC sp_addtype 'AnotherTypeT' char(5)" + NEWLINE +
+>             NEWLINE +
+>             "GO";
+>
+>         String actual = fileTpl.toString();
+>
+>         /* Shows that newline is the culprit
+>         char[] expectedchars = expected.toCharArray();
+>         char[] actualchars = actual.toCharArray();
+>         for (int i = 0; i < expectedchars.length; i++) {
+>             System.out.println("Comparing " + expectedchars[i] + " to " +
+> actualchars[i]); assertEquals(expectedchars[i],actualchars[i]);
+>         }
+>         */
+>
+>         /* Shows ASCII 13 vs. ASCII 10
+>         StringReader expectedReader = new StringReader(expected);
+>         StringReader actualReader = new StringReader(actual);
+>         int exp = 0;
+>         int act = 0;
+>         while ((exp = expectedReader.read()) != -1) {
+>             act = actualReader.read();
+>             System.out.println("Comparing " + exp + " to " + act);
+>             assertEquals(exp,act);
+>         }
+>         */
+>
+>         assertEquals(expected, actual);
+>     }
+>
+> }
+> ==End Test.java==
+_______________________________________________
+stringtemplate-interest mailing list
+stringtemplate-interest@antlr.org
+http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20050922/99145062/attachment-0001.html
+From parrt at cs.usfca.edu  Thu Sep 22 10:58:40 2005
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Thu Sep 22 10:58:43 2005
+Subject: [stringtemplate-interest] counter in anonymous templates with
+	multi-valued attributes
+In-Reply-To: <200509061745.42393.jose.sanleandro@ventura24.es>
+References: <200509061745.42393.jose.sanleandro@ventura24.es>
+Message-ID: <A3332046-F5D8-4FDE-84E0-BE77D49D29A3@cs.usfca.edu>
+
+On Sep 6, 2005, at 8:45 AM, Jose San Leandro wrote:
+> Hi,
+>
+> It seems the default counter, $i$ (or <i>), is only available on  
+> templates
+> which accept one multi-valued attribute, such as
+>
+> users:{ User $i$: $it.name$ }
+
+Interesting!  Yes, I guess $i$ should work for multiple iteration too!
+
+> I get an error when trying to access such element on templates with  
+> more than
+> one formal parameter:
+>
+> users,jobs:{ u,j | User $i$: $u.name$, $j.name$ }
+>
+> Is there any way to access the counter in these cases?
+
+It's a mistake on my part!  Adding to bug list.
+
+Ter
+--
+CS Professor & Grad Director, University of San Francisco
+Creator, ANTLR Parser Generator, http://www.antlr.org
+Cofounder, http://www.jguru.com
+
+From parrt at cs.usfca.edu  Thu Sep 22 11:02:02 2005
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Thu Sep 22 11:02:05 2005
+Subject: [stringtemplate-interest] StringTemplate rules
+In-Reply-To: <200509021222.21982.jose.sanleandro@ventura24.es>
+References: <200509021222.21982.jose.sanleandro@ventura24.es>
+Message-ID: <05A133E8-EE5E-40BB-AD4D-B82C6BE0570A@cs.usfca.edu>
+
+
+On Sep 2, 2005, at 3:22 AM, Jose San Leandro wrote:
+
+> Hi,
+>
+> I have some questions regarding template groups and rules.
+> I'm trying to define a template to generate some kind of Java  
+> source files.
+>
+> type1.st :
+>
+> //;-*- mode: antlr-*-
+> group javaSourceType1Group;
+>
+> source(year, name, package) ::= <<
+> <header_declaration()>
+> <package_declaration(package)>
+>
+>>>
+>>>
+>
+> header_declaration() ::= <<
+> /*
+>   (GPL License) Copyright <year>
+>   Description: <name> does whatever.
+>  */
+>
+>>>
+>>>
+>
+> package_declaration(package) ::= <<
+> package <package>;
+>
+>>>
+>>>
+>
+> I test it through a beanshell script.
+> type1.bsh:
+>
+> import org.antlr.stringtemplate.*;
+> import org.antlr.stringtemplate.language.*;
+> import java.util.*;
+> import java.io.*;
+> StringTemplateGroup group =
+>   new StringTemplateGroup(
+>       new FileReader("path-to/type1.st"),  
+> AngleBracketTemplateLexer.class);
+> StringTemplate template = group.getInstanceOf("source");
+> template.setAttribute("year", "2005");
+> template.setAttribute("name", "Euler");
+> template.setAttribute("package", "com.foo.bar");
+> print(template.toString());
+>
+> The template below works. However, I'd rather use something like:
+>
+> type1.st :
+>
+> //;-*- mode: antlr-*-
+> group javaSourceType1Group;
+>
+> source(year, name, package) ::= <<
+> <header_declaration(year,name)>
+> <package_declaration(package)>
+>
+>>>
+>>>
+>
+> header_declaration(year,name) ::= <<
+> /*
+>   (GPL License) Copyright <year>
+>   Description: <name> does whatever.
+>  */
+>
+>>>
+>>>
+>
+> package_declaration(package) ::= <<
+> package <package>;
+>
+>>>
+>>>
+>
+>
+> My questions are:
+> 1) I cannot define "header_declaration" rule parameters, since, if  
+> I use
+> header_declaration(year,name) ::= <<
+> ...
+>
+>>>
+>>>
+> the parameters are not being passed by the "source" rule (which is  
+> the one I
+> want to use to trigger the whole generation process), and they're not
+> printed. If "source" rule passes them explicitly
+>
+> source(year, name, package) ::= <<
+> <header_declaration(year,name)>
+> <package_declaration(package)>
+>
+>>>
+>>>
+>
+> I get an ANTLR saying
+>
+> StringTemplate: error: template parse error: line 1:1: unexpected  
+> token:
+> header_declaration
+> StringTemplate: error: template parse error: line 1:24: unexpected  
+> token: ,
+> StringTemplate: error: problem parsing template 'source':
+> java.lang.NullPointerException
+
+Parameters are actually parameter assignments so you would need the  
+wacky
+
+source(year, name, package) ::= <<
+<header_declaration(year=year,name=name)>
+ >>
+
+or as of 2.2 you can just use "...":
+
+source(year, name, package) ::= <<
+<header_declaration(...)>
+ >>
+
+which explicitly allows all attributes in source to flow thru.
+
+> Also, if I pass only "year" parameter to "header_declaration", I get
+>
+> StringTemplate: error: template header_declaration must have  
+> exactly one
+> formal arg in template context [source <invoke header_declaration arg
+> context>]
+>
+> I wonder if I can define more than one parameter on nested rules,  
+> without
+> taking it from the context. That would allow me to use  
+> "header_declaration"
+> directly or not without having to define two identical rules. If I use
+> <header_declaration()> inside "source" rule, and define
+> header_declaration(year,name) ::= << ..., the rule cannot see the  
+> parameters.
+>
+> 2) My "source" rule will act as the entry point in the generation  
+> process for
+> each type. I don't know in advance the parameters its nested rules  
+> will
+> require. Do I have to declare them all in its declaration?
+
+Not necessarily.  Your nested subtemplates could actually have the  
+attributes set in them directly as you build up the big template.
+
+Ter
+--
+CS Professor & Grad Director, University of San Francisco
+Creator, ANTLR Parser Generator, http://www.antlr.org
+Cofounder, http://www.jguru.com
+
+From parrt at cs.usfca.edu  Thu Sep 22 11:04:03 2005
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Thu Sep 22 11:04:06 2005
+Subject: [stringtemplate-interest] Problem with newline chars
+In-Reply-To: <s33289a8.001@gwmta.wicourts.gov>
+References: <s33289a8.001@gwmta.wicourts.gov>
+Message-ID: <E26687B9-C5E4-467D-98F0-1D8A666467FF@cs.usfca.edu>
+
+Hi Andrew, well ST only spits out what you give it.  So if your  
+template has \n instead of \r\n then you must compare against \n  
+only.  Not sure if this helps ;)
+Ter
+--
+CS Professor & Grad Director, University of San Francisco
+Creator, ANTLR Parser Generator, http://www.antlr.org
+Cofounder, http://www.jguru.com
+
+From parrt at cs.usfca.edu  Thu Sep 22 11:05:33 2005
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Thu Sep 22 11:05:37 2005
+Subject: [stringtemplate-interest] Missing convenience ctor in
+	StringTemplateGroup(?)
+In-Reply-To: <9da4f452050815102652f8c1ed@mail.gmail.com>
+References: <9da4f452050815102652f8c1ed@mail.gmail.com>
+Message-ID: <A4E1910E-26C3-4671-A07E-BA215795222E@cs.usfca.edu>
+
+
+On Aug 15, 2005, at 10:26 AM, Oliver Zeigermann wrote:
+
+> I thought it might be convenient to have something that resolves the
+> file a group is specified in in the same way as with string templates.
+> While now you can use the ctor
+>
+> public StringTemplateGroup(Reader r)
+>
+> to make clear that the group is specified in a file, something like
+> that might be more convenient:
+>
+> public StringTemplateGroup(String name, boolean groupFormat);
+
+Hi.  This is mainly for legacy  confusion issues.  The old stuff pre- 
+group format used strings for args to the groups.  I used the Reader  
+stuff to make it clear.  Perhaps I should have done a new subclass  
+instead. :(
+
+Ter
+
+>
+> Right now I saw myself forced to write something like
+>
+>     static Reader getGroup(String name) {
+>         ClassLoader cl = Thread.currentThread 
+> ().getContextClassLoader();
+>         InputStream is = cl.getResourceAsStream(name + ".stg");
+>         if (is == null) {
+>             return null;
+>         }
+>         BufferedReader reader = new BufferedReader(new  
+> InputStreamReader(is));
+>         return reader;
+>     }
+>
+> to map the name to a reader.
+>
+> Why isn't this part of StringTemplate?
+>
+> Or did I get it all wrong?
+>
+> Thanks for any hints/comments and cheers
+>
+> Oliver
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest@antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>
+
+--
+CS Professor & Grad Director, University of San Francisco
+Creator, ANTLR Parser Generator, http://www.antlr.org
+Cofounder, http://www.jguru.com
+
+From Andrew.Goodnough at wicourts.gov  Fri Sep 23 05:35:00 2005
+From: Andrew.Goodnough at wicourts.gov (Andrew Goodnough)
+Date: Fri Sep 23 05:35:15 2005
+Subject: [stringtemplate-interest] Problem with newline chars
+Message-ID: <s333b030.098@gwmta.wicourts.gov>
+
+Yes, and if you look at Test.java (at the top), in one iteration, I hardcoded NEWLINE to be '\n' to match the template and still got the problem.  Not a huge deal, though.  The good news is that in the course of fighting this problem I've learned alot about how StringTemplate works.
+ 
+Andy
+
+>>> Terence Parr <parrt@cs.usfca.edu> 9/22/2005 1:04:03 PM >>>
+
+Hi Andrew, well ST only spits out what you give it.  So if your  
+template has \n instead of \r\n then you must compare against \n  
+only.  Not sure if this helps ;)
+Ter
+--
+CS Professor & Grad Director, University of San Francisco
+Creator, ANTLR Parser Generator, http://www.antlr.org
+Cofounder, http://www.jguru.com
+
+_______________________________________________
+stringtemplate-interest mailing list
+stringtemplate-interest@antlr.org
+http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20050923/e71e3e63/attachment.html
+From Andrew.Goodnough at wicourts.gov  Fri Sep 23 05:46:58 2005
+From: Andrew.Goodnough at wicourts.gov (Andrew Goodnough)
+Date: Fri Sep 23 05:47:20 2005
+Subject: [stringtemplate-interest] Missing convenience ctor in
+	StringTemplateGroup(?)
+Message-ID: <s333b307.053@gwmta.wicourts.gov>
+
+I was surprised to see the convienient constructor using the Classloader but soon realized it was only for the non-group files.  I wrote something almost identical to Olivers method to load the group file.  But the "Reader" constuctor is very useful because you can parse any stream wrapped in a Reader and not have to invent a constructor for each.
+ 
+Andy
+ 
+
+>>> Terence Parr <parrt@cs.usfca.edu> 9/22/2005 1:05:33 PM >>>
+
+
+On Aug 15, 2005, at 10:26 AM, Oliver Zeigermann wrote:
+
+> I thought it might be convenient to have something that resolves the
+> file a group is specified in in the same way as with string templates.
+> While now you can use the ctor
+>
+> public StringTemplateGroup(Reader r)
+>
+> to make clear that the group is specified in a file, something like
+> that might be more convenient:
+>
+> public StringTemplateGroup(String name, boolean groupFormat);
+
+Hi.  This is mainly for legacy  confusion issues.  The old stuff pre- 
+group format used strings for args to the groups.  I used the Reader  
+stuff to make it clear.  Perhaps I should have done a new subclass  
+instead. :(
+
+Ter
+
+>
+> Right now I saw myself forced to write something like
+>
+>     static Reader getGroup(String name) {
+>         ClassLoader cl = Thread.currentThread 
+> ().getContextClassLoader();
+>         InputStream is = cl.getResourceAsStream(name + ".stg");
+>         if (is == null) {
+>             return null;
+>         }
+>         BufferedReader reader = new BufferedReader(new  
+> InputStreamReader(is));
+>         return reader;
+>     }
+>
+> to map the name to a reader.
+>
+> Why isn't this part of StringTemplate?
+>
+> Or did I get it all wrong?
+>
+> Thanks for any hints/comments and cheers
+>
+> Oliver
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest@antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>
+
+--
+CS Professor & Grad Director, University of San Francisco
+Creator, ANTLR Parser Generator, http://www.antlr.org
+Cofounder, http://www.jguru.com
+
+_______________________________________________
+stringtemplate-interest mailing list
+stringtemplate-interest@antlr.org
+http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20050923/cbe55513/attachment.html

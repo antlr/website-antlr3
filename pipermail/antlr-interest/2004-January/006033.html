@@ -1,0 +1,203 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Exception tests eat performance?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Exception%20tests%20eat%20performance%3F&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="006031.html">
+   <LINK REL="Next"  HREF="006036.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Exception tests eat performance?</H1>
+    <B>mzukowski at yci.com</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Exception%20tests%20eat%20performance%3F&In-Reply-To="
+       TITLE="[antlr-interest] Exception tests eat performance?">mzukowski at yci.com
+       </A><BR>
+    <I>Wed Jan  7 09:14:49 PST 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="006031.html">Unsubscription by antlr-interest member
+</A></li>
+        <LI>Next message: <A HREF="006036.html">[antlr-interest] Exception tests eat performance?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6033">[ date ]</a>
+              <a href="thread.html#6033">[ thread ]</a>
+              <a href="subject.html#6033">[ subject ]</a>
+              <a href="author.html#6033">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>There are other sources of exceptions which you would need to analyze the
+code before knowing you could use goto.  For instance rules can have initial
+actions, which are executed during syn preds and which could potentially
+throw exceptions.  And when lookahead conditions aren't met we throw an
+exception because remember the same code is used during syn preds and when
+not in a syn pred.  So you would need a hook into the user exception
+handling stuff so it would be handled a different way if you aren't
+exceptioning out.
+
+And of course you can't do this for java because of the lack of goto.  Maybe
+you could get away with labeled breaks and continues, I haven't thought it
+through yet.
+
+This will be easier to experiment with in antlr 3 because writing code
+generators will be template driven.
+
+Monty
+
+-----Original Message-----
+From: Karl Meissner [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">meissnersd at yahoo.com</A>] 
+Sent: Wednesday, January 07, 2004 8:55 AM
+To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>
+Subject: [antlr-interest] Exception tests eat performance?
+
+
+It seems that antlr uses exceptions in a lot of the generated parsers where
+simple test will do. 
+Everything that I have read is that an exceptions have a very high overhead
+and it is undesirable 
+to  generate them in a tight loop where they happen a lot. 
+
+Exceptions are used so extensivly it would require a big rewrite to change
+but I wanted to 
+raise it as an issue
+
+A very common piece of code in a parser is 
+
+try {
+  {
+    match( SYM1 );
+    match( SYM2 );
+    match( SYM3 );
+ }
+} catch (RecognitionException)	{
+  synPredMatched84 = false;
+}
+
+where match throws an exception if the next token is not the parameter. 
+Since match is just
+public virtual void  match(int t)
+{
+    if (LA(1) != t)
+	throw new MismatchedTokenException(tokenNames, LT(1), t, false,
+getFilename());
+    else
+	consume();
+}
+
+
+Using if based tests would be faster I think...
+
+Something like this
+
+bool Rule10() { 
+  if( !Rule22() ) goto 	_RecognitionException_123:
+
+  currentSym = SYM1; if ( LA( 1 ) != currentSym ) goto
+_RecognitionException_123; consume(); 
+  currentSym = SYM2; if ( LA( 1 ) != currentSym ) goto
+_RecognitionException_123; consume(); 
+  currentSym = SYM3; if ( LA( 1 ) != currentSym ) goto
+_RecognitionException_123; consume(); 
+    
+  return true; 
+
+  _RecognitionException_123:
+    if (0 == inputState.guessing)
+    {
+      reportError(currentSym);
+      consume();
+      consumeUntil(tokenSet_27_);
+
+      return true;  //attempt to recover in the calling rule
+    }
+    else //guessing
+    {
+	return false; 
+    }
+  }
+
+I probably missed some the the code paths with predicate guessing and error
+handling but 
+I still think you can get the same behavior as the exception with a
+combination of if, goto and
+storing information into stack.   
+
+And get a performance improvement....
+
+Karl 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+__________________________________
+Do you Yahoo!?
+Yahoo! Hotjobs: Enter the &quot;Signing Bonus&quot; Sweepstakes
+<A HREF="http://hotjobs.sweepstakes.yahoo.com/signingbonus">http://hotjobs.sweepstakes.yahoo.com/signingbonus</A>
+
+ 
+
+Yahoo! Groups Links
+
+To visit your group on the web, go to:
+ <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+To unsubscribe from this group, send an email to:
+ <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+Your use of Yahoo! Groups is subject to:
+ <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+
+ 
+
+Yahoo! Groups Links
+
+To visit your group on the web, go to:
+ <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+To unsubscribe from this group, send an email to:
+ <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+Your use of Yahoo! Groups is subject to:
+ <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="006031.html">Unsubscription by antlr-interest member
+</A></li>
+	<LI>Next message: <A HREF="006036.html">[antlr-interest] Exception tests eat performance?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6033">[ date ]</a>
+              <a href="thread.html#6033">[ thread ]</a>
+              <a href="subject.html#6033">[ subject ]</a>
+              <a href="author.html#6033">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

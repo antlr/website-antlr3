@@ -1,0 +1,378 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Faster expression parsing
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Faster%20expression%20parsing&In-Reply-To=%3C86403CA0939415448BCCB83855EFE09A64E233%40Bloodymary.ironwillgames.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="030391.html">
+   <LINK REL="Next"  HREF="030395.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Faster expression parsing</H1>
+    <B>Sam Harwell</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Faster%20expression%20parsing&In-Reply-To=%3C86403CA0939415448BCCB83855EFE09A64E233%40Bloodymary.ironwillgames.com%3E"
+       TITLE="[antlr-interest] Faster expression parsing">sharwell at pixelminegames.com
+       </A><BR>
+    <I>Wed Aug 27 20:31:21 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="030391.html">[antlr-interest] Parsing a Fixed length file
+</A></li>
+        <LI>Next message: <A HREF="030395.html">[antlr-interest] Faster expression parsing
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30392">[ date ]</a>
+              <a href="thread.html#30392">[ thread ]</a>
+              <a href="subject.html#30392">[ subject ]</a>
+              <a href="author.html#30392">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Profiling my grammar showed the expression parsing as one of the slowest
+segments. The problem stemmed from the fact that this grammar has ~18
+precedence categories of operators, so getting to a primary expression
+was unnecessarily slow. Here is an example grammar that shows how you
+can flatten groups of operators while maintaining a correct AST. If you
+have a large number of precedence groups, and your expressions are
+taking a long time to parse, you can try a method like this and see if
+it helps. The createPrecedenceTree algorithm is sub-optimal, but it was
+only responsible for 1% of the parse time in my recent profiling.
+
+ 
+
+My current stages have simplified to:
+
+ 
+
+assignment_expression
+
+ternary_expression
+
+binary_expression
+
+prefix_expression
+
+postfix_expression
+
+primary_expression
+
+ 
+
+And the time it spent in the expression rule dropped from 54% of the
+total parse time to 23%.
+
+ 
+
+Sam
+
+ 
+
+ 
+
+grammar ExpressionParser;
+
+ 
+
+options
+
+{
+
+        output=AST;
+
+}
+
+ 
+
+tokens
+
+{
+
+        PLUS = '+';
+
+        MINUS = '-';
+
+        TIMES = '*';
+
+        DIVIDE = '/';
+
+ 
+
+        LPAREN = '(';
+
+        RPAREN = ')';
+
+ 
+
+        AST_EXPR;
+
+}
+
+ 
+
+@parser::members
+
+{
+
+        boolean isRightToLeft( int type )
+
+        {
+
+                return false;
+
+        }
+
+        int getOperatorPrecedence( int type )
+
+        {
+
+                switch ( type )
+
+                {
+
+                case TIMES:
+
+                case DIVIDE:
+
+                        return 1;
+
+                case PLUS:
+
+                case MINUS:
+
+                        return 2;
+
+                default:
+
+                        return 0;
+
+                }
+
+        }
+
+        int findPivot( List operators, int startIndex, int stopIndex )
+
+        {
+
+                int pivot = startIndex;
+
+                int pivotRank = getOperatorPrecedence(
+((Token)operators.get(pivot)).getType() );
+
+                for ( int i = startIndex + 1; i &lt;= stopIndex; i++ )
+
+                {
+
+                        int type = ((Token)operators.get(i)).getType();
+
+                        int current = getOperatorPrecedence( type );
+
+                        boolean rtl = isRightToLeft(type);
+
+                        if ( current &gt; pivotRank || (current ==
+pivotRank &amp;&amp; rtl) )
+
+                        {
+
+                                pivot = i;
+
+                                pivotRank = current;
+
+                        }
+
+                }
+
+                return pivot;
+
+        }
+
+        Tree createPrecedenceTree( List expressions, List operators, int
+startIndex, int stopIndex )
+
+        {
+
+                if ( stopIndex == startIndex )
+
+                        return (Tree)expressions.get(startIndex);
+
+ 
+
+                int pivot = findPivot( operators, startIndex, stopIndex
+- 1 );
+
+                Tree root = (Tree)adaptor.nil();
+
+                Object root_1 = (Object)adaptor.nil();
+
+                root_1 = (Object)adaptor.becomeRoot(
+(Token)operators.get(pivot), root_1 );
+
+                adaptor.addChild( root_1, createPrecedenceTree(
+expressions, operators, startIndex, pivot ) );
+
+                adaptor.addChild( root_1, createPrecedenceTree(
+expressions, operators, pivot + 1, stopIndex ) );
+
+                adaptor.addChild( root, root_1 );
+
+                return root;
+
+        }
+
+        Tree createPrecedenceTree( List expressions, List operators )
+
+        {
+
+                return createPrecedenceTree( expressions, operators, 0,
+expressions.size() - 1 );
+
+        }
+
+}
+
+ 
+
+complete_expression
+
+        :       expression EOF
+
+                -&gt; expression
+
+        ;
+
+ 
+
+primary_expression
+
+        :       INTEGER
+
+                -&gt; ^(INTEGER)
+
+        |       '(' expression ')'
+
+                -&gt; expression
+
+        ;
+
+ 
+
+expression
+
+@init
+
+{
+
+        List expressions = new ArrayList();
+
+        List operators = new ArrayList();
+
+}
+
+        :       (       left=primary_expression
+
+                        { expressions.add($left.tree); }
+
+                )
+
+                (       operator
+
+                        right=primary_expression
+
+                        {
+
+                                operators.add($operator.start);
+
+                                expressions.add($right.tree);
+
+                        }
+
+                )*
+
+                -&gt; {createPrecedenceTree(expressions,operators)}
+
+        ;
+
+ 
+
+operator
+
+        :       '+'
+
+        |       '-'
+
+        |       '*'
+
+        |       '/'
+
+        ;
+
+ 
+
+///////////////////////////////////////////
+
+// LEXER
+
+ 
+
+fragment
+
+DIGIT   :       '0'..'9'
+
+        ;
+
+ 
+
+INTEGER :       DIGIT+
+
+        ;
+
+ 
+
+WS      :       (' ' | '\t' | '\n' | '\r')+
+
+                { $channel = HIDDEN; }
+
+        ;
+
+ 
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20080827/85d419cf/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20080827/85d419cf/attachment.html</A> 
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="030391.html">[antlr-interest] Parsing a Fixed length file
+</A></li>
+	<LI>Next message: <A HREF="030395.html">[antlr-interest] Faster expression parsing
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30392">[ date ]</a>
+              <a href="thread.html#30392">[ thread ]</a>
+              <a href="subject.html#30392">[ subject ]</a>
+              <a href="author.html#30392">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

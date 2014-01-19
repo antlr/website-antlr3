@@ -1,0 +1,372 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [stringtemplate-interest] StringTemplate Compiler for .NET
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20StringTemplate%20Compiler%20for%20.NET&In-Reply-To=%3C86403CA0939415448BCCB83855EFE09AA67B8A%40Bloodymary.ironwillgames.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001809.html">
+   <LINK REL="Next"  HREF="001813.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[stringtemplate-interest] StringTemplate Compiler for .NET</H1>
+    <B>Sam Harwell</B> 
+    <A HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20StringTemplate%20Compiler%20for%20.NET&In-Reply-To=%3C86403CA0939415448BCCB83855EFE09AA67B8A%40Bloodymary.ironwillgames.com%3E"
+       TITLE="[stringtemplate-interest] StringTemplate Compiler for .NET">sharwell at pixelminegames.com
+       </A><BR>
+    <I>Wed Mar 18 17:25:38 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001809.html">[stringtemplate-interest] StringTemplate Compiler for .NET
+</A></li>
+        <LI>Next message: <A HREF="001813.html">[stringtemplate-interest] Performance improvement in	AutoIndentWriter
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1817">[ date ]</a>
+              <a href="thread.html#1817">[ thread ]</a>
+              <a href="subject.html#1817">[ subject ]</a>
+              <a href="author.html#1817">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>So here we go/you've inspired me. :) For syntax highlighting, view in
+HTML.
+
+ 
+
+I'm starting with the if condition evaluation in ConditionalExpr. The
+delegate returned can call either the interpreted version or a dynamic
+method to evaluate the expression. The delegates are created on-demand
+inside ConditionalExpr.Write, and called instead of directly creating
+instances of ActionEvaluator like before.
+
+ 
+
+public static bool EnableDynamicMethods = true;
+
+static int _evaluatorNumber = 1;
+
+static System.Func&lt;StringTemplate, IStringTemplateWriter, bool&gt;
+GetEvaluator( ASTExpr chunk, ITree condition )
+
+{
+
+    if ( EnableDynamicMethods )
+
+    {
+
+        try
+
+        {
+
+            Type[] parameterTypes = { typeof( StringTemplate ), typeof(
+IStringTemplateWriter ) };
+
+            DynamicMethod method = new DynamicMethod(
+&quot;ConditionEvaluator&quot; + _evaluatorNumber++, typeof( bool ),
+parameterTypes );
+
+ 
+
+            var gen = method.GetILGenerator();
+
+            ActionEvaluator evalCompiled = new ActionEvaluator( null,
+chunk, null, condition );
+
+            evalCompiled.ifConditionCompiled( gen );
+
+            gen.Emit( OpCodes.Ret );
+
+ 
+
+            var dynamicEvaluator = (System.Func&lt;StringTemplate,
+IStringTemplateWriter, bool&gt;)method.CreateDelegate( typeof(
+System.Func&lt;StringTemplate, IStringTemplateWriter, bool&gt; ) );
+
+            return dynamicEvaluator;
+
+        }
+
+        catch
+
+        {
+
+            // fall back to interpreted version
+
+        }
+
+    }
+
+ 
+
+    return new System.Func&lt;StringTemplate, IStringTemplateWriter, bool&gt;(
+( self, @out ) =&gt;
+
+    {
+
+        ActionEvaluator eval = new ActionEvaluator( self, chunk, @out,
+condition );
+
+        return eval.ifCondition();
+
+    } );
+
+}
+
+ 
+
+Inside ActionEvaluator.g3, I'm working my way up, and it throws
+System.NotImplementedException if it doesn't know how to emit IL for the
+[sub]expression. The exception results in automatic fallback to the
+interpreted code that we know works.
+
+ 
+
+public
+
+ifConditionCompiled[System.Reflection.Emit.ILGenerator gen]
+
+        :       ifAtomCompiled[$gen]
+
+        |       ^(NOT ifAtomCompiled[$gen])
+
+                {EmitNot($gen);}
+
+        ;
+
+ 
+
+ifAtomCompiled[System.Reflection.Emit.ILGenerator gen]
+
+        :       exprCompiled[$gen] {EmitTest($gen);}
+
+        ;
+
+ 
+
+exprCompiled[System.Reflection.Emit.ILGenerator gen]
+
+        :       ^(PLUS exprCompiled[$gen] exprCompiled[$gen])
+
+                {throw new System.NotImplementedException();}
+
+        |       templateApplication
+
+                {throw new System.NotImplementedException();}
+
+        |       attribute
+
+                {throw new System.NotImplementedException();}
+
+        |       templateInclude
+
+                {throw new System.NotImplementedException();}
+
+        |       function
+
+                {throw new System.NotImplementedException();}
+
+        |       list
+
+                {throw new System.NotImplementedException();}
+
+        |       ^(VALUE exprCompiled[$gen])
+
+                {throw new System.NotImplementedException();}
+
+        ;
+
+ 
+
+Helper methods do the actual emit:
+
+ 
+
+static void EmitNot( ILGenerator gen )
+
+{
+
+    gen.Emit( OpCodes.Not );
+
+}
+
+static void EmitTest( ILGenerator gen )
+
+{
+
+    var label = gen.DefineLabel();
+
+    var label2 = gen.DefineLabel();
+
+    gen.Emit( OpCodes.Brtrue_S, label );
+
+    gen.Emit( OpCodes.Ldc_I4_0 );
+
+    gen.Emit( OpCodes.Br_S, label2 );
+
+    gen.MarkLabel( label );
+
+    gen.Emit( OpCodes.Ldc_I4_1 );
+
+    gen.MarkLabel( label2 );
+
+}
+
+ 
+
+Sam
+
+ 
+
+-----Original Message-----
+From: <A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">stringtemplate-interest-bounces at antlr.org</A>
+[mailto:<A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">stringtemplate-interest-bounces at antlr.org</A>] On Behalf Of Volkan
+Ceylan
+Sent: Tuesday, March 17, 2009 3:52 AM
+To: <A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">stringtemplate-interest at antlr.org</A>
+Subject: [stringtemplate-interest] StringTemplate Compiler for .NET
+
+ 
+
+&gt;<i> I'm extremely interested to see how the compiled code performs
+</I>compared
+
+&gt;<i> to my C# port of StringTemplate.
+</I>
+ 
+
+ Hi, is your C# port open source? Would like to see what optimizations
+
+you did. I'm currently working on public 3.1beta at stringtemplate.org
+
+ 
+
+&gt;<i> That aside, I think the idea of compiling templates to an assembly is
+</I>great.
+
+ 
+
+Actually, i'm not thinking about compiling to an assembly, but to
+
+dynamic methods. AFAIK, due to some problems with .NET, when you load
+
+an assembly, there is no way to unload it, unless you use a separate
+
+application domain to load assemblies, and unload the domain
+
+completely.
+
+ 
+
+Dynamic methods can be garbage collected when you have no delegates or
+
+references to them. That's why i prefer dynamic methods versus
+
+assemblies. The only problem with dynamic methods i see is that they
+
+are harder to debug :(
+
+ 
+
+&gt;<i>I used a sampling method to profile the library. The test was a batch
+</I>conversion
+
+&gt;<i> of the 8 grammars that are used in the C# port of the ANTLR &gt;Tool.
+</I>54.33% (inclusive)
+
+&gt;<i> of the samples were in Antlr3.StringTemplate.dll. Only 6.59%
+</I>(inclusive) was spent
+
+&gt;<i> in &gt;ASTExpr.rawGetObjectProperty, which is responsible for all
+</I>measurable uses of .NET reflection.
+
+&gt;<i> 35.31% (inclusive) of the time was spent in &gt;ActionEvaluator.action,
+</I>
+&gt;<i> (note: this call encapsulates all calls to
+</I>ASTExpr.rawGetObjectProperty).
+
+ 
+
+ActionEvaluator.action is walking a tree and consists of some costly
+
+CASE statements. When a template is compiled, there will not be any of
+
+them in the generated IL. Currently i'm having about 10x speed for
+
+simple templates.
+
+ 
+
+ 
+
+&gt;<i> By implementing a System.Type -&gt; System.Reflection.MemberInfo map in
+</I>ASTExpr and
+
+&gt;<i> caching the property accessors, I was able to reduce the time spent in
+</I>
+&gt;<i> ASTExpr.rawGetObjectProperty to 2.36% (inclusive).
+</I>
+ 
+
+This is a nice idea, would like to see implementation. There may be
+
+even a further improvement by compiling property accessors as dynamic
+
+methods such as (type, property) -&gt; dynamic get delegate (though i'm
+
+not %100 sure about that, need to see source code of new DLR)
+
+ 
+
+&gt;<i> PS: I've thought about doing something similar to the CLI compilation
+</I>with
+
+&gt;<i> ANTLR grammars, but profiling the generated code has shown that it's
+</I>not the bottleneck right now.
+
+ 
+
+I don't know much about ANTLR and its grammars, other than a general
+
+overview of what it is used for :(
+
+_______________________________________________
+
+stringtemplate-interest mailing list
+
+<A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">stringtemplate-interest at antlr.org</A>
+
+<A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">http://www.antlr.org/mailman/listinfo/stringtemplate-interest</A>
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/stringtemplate-interest/attachments/20090318/94ee6415/attachment-0001.html">http://www.antlr.org/pipermail/stringtemplate-interest/attachments/20090318/94ee6415/attachment-0001.html</A> 
+</PRE>
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001809.html">[stringtemplate-interest] StringTemplate Compiler for .NET
+</A></li>
+	<LI>Next message: <A HREF="001813.html">[stringtemplate-interest] Performance improvement in	AutoIndentWriter
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1817">[ date ]</a>
+              <a href="thread.html#1817">[ thread ]</a>
+              <a href="subject.html#1817">[ subject ]</a>
+              <a href="author.html#1817">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">More information about the stringtemplate-interest
+mailing list</a><br>
+</body></html>

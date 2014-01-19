@@ -1,0 +1,239 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] AST generation in a recursive rule
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20AST%20generation%20in%20a%20recursive%20rule&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005288.html">
+   <LINK REL="Next"  HREF="005290.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] AST generation in a recursive rule</H1>
+    <B>Jeff Vincent</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20AST%20generation%20in%20a%20recursive%20rule&In-Reply-To="
+       TITLE="[antlr-interest] AST generation in a recursive rule">JVincent at Novell.Com
+       </A><BR>
+    <I>Thu Oct 23 17:21:13 PDT 2003</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005288.html">[antlr-interest] AST generation in a recursive rule
+</A></li>
+        <LI>Next message: <A HREF="005290.html">[antlr-interest] AST generation in a recursive rule
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5289">[ date ]</a>
+              <a href="thread.html#5289">[ thread ]</a>
+              <a href="subject.html#5289">[ subject ]</a>
+              <a href="author.html#5289">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Thanks Monty!
+ 
+I used references to down and right because those are the member
+variables used within the AST reference (as seen in debugger) to denote
+child and sibling respectively.  Maybe that is why I get so confused. 
+The docs refer to child/sibling, but actual code uses down/right.  Your
+solution looks cleaner than mine (I finally got mine to work - FWIW)
+shown below for your entertainment ;-).
+
+ catchBlock!
+  { AST temp = null, parent = null;
+  } :
+  ( idCATCH:CATCH LPAREN! eType:identifier eID:IDENTIFIER RPAREN!
+catchBody:block 
+  { temp = #(null, #idCATCH, #eType, #eID, #catchBody); 
+   
+   if (#catchBlock == null)
+    #catchBlock = temp;
+   
+   if (parent != null)
+    parent.addChild(temp);
+ 
+   parent = temp;    
+  }
+  )+
+  ;
+
+- Is ## shorthand for #&lt;rulename&gt;?  
+ 
+- Is the &quot;()+&quot; notation on your catchBlock rule a typo?  I would think
+the only one I would need to keep is on the catchBlocks rule.
+ 
+- Won't using the imaginary token build a tree like:
+ 
+CATCH_BLOCK--&gt;CATCH_BLOCK--&gt;(another CATCH_BLOCK, etc.)
+   |
+CATCH
+   |
+   v
+Exception1--(right)--&gt;e1--(right)--&gt;block--(right)--&gt;null
+
+Is there any way to use the CATCH token in the same manner as the
+CATCH_BLOCK imaginary token and in effect, remove the extra node?  
+ 
+Thanks again!
+
+&gt;&gt;&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">mzukowski at yci.com</A> 10/23/2003 3:42:30 PM &gt;&gt;&gt;
+</I>
+That's an unusual tree structure, it's like you have down and right
+mixed
+up.  Think siblings and children.  All the catch blocks would be
+siblings,
+right?  I would recommend something like:
+
+idCatch--(right)--&gt; (another idCatch, etc.)
+   |
+(down)
+   |
+   v
+Exception1--(right)--&gt;e1--(right)--&gt;block--(right)--&gt;null
+
+The code:
+
+statement :
+   TRY^ block catchBlocks 
+      (idFINALLY:FINALLY! finallyBlock:block!
+       {## = #(##,#(idFINALLY,#finallyBlock))} )?
+   ;
+
+catchBlocks :
+    (catchBlock)+
+    {##=#(#[CATCH_BLOCK],##);}
+    ;
+
+catchBlock:
+   (CATCH^ LPAREN! identifier IDENTIFIER RPAREN! block
+   )+
+   ;
+
+Also, try using toStringList() to print out your tree, you'll get a
+better
+idea of the structure that way.
+
+catchBlocks uses a standard tree building idiom to root a tree with an
+imaginary node (which you'll define in your tokens{} section)
+
+Note I split your catchBlock rule into two rules to be able to easily
+build
+the tree I want to build.  I could have done the same with the
+&quot;finally&quot;
+block part of &quot;statement&quot; too.
+
+Monty
+
+-----Original Message-----
+From: Jeff Vincent [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">JVincent at Novell.Com</A>] 
+Sent: Thursday, October 23, 2003 2:29 PM
+To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>
+Subject: [antlr-interest] AST generation in a recursive rule
+
+Hey all,
+ 
+I can't seem to get my mind around how to solve the following problem I
+am
+having.  I have rules to match a try-catch construct similar to that
+in
+Java:
+ 
+statement! :
+   stateTry:TRY tryBlock:block idCATCH:catchBlock ( idFINALLY:FINALLY
+finallyBlock:block )?
+   { #statement = #(#stateTry, #tryBlock, #(#[CATCH], #idCATCH),
+#(#idFINALLY, #finallyBlock)); } 
+   ;
+ 
+catchBlock! :
+   ( idCATCH:CATCH LPAREN! eType:identifier eID:IDENTIFIER RPAREN!
+catchBody:block
+       { #catchBlock = #(#catchBlock, #idCATCH, #eType, #eID,
+#catchBody); }
+   )+
+   ;
+These rules match input similar to the following:
+ 
+try {
+}
+catch(Exception1 e1) {
+}
+catch(Exception2 e2) {
+}
+catch(Exception3 e3) {
+}
+finally {
+}
+ 
+I would like the resulting AST tree for the catchBlock rule to look
+like the
+following:
+ 
+idCatch--(right)--&gt;Exception1--(right)--&gt;e1--(right)--&gt;block--(right)--&gt;null
+   |
+(down)
+   |
+   v
+idCatch--(right)--&gt;Exception2--(right)--&gt;e2--(right)--&gt;block--(right)--&gt;null
+   |
+(down)
+   |
+   v
+idCatch--(right)--&gt;Exception3--(right)--&gt;e3--(right)--&gt;block--(right)--&gt;null
+   |
+(down)
+   |
+   v
+ null
+ 
+Everything parses without errors, but the resulting AST from the
+catchBlock
+rule contains only the first and last catch AST's, the rest are
+somehow
+discarded.  What I suspect is happening is that instead of adding an
+additional child, it overwrites it.  What is the syntax to construct an
+AST
+by appending consecutive subtrees to the resulting root AST for the
+catchBlock rule?  I am unable to find (or missed) any reference on how
+to do
+this.
+ 
+Thanks,
+ 
+Jeff
+
+Your use of Yahoo! Groups is subject to the Yahoo! Terms of Service. 
+
+
+
+Your use of Yahoo! Groups is subject to
+<A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20031023/2049726b/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20031023/2049726b/attachment.html</A>
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005288.html">[antlr-interest] AST generation in a recursive rule
+</A></li>
+	<LI>Next message: <A HREF="005290.html">[antlr-interest] AST generation in a recursive rule
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5289">[ date ]</a>
+              <a href="thread.html#5289">[ thread ]</a>
+              <a href="subject.html#5289">[ subject ]</a>
+              <a href="author.html#5289">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

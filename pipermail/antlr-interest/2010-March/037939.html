@@ -1,0 +1,531 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Gated semantic predicates - performance problem
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Gated%20semantic%20predicates%20-%20performance%20problem&In-Reply-To=%3Ca382aa011003150625y198dc82chbab212ff4ce9096c%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="037937.html">
+   <LINK REL="Next"  HREF="037940.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Gated semantic predicates - performance problem</H1>
+    <B>Andrew Haritonkin</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Gated%20semantic%20predicates%20-%20performance%20problem&In-Reply-To=%3Ca382aa011003150625y198dc82chbab212ff4ce9096c%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Gated semantic predicates - performance problem">thikone at gmail.com
+       </A><BR>
+    <I>Mon Mar 15 06:25:50 PDT 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="037937.html">[antlr-interest] Strange behaviour - pls help.
+</A></li>
+        <LI>Next message: <A HREF="037940.html">[antlr-interest] Gated semantic predicates - performance problem
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37939">[ date ]</a>
+              <a href="thread.html#37939">[ thread ]</a>
+              <a href="subject.html#37939">[ subject ]</a>
+              <a href="author.html#37939">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello everyone,
+
+While writing grammar for PL/SQL I have encountered a problem with
+performance of generated code.
+
+There is a need to direct parser to one rule or to another depending
+on history of visited rules. So, that means dynamically switching on
+and off some subrules - means gated semantic predicates. The current
+implementation which I have and which performs rather slow can be
+sketched like this:
+
+
+sql_condition
+		@init { is_sql = true; is_cond = true; }
+	:	condition_or
+	;
+
+plsql_condition
+		@init { is_sql = false; is_cond = true; }
+	:	condition_or
+	;
+
+condition_or
+	:	condition_and ( ( 'OR' )=&gt; 'OR' condition_and )*
+	;
+
+condition_and
+	:	condition_not ( ( 'AND' )=&gt; 'AND' condition_not )*
+	;
+
+condition_not
+	:	( 'NOT' )? condition_is
+	;
+
+plsql_expression
+		@init { is_sql = false; is_cond = false; }
+	:	condition_or
+	;
+
+expression_add
+	:	expression_mul ( ( PLUS | MINUS | DOUBLEVERTBAR ) expression_mul )*
+	;
+
+expression_mul
+	:	expression_sign ( ( ASTERISK | DIVIDE ) expression_sign )*
+	;
+
+expression_sign
+	:	( PLUS | MINUS )? expression_expr
+	;
+
+expression_expr
+	:	QUOTED_STRING
+	|	NUMBER
+	|	'NULL'
+	|	identifier
+	| 	{ !is_sql }?=&gt; ( 'SQL' | 'EXISTS' | 'PRIOR' | 'DELETE' )
+	|	( LPAREN )=&gt; LPAREN expression_par RPAREN
+	;
+
+expression_par
+	options { k=0; }
+	:	{  is_cond }?=&gt; condition_or
+	|	{ !is_cond }?=&gt; expression_add
+	;
+
+
+The switching between rules is done in expression_par rule. If it
+started as condition then it should recurs in condition top rule
+condition_or, otherwise it's an expression and we should go to
+expression_add.
+
+Parser works fine, it takes the right path in all my tests.
+Performance, however, has dropped 5 times because of this switching in
+expression_par and in other rules similar to it. While it's obvious
+from exclusive predicates which rule to take, ANTLR generates code
+which first tries to predict which alternative to take and then
+additionally applies condition from predicates. In this case, to
+predict which of two nearly equal ways to take is not an easy task.
+Moreover, generate DFA code looks very ineffective (note huge
+conditions in if statements which have to be evaluated at run-time):
+
+
+    protected internal int DFA23_SpecialStateTransition(DFA dfa, int
+s, IIntStream _input) //throws NoViableAltException
+    {
+            ITokenStream input = (ITokenStream)_input;
+    	int _s = s;
+        switch ( s )
+        {
+               	case 0 :
+                   	int LA23_0 = input.LA(1);
+
+                   	
+                   	int index23_0 = input.Index();
+                   	input.Rewind();
+                   	s = -1;
+                   	if ( ((LA23_0 &gt;= PLUS &amp;&amp; LA23_0 &lt;= MINUS)) &amp;&amp; (((
+!is_cond )|| (  is_cond ))) ) { s = 1; }
+
+                   	else if ( (LA23_0 == QUOTED_STRING) &amp;&amp; (((
+!is_cond )|| (  is_cond ))) ) { s = 2; }
+
+                   	else if ( (LA23_0 == NUMBER) &amp;&amp; ((( !is_cond )|| (
+ is_cond ))) ) { s = 3; }
+
+                   	else if ( (LA23_0 == 55) &amp;&amp; ((( !is_cond )|| (
+is_cond ))) ) { s = 4; }
+
+                   	else if ( ((LA23_0 &gt;= ID &amp;&amp; LA23_0 &lt;=
+DOUBLEQUOTED_STRING)) &amp;&amp; ((( !is_cond )|| (  is_cond ))) ) { s = 5; }
+
+                   	else if ( (LA23_0 == 62) &amp;&amp; (((( !is_cond ) &amp;&amp; (
+!is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; (
+!is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; (
+!is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; (
+!is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; (
+!is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; (
+!is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; (
+!is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; (
+!is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; (
+!is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| (  is_cond )|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql )))) ) { s = 6; }
+
+                   	else if ( (LA23_0 == LPAREN) &amp;&amp; ((( !is_cond )|| (
+ is_cond ))) ) { s = 7; }
+
+                   	else if ( (LA23_0 == 53 || (LA23_0 &gt;= 59 &amp;&amp; LA23_0
+&lt;= 61)) &amp;&amp; ((  is_cond )) ) { s = 8; }
+
+                   	else if ( ((LA23_0 &gt;= 63 &amp;&amp; LA23_0 &lt;= 64)) &amp;&amp; ((((
+!is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| (( !is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+!is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql ))|| ((
+is_cond ) &amp;&amp; ( !is_sql ))|| ((  is_cond ) &amp;&amp; ( !is_sql )))) ) { s =
+10; }
+
+                   	
+                   	input.Seek(index23_0);
+                   	if ( s &gt;= 0 ) return s;
+                   	break;
+               	case 1 :
+                   	int LA23_1 = input.LA(1);
+
+                   	
+                   	int index23_1 = input.Index();
+                   	input.Rewind();
+                   	s = -1;
+                   	if ( (( !is_cond )) ) { s = 11; }
+
+                   	else if ( ((  is_cond )) ) { s = 8; }
+
+                   	
+                   	input.Seek(index23_1);
+                   	if ( s &gt;= 0 ) return s;
+                   	break;
+               	case 2 :
+                   	int LA23_2 = input.LA(1);
+
+                   	
+                   	int index23_2 = input.Index();
+                   	input.Rewind();
+                   	s = -1;
+                   	if ( (( !is_cond )) ) { s = 11; }
+
+                   	else if ( ((  is_cond )) ) { s = 8; }
+
+                   	
+                   	input.Seek(index23_2);
+                   	if ( s &gt;= 0 ) return s;
+                   	break;
+               	case 3 :
+                   	int LA23_3 = input.LA(1);
+
+                   	
+                   	int index23_3 = input.Index();
+                   	input.Rewind();
+                   	s = -1;
+                   	if ( (( !is_cond )) ) { s = 11; }
+
+                   	else if ( ((  is_cond )) ) { s = 8; }
+
+                   	
+                   	input.Seek(index23_3);
+                   	if ( s &gt;= 0 ) return s;
+                   	break;
+               	case 4 :
+                   	int LA23_4 = input.LA(1);
+
+                   	
+                   	int index23_4 = input.Index();
+                   	input.Rewind();
+                   	s = -1;
+                   	if ( (( !is_cond )) ) { s = 11; }
+
+                   	else if ( ((  is_cond )) ) { s = 8; }
+
+                   	
+                   	input.Seek(index23_4);
+                   	if ( s &gt;= 0 ) return s;
+                   	break;
+               	case 5 :
+                   	int LA23_5 = input.LA(1);
+
+                   	
+                   	int index23_5 = input.Index();
+                   	input.Rewind();
+                   	s = -1;
+                   	if ( (( !is_cond )) ) { s = 11; }
+
+                   	else if ( ((  is_cond )) ) { s = 8; }
+
+                   	
+                   	input.Seek(index23_5);
+                   	if ( s &gt;= 0 ) return s;
+                   	break;
+               	case 6 :
+                   	int LA23_6 = input.LA(1);
+
+                   	
+                   	int index23_6 = input.Index();
+                   	input.Rewind();
+                   	s = -1;
+                   	if ( ((( !is_cond ) &amp;&amp; ( !is_sql ))) ) { s = 11; }
+
+                   	else if ( ((((  is_cond ) &amp;&amp; ( !is_sql ))|| (
+is_cond ))) ) { s = 8; }
+
+                   	
+                   	input.Seek(index23_6);
+                   	if ( s &gt;= 0 ) return s;
+                   	break;
+               	case 7 :
+                   	int LA23_7 = input.LA(1);
+
+                   	
+                   	int index23_7 = input.Index();
+                   	input.Rewind();
+                   	s = -1;
+                   	if ( (( !is_cond )) ) { s = 11; }
+
+                   	else if ( ((  is_cond )) ) { s = 8; }
+
+                   	
+                   	input.Seek(index23_7);
+                   	if ( s &gt;= 0 ) return s;
+                   	break;
+               	case 8 :
+                   	int LA23_10 = input.LA(1);
+
+                   	
+                   	int index23_10 = input.Index();
+                   	input.Rewind();
+                   	s = -1;
+                   	if ( ((( !is_cond ) &amp;&amp; ( !is_sql ))) ) { s = 11; }
+
+                   	else if ( (((  is_cond ) &amp;&amp; ( !is_sql ))) ) { s = 8; }
+
+                   	
+                   	input.Seek(index23_10);
+                   	if ( s &gt;= 0 ) return s;
+                   	break;
+        }
+        if (state.backtracking &gt; 0) {state.failed = true; return -1;}
+        NoViableAltException nvae23 =
+            new NoViableAltException(dfa.Description, 23, _s, input);
+        dfa.Error(nvae23);
+        throw nvae23;
+    }
+
+I attached the grammar file from which it was generated in case it is needed.
+
+I tried a lot of things, changing predicates type, covering only one
+alternative with predicate, adding option k=1 and k=0 without any
+significant improvement. So far the best result gives manual
+replacement of DFA Predict method call in the generated code for this
+rule:
+
+    public expression_par()
+    {
+            alt23 = dfa23.Predict(input);
+            switch (alt23)
+            {
+                case 1 :
+                    // PLSQL3.g:170:4: {!is_cond}? =&gt; expression_list
+                ...
+                case 2 :
+                    // PLSQL3.g:171:4: {is_cond}? =&gt; condition_list
+                ...
+            }
+    ...
+    }
+
+with simple expression:
+
+    public expression_par()
+    {
+            alt23 = is_cond ? 2 : 1;
+            switch (alt23)
+            {
+                case 1 :
+                    // PLSQL3.g:170:4: {!is_cond}? =&gt; expression_list
+                ...
+                case 2 :
+                    // PLSQL3.g:171:4: {is_cond}? =&gt; condition_list
+                ...
+            }
+    ...
+    }
+
+Manually amended parser performs about 5 times faster on my test
+input. Another approach would be to have two separate brunches to
+avoid switching but that is not a nice solution. Perhaps there is a
+problem in the grammar, but I wasn't able to find it so far.
+
+Do I use predicates right or is there another way to achieve rule
+switching and run-time?
+
+Thanks,
+Andrew
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: PLSQL3.g
+Type: application/octet-stream
+Size: 5100 bytes
+Desc: not available
+Url : <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20100315/b600fa55/attachment.obj">http://www.antlr.org/pipermail/antlr-interest/attachments/20100315/b600fa55/attachment.obj</A> 
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="037937.html">[antlr-interest] Strange behaviour - pls help.
+</A></li>
+	<LI>Next message: <A HREF="037940.html">[antlr-interest] Gated semantic predicates - performance problem
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37939">[ date ]</a>
+              <a href="thread.html#37939">[ thread ]</a>
+              <a href="subject.html#37939">[ subject ]</a>
+              <a href="author.html#37939">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

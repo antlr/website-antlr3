@@ -1,0 +1,275 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Is parser control over the lexer possible?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Is%20parser%20control%20over%20the%20lexer%20possible%3F&In-Reply-To=%3C4be3c81a.0663730a.670d.7310%40mx.google.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="038575.html">
+   <LINK REL="Next"  HREF="038577.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Is parser control over the lexer possible?</H1>
+    <B>Cliff Hudson</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Is%20parser%20control%20over%20the%20lexer%20possible%3F&In-Reply-To=%3C4be3c81a.0663730a.670d.7310%40mx.google.com%3E"
+       TITLE="[antlr-interest] Is parser control over the lexer possible?">cliff.s.hudson at gmail.com
+       </A><BR>
+    <I>Fri May  7 00:58:11 PDT 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="038575.html">[antlr-interest] Is parser control over the lexer possible?
+</A></li>
+        <LI>Next message: <A HREF="038577.html">[antlr-interest] Is parser control over the lexer possible?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#38576">[ date ]</a>
+              <a href="thread.html#38576">[ thread ]</a>
+              <a href="subject.html#38576">[ subject ]</a>
+              <a href="author.html#38576">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>It's not at all difficult to let ANTLR handle indeterminate amounts of
+input.  As has been suggested before, you will need to provide your own
+token stream to provide tokens at the rate you wish to give them.  The
+problem is one of interfacing the pull model of the parser with the push
+model of your input. 
+
+Lets assume you have a parser which runs indefinitely so long as you keep
+feeding it tokens, until you feed it the EOF token.  For example:
+
+command : expr+;
+
+So long as the parser can receive tokens which match the grammar for expr, a
+call to command() will not return.  In your case, you may very well have an
+infinite number of tokens, but you aren't wanting to provide them up-front.
+The solution is a token stream which provides tokens in batches you choose.
+You can do this by letting ANTLR control the input loop, as follows:
+
+Create your custom token stream.
+Pass it to the parser.
+Execute command();
+In your token stream's implementation of NextToken() you will either:
+1) If you have no stored tokens, ask the &quot;user&quot; for additional input.  If
+you are reading from a file, this might consist of reading in a line and
+sending it to the lexer, which will spit out a bunch of tokens. In an
+interactive interpreter sort of scenario, you might prompt the user for a
+line of text. Store these tokens in some ordered collection, and return the
+first one; or
+2) If you still have stored tokens, return the next one.
+
+In this way, ANTLR will parse only as much as you have to give at any time,
+and will wait for you to provide it more tokens if you don't have any at the
+moment.  When you are finished with your session, you can pass EOF back from
+NextToken() which will tell the parser that there is no more input to be
+had.  The call to command() will return.
+
+Note that as long as command() hasn't returned, ANTLR will be able to
+process rules and execute grammar actions when you return tokens to it from
+NextToken().
+
+Does that make sense?
+
+On the subject of the parser controlling how the lexer works, this is not
+something that ANTLR is designed to do &quot;out of the box&quot;.  However, you
+control the token stream, and you control what happens when certain actions
+are invoked.  You could construct a system whereby when an action is
+executed, it changes the lexer used by your NextToken() call to fetch
+additional tokens.  Remember, you are utterly in control of which tokens are
+provided to the parser and - as illustrated by the technique above - when
+they are provided.  You control which lexer you use and when.  But I would
+caution you that such a system can become fairly complex - for instance you
+have to ensure that token IDs don't conflict between your lexers, which may
+require mapping them by hand in your NextToken call and altering the token
+IDs used by the generated parser itself.  I've not tried this before, though
+I'd be a bit surprised if it couldn't be done.
+
+I personally have a system where there are two grammars and two parsers.
+The 'outer' grammar knows about areas where the inner grammar would be used.
+Those areas are lexed as a single token (quoted string in this case).  When
+the rule in the outer grammar matches the quoted string, it uses a lexer and
+parser for the 'inner' grammar to process it.
+
+Hope this has helped.
+
+
+
+-----Original Message-----
+From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>
+[mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Brian Catlin
+Sent: Thursday, May 06, 2010 7:37 PM
+To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: Re: [antlr-interest] Is parser control over the lexer possible?
+
+I too would be interested in changing that behavior.  I use ANTLR as a
+command parser, so instantiating everything for every new command is a lot
+of overhead.  I think ANTLR needs a mode in where it only fetches one line
+at a time, by calling a GetInput routine that we supply
+
+ -Brian
+
+-----Original Message-----
+From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>
+[mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Mike Matera
+Sent: Friday, May 07, 2010 10:13
+To: Chris verBurg
+Cc: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: Re: [antlr-interest] Is parser control over the lexer possible?
+
+Hi Chris,
+
+Yes, antlr reads the whole file into memory.  I don't know how to stop it
+from doing that. 
+
+Cheers
+./m
+
+Chris verBurg wrote:
+&gt;<i> Hey all,
+</I>&gt;<i>
+</I>&gt;<i> OK, let me try a related but far less involved question:
+</I>&gt;<i>
+</I>&gt;<i> ANTLR tokenizes all input into an internal list before parsing 
+</I>&gt;<i> anything in that list.  (Right?)  Hence, it runs out of memory trying 
+</I>&gt;<i> to read my 6.2-million-line input file, because that list is huge.  
+</I>&gt;<i> What's the ANTLR way to handle such large input streams?
+</I>&gt;<i>
+</I>&gt;<i> Thanks,
+</I>&gt;<i> -Chris
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> On Thu, Apr 29, 2010 at 4:33 PM, Chris verBurg
+</I>&lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">cheetomonster at gmail.com</A>&gt;wrote:
+&gt;<i>
+</I>&gt;<i>   
+</I>&gt;&gt;<i> Hey guys,
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> A question was posted a few days ago about dealing with an infinite 
+</I>&gt;&gt;<i> input stream, and the suggestion was to subclass TokenStream so that 
+</I>&gt;&gt;<i> it didn't read in all of the input upfront.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I'm running into a similar problem, but before I go run off and 
+</I>&gt;&gt;<i> subclass things I thought I'd see if there's a &quot;best practice&quot; for my 
+</I>&gt;&gt;<i> situation.  It also overlaps with the &quot;how do I use keywords as
+</I>identifiers&lt;<A HREF="http://www.antlr.org/wiki/pages/viewpage.action?pageId=1741">http://www.antlr.org/wiki/pages/viewpage.action?pageId=1741</A>&gt;&quot;
+&gt;&gt;<i> FAQ.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I have a data-file grammar that recognizes strings, numbers, and a 
+</I>&gt;&gt;<i> ton of keywords.  Pretending &quot;VERSION&quot; and &quot;LIMIT&quot; are two keywords, 
+</I>&gt;&gt;<i> here's (part
+</I>&gt;&gt;<i> of) the .g file:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> data_file:
+</I>&gt;&gt;<i>   'VERSION' STRING ';'
+</I>&gt;&gt;<i>   | 'LIMIT' NUMBER ';'
+</I>&gt;&gt;<i>   ;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> NUMBER:
+</I>&gt;&gt;<i>   ('-'|'+')? ('0'..'9')+
+</I>&gt;&gt;<i>   | ('-'|'+')? ('0'..'9')* '.' ('0'..'9')*
+</I>&gt;&gt;<i>   ;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> STRING:
+</I>&gt;&gt;<i>   ('a'..'z' | 'A'..'Z' | '_' | '.' | '0'..'9')+ ;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Problem input #1:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> VERSION 1.2 ;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> The &quot;1.2&quot; is lexed as a number instead of a string, so I get a parse
+</I>error.
+&gt;&gt;<i>
+</I>&gt;&gt;<i> Problem input #2:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> VERSION LIMIT ;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> The &quot;LIMIT&quot; is lexed as a keyword instead of a string, so I get a 
+</I>&gt;&gt;<i> parse error.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I saw the FAQ about keywords-as-identifiers, but I don't think it's 
+</I>&gt;&gt;<i> helpful for me.  For the NUMBER-that-should-be-a-STRING problem, 
+</I>&gt;&gt;<i> there's no exact string I could pass to 
+</I>&gt;&gt;<i> input.LT(1).getText().equals(), because it requires a regex to match a
+</I>NUMBER.  The other solution was to make an &quot;identifier&quot;
+&gt;&gt;<i> rule to match all possibilities -- is the best solution here really 
+</I>&gt;&gt;<i> to change the rule to 'VERSION' (STRING | NUMBER) ';'?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> For the keyword-that-should-be-a-STRING problem, I'm hesitant to use 
+</I>&gt;&gt;<i> either of those solutions because of the sheer number of keywords in this
+</I>grammar.
+&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Ideally what I'd like to do is what I did in Flex and Bison (which 
+</I>&gt;&gt;<i> I'm porting this grammar from).  What I did there was have the parser 
+</I>&gt;&gt;<i> control how the lexer interpreted subsequent tokens.  I embedded a 
+</I>&gt;&gt;<i> rule in the parser, immediately after the 'VERSION' token, to tell 
+</I>&gt;&gt;<i> Flex to enter a &quot;force-the-next-token-to-be-a-STRING-no-matter-what&quot; 
+</I>&gt;&gt;<i> start state.  It worked beautifully.  I got most of the way through 
+</I>&gt;&gt;<i> implementing that in my ANTLR grammar when I found out that 
+</I>&gt;&gt;<i> ANTLRFileStream reads all the tokens in before the parser even starts 
+</I>&gt;&gt;<i> up -- which means the parser can't give the lexer any direction over
+</I>token interpretation.
+&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Thoughts, suggestions, outrageous flames?  Is there a &quot;good&quot; way to 
+</I>&gt;&gt;<i> do this, or maybe is there a completely different approach I should take?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Thanks!
+</I>&gt;&gt;<i> -Chris
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>     
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: 
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i>
+</I>&gt;<i>   
+</I>
+This email and any attachments are intended for the sole use of the named
+recipient(s) and contain(s) confidential information that may be
+proprietary, privileged or copyrighted under applicable law. If you are not
+the intended recipient, do not read, copy, or forward this email message or
+any attachments. Delete this email message and any attachments immediately.
+
+
+
+List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+Unsubscribe:
+<A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+
+
+List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+Unsubscribe:
+<A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="038575.html">[antlr-interest] Is parser control over the lexer possible?
+</A></li>
+	<LI>Next message: <A HREF="038577.html">[antlr-interest] Is parser control over the lexer possible?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#38576">[ date ]</a>
+              <a href="thread.html#38576">[ thread ]</a>
+              <a href="subject.html#38576">[ subject ]</a>
+              <a href="author.html#38576">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

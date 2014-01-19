@@ -1,0 +1,225 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] antlrworks confused by imaginary tokens?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20antlrworks%20confused%20by%20imaginary%20tokens%3F&In-Reply-To=%3C1331900522.4606.0%40pc-stefanm%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="044250.html">
+   <LINK REL="Next"  HREF="044255.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] antlrworks confused by imaginary tokens?</H1>
+    <B>Stefan M&#228;tje</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20antlrworks%20confused%20by%20imaginary%20tokens%3F&In-Reply-To=%3C1331900522.4606.0%40pc-stefanm%3E"
+       TITLE="[antlr-interest] antlrworks confused by imaginary tokens?">Stefan.Maetje at esd-electronics.com
+       </A><BR>
+    <I>Fri Mar 16 05:22:02 PDT 2012</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="044250.html">[antlr-interest] antlrworks confused by imaginary tokens?
+</A></li>
+        <LI>Next message: <A HREF="044255.html">[antlr-interest] antlrworks confused by imaginary tokens?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#44252">[ date ]</a>
+              <a href="thread.html#44252">[ thread ]</a>
+              <a href="subject.html#44252">[ subject ]</a>
+              <a href="author.html#44252">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+some hints on defining imaginary and real tokens in an ANTLR grammar.
+
+The ANTLR grammar for *.g files prescribes a certain order of sections in the 
+grammar file. Therefore you must follow this order in your grammar file. See 
+this short excerpt from the ANTLR grammar for ANTLR grammar files:
+
+grammarDef
+    :   DOC_COMMENT?
+        (   'lexer'  {gtype=LEXER_GRAMMAR;}    // pure lexer
+        |   'parser' {gtype=PARSER_GRAMMAR;}   // pure parser
+        |   'tree'   {gtype=TREE_GRAMMAR;}     // a tree parser
+        |            {gtype=COMBINED_GRAMMAR;} // merged parser/lexer
+        )
+        g='grammar' id ';' optionsSpec? tokensSpec? attrScope* action*
+        rule+
+        EOF
+        -&gt; ^( {adaptor.create(gtype,$g)}
+                  id DOC_COMMENT? optionsSpec? tokensSpec? attrScope* action* 
+rule+
+                )
+    ;
+
+You see the tokensSpec follows the optionsSpec and so on ...
+
+The token section should look like the following example:
+
+token {
+	VIRTUAL_TOKEN1;
+	VIRTUAL_TOKEN2;
+	REAL_TEXT = 'TEXT';	// Only a single char / string allowed!
+	REAL_INFO = 'INFO';
+}
+
+Please observe the fact that between the token name and the token text there 
+is an equals (&quot;=&quot;) sign! This is an deviation from the syntax of a lexer rule 
+to define a token. 
+
+Please also observe that in the token section only a single string or char 
+literal is allowed. If you need something like a keyword which may have an 
+abbreviated form then you must use a lexer rule like this:
+
+KW_IDENT: ('IDENT' | 'IDENTICAL');
+
+If you look at these rules you see that your posted tokens section violates 
+these rules.
+
+I hope that helps,
+	Stefan
+
+PS.: You may look for the ANTLR grammar for grammar files in the source 
+distribution. Look for file ./antlr-3.4/tool/src/main/antlr3/org/antlr/
+grammar/v3/ANTLRv3.g
+
+
+Am 16.03.2012 05:03:44 schrieb(en) Michael Roberts:
+&gt;<i> I've been happily hacking on my little grammar using antlrworks.
+</I>&gt;<i>  Everything was going swimmingly until I introduced a section of imaginary
+</I>&gt;<i> tokens for use in rewrite rules.  For some reason, antlr/antlrworks really
+</I>&gt;<i> wanted this section of imaginary tokens at the start of the file, directly
+</I>&gt;<i> behind the options section.  It didn't seem to like it in other places, and
+</I>&gt;<i> would not recognize the imaginary tokens otherwise.
+</I>&gt;<i> 
+</I>&gt;<i> However, oddly, it didn't like it if I defined my regular tokens inside the
+</I>&gt;<i> tokens sections and refused to recognize them, flagging mismatched token
+</I>&gt;<i> exceptions all over the place.  So, accepting defeat, I moved these
+</I>&gt;<i> non-imaginary tokens back to the end of the file, where they'd previously
+</I>&gt;<i> been living.  No missing tokens, everything generates fine now.
+</I>&gt;<i> 
+</I>&gt;<i> However, when I attempt to debug my parser, the generated test code
+</I>&gt;<i> references the first non-imaginary token it finds as the top level
+</I>&gt;<i> construct, in my case CLOSE_PAREN, and not my top-level compilationUnit
+</I>&gt;<i> production (which is ahead of it in the file).  Thus:
+</I>&gt;<i> 
+</I>&gt;<i> public class __Test__ {
+</I>&gt;<i> 
+</I>&gt;<i>     public static void main(String args[]) throws Exception {
+</I>&gt;<i>         JLG2Lexer lex = new JLG2Lexer(new
+</I>&gt;<i> ANTLRFileStream(&quot;C:\\src\\Core\\src\\org\\veve\\reflect\\interpreter\\output
+</I>&gt;<i> \\__Test___input.txt&quot;,
+</I>&gt;<i> &quot;UTF8&quot;));
+</I>&gt;<i>         CommonTokenStream tokens = new CommonTokenStream(lex);
+</I>&gt;<i> 
+</I>&gt;<i>         JLG2Parser g = new JLG2Parser(tokens, 49100, null);
+</I>&gt;<i>         try {
+</I>&gt;<i>             g.CLOSE_PAREN();   // &lt;-- BAD, was expecting to see
+</I>&gt;<i> compilationUnit here ...
+</I>&gt;<i>         } catch (RecognitionException e) {
+</I>&gt;<i>             e.printStackTrace();
+</I>&gt;<i>         }
+</I>&gt;<i>     }
+</I>&gt;<i> }
+</I>&gt;<i> 
+</I>&gt;<i> So, my main question is ..  why doesn't this form of token definition
+</I>&gt;<i> (below) work:
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> tokens
+</I>&gt;<i> {
+</I>&gt;<i> 
+</I>&gt;<i> // Imaginary tokens for AST rewrite ops
+</I>&gt;<i> IDENTIFIER_PATH;
+</I>&gt;<i> INVOCATION;
+</I>&gt;<i> STATEMENT_BLOCK;
+</I>&gt;<i> AMPERSAND_INVOCATION;
+</I>&gt;<i> INVOCATION_STAT;
+</I>&gt;<i> OBJECT;
+</I>&gt;<i> ARRAY;
+</I>&gt;<i> ELEMENT_STAT;
+</I>&gt;<i> MEMBERS;
+</I>&gt;<i> PAIR;
+</I>&gt;<i> PAIR_LIST;
+</I>&gt;<i> METHOD_INVOCATION;
+</I>&gt;<i> NEW_COMMAND;
+</I>&gt;<i> STRING;
+</I>&gt;<i> NUMBER;
+</I>&gt;<i> ARRAY;
+</I>&gt;<i> BOOLEAN;
+</I>&gt;<i> NULL;
+</I>&gt;<i> PATH;
+</I>&gt;<i> 
+</I>&gt;<i> // Real, defined tokens
+</I>&gt;<i> CLOSE_PAREN : ')';
+</I>&gt;<i> AMPERSAND : '@';
+</I>&gt;<i> WS       :           (' '|'\t'|'\f'|'\n'|'\r')+{ skip(); };
+</I>&gt;<i> COLON : ':';
+</I>&gt;<i> EQUALS : '=';
+</I>&gt;<i> INJECT : '&lt;-';
+</I>&gt;<i> COMMA : ',';
+</I>&gt;<i> SLASH : '/';
+</I>&gt;<i> OPEN_PAREN :    '(' ;
+</I>&gt;<i> OPEN_BRACE   : '{';
+</I>&gt;<i> CLOSE_BRACE
+</I>&gt;<i> :   '}';
+</I>&gt;<i> DOT
+</I>&gt;<i> : '.';
+</I>&gt;<i> SEMI_COLON
+</I>&gt;<i> : ';';
+</I>&gt;<i> BLOCK :   '|' ;
+</I>&gt;<i> }
+</I>&gt;<i> 
+</I>&gt;<i> is the token section just for imaginary tokens, then, and, if not how do I
+</I>&gt;<i> define regular tokens in it .. and, in essence, what could I possibly be
+</I>&gt;<i> doing to so confuse the test jig generator code so that it's generating
+</I>&gt;<i> something silly?
+</I>&gt;<i> 
+</I>&gt;<i> MR
+</I>&gt;<i> 
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-">http://www.antlr.org/mailman/options/antlr-interest/your-email-</A>
+</I>&gt;<i> address
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="044250.html">[antlr-interest] antlrworks confused by imaginary tokens?
+</A></li>
+	<LI>Next message: <A HREF="044255.html">[antlr-interest] antlrworks confused by imaginary tokens?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#44252">[ date ]</a>
+              <a href="thread.html#44252">[ thread ]</a>
+              <a href="subject.html#44252">[ subject ]</a>
+              <a href="author.html#44252">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

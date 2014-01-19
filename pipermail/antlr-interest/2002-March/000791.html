@@ -1,0 +1,161 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] What's coming for 2.8 (was Re: Build Question)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20What%27s%20coming%20for%202.8%20%28was%20Re%3A%20Build%20Question%29&In-Reply-To=20020312162312.G680%40cs.utwente.nl">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000776.html">
+   <LINK REL="Next"  HREF="000795.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] What's coming for 2.8 (was Re: Build Question)</H1>
+    <B>lgcraymer</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20What%27s%20coming%20for%202.8%20%28was%20Re%3A%20Build%20Question%29&In-Reply-To=20020312162312.G680%40cs.utwente.nl"
+       TITLE="[antlr-interest] What's coming for 2.8 (was Re: Build Question)">lgc at mail1.jpl.nasa.gov
+       </A><BR>
+    <I>Tue Mar 12 22:37:03 PST 2002</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000776.html">[antlr-interest] Build Question
+</A></li>
+        <LI>Next message: <A HREF="000795.html">[antlr-interest] What's coming for 2.8 (was Re: Build Question)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#791">[ date ]</a>
+              <a href="thread.html#791">[ thread ]</a>
+              <a href="subject.html#791">[ subject ]</a>
+              <a href="author.html#791">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>In response to Ric's and Mike Tiller's comments, I thought that I'd 
+post something on the AST construction extensions and tree grammar 
+generation.  This stuff all works now, and I'm in the process of 
+jumping through the necessary hoops so that I can release the code.  
+If we get really lucky, Ter will manage to finish his code generation 
+stuff in time for a 2.8 release.
+
+C++/C# support will require under 100 lines of new code to support the 
+extensions, excluding the translocation support which takes about 500 
+LOC.  That enables language neutral AST rewriting.
+
+My current code base is based on 2.7.1; Ter and I plan to upgrade to a 
+2.7.2 base before releasing 2.8.
+
+More detail:
+As Ter noted a few months back, I have been working on a tree grammar 
+generation phase for ANTLR.  Since that is nearing completion, now 
+seems a good time for a status report and request input.
+
+Tree grammar generation involves a transformation of loop 
+structures--()+ and ()*--containing root elements (elements marked 
+with a caret) into recursive rules.  Additionally, alternatives need 
+to be split out and subtree structure must be tracked.
+
+The tree rewriting required to transform an input grammar tree into an 
+output grammar tree is rather demanding on ANTLR's tree rewrite 
+support. In the course of development, I have had to fix a number of 
+misfeatures.  BANG (!) did not work when applied to parenthesized 
+expressions, including ()+ and ()* and ()? blocks.  Annotations--&#136; and 
+!--did not behave quite as expected in tree grammars.
+	#( ROOT! A B )
+led to the output tree
+	#( A B )
+rather than the A B list that might have been expected.  Further, ^ 
+had scope limited to the current tree structure within a rule rather 
+than having rule-level scope.
+	#( A #( B C&#136; D ) )
+would generate
+	#( A #( C #( B D ) ) )
+and not
+	#( C #( A #( B D ) ) )
+These have been fixed.
+
+Additionally, roots are limited to single values in 2.7--ranges and 
+alternatives are not supported.  This may get fixed this in time for 
+the 2.8.0 release.
+
+ANTLR tree restructuring via annotations is powerful, but spartan.  I 
+found that I needed a facility for reordering AST nodes and explicitly 
+respecifying trees within rule definitions.  This led to the idea of 
+extending the ANTLR meta-language to include generic restructuring.  
+The added facilities would include support for long distance 
+transposition of tree elements--while not needed for the current 
+application, it is essential in other contexts.
+
+The syntactic approach that I settled on was to mirror the normal tree 
+grammar--#( ... )--and add extensions as needed.  #{ ... } is a &quot;build 
+tree&quot; construct (identifiers and tree expressions within #{ ... } 
+define an AST construction rather than grammar elements to be matched) 
+and is intended to be mnemonic, with the braces suggestive of an 
+action syntax.  Tree construction may be conditional; { ... }? 
+delineates construction predicates when building trees--the analogy to 
+semantic predicates should be clear.  Additionally, &quot;COPY&quot; (duplicate 
+and insert duplicate into tree and &quot;REUSE&quot; (insert &quot;as is&quot;--usually 
+used as an optimization to avoid the overhead of AST node allocation) 
+are keywords which precede AST node descriptors.  &quot;RETURN&quot; is used to 
+restart tree construction--a better name could probably be found, but 
+the usual usage is #{ RETURN #( A B C ) } to specify the tree returned 
+from a rule.
+
+One feature that I have found useful in other contexts is to 
+translocate (or duplicate) a subtree to another location.  To support 
+this, an isolated string literal (&quot;literal&quot;) marks an insertion point; 
+assigning a value to a string literal (&quot;lit&quot; = #( A B C )) marks the 
+data to be translocated.  Scoping is fairly simple:  if an insertion 
+point is encountered before an initial assignment of data to that 
+insertion point, then subsequent assignments will be to that insertion 
+point until a new insertion point is encountered.  Similarly, if an 
+assignment precedes the first insertion point for that string, then 
+the insertion point is used to resolve insertion of the preceding 
+assignments and subsequent assignments will be made to the next 
+insertion point.  Insertions are always done in line:  there are no 
+special notations for &quot;insert as root&quot; or &quot;insert as child&quot;.   Any 
+such rearrangements are made in subsequent AST transformation passes.
+
+The simplest loop-to-recursion transformation for tree grammars is
+	foo : ( A B&#136; C )+ ;
+to
+	foo : #( B foo1 C ) ;
+	foo1 : #( B foo1 C A )
+	         | A
+		;
+but they can quickly become complex when alternative roots or nested 
+loops are involved.  The tree grammar generation code has been torture 
+tested and seems to handle all possible cases, including support for 
+the tree rewriting extensions (except for the translocation extension, 
+which requires significant effort to support in generated tree 
+grammars).
+
+--Loring Craymer
+
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000776.html">[antlr-interest] Build Question
+</A></li>
+	<LI>Next message: <A HREF="000795.html">[antlr-interest] What's coming for 2.8 (was Re: Build Question)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#791">[ date ]</a>
+              <a href="thread.html#791">[ thread ]</a>
+              <a href="subject.html#791">[ subject ]</a>
+              <a href="author.html#791">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

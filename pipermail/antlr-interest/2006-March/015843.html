@@ -1,0 +1,357 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] my nondeterministic grammar
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20my%20nondeterministic%20grammar&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="015842.html">
+   <LINK REL="Next"  HREF="015852.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] my nondeterministic grammar</H1>
+    <B>karl wettin</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20my%20nondeterministic%20grammar&In-Reply-To="
+       TITLE="[antlr-interest] my nondeterministic grammar">kalle at snigel.net
+       </A><BR>
+    <I>Tue Mar 28 11:00:30 PST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="015842.html">[antlr-interest] custom methods to CommonAST
+</A></li>
+        <LI>Next message: <A HREF="015852.html">[antlr-interest] Assignment from token reference only allowed in
+	lexer
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#15843">[ date ]</a>
+              <a href="thread.html#15843">[ thread ]</a>
+              <a href="subject.html#15843">[ subject ]</a>
+              <a href="author.html#15843">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Basically I'm trying to use Antlr as a natrual language parser. I've  
+succeded with the grammar before, but as I felt the urge to refactor  
+it I I get all these nondeterministic warnings. I understand what  
+they mean, but I can understand why I get them.
+If there is one rule I don't understand why it is nondeterministic,  
+it's the protected EN_NATURAL_EPISODE. And since this rule &quot;fails&quot; my  
+grammar is rendered useless. I've been reading up on syntactic  
+predicate, but don't think that it's the solution.
+
+There are no trees or any other fancy things. It's a straight forward  
+Lexer. It's Java and I have added a main method that explains what I  
+try to parse.
+
+Also, I don't understand why my EN_NATURAL_NUMBER returns a token and  
+not an integer?
+
+I would be very greatful if someone could take a few minutes and look  
+it. I'll even out the karma from freeloading by answering newbie  
+questions on other forums until I've figured this out. :)
+
+
+header {
+	package se.snigel.tindex.analysis.tvserie;
+	import java.util.*;
+	import java.io.*;
+	
+	import antlr.CommonToken;
+	import antlr.Token;	
+}
+
+
+class TVSerieEpisodeLexer extends Lexer;
+options {
+	k=10;
+}
+{	
+	public class SeasonAndEpisode {
+		private int season;
+		private int episode;	
+		private SeasonAndEpisode(int season, int episode) {
+			this.season = season;
+			this.episode = episode;
+		}
+		public int getSeason() {
+			return season;
+		}
+		public int getEpisode() {
+			return episode;
+		}
+		public String toString() {
+			return season + &quot;x&quot; + episode;	
+		}
+	}
+	
+	private LinkedList&lt;SeasonAndEpisode&gt; episodes = new  
+LinkedList&lt;SeasonAndEpisode&gt;();
+	private LinkedList&lt;Integer&gt; seasons = new LinkedList&lt;Integer&gt;();
+	
+	/** for sanity checks */
+	private Long fileSize;
+	
+	private void addSequence(boolean skipFirstEpisode, Integer  
+fromSeason, Integer fromEpisode, Integer toSeason, Integer toEpisode) {
+         int startEpisode = fromEpisode;
+         int endEpisode;
+         if (fromSeason == toSeason) {
+             endEpisode = toEpisode;
+         } else {
+             throw new RuntimeException(&quot;Need to figure out the last  
+episode of this season.&quot;);
+         }
+
+         LinkedList&lt;SeasonAndEpisode&gt; saes = new  
+LinkedList&lt;SeasonAndEpisode&gt;();
+
+         for (int season = fromSeason; season &lt;= toSeason; season++) {
+             for (int episode = startEpisode; episode &lt;= endEpisode;  
+episode++) {
+                 saes.add(new SeasonAndEpisode(season, episode));
+             }
+             startEpisode = 1;
+         }
+
+         if (skipFirstEpisode) {
+			saes.removeFirst();
+         }
+
+         // how big is the file, and how many episodes are there?
+         if (fileSize != null) {
+             if (120 * 1024 * saes.size() &lt;= fileSize) {
+                 episodes.addAll(saes);
+             } else {
+                 // todo could it be S1 - 7 as in s1e7?
+             }
+         }
+
+     }
+
+     public String toString() {
+     		StringBuffer buf = new StringBuffer();
+     		for (SeasonAndEpisode sae : episodes) {
+     			buf.append(sae);
+			buf.append('\n');	
+     		}
+     		for (Integer s : seasons) {
+     			buf.append(s);
+			buf.append('\n');	
+     		}
+     		
+     		return buf.toString();
+     }
+
+	public static void main(String[] args) throws Exception {
+	
+		String[] testText = new String[]{
+			&quot;season 1 jo men visst&quot;,
+			&quot;s1e1&quot;,
+			&quot;s1&quot;,
+			&quot;s 1&quot;,
+			&quot;season 1&quot;,
+			&quot;season 1 episode 3&quot;,
+			&quot;s1,s2,s3&quot;,
+			&quot;s1-s3&quot;,
+			&quot;s1e3-4&quot;,
+			&quot;s1 e4, 5, 6&quot;,
+			&quot;season one will fail. how do I handle the EN_NATURAL_NUMBER int?&quot;,
+			&quot;s1 - 4 is this really four seasons? sanity check. is it s1e4?&quot;,
+			&quot;s1e19-s2e12 what is the last episode of season 1?&quot;,
+		};
+			
+		for (String text : testText) {
+			System.out.println(text);
+			TVSerieEpisodeLexer lexer = new TVSerieEpisodeLexer(new  
+StringReader(text));
+			lexer.nextToken();
+			System.out.println(lexer);
+		}
+	}
+	
+}
+
+
+	
+protected WHITESPACE :
+	('.' | ' ')+
+	;
+
+protected EN_NATURAL_SEASON :
+	's' (&quot;eason&quot; ('s')?)?
+	;
+
+protected EN_NATURAL_EPISODE :
+	'e'('p'(&quot;isode&quot; | 's')?)?
+	/*&quot;episode&quot; | &quot;eps&quot; | &quot;ep&quot; | &quot;e&quot;*/
+	;
+
+protected EN_NATURAL_VECTOR :
+	&quot;and&quot; | &quot;,&quot;
+	;
+
+protected EN_NATURAL_SEQUENCE :
+	&quot;to&quot; | &quot;through&quot; | &quot;-&quot;
+	;
+
+protected EN_NATURAL_NUMBER returns [int v] :
+     ('0'..'9')+ { v=Integer.valueOf($getText); }
+     | &quot;one&quot;     { v=1; }
+     | &quot;two&quot;     { v=2; }
+     | &quot;three&quot;   { v=3; }
+     | &quot;four&quot;    { v=4; }
+     | &quot;five&quot;    { v=5; }
+     | &quot;six&quot;     { v=6; }
+     | &quot;seven&quot;   { v=7; }
+     | &quot;eight&quot;   { v=8; }
+     | &quot;nine&quot;    { v=9; }
+     | &quot;ten&quot;     { v=10;}
+     ;
+
+	
+EN_NATURAL :
+	{System.out.println(&quot;EN_NATURAL&quot;);}
+	EN_NATURAL_SEASON (WHITESPACE)?
+	startSeason:EN_NATURAL_NUMBER
+		
+	(	
+		// specific episodes
+		EN_NATURAL_EPISODE (WHITESPACE)?
+		startEpisode:EN_NATURAL_NUMBER	
+		(
+			{System.out.println(&quot;episode sequence&quot;);}
+			// sequence
+			EN_NATURAL_SEQUENCE (WHITESPACE)?
+			(
+		        EN_NATURAL_SEASON (WHITESPACE)?
+		        episodeSequenceEndSeason:EN_NATURAL_NUMBER (WHITESPACE)?	
+		    )?
+		    EN_NATURAL_EPISODE (WHITESPACE)?
+		    episodeSequenceEndEpisode:EN_NATURAL_NUMBER
+		    {
+		    		addSequence(false,
+					new Integer(startSeason.getText()),
+					new Integer(startEpisode.getText()),
+					episodeSequenceEndSeason == null ? new Integer 
+(startSeason.getText()) : new Integer(episodeSequenceEndSeason.getText 
+()),
+					new Integer(episodeSequenceEndEpisode.getText())
+				);
+		    }
+			
+		
+	    ) | (
+	    		{System.out.println(&quot;episode vector&quot;);}	    		
+	    		// vector
+			{
+	    			Integer lastSeenSeason = new Integer(startSeason.getText());
+	    			episodes.add(new SeasonAndEpisode(new Integer 
+(startSeason.getText()), new Integer(startEpisode.getText())));				
+	    		}
+	    		(	    			
+				EN_NATURAL_VECTOR (WHITESPACE)?
+				(
+					EN_NATURAL_SEASON (WHITESPACE)?
+					episodeVectorAndSeason:EN_NATURAL_NUMBER (WHITESPACE)?
+					{
+						lastSeenSeason = new Integer(episodeVectorAndSeason.getText());	
+					}
+				)?
+				EN_NATURAL_EPISODE (WHITESPACE)?
+
+				episodeVectorAndEpisode:EN_NATURAL_NUMBER (WHITESPACE)?
+				{
+	            		episodes.add(new SeasonAndEpisode(lastSeenSeason, new  
+Integer(episodeVectorAndEpisode.getText())));
+	            }
+			)+
+			
+	    		
+		) | (
+			(.)*
+			{System.out.println(&quot;a specific episode in a season.&quot;);}
+			{
+				episodes.add(new SeasonAndEpisode(new Integer(startSeason.getText 
+()), new Integer(startEpisode.getText())));
+			}
+			
+			
+		)  		
+	) | (
+		{System.out.println(&quot;season only.&quot;);}
+		(	
+			{System.out.println(&quot;sequence of seasons.&quot;);}
+			// sequence
+			EN_NATURAL_SEQUENCE (WHITESPACE)?
+			(EN_NATURAL_SEASON (WHITESPACE)?)?
+		    seasonSequenceEndSeason:EN_NATURAL_NUMBER			
+		    {
+		    		for (int i= new Integer(startSeason.getText()); i &lt;= new  
+Integer(seasonSequenceEndSeason.getText()); i++) {
+					seasons.add(i);
+					// todo sanity check file size	
+		    		}		
+		    }		    	    		
+		) | (
+		
+			{System.out.println(&quot;vector of seasons&quot;);}
+			// vector			
+			{
+				seasons.add(new Integer(startSeason.getText()));
+			}
+			(								
+		        EN_NATURAL_VECTOR (WHITESPACE)?
+		        (
+		            (EN_NATURAL_SEASON (WHITESPACE)?)?
+		            seasonVectorAndSeason:EN_NATURAL_NUMBER (WHITESPACE)?
+		            {		            		
+		            		seasons.add(new Integer(seasonVectorAndSeason.getText 
+()));
+		            }
+		        )
+		    )+
+		
+		) | (		
+			(.)*
+			{System.out.println(&quot;a single season&quot;);}
+			{
+				seasons.add(new Integer(startSeason.getText()));
+			}				
+		)
+	)
+	;
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="015842.html">[antlr-interest] custom methods to CommonAST
+</A></li>
+	<LI>Next message: <A HREF="015852.html">[antlr-interest] Assignment from token reference only allowed in
+	lexer
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#15843">[ date ]</a>
+              <a href="thread.html#15843">[ thread ]</a>
+              <a href="subject.html#15843">[ subject ]</a>
+              <a href="author.html#15843">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

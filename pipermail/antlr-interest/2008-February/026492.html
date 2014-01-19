@@ -1,0 +1,193 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Lexical error recovery by manual symbol	(character) insertion/deletion?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Lexical%20error%20recovery%20by%20manual%20symbol%0A%09%28character%29%20insertion/deletion%3F&In-Reply-To=%3C4d596d820802151317gdc5c2a0u5ab9113a73fcf65f%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="026489.html">
+   <LINK REL="Next"  HREF="026499.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Lexical error recovery by manual symbol	(character) insertion/deletion?</H1>
+    <B>Darach Ennis</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Lexical%20error%20recovery%20by%20manual%20symbol%0A%09%28character%29%20insertion/deletion%3F&In-Reply-To=%3C4d596d820802151317gdc5c2a0u5ab9113a73fcf65f%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Lexical error recovery by manual symbol	(character) insertion/deletion?">darach at gmail.com
+       </A><BR>
+    <I>Fri Feb 15 13:17:10 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="026489.html">[antlr-interest] antlrworks versus command line type debugging
+</A></li>
+        <LI>Next message: <A HREF="026499.html">[antlr-interest] Lexical error recovery by manual symbol (character) insertion/deletion?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#26492">[ date ]</a>
+              <a href="thread.html#26492">[ thread ]</a>
+              <a href="subject.html#26492">[ subject ]</a>
+              <a href="author.html#26492">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Gavin,
+
+Thanks for the clarifications and historical information.
+
+However the dummy-fragment approach is counter-intuitive at best because the
+lexer rules FLOAT and NUMBER are what I'm using in my parser rules section.
+But these
+are fragment rules... so this is bad practice!
+
+The fact that 'top-level' lexer rules can emit types and fragment rules
+cannot isn't
+mentioned in that section of the book. The 'fragment' keyword merely infers
+the
+intended (ie: not mandated) visibility of the rule. So the 'dummy-fragment
+approach'
+is more of a lucky side-effect adopted as a feature? Thankfully, ANTLR
+doesn't
+complain when fragment rules are referred to directly in parser rules...
+
+The following makes more sense, at least to me, but is of course completely
+illegal syntax:
+
+fragment DIGIT: '0'..'9'; // this is a genuine fragment rule
+imaginary NUMBER: DIGIT+; // this is an imaginary / special token
+imaginary FLOAT: NUMBER DOT NUMBER; // this is an imaginary / special token
+generator INT_OR_FLOAT
+  :  NUMBER // =&gt; NUMBER is implicit here?
+     ( (DOT DIGIT) =&gt; DOT NUMBER { $type = FLOAT; } )?
+  ;
+
+I appreciate there may be technical reasons for restricting fragment rules
+such that
+they can not emit tokens but the notion of a fragment (lexer-visible, not
+parser-visible)
+and a type-generating (may emit tokens) rule should not necessarily be
+mutually exclusive.
+
+To quote from the definitive ANTLR bible, page 92-93 in the 'Fragment Lexer
+Rules' section:
+
+      Because ANTLR assumes that all lexer rules are valid tokens, you must
+prefix factored
+      &quot;helper rules&quot; with the fragment keyword. This keyword tells ANTLR
+that you intend for
+      this rule to be called only by other rules and that it should not
+yield a token to the parser.
+
+Similarly, on page 127, in the token/lexer rule attribute table the
+attribute $type is described as:
+
+      The token type (nonzero positive integer) of the token such as INT;
+translates to a call to getType().
+
+No mention of a restriction for fragment rules there, so one should be able
+to manipulate the type
+information in this case.
+
+So when I see the keyword 'fragment' it is explicitly communicating 'do not
+refer to me in a parser
+rule'. The dummy-fragment approach is breaking this rule and so I
+(innocently) overlooked any solution using
+them. The bible deems this a sin, but as this is an accepted means to an
+end, call me a sinner!
+
+I'll take the approach, because it works, but i'll document every single
+usage in my lexer rules
+because it is relatively non-standard and non-documented unless you use
+ANTLR every day.
+
+Regards,
+
+Darach.
+
+
+
+
+
+
+On Fri, Feb 15, 2008 at 7:42 PM, Gavin Lambert &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr at mirality.co.nz</A>&gt; wrote:
+
+&gt;<i> At 04:34 16/02/2008, Darach Ennis wrote:
+</I>&gt;<i> &gt;After some trial and error and a little brain-stretching the
+</I>&gt;<i> &gt;following seems to work:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;F:   ('0' | '1'..'9' '0'..'9'*)
+</I>&gt;<i> &gt;     (
+</I>&gt;<i> &gt;         { input.LA(1) == '.' &amp;&amp; Character.isDigit(input.LA(2))
+</I>&gt;<i> &gt; }?=&gt; ('.' '0'..'9'+) { _type = F; }
+</I>&gt;<i> &gt;         |   { _type = I; }
+</I>&gt;<i> &gt;     )
+</I>&gt;<i> &gt;     ;
+</I>&gt;<i>
+</I>&gt;<i> First: don't use _type (that's an implementation detail).  Use
+</I>&gt;<i> $type instead.
+</I>&gt;<i>
+</I>&gt;<i> Second: solutions to this issue have been posted several times
+</I>&gt;<i> before; a common alternative solution is:
+</I>&gt;<i>
+</I>&gt;<i> fragment DIGIT: '0'..'9';
+</I>&gt;<i> fragment NUMBER: DIGIT+;
+</I>&gt;<i> fragment FLOAT: NUMBER DOT NUMBER;
+</I>&gt;<i> INT
+</I>&gt;<i>   :  NUMBER
+</I>&gt;<i>      ( (DOT DIGIT) =&gt; DOT NUMBER { $type = FLOAT; } )?
+</I>&gt;<i>   ;
+</I>&gt;<i>
+</I>&gt;<i> (Or you could replace that first NUMBER in the INT rule with ('0'
+</I>&gt;<i> | '1'..'9' DIGIT*) if you wanted to ensure leading zeros were
+</I>&gt;<i> invalid.)
+</I>&gt;<i>
+</I>&gt;<i> The actual contents of the FLOAT rule don't matter, though it's
+</I>&gt;<i> usually preferable to make it look similar to what it's going to
+</I>&gt;<i> represent.
+</I>&gt;<i>
+</I>&gt;<i> FLOAT can actually be put into the tokens section instead, but
+</I>&gt;<i> only if it has no content (since if it has content it becomes a
+</I>&gt;<i> top-level rule, which isn't the goal); unfortunately doing this
+</I>&gt;<i> causes ANTLR to emit a warning at present, which is why the dummy
+</I>&gt;<i> fragment approach is usually preferred.
+</I>&gt;<i>
+</I>&gt;<i> &gt;The _type field should be defined in lexer fragment rules so that
+</I>&gt;<i> &gt;ambiguity such as the above can be resolved without making a rule
+</I>&gt;<i> &gt;public.
+</I>&gt;<i>
+</I>&gt;<i> Lexer fragment rules never emit tokens, so $type is completely
+</I>&gt;<i> meaningless for them.  Any type-juggling must be done in the
+</I>&gt;<i> top-level rule.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20080215/486e1818/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20080215/486e1818/attachment.html</A> 
+</PRE>
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="026489.html">[antlr-interest] antlrworks versus command line type debugging
+</A></li>
+	<LI>Next message: <A HREF="026499.html">[antlr-interest] Lexical error recovery by manual symbol (character) insertion/deletion?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#26492">[ date ]</a>
+              <a href="thread.html#26492">[ thread ]</a>
+              <a href="subject.html#26492">[ subject ]</a>
+              <a href="author.html#26492">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

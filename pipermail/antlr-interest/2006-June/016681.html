@@ -1,0 +1,145 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] tree --&gt; tree transformation
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20tree%20--%3E%20tree%20transformation&In-Reply-To=aff5e35a0606192231u76541b78v860b732082d4d5b7%40mail.gmail.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="016665.html">
+   <LINK REL="Next"  HREF="016669.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] tree --&gt; tree transformation</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20tree%20--%3E%20tree%20transformation&In-Reply-To=aff5e35a0606192231u76541b78v860b732082d4d5b7%40mail.gmail.com"
+       TITLE="[antlr-interest] tree --&gt; tree transformation">parrt at cs.usfca.edu
+       </A><BR>
+    <I>Tue Jun 20 11:07:05 PDT 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="016665.html">[antlr-interest] tree --&gt; tree transformation
+</A></li>
+        <LI>Next message: <A HREF="016669.html">[antlr-interest] parsing a mix of structured and free-form text
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#16681">[ date ]</a>
+              <a href="thread.html#16681">[ thread ]</a>
+              <a href="subject.html#16681">[ subject ]</a>
+              <a href="author.html#16681">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Jun 19, 2006, at 10:31 PM, Bernhard Damberger wrote:
+&gt;<i> I was trying to make a tree grammar with Antlr 3.0 that spits out
+</I>&gt;<i> another modified tree.
+</I>
+Uh oh!  You caught me!  I have not implemented that feature yet...I'm  
+not sure exactly how I want to do it.
+
+&gt;<i> I just want to transform a tree from one form to another.
+</I>
+That's the issue... you can see that the basic mechanism borrowed  
+straight from parser -&gt; AST almost works.  My concern is how to deal  
+with sharing tree nodes.  Clearly if you only want to go through and  
+replace x*0 with 0 everywhere in expressions you should be able to  
+reuse the rest of the tree; i.e., without dup'ing it.
+
+I *think* the way to deal with that is that if you don't create a  
+tree, return the incoming tree pointer as the result tree.
+
+&gt;<i> Two kinds of lines of code are causing problems:
+</I>&gt;<i>              adaptor.setTokenBoundaries 
+</I>&gt;<i> (retval.tree,retval.start,retval.stop);
+</I>&gt;<i>
+</I>&gt;<i> In this case retval.start and retval.stop are Objects, not Tokens.
+</I>
+Yes, that would need to be turned off when building trees from a  
+tree; those values are set and should not be touched.
+
+&gt;<i> And
+</I>&gt;<i>
+</I>&gt;<i>                  string_literal4=(Object)input.LT(1);
+</I>&gt;<i>                  match(input,118,FOLLOW_118_in_statement63);
+</I>&gt;<i>                  string_literal4_tree =(Object)adaptor.create 
+</I>&gt;<i> (string_literal4);
+</I>&gt;<i>
+</I>&gt;<i> on the third line because string_literal4 is expected to be a token,
+</I>&gt;<i> but its a Object.
+</I>
+We could add that method create(object) to the adaptor no problem.   
+The issue is that we'd be dup'ing nodes like crazy.
+
+&gt;<i> Any thoughts?
+</I>
+Yep!  I think tree grammars should by default just return the input  
+tree.  If you have -&gt; rewrites then a new subtree for a rule is  
+created.  ^ and ^^ would not be allowed and I'd like to disallow !  
+also to be consistent.  ! could be useful but mostly likely you would  
+want to remvoe a node upon some condition, hence, just saying ID! is  
+not that useful.  If you unconditionally knew you didn't want ID in  
+the tree, you could have used ID! when creating the tree.  Actually,  
+you could also reuse old subtrees too:
+
+expr
+	:	^(ADD x=expr y=expr)		// return either subtree or whole thing
+			-&gt; {isZero($x)}? $y
+			-&gt; {isZero($y)}? $x
+			-&gt; $expr
+	|	^(MULT x=expr y=expr)
+			-&gt; {isZero($x)}? [
+	|	ID						// same ID node returned
+	;
+
+So every rule would by default terminate with a hidden &quot;-&gt; $rule&quot;
+
+Interesting...do you concur Bernhard?  I should add to blog...
+
+Oh, i just noticed from blog:
+
+<A HREF="http://www.antlr.org/blog/antlr3/treegrammar.tml">http://www.antlr.org/blog/antlr3/treegrammar.tml</A>
+&gt;<i> June 28, 2005
+</I>&gt;<i>
+</I>&gt;<i> Ok, last night I figured out how to handle rewrites during tree  
+</I>&gt;<i> parsing. Simple! Just mirror what I do for token rewrite stream but  
+</I>&gt;<i> for tree rewrite stream. Queue up a series of rewrites until the  
+</I>&gt;<i> end and then alter the tree, giving it back to the user. Some  
+</I>&gt;<i> people have mentioned doing this on a rule-by-rule basis for tree  
+</I>&gt;<i> construction (during parsing) but this will work great on a grammar  
+</I>&gt;<i> basis for tree rewriting too. :) I think it was Paul Lucas and  
+</I>&gt;<i> Loring and Stanchfield who were talking about a related thing on a  
+</I>&gt;<i> rule basis.
+</I>Perhaps you'd also be interested in inserting nodes anywhere in the  
+tree when you see, for example, an implicit var def (x=3).  You'd  
+want to insert a def for x somewhere above.  You could say
+
+engine.insertAfter($block.getFirstChild(), ^([DECL], [TYPE,&quot;int&quot;], $ID))
+
+or some such.  Hmm...needs more thinking...
+
+Ter
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="016665.html">[antlr-interest] tree --&gt; tree transformation
+</A></li>
+	<LI>Next message: <A HREF="016669.html">[antlr-interest] parsing a mix of structured and free-form text
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#16681">[ date ]</a>
+              <a href="thread.html#16681">[ thread ]</a>
+              <a href="subject.html#16681">[ subject ]</a>
+              <a href="author.html#16681">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,180 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] simple lexical analysis question
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20simple%20lexical%20analysis%20question&In-Reply-To=%3C3cac8fdf0912141046y705f3b42k30c1448a5c44f365%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="037109.html">
+   <LINK REL="Next"  HREF="037071.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] simple lexical analysis question</H1>
+    <B>Kirby Bohling</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20simple%20lexical%20analysis%20question&In-Reply-To=%3C3cac8fdf0912141046y705f3b42k30c1448a5c44f365%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] simple lexical analysis question">kirby.bohling at gmail.com
+       </A><BR>
+    <I>Mon Dec 14 10:46:07 PST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="037109.html">[antlr-interest] simple lexical analysis question
+</A></li>
+        <LI>Next message: <A HREF="037071.html">[antlr-interest] simple lexical analysis question
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37070">[ date ]</a>
+              <a href="thread.html#37070">[ thread ]</a>
+              <a href="subject.html#37070">[ subject ]</a>
+              <a href="author.html#37070">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Mon, Dec 14, 2009 at 12:18 PM, Jean-Claude Durand
+&lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">Jean-Claude.Durand at imag.fr</A>&gt; wrote:
+&gt;<i> My lexical grammar (I use antlr v3.2):
+</I>&gt;<i> lexer grammar Lex;
+</I>&gt;<i> options
+</I>&gt;<i> {&#160;language=Java;&#160;}
+</I>&gt;<i> WS: ( ' ' | '\t' | '\n' )+ { $channel=HIDDEN; } ;
+</I>&gt;<i> FIN : '-FIN-' ;
+</I>&gt;<i> Moins : '-' ;
+</I>&gt;<i> // Identifiers:
+</I>&gt;<i> Idf : ('A'..'Z')+ ;
+</I>&gt;<i> I want to enumerate the tokens for the following example (Main.java is in
+</I>&gt;<i> the archive):
+</I>&gt;<i> VLEG-XLEG-FCINFZU
+</I>&gt;<i> And the output is:
+</I>&gt;<i> ~/Soft/Antlr/LexJava: java Main test
+</I>&gt;<i> &#160;--&gt; [@-1,0:3='VLEG',&lt;7&gt;,1:0]
+</I>&gt;<i> &#160;--&gt; [@-1,4:4='-',&lt;6&gt;,1:4]
+</I>&gt;<i> &#160;--&gt; [@-1,5:8='XLEG',&lt;7&gt;,1:5]
+</I>&gt;<i> line 1:11 mismatched character 'C' expecting 'I'
+</I>&gt;<i> &#160;--&gt; [@-1,12:16='INFZU',&lt;7&gt;,1:12]
+</I>&gt;<i> &#160;--&gt; [@-1,17:36=' &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160;',&lt;4&gt;,channel=99,1:17]
+</I>&gt;<i> ~/Soft/Antlr/LexJava:
+</I>&gt;<i> The lexer is looking for the keyword -FIN- &#160;and not for minus sign followed
+</I>&gt;<i> by an identifier (which begins with an F).
+</I>&gt;<i>
+</I>
+
+This is one of the weirdism's (IMHO, the author of the tool, finds
+this totally natural, and he's got 20 odd years of parsing
+experience), of the lexer is that there is no backtracking.  Hopefully
+I've said that correctly, so lets say you have rules like:
+
+TOKEN_1:  'F';
+TOKEN_2:  'FOO';
+TOKEN_3:  'FOOBAR';
+TOKEN_4:  'AR';
+
+Now, if given the input of: 'FOOBFAR', I would expect to get:
+TOKEN_2, TOKEN_1, TOKEN_4, however, you'll get an error (I forget which one).
+
+As it moves along parsing the input, it keeps track of which tokens it
+could be, and if the next character could be part of any token, all
+the tokens it can't be are removed from consideration.
+
+So my understanding of how my example works is as follows:
+When the 'F' is consumed rules 1, 2, 3 are eligible, 4 has been removed.
+When the 'O' is consumed rules 2, 3 are eligible, rule 1 has been removed.
+When the 'O' is consumed rules 2, 3 are eligible.
+When the 'B' is consumed rules 3 is eligible, rule 2 is removed (at
+which point, you can never return TOKEN_2), which would be my expected
+behavior.
+When the 'F' is consumed no rules are eligible, throw some type of
+ANTLR Exception.
+
+I really wish it'd fall back and give me the last token that did
+actually work.  From what I can gather, there is some performance
+issue with doing that (I've never understood why).  Instead, you have
+to manually implement all of the back tracking yourself.  If you
+wanted to do something like that, you'd do something like:
+
+// NOTE: This is inefficient, in reality, you'd declare TOKEN_3 in the
+tokens declaration, and after matching 'FOO', see if the 'BAR'
+matches, if it does, return TOKEN_3, if it doesn't return TOKEN_2 and
+don't consume any more input.
+TOKEN_1: 'F';
+TOKEN_2: 'FOO';
+// The lookahead syntax is from memory, it might be wrong...
+// I might also have chosen the wrong one between semantic and
+syntactic predicates, I defer to more experience folks again...
+TOKEN_3: ('FOOBAR')=&gt; 'FOOBAR';
+TOKEN_4: 'AR';
+
+The canonical example of this technique:
+<A HREF="http://www.antlr.org/wiki/display/ANTLR3/Lexer+grammar+for+floating+point,+dot,+range,+time+specs">http://www.antlr.org/wiki/display/ANTLR3/Lexer+grammar+for+floating+point,+dot,+range,+time+specs</A>
+
+That's fairly complex, if you don't understand what it's doing, I'd
+recommend picking up the ANTLR book.
+
+So in your case, it sees the '-F', at which point, the only eligible
+token is '-FINS-', if the input isn't that (which in your case it
+isn't), an exception will be thrown on the first character that does
+not match the lexer expectation.
+
+I have no idea what the best approach for resolving this is.  Others
+on the list have a much deeper understanding of language design then I
+do.  I'll defer to them on the best approach for this problem.  My
+e-mail is just trying to explain what I believe is going on (similar
+problems I had confused, and frustrated me for a long time when I
+started with ANTLR).
+
+Kirby
+
+&gt;<i>
+</I>&gt;<i> Thanks a lot for your help.
+</I>&gt;<i> Jean-Claude Durand
+</I>&gt;<i> LIG, &#233;quipe GETALP
+</I>&gt;<i> 385, rue de la Biblioth&#232;que
+</I>&gt;<i> BP 53
+</I>&gt;<i> 38041 Grenoble cedex 9
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">Jean-Claude.Durand at imag.fr</A>
+</I>&gt;<i> t&#233;l: +33 (0)4 76 51 43 81
+</I>&gt;<i> fax:&#160;+33 (0)4 76 63 56 86
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe:
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i>
+</I>&gt;<i>
+</I></PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="037109.html">[antlr-interest] simple lexical analysis question
+</A></li>
+	<LI>Next message: <A HREF="037071.html">[antlr-interest] simple lexical analysis question
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37070">[ date ]</a>
+              <a href="thread.html#37070">[ thread ]</a>
+              <a href="subject.html#37070">[ subject ]</a>
+              <a href="author.html#37070">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

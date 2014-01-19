@@ -1,0 +1,149 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] parse error because of AST rewrite rules?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20parse%20error%20because%20of%20AST%20rewrite%20rules%3F&In-Reply-To=%3C4AB7C5FA.1080408%40temporal-wave.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="036039.html">
+   <LINK REL="Next"  HREF="036041.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] parse error because of AST rewrite rules?</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20parse%20error%20because%20of%20AST%20rewrite%20rules%3F&In-Reply-To=%3C4AB7C5FA.1080408%40temporal-wave.com%3E"
+       TITLE="[antlr-interest] parse error because of AST rewrite rules?">jimi at temporal-wave.com
+       </A><BR>
+    <I>Mon Sep 21 11:29:14 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="036039.html">[antlr-interest] parse error because of AST rewrite rules?
+</A></li>
+        <LI>Next message: <A HREF="036041.html">[antlr-interest] parse error because of AST rewrite rules?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36040">[ date ]</a>
+              <a href="thread.html#36040">[ thread ]</a>
+              <a href="subject.html#36040">[ subject ]</a>
+              <a href="author.html#36040">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 09/21/2009 11:07 AM, Stefan Oestreicher wrote:
+&gt;<i> Hi,
+</I>&gt;<i>
+</I>&gt;<i> I'm working on a grammar for a simple programming language and I'd like
+</I>&gt;<i> to support variable declarations like that:
+</I>&gt;<i> int a, b = 3
+</I>&gt;<i>
+</I>&gt;<i> I started out with the following rule:
+</I>&gt;<i>
+</I>&gt;<i> variableDeclaration
+</I>&gt;<i>      :   type ID ( COMMA ID )* ( ASSIGN expression )?
+</I>&gt;<i>      ;
+</I>&gt;<i>    
+</I>Do you really mean that, or do you mean:
+
+(type (ASSIGN expression)?) ( COMMA type (ASSIGN expression)?)*
+
+
+However, it looks like your simpleVariable and listVariable need left 
+factoring (bring all the common things in to one rule and branch alts 
+where they differ.
+
+Jim
+&gt;<i> Now I'd like to generate an AST for the above example that looks like that:
+</I>&gt;<i> ^(VAR_DEF int a)
+</I>&gt;<i> ^(VAR_DEF int b)
+</I>&gt;<i> ^(= a 3)
+</I>&gt;<i> ^(= b a)
+</I>&gt;<i>
+</I>&gt;<i> So I've tried it with the following rules:
+</I>&gt;<i>
+</I>&gt;<i> --- grammar snippet ---
+</I>&gt;<i> variableDeclaration
+</I>&gt;<i>      :    simpleVariableDeclaration
+</I>&gt;<i>      |    listVariableDeclaration
+</I>&gt;<i>      ;
+</I>&gt;<i>
+</I>&gt;<i> simpleVariableDeclaration
+</I>&gt;<i>      :    type ID ( ASSIGN expression )?
+</I>&gt;<i>          -&gt;     ^(VAR_DEF ID type)
+</I>&gt;<i>                  ^(ASSIGN ID expression)?
+</I>&gt;<i>      ;
+</I>&gt;<i>
+</I>&gt;<i> listVariableDeclaration
+</I>&gt;<i>      :    type first=ID ( COMMA other+=ID )+
+</I>&gt;<i> listVariableAssignment[$first, $other]?
+</I>&gt;<i>          -&gt;     ^(VAR_DEF $first type)
+</I>&gt;<i>                  ^(VAR_DEF $other type)
+</I>&gt;<i>              listVariableAssignment?
+</I>&gt;<i>      ;
+</I>&gt;<i>
+</I>&gt;<i> listVariableAssignment[pANTLR3_COMMON_TOKEN first, pANTLR3_VECTOR other]
+</I>&gt;<i>      :    ASSIGN expression
+</I>&gt;<i>          -&gt;     ^(ASSIGN {$first} expression)
+</I>&gt;<i>                  ^(ASSIGN {$other} {$first})+
+</I>&gt;<i>      ;
+</I>&gt;<i> --- /grammar snippet ---
+</I>&gt;<i>
+</I>&gt;<i> I've also tried this simpler variant for listVariableDeclaration:
+</I>&gt;<i>
+</I>&gt;<i> --- grammar snippet ---
+</I>&gt;<i> listVariableDeclaration
+</I>&gt;<i>      :    (    type first=ID ( COMMA other+=ID )+
+</I>&gt;<i>              -&gt;     ^(VAR_DEF $first type)
+</I>&gt;<i>                      ^(VAR_DEF $other type)
+</I>&gt;<i>           )
+</I>&gt;<i>           (    ASSIGN expression
+</I>&gt;<i>               -&gt;    ^(ASSIGN $first expression)
+</I>&gt;<i>                      ^(ASSIGN $other $first)+
+</I>&gt;<i>           )?
+</I>&gt;<i>      ;
+</I>&gt;<i> --- /grammar snippet ---
+</I>&gt;<i>
+</I>&gt;<i> The modified rules still produce a correct parse tree in the interpreter
+</I>&gt;<i> but the generated code raises a parse error. It either complains about
+</I>&gt;<i> the assignment operator after the ID list or about the semicolon the
+</I>&gt;<i> terminates the declaration (not shown in the example).
+</I>&gt;<i> If I remove the rewrite rules there is no problem.
+</I>&gt;<i>
+</I>&gt;<i> I'd appreciate any hint about what I'm doing wrong. I'm using the C
+</I>&gt;<i> target btw, version 3.1.3.
+</I>&gt;<i>
+</I>&gt;<i> Thanks,
+</I>&gt;<i>
+</I>&gt;<i> Stefan
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i>    
+</I>
+</PRE>
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="036039.html">[antlr-interest] parse error because of AST rewrite rules?
+</A></li>
+	<LI>Next message: <A HREF="036041.html">[antlr-interest] parse error because of AST rewrite rules?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36040">[ date ]</a>
+              <a href="thread.html#36040">[ thread ]</a>
+              <a href="subject.html#36040">[ subject ]</a>
+              <a href="author.html#36040">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,595 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] nested parsing (BSDL)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20nested%20parsing%20%28BSDL%29&In-Reply-To=%3CPine.LNX.4.64.0801011551220.8143%40localhost.localdomain%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="025544.html">
+   <LINK REL="Next"  HREF="025510.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] nested parsing (BSDL)</H1>
+    <B>Mark Whitis</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20nested%20parsing%20%28BSDL%29&In-Reply-To=%3CPine.LNX.4.64.0801011551220.8143%40localhost.localdomain%3E"
+       TITLE="[antlr-interest] nested parsing (BSDL)">whitis at freelabs.com
+       </A><BR>
+    <I>Wed Jan  2 23:47:07 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="025544.html">[antlr-interest] More, Status of C++ backend?
+</A></li>
+        <LI>Next message: <A HREF="025510.html">[antlr-interest] nested parsing (BSDL)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25506">[ date ]</a>
+              <a href="thread.html#25506">[ thread ]</a>
+              <a href="subject.html#25506">[ subject ]</a>
+              <a href="author.html#25506">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>[This message mentions some antlr bugs and feature suggestions, they
+have been tagged with &quot;[BUG]&quot;.  Feature suggestions are not necessarilly
+bugs in the sense of failure to perform as documented but they do
+represent substantial limitations in antlr's expressive power or serious
+usability issues.   Bugs were compounded by other bugs, to a staggering
+degree]
+
+Thanks for a very detailed response.   Even if it wasn't quite what
+I was looking for, I think I and others will learn from your example.
+I found your message as I was preparing to post a progress report.
+
+I think I came up with a solution that almost works just before I got your 
+email. It works pretty much like what I was asking for aside from having
+too much target language specific code.   But it does have some advantages
+over your suggestion:
+   - Single grammar file
+   - Makes good AST trees if you want them
+   - Use of AST trees is not necessary
+     Can use one assignment to a data structure or a function call
+     for more complicated assignments in each major rule.
+   - doesn't have lex/yacc anachronisms like predefining
+     lexical tokens.
+   - extending to support other structured strings does not require
+     anything more than new grammar rules
+   - If it wasn't for a confounding series of bugs, the single
+     grammar file would have been conducive to using antlrworks
+     debugger.
+   - yours uses InnerParser.  I can't find that documented anywhere.
+     (The C# API doc is a broken link), it doesn't seem to exist
+     in the C, Java, or Python APIs.   If there was a variation that
+     let you specify the root rule to use in a grammar so I
+     could use the same grammer, it would be close to what I want).
+     And, trying to recreate the functionality runs into the same
+     problems with the runtime libraries I was having 
+Thus it keeps my options open.
+Yours has the advantage that it works from a parser rule instead of
+a lexer rule but it loses the advantage by using multiple parsers.
+Yours has an advantage if the island grammar is lexically incompatable
+with the parent grammar.   However, I thought I was pretty clear about
+wanting to do this with one grammar.
+
+
+The basic form is:
+
+    rule: blah blah (ugly_string | parse_inside_ugly_string) blah blah;
+
+Where &quot;ugly_string&quot; is a lexer rule that matches the string and
+then embeds the text  and &quot;parse_inside_ugly_string&quot; is a parser rule that
+parses inside the string.   You end up with a grammar that will parse
+a file with or without quotes on the subordinate grammar.  This won't work
+if the island grammar is incompatible with the enclosing grammar's lexar.
+
+There is one issue I am still working on.    [Found a workaround] The need 
+for two
+token rules that both can match the same string, one for structured
+strings and one for simple strings.   Maybe I can move the
+nesting call up to the parser level so I can use the same token.
+But, it seems the code to switch streams works in a lexar but not
+in a parser.   The FAQ example cheats by handling the include directive
+as a lexical token.   I am now trying to use a &quot;global&quot; variable
+that is common to a single instance of the parser+lexer to
+switch the parsing behavior on and off but I am having a hard
+time figuring out where to declare it such that it can be
+set in a parser rule but tested from a lexer action.
+
+[BUG]Unfortunately, trying to define a psuedo-global or even global
+in antlr is a frustrating experience, particularly since I am
+using antlrworks and everthing must be in the parser file.
+I have no control over how files are linked together or even
+knowledge of or control over what is in main().   Even defining &quot;public 
+class global { 
+...}&quot; in @header (which isn't reentrant) fails because it gets inserted
+before the import statements.  &quot;scope global {...}&quot; and then using
+$Global:: fails in lexer actions.  There should
+  Globals could also have issues with backtracking, so I coded somewhat
+defensively (I set it at the beginning of each rule that calls 
+STRING_LITERAL_TOKEN).   And I can't see how to navigate from
+the parser context to a public member of the lexer class (which
+I declared) getTokenStream().member_name doesn't work. 
+getTokenStream().getTokenSource() is a dead end; antlr runtime classs
+fail to preserve the all important class linkages.
+
+You should
+be able to do something simple like PARSER-&gt;LEXER-&gt;Member
+
+[BUG]Token rules don't accept parameters.  Tried that.  One of the
+advantages of an integrated tool such as antlr over separate
+tools like lex/yacc should be tight coupling.   This should
+be possible even with TokenStream packages in the way.
+Instead of calling:
+   if(nextToken() == TOKEN_TYPE_FOO) ...
+You call
+   if(nextTokenOfType(TOKEN_TYPE_FOO, args)) ...
+If the args make the token match different input, a token rule can
+be automatically split into multiple tokens as far as the state
+machine is concerned.
+
+[BUG]ANTLR doesn't appear to be smart enough yet to automatically gate the 
+lexar based on the parser context.   Seems that this could potentially
+reslove a lot of grammar issues.   One example would be the use of
+a keyword as an identifier.
+   - Pass a bitmap into the lexer indicating the valid tokens
+     at this level of grammar.
+   - lexer state machine doesn't take branches not allowed by context.
+     It defaults to branching into another state it would otherwise
+     have reached.  If more characters have been consumed than
+     necessary because the state machine would have otherwise
+     reached a terminal state, the branch specifies a number
+     of characters to ungetc().
+   - If the lexer can't find a valid state in the current context,
+     then maybe it tries all possibilities to enable better error
+     messages: &quot;Expecting hex constant, got: identifier&quot; or
+     &quot;expecting decimal integer, got hex constant or identifier&quot;.
+If antlr did this, the whole issue of parsing inside strings woul
+have been a non-issue as you could have a STRING_LITERAL token
+and still use '&quot;' as a token as well.   And you could easily parse
+languages where a hex constant was lexically indistinguisable from
+an identifier but easily distinguished in context.
+
+&quot;The first time you 
+encounter a problem, writing a formal, general, and automatic mechanism
+is expensive and is usually overkill. From then on, though, you are much
+faster and better at solving similar problems because of your automated 
+tool.&quot;  -- definitive antlr guide
+
+Basically, I have solved the problem of parsing inside strings, at least
+for this problem domain.  But
+I can't turn it on and off because every path I have tried to accomplish
+that has been blocked, usually because of implementation flaws that
+I would not have made even if I wasn't thinking about this particular
+problem.  I have spent an entire day trying to do something (communicate
+a single bit of information to the lexer) that should have been
+trivial.
+
+
+[BUG]Now because antlrworks only handles Java, I am going to need C
+and Java code for the dirty tricks.   And since antlr lacks support
+for conditionally including multiple languages, I am going to
+have to preprocess the file when producing the C version.  To
+do this, I will put something like &quot;///Java&quot; after each line of
+Java code and &quot;///C&quot; before each line of C code.   That way,
+when antlrworks processes the file, it will see Java but the
+Makefile can preprocess the file to turn it into C.
+As far as I can tell, the remote debugging protocol for C targets
+hasn't been implemented yet.
+
+Here are the relevent excerpts from the grammar file.
+
+// Taken from ANTLR FAQ: How do I implement include files?
+// <A HREF="http://www.antlr.org/wiki/pages/viewpage.action?pageId=557057">http://www.antlr.org/wiki/pages/viewpage.action?pageId=557057</A>
+@lexer::members {
+     class SaveStruct {
+       SaveStruct(CharStream input){
+         this.input = input;
+         this.marker = input.mark();
+       }
+       public CharStream input;
+       public int marker;
+      }
+
+      Stack&lt;SaveStruct&gt; includes = new Stack&lt;SaveStruct&gt;();
+
+     // We should override this method for handling EOF of included file
+      public Token nextToken(){
+        Token token = super.nextToken();
+
+        if(token==Token.EOF_TOKEN &amp;&amp; !includes.empty()){
+         // We've got EOF and have non empty stack.
+          SaveStruct ss = includes.pop();
+          setCharStream(ss.input);
+          input.rewind(ss.marker);
+          token = super.nextToken();
+        }
+
+       // Skip first token after switching on another input.
+       if(((CommonToken)token).getStartIndex() &lt; 0)
+          token = super.nextToken();
+
+        return token;
+      }
+  }
+
+STRING_LITERAL:
+      '&quot;' STRING_CONTENTS_FRAGMENT '&quot;'
+        (WHITESPACE_COMMENT_FRAGMENT* '&amp;' WHITESPACE_COMMENT_FRAGMENT* 
+'&quot;'STRING_CONTENTS_FRAGMENT '&quot;')*
+       {
+         int i;
+         boolean instring=false;
+         boolean incomment=false;
+         String s;
+         StringBuffer d = new StringBuffer(65536);
+         s=getText();
+         for(i=0; i&lt;s.length(); i++) {
+            // if(s.charAt(i) != '&quot;') d.append(s.charAt(i));
+            if(!incomment &amp;&amp; s.charAt(i) == '&quot;') {
+                instring = !instring;
+                continue;  // don't want to add character to string below
+            }
+            if(!instring &amp;&amp; s.charAt(i) == '-') { // since it has already 
+been lexed, one dash is enough
+               incomment=true;
+            }
+            if(s.charAt(i) == '\r' || s.charAt(i) == '\n') {
+               incomment=false;
+            }
+            if(instring) d.append(s.charAt(i));
+
+         }
+         setText(d.toString());
+         // char x[] = { 'a', 'b', 'c', 'd' };
+         // PUSHSTREAM(new pANTLR3_INPUT_STREAM(new 
+ANTLRStringStream(x,4)));
+         // PUSHSTREAM(new pANTLR3_INPUT_STREAM(new 
+ANTLRStringStream(d.toString())));
+
+         // Adapted from ANTLR FAQ: How do implement include files?
+          SaveStruct ss = new SaveStruct(input);
+          includes.push(ss);
+
+          // switch on new input stream
+          setCharStream(new ANTLRStringStream(d.toString()));
+          reset();
+      }
+      ;
+
+fragment STRING_CONTENTS_FRAGMENT: ~('&quot;')*;
+fragment WHITESPACE_COMMENT_FRAGMENT: (WHITESPACE_FRAG | COMMENT_FRAG)+ ;
+
+fragment WHITESPACE_FRAG: ( '\t' | ' ' | '\r' | '\n'| '\u000C' )+ ;
+fragment COMMENT_FRAG: '--' ~('\r'|'\n')* '\r'? '\n' ;
+
+
+package_pin_mapping:
+   'attribute' 'PIN_MAP' 'of' IDENTIFIER ':' 'entity' 'is' 
+'PHYSICAL_PIN_MAP' ';'
+   | 'constant' IDENTIFIER ':' 'PIN_MAP_STRING' ':=' (map_string | 
+package_pin_map_string) ';' ;
+
+package_pin_map_string: package_pin_map_string_entry ( ',' 
+package_pin_map_string_entry )*;
+
+package_pin_map_string_entry:
+    IDENTIFIER ':' INTEGER_LITERAL
+    | IDENTIFIER ':' '(' INTEGER_LITERAL ( ',' INTEGER_LITERAL )* ')'
+    ;
+// must invoke a subordinate parser on map_string;
+map_string: STRING_LITERAL;
+
+INTEGER_LITERAL: ('0'..'9')+;
+---end excerpt---
+I have been running the antlrworks debugger on the following
+text (with package_pin_mapping as the start rule):
+
+constant FK_PACKAGE:PIN_MAP_STRING:=&quot;CLK:9, Q:(10,11,12,13,16,17,18,19),&quot; 
+&amp;   &quot;D:(6,5,4,3,2,27,26,25),&quot; &amp; -- comment
+   &quot;GND:14, VCC:28, OC_NEG:7, TDO:20, TMS:21, TCK:23, TDI:24&quot;;
+
+This gets translated into this:
+
+constant FK_PACKAGE:PIN_MAP_STRING:= CLK:9, Q:(10,11,12,13,16,17,18,19),
+   D:(6,5,4,3,2,27,26,25), GND:14,
+   VCC:28, OC_NEG:7, TDO:20, TMS:21, TCK:23, TDI:24;
+(linebreaks added for readability).
+
+I am tempted to include &quot;{&quot; and &quot;}&quot; around the embedded text since
+that makes a more aesthically pleasing virtual grammar closer to
+what BSDL should have been in the first place.
+
+
+
+
+
+In response to one of your comments that what I was trying to do,
+parse inside strings, is unusual, I think that is far from the case.
+&gt;<i>From a programming language perspective, it is unusual.   For data
+</I>files, though, it is very common.
+One example would be SVG where they made the huge mistake of
+encoding polylines inside of strings instead of encoding as
+XML.   Saves a few bytes in the file but at way to high a cost.
+
+Here is another possible vector representation of a polyline that
+I am considering for a CAD application:
+    &lt;polyline type=&quot;closed&quot;&gt;
+       &lt;line start=&quot;point(0,0,0)&quot; end=&quot;point(0,1,0)&quot; /&gt;
+       &lt;line start=&quot;point(0,1,0)&quot; end=&quot;point(1,1,0)&quot; /&gt;
+       &lt;arc start=&quot;point(1,1,0)&quot; end=&quot;point(1,1,1)&quot; center=&quot;point(0,1,0)&quot; 
+direction=&quot;clockwise&quot; normalvector=&quot;vector(0,1,0)&quot; /&gt;
+    &lt;/polyline&gt;
+This is more in keeping with the XML philosphy and much more readable
+than how SVG does it.   It also has the problem of parsing inside strings
+but for a good reason.    Unlike SVG, points in this language are
+expressions.   Writing expressions as xml trees would get hideous.
+
+    &lt;polyline id=&quot;polyline1&quot; type=&quot;closed&quot;&gt;
+       &lt;line id=&quot;segment1&quot; start=&quot;point(0,0,0)&quot; end=&quot;point(0,1,0)&quot; /&gt;
+       &lt;line id=&quot;segment2&quot; start=&quot;segment1.end&quot; end=&quot;segment1.end+vector(1,0,0)&quot; /&gt;
+       &lt;arc id=&quot;segment3&quot; start=&quot;segment2.end&quot; end=&quot;segment1.start&quot; 
+center=&quot;segment1.end&quot;
+direction=&quot;clockwise&quot; normalvector=&quot;vector(0,1,0)&quot; /&gt;
+    &lt;/polyline&gt;
+
+This representation is still trading gramatical elegence for brevity. 
+And in practice, CAD files can have a huge number of parameters so
+things often aren't going to fit on one line, anyway.   But such
+a tradeoff would have been a reasonable compromise for SVG.
+Not having one tag per sub-object in SVG was a big mistake.
+So, both SVG and a slightly improved SVG are examples of parsing inside
+strings.
+
+Of course, there is also the possibility of representing the
+start and end points as tags instead of attributes which is actually
+better XML practice.
+    &lt;polyline&gt;
+      &lt;line&gt;
+         &lt;start&gt;point(0,0,0)&lt;/start&gt;
+         &lt;end&gt;point(0,0,0)&lt;/end&gt;
+      &lt;/line&gt;
+    ...
+    &lt;/polyline&gt;
+Of course, abandoning XML makes possible a variety of more readable
+expressions that read more like code:
+    object polyline1 : type polyline {
+       object segment1 : type line {
+          start point(0,0,0);
+          end point(0,1,0);
+       }
+       object segment2 : type line {
+          start segment2.start;
+          end segment1.end+vector(1,0,0);
+       }
+       ...
+    }
+
+[BUG]Not parsing inside strings
+Some examples of structured stings that are likely to be common
+in data files:
+   - Lists
+     foo=&quot;1,2,3&quot;
+     nameservers=&quot;128.168.0.1, 128.168.0.2&quot;
+     nameservers=&quot;ns1.example.com, ns2.example.com&quot;
+     administrators=&quot;john, paul, george&quot;
+   - ip addresses (above)
+   - Dates:
+     date=&quot;2008-01-01&quot;
+     date=&quot;2008-01-01T0505Z&quot;
+   - currency:
+     &quot;US$150.22&quot;
+   - format strings
+     format=&quot;%s: (%d, %d)&quot;
+   - phone numbers:
+     phone=&quot;+1-123-456-7890x123&quot;
+   - urls
+     url=&quot;<A HREF="http://www.example.com:1234/foo/bar?query=antlr&quot;">http://www.example.com:1234/foo/bar?query=antlr&quot;</A>
+   - display modes:
+     Option &quot;MetaModes&quot; &quot;1600x1200, 1280x1024, 800x600, 640x480&quot;
+   - key codes
+     type=&quot;CTRL+ALT&quot;
+   - colors
+     color=&quot;lightblue&quot;
+     color=&quot;rgb:20/35/73&quot;
+     color=&quot;#FF0080&quot;
+   - USB/PCI device ids:
+     id=&quot;1234:5678&quot;
+     id=&quot;0x1234:0x5678&quot;
+     id=&quot;usb:1234:5678&quot;
+   - filemodes:
+     mode=&quot;0755&quot;
+     mode=&quot;u+rwx,g+rx,o+rx&quot;
+   - regular expressions
+     match=&quot;[A-Za-z0-9][A-Za-z0-9_]*&quot;
+   - substitution
+     path=&quot;/home/$(user)/mail&quot;
+   - query strings
+     query=&quot;antlr AND \&quot;island grammar\&quot;&quot;
+     query=&quot;name, address, phone FROM customers WHERE total_purchases&gt;100&quot;
+   - ids
+     id=&quot;foo bar&quot; // invalid
+     id=&quot;ABC123&quot; // valid
+   - styles
+     &lt;p style=&quot;{border: solid; border-width: thick; clear: both; 
+background: 
+silver; padding 12px; porder-style: groove}&quot;&gt;
+   -
+
+If you are building a parser, validator, or a translator, you may need to 
+parse inside.
+
+[BUG]Thus, in the following example (where a string has all the baggage 
+of
+the BSDL example), a very simple notation such as
+     LEXER_TOKEN --&gt; STRIPANDPARSE( LEXER_FRAGMENT, root_rule)
+could be used to say:
+     When you encounter a LEXER_TOKEN, discard the portion that
+     does not match one or more occurances of LEXER_FRAGMENT in the
+     original lexer rule and then parse the results inline starting
+     with root_rule.
+
+Simple notation, fairly easy to implement except for requiring
+the lexer to keep a temporary fragment tree, easy to apply in
+a variety situations, requires no target language dependencies,
+and the --&gt;FUNCTION_CALL() mechanism can be reused to provide
+many other things missing in antlr in a target language independent
+way.   For more generality, an optional third argument could specify
+a different set of lexer rules:
+    lexer SUBSET1 {
+        RULE1: ... ;
+        RULE2: ... ;
+        inherit MAIN_LEXER RULE3, RULE4;
+       ...
+    }
+Maybe there is a way to use the x=RULE or x+=RULE notation somehow instead
+of using the fragment extraction.  This equires that the variable
+have a scope that spans more than one rule.  If so, it still should not
+require target language specific code and should be reentrant across
+mulitple invokations of parsers and possibly within a parser as well.
+
+Example:
+    ip_addresses: 'ip_address' '=' STRING_LITERAL 
+--&gt;STRIPANDPARSE(STRING_CONTENTS_FRAGMENT, ipadress_contents) ';' ;
+    ip_address_contents: one_ip_address (',' one_ip_address);
+    one_ip_address:
+       ipv4_address
+       | '[' ipv4_address ']'
+       | ipv6_address
+       | '[' ipv6_address ']'
+       | domain_name
+       ;
+    IPV4_ADDRESS: INT '.' INT '.' INT '.' INT;
+    IPV6_ADDRESS: HEX (':'+ HEX)*;   // oversimplified
+    fragment HEX: ('0'..'9'| 'A'..'Z')+
+    fragment INT: ('0'..'9')+
+    STRING_LITERAL:
+      '&quot;' STRING_CONTENTS_FRAGMENT '&quot;'
+        (WHITESPACE_COMMENT_FRAGMENT* '&amp;' WHITESPACE_COMMENT_FRAGMENT*
+       '&quot;'STRING_CONTENTS_FRAGMENT '&quot;')*
+    fragment STRING_CONTENTS_FRAGMENT: ~('&quot;')*;
+    fragment WHITESPACE_COMMENT_FRAGMENT: (WHITESPACE_FRAG | COMMENT_FRAG)+ 
+;
+
+    fragment WHITESPACE_FRAG: ( '\t' | ' ' | '\r' | '\n'| '\u000C' )+ ;
+    fragment COMMENT_FRAG: '--' ~('\r'|'\n')* '\r'? '\n' ;
+
+
+In your example, you wrote:
+    : ATTRIBUTE^ ID OF! ID COLON! ENTITY! IS! expression SEMI! ;
+took me a minute, then I realized you were stripping away the
+unnecessary cruft using &quot;!&quot;.   Although I was aware of &quot;!&quot;, I hadn't
+thought of using it that aggressively, yet.    Since I am parsing
+BSDL instead of VHDL, I am using a separate rule for each.
+
+
+I would have been done by now if I had written a recursive descent
+parser by hand.   I have been trying to learn antlr in the hope
+that, having done so, I would be able to do similar things faster.
+In light of my experiences so far, that hope is fading fast.
+
+[bug] The problem isn't so much the individual bugs but the fact
+that every most attempts to workaround an existing bug is
+compounded by additional bugs.   The tree of compounding bugs below is
+only a partial list:
+   - bug: antlr doesn't handle parsing inside strings
+     workaround: switch the input by messing with the internals
+     - bug: antlrworks doesn't suport debugging C code
+     - workaround: code the dirty tricks in Java as well as C
+       - bug: Java runtime lacks InnerParser like functionality
+         (not that innerparser itself is quite right for the job
+         since it requires separate file).
+         workaround: try to duplicate the functionaly using the
+         include file example.
+          - bug: the include file example only works in the lexer
+              and you can't pass arguments to lexer rules.   Need
+              parser context to enable and disable dirty tricks.
+            workaround: try to set a variable
+              - bug: variables aren't shared between lexer and parser
+                workaround: use scope
+                  - bug: that doesn't work
+                workaround: use @members
+                  - bug: that doesn't work
+                workaround: use a global variable (not reentrant)
+                   - bug: straightjacketed java language doesn't allow
+                     globals:
+                     workaround: declare a global class in @header
+                         - bug: it puts the header before the imports
+                           and Java won't let you declare a class before
+                            the imports
+               workaround: try to put the variable in the lexer and
+               access it from the parser by following the class
+               chain from lexer to parser
+                  - bug: antlr doesn't provide ready access to
+                    the current parser and lexer.  PARSER-&gt;, LEXER-&gt;
+                    Workaround: follow the class chain
+                     - bug: antlr runtime doesn't preserve class chain
+                       linkages, for example in TokenSource so
+                       you can't get from the parser class to the
+                       lexer class public members.
+                       workaround: try to go from lexer to parser
+                          - bug: doesn't look like that will work, either.
+           Workaround: try to use rule arguments
+              - bug: you can't pass rule arguments to lexer rules.
+
+       - bug: antlrworks doesn't support multiple target language actions
+           or conditional inclusion
+         workaround: preprocess grammar file
+            - bug: antlrworks doesn't play nicely with make
+             workaround:  use a weird syntax
+     - workaround: define two parser rules that parse the
+       same token with different actions based on context
+        - bug: can't communicate parser to lexer
+          workaround: use two lexer rules that match the same token
+          but are never called in the same parser context
+           - bug: antlr can't pick the lexer rule based on context
+   workaround: set parse_inside_string in token rules for tokens
+         which match before the string to be parsed, even though
+         this violates one of ANTLRs primary selling points of not
+         having to define tokens seperately.
+        - bug: this
+          PIN_MAP_STRING: 'PIN_MAP_STRING' {
+               parse_inside_string=true;
+          };
+          Generates this:
+            &quot;mismatched input 'PIN_MAP_STRING' expecting PIN_MAP_STRING&quot;
+          But 'PIN_MAP_STRING' in a parser rule does not.
+          Workaround: move IDENTIFIER to bottom of file since ANTLR
+          handles precedence by order in file rather than an explicit
+          precedence.
+
+[bug]When parsing inside a string, line numbers printed are wrong and
+it doesn't print the number the string (or include file) was included
+from.
+
+Anyway, I finally got it to parse the entire file.
+</PRE>
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="025544.html">[antlr-interest] More, Status of C++ backend?
+</A></li>
+	<LI>Next message: <A HREF="025510.html">[antlr-interest] nested parsing (BSDL)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25506">[ date ]</a>
+              <a href="thread.html#25506">[ thread ]</a>
+              <a href="subject.html#25506">[ subject ]</a>
+              <a href="author.html#25506">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

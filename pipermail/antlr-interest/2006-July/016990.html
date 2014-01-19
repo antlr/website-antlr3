@@ -1,0 +1,152 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Problem with memory management
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Problem%20with%20memory%20management&In-Reply-To=20060721183111.5911.qmail%40web52112.mail.yahoo.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="016969.html">
+   <LINK REL="Next"  HREF="016968.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Problem with memory management</H1>
+    <B>Ric Klaren</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Problem%20with%20memory%20management&In-Reply-To=20060721183111.5911.qmail%40web52112.mail.yahoo.com"
+       TITLE="[antlr-interest] Problem with memory management">ric.klaren at gmail.com
+       </A><BR>
+    <I>Mon Jul 24 04:09:05 PDT 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="016969.html">[antlr-interest] Problem with (C++) memory management
+</A></li>
+        <LI>Next message: <A HREF="016968.html">[antlr-interest] Line number help
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#16990">[ date ]</a>
+              <a href="thread.html#16990">[ thread ]</a>
+              <a href="subject.html#16990">[ subject ]</a>
+              <a href="author.html#16990">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+On 7/21/06, Eugen Cazacu &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">the_e57 at yahoo.com</A>&gt; wrote:
+&gt;<i> I am writing a verilog parser in antl, actually it is
+</I>&gt;<i> finished, now we are running tests on it, one type of
+</I>&gt;<i> test revealed a pretty big problem with antlr design.
+</I>&gt;<i> I must mention that the generated code is C++.
+</I>&gt;<i> The problem is in the way the AST is built. This
+</I>&gt;<i> nextSibling/firstChild tree design has a problem when
+</I>&gt;<i> one node has many children, because they are all
+</I>&gt;<i> stored in a unidirectional list if I use CommonAST
+</I>&gt;<i> class. The problem occures on the destruction of the
+</I>&gt;<i> tree. ...  this causes a
+</I>&gt;<i> recursive call if all of the destructors in depth. IF
+</I>&gt;<i> a node has as many as 20000-30000 children there are
+</I>&gt;<i> at least 20000-30000 recursive calls, if we would
+</I>
+Yup this is a known problem. Occasionally there's someone that runs into it.
+
+&gt;<i> ...
+</I>&gt;<i> To avoid this probelem I wrote a
+</I>&gt;<i> special destroy function to delete the AST after I
+</I>&gt;<i> don't need it any more, that looks like this:
+</I>&gt;<i>
+</I>&gt;<i> void destroy(RefAST &amp;ast) {
+</I>&gt;<i>   if(!ast.get())
+</I>&gt;<i>     return;
+</I>&gt;<i>   std::cerr &lt;&lt; &quot;before destroy&quot; &lt;&lt; endl;
+</I>&gt;<i>   std::queue&lt;RefAST&gt; destroyQueue;
+</I>&gt;<i>   destroyQueue.push(ast);
+</I>&gt;<i>   ast = 0;
+</I>&gt;<i>   RefAST temp1, temp2;
+</I>&gt;<i>   while(!destroyQueue.empty()) {
+</I>&gt;<i>     temp1 = destroyQueue.front();
+</I>&gt;<i>     destroyQueue.pop();
+</I>&gt;<i>     temp2 = temp1-&gt;getFirstChild();
+</I>&gt;<i>     temp1-&gt;setFirstChild(RefAST(0));
+</I>&gt;<i>     if(temp2.get())
+</I>&gt;<i>       destroyQueue.push(temp2);
+</I>&gt;<i>     temp2 = temp1-&gt;getNextSibling();
+</I>&gt;<i>     temp1-&gt;setNextSibling(RefAST(0));
+</I>&gt;<i>     if(temp2.get())
+</I>&gt;<i>       destroyQueue.push(temp2);
+</I>&gt;<i>     temp1 = 0;
+</I>&gt;<i>     temp2 = 0;
+</I>&gt;<i>   }
+</I>
+This is indeed a good work around.
+
+&gt;<i> This make the program terminate correctly. But only in
+</I>&gt;<i> the case when the parser doesn't throw any exceptions
+</I>&gt;<i> (MismatchedTokenException for example). When the
+</I>&gt;<i> parser does this, it destroyes whatever tree was built
+</I>&gt;<i> by itself and if the tree is similar to what I
+</I>&gt;<i> described before, a stack overflow occures and the
+</I>&gt;<i> program end without printing the exception message in
+</I>&gt;<i> a segmentation fault, because I can only catch the
+</I>&gt;<i> exceptions after antlr tryes to delete the tree.
+</I>&gt;<i>
+</I>&gt;<i> To avoid this problem I am attempting now to write my
+</I>&gt;<i> own AST Node class derived from AST that would
+</I>&gt;<i> simulate the behaviour of it, but would use a more
+</I>&gt;<i> linear structure, small example:
+</I>
+It's probably easier to override the destructor of the parser (e.g.
+add a custom destructor in the .g file) and include the previous fix
+to that? Or maybe I'm missing something (don't have access to the code
+atm so can't check)
+
+&gt;<i> But here I got another problem. The reference counting
+</I>&gt;<i> antlr nechanism doesn't have a weak reference class (I
+</I>&gt;<i> can't use strong references, RefCount, because it
+</I>&gt;<i> would cause a the object to have a counted reference
+</I>&gt;<i> to itself and it will never be destroyed, since antlr
+</I>&gt;<i> RefCount doesn't check for loop references) , that I
+</I>&gt;<i> could use in place of &quot;this&quot; pointer, I need it
+</I>&gt;<i> because all the antlr interface uses Refs. This would
+</I>&gt;<i> make me to rewrite antlr code, which I don't want to
+</I>&gt;<i> do because when a new version of antlr will appear I
+</I>&gt;<i> will have to rewrite some code again. I hope that
+</I>&gt;<i> someone could help with this here.
+</I>
+The reference counter is something I'd rather not touch. It's very
+much tailored to the antlr runtime. Trying to use a smarter reference
+counter and inject it into the antlr runtime will probably get you
+some gray hairs. Got some work in progress code for it but that broke
+around heterogeneous AST's.
+
+Expect something better in antlr3. I will (re)start on the C++ codegen
+for ANTLR 3 in one/two weeks.
+
+Cheers,
+
+Ric
+</PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="016969.html">[antlr-interest] Problem with (C++) memory management
+</A></li>
+	<LI>Next message: <A HREF="016968.html">[antlr-interest] Line number help
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#16990">[ date ]</a>
+              <a href="thread.html#16990">[ thread ]</a>
+              <a href="subject.html#16990">[ subject ]</a>
+              <a href="author.html#16990">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

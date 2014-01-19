@@ -1,0 +1,270 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Exploit ambiguity in tree rewriter
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Exploit%20ambiguity%20in%20tree%20rewriter&In-Reply-To=%3C4FD9B629.5000201%40esd-electronics.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="044720.html">
+   <LINK REL="Next"  HREF="044729.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Exploit ambiguity in tree rewriter</H1>
+    <B>Stefan M&#228;tje</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Exploit%20ambiguity%20in%20tree%20rewriter&In-Reply-To=%3C4FD9B629.5000201%40esd-electronics.com%3E"
+       TITLE="[antlr-interest] Exploit ambiguity in tree rewriter">Stefan.Maetje at esd-electronics.com
+       </A><BR>
+    <I>Thu Jun 14 03:00:09 PDT 2012</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="044720.html">[antlr-interest] Exploit ambiguity in tree rewriter
+</A></li>
+        <LI>Next message: <A HREF="044729.html">[antlr-interest] Exploit ambiguity in tree rewriter
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#44728">[ date ]</a>
+              <a href="thread.html#44728">[ thread ]</a>
+              <a href="subject.html#44728">[ subject ]</a>
+              <a href="author.html#44728">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi nafur,
+
+from what I've read in this thread till now I got the impression that 
+you've structured your AST in a way that counteracts your goals.
+
+I'll try to give a simple example to get us on common ground. I will 
+refer here only to simple scalar multiplication with an expression like 
+this:
+
+&quot;5 * 3 * 1 * 2 * 4&quot;
+
+As far as I understand from your writings you would build an AST like 
+the following from this input
+
+&quot;^(MULT 5 3 1 2 4)
+
+and try to match it with a rule like this
+
+topdown :
+     ^( MULT (before += .)* x=. (after += .)* )
+         { $x.has(&quot;IDENTITY&quot;) }?
+     -&gt;  ^( MULT $before* $after* )
+;
+
+How should ANTLR generated code distribute the tokens from the AST to 
+your variables &quot;before&quot;, &quot;x&quot; and &quot;after&quot;? You're not giving ANTLR any 
+hint about it. I guess you would end up with:
+before: &quot;5 3 1 2&quot;
+x:      &quot;4&quot;
+after:  &quot;&quot;	// empty
+
+And you must to have &quot;x&quot; assigned the &quot;1&quot; to make your code work.
+
+Doing expression evaluation and simplification is done differently with 
+ANTLR and leads to ASTs that combine two operands with one operator that 
+can then be simplified in a straightforward manner.
+
+A more appropriate AST structure for the before mentioned input would be 
+this recursive structure:
+
+^(* ^(* ^(* ^(* 5 3) 1) 2) 4)
+
+In a &quot;pretty printed&quot; style it would appear like this.
+
+^(*
+     ^(*
+         ^(*
+             ^(*
+                 5
+                 3
+             )
+             1
+         )
+         2
+     )
+     4
+)
+
+This way you have only to deal with an operator and two operands in one 
+rule. A bare bones example (not working) looks like this:
+
+bottomup:
+	expr
+	;
+
+expr:
+	^(* a=expr b=INT {$b.text()== &quot;1&quot;}?)	-&gt;	$a
+	^(* a=INT {$a.text()== &quot;1&quot;}? b=expr)	-&gt;	$b
+	;
+
+This way you can now match special things in the AST and act on them 
+testing some properties of the trees. You can see the simplification 
+that the result of &quot;expr&quot; is one of the operands if one of the others is 
+a literal &quot;1&quot;.
+
+For a better explanation and an example look at
+<A HREF="http://www.antlr.org/wiki/display/~admin/2008/11/30/Example+tree+rewriting+with+patterns">http://www.antlr.org/wiki/display/~admin/2008/11/30/Example+tree+rewriting+with+patterns</A>
+
+
+I hope I did not misunderstand what you want to do.
+
+Stefan
+
+
+Am 13.06.2012 10:18, schrieb nafur:
+&gt;<i> Hi,
+</I>&gt;<i>
+</I>&gt;<i> Ok, I guess I have to somehow redefine the nature of the rewrite rules I
+</I>&gt;<i> want to use:
+</I>&gt;<i>
+</I>&gt;<i> My ASTs represent mathematical formulas and .has() checks, if this
+</I>&gt;<i> symbol has some special mathematical property (like &quot;is identity&quot;, &quot;is
+</I>&gt;<i> symmetric&quot;, &quot;is invertible&quot;, &quot;is orthogonal&quot;, ... I'm working with
+</I>&gt;<i> matrices).
+</I>&gt;<i>
+</I>&gt;<i> Thus, this example is really the simplest one. Another example is:
+</I>&gt;<i>
+</I>&gt;<i> ^( MULT (before += .)* x=. ^( POW y=. TRANSPOSE) (after += .)* )
+</I>&gt;<i> { $x.equals($y)&amp;&amp;  $x.has(&quot;ORTHOGONAL&quot;) }?
+</I>&gt;<i> -&gt;  ^( MULT $before* IDENTITY $after* )
+</I>&gt;<i>
+</I>&gt;<i> i.e.: replace any Q Q^T by the identity, if Q is orthogonal. Note that
+</I>&gt;<i> this rule requires a comparison of whole subtrees ($x.equals($y)).
+</I>&gt;<i>
+</I>&gt;<i> Therefore, filtering single symbols would work for my first example (I
+</I>&gt;<i> somehow selected a quite bad example). For more complex examples, I
+</I>&gt;<i> really want to rely on the pattern matching offered by ANTLR.
+</I>&gt;<i>
+</I>&gt;<i> What I would like: Instead of resolving ambiguity by just choosing a
+</I>&gt;<i> single possibility, try all of them (what makes more sense for rewrite
+</I>&gt;<i> rules anyway).
+</I>&gt;<i>
+</I>&gt;<i> Gereon
+</I>&gt;<i>
+</I>&gt;<i> On 06/13/2012 07:35 AM, Benjamin S Wolf wrote:
+</I>&gt;&gt;<i> If I were programming this for a Python target, I'd guess it would
+</I>&gt;&gt;<i> look something like:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> topdown : ^( MULT (arg+=.)* )
+</I>&gt;&gt;<i>      -&gt;  { filter_out_identities(MULT, $arg) };
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> with a function filter_out_identities defined in a header somewhere:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> def filter_out_identities(node, nodes):
+</I>&gt;&gt;<i>      tree = CommonTree(node)
+</I>&gt;&gt;<i>      tree.addChildren(n for n in nodes if not n.has(&quot;IDENTITY&quot;))
+</I>&gt;&gt;<i>      return tree
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I'm not sure what you really want to do. You were asking how to remove
+</I>&gt;&gt;<i> all of a token from a list, and you gave an example that indicated you
+</I>&gt;&gt;<i> had a function &quot;has&quot; that would let you check whether a token was an
+</I>&gt;&gt;<i> identity, and you're matching against every token. Sorry if I
+</I>&gt;&gt;<i> misunderstood that.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> If you only have one token that could be an identity, then you could
+</I>&gt;&gt;<i> do something like:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> topdown : ^( MULT (a+=~IDENTITY)* (IDENTITY* b+=~IDENTITY*)* IDENTITY*
+</I>&gt;&gt;<i>      -&gt;  ^( MULT a* b* );
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> and no actions are required.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> You might even be able to do
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> ^( MULT ( IDENTITY | a+=~IDENTITY )* ) -&gt;  ^( MULT a* )
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> This is based on my understanding of parser rules; I'm not sure how
+</I>&gt;&gt;<i> different it would be for tree parser rules.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> On Tue, Jun 12, 2012 at 10:07 PM, nafur&lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">nafur42 at gmail.com</A>&gt;  wrote:
+</I>&gt;&gt;&gt;<i> Hi,
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> While I'm not completely sure how this would look like, this would
+</I>&gt;&gt;&gt;<i> somehow result in implementing the pattern matching myself, right?
+</I>&gt;&gt;&gt;<i> As this example is a very easy one, this is no option for me. Actually,
+</I>&gt;&gt;&gt;<i> I'm only using ANTLR because of this pattern matching...
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> Gereon
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> On 06/13/2012 05:34 AM, Benjamin S Wolf wrote:
+</I>&gt;&gt;&gt;&gt;<i> The best way to accomplish this is likely to be an arbitrary action, eg.:
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> a : INT -&gt;  { new CommonTree(new CommonToken(FLOAT, $INT.text + &quot;.0&quot;)) } ;
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> This takes an INT and returns a Tree with one node, a FLOAT token with
+</I>&gt;&gt;&gt;&gt;<i> text that is the int plus &quot;.0&quot;.
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> You'll want to make a tree via CommonTree() and add a list of children
+</I>&gt;&gt;&gt;&gt;<i> that excludes all tokens that have IDENTITY (or add each child if it
+</I>&gt;&gt;&gt;&gt;<i> doesn't have the identity). This means you'll be looping over all the
+</I>&gt;&gt;&gt;&gt;<i> nodes in the MULT subtree within the action.
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> On Mon, Jun 11, 2012 at 2:01 AM, nafur&lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">nafur42 at gmail.com</A>&gt;  wrote:
+</I>&gt;&gt;&gt;&gt;&gt;<i> Hi,
+</I>&gt;&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;<i> I asked about this ambiguity quite a while ago. Does nobody has any idea
+</I>&gt;&gt;&gt;&gt;&gt;<i> how to do this?
+</I>&gt;&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;<i> Gereon
+</I>&gt;&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;<i> On 05/29/2012 12:48 PM, nafur wrote:
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> Hi,
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> I'm using tree rewriters to manipulate formulas that are represented as
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> ASTs. One operation I'd like to do is: &quot;remove any identity from a
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> multiplication&quot;.
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> The replacement rule I'm currently working with is the following:
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> topdown :
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i>        ^( MULT (before += .)* x=. (after += .)* )
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i>        { $x.has(&quot;IDENTITY&quot;) }?
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i>        -&gt;  ^( MULT $before* $after* )
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> ;
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> As you probably see, we have some ambiguity here: before and after can
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> both take arbitrarily many elements. If I take an AST like
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> ^( MULT A I x ), the replacement will not match. printing some debug
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> output reveals, that ANTLR will only check $x.has(&quot;IDENTITY&quot;), i.e. will
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> only try to match the last element in a multiplication.
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> (That is actually not a surprise, as ANTLR issues a warning...)
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> Is there any way to resolve this ambiguity in a way, such that I can
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> match all occurrences?
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> Thanks,
+</I>&gt;&gt;&gt;&gt;&gt;&gt;<i> Gereon
+</I>&gt;&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;&gt;&gt;&gt;&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i>
+</I></PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="044720.html">[antlr-interest] Exploit ambiguity in tree rewriter
+</A></li>
+	<LI>Next message: <A HREF="044729.html">[antlr-interest] Exploit ambiguity in tree rewriter
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#44728">[ date ]</a>
+              <a href="thread.html#44728">[ thread ]</a>
+              <a href="subject.html#44728">[ subject ]</a>
+              <a href="author.html#44728">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

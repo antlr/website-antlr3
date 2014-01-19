@@ -1,0 +1,113 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Hetero ASTs, Manual Tree Construction, C++, etc...
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Hetero%20ASTs%2C%20Manual%20Tree%20Construction%2C%20C%2B%2B%2C%20etc...&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004222.html">
+   <LINK REL="Next"  HREF="004223.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Hetero ASTs, Manual Tree Construction, C++, etc...</H1>
+    <B>Tiller, Michael (M.M.)</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Hetero%20ASTs%2C%20Manual%20Tree%20Construction%2C%20C%2B%2B%2C%20etc...&In-Reply-To="
+       TITLE="[antlr-interest] Hetero ASTs, Manual Tree Construction, C++, etc...">mtiller at ford.com
+       </A><BR>
+    <I>Tue Jun 17 11:36:11 PDT 2003</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004222.html">[antlr-interest] Re: LR problem with SQL92 parsing?
+</A></li>
+        <LI>Next message: <A HREF="004223.html">[antlr-interest] Re: Hetero ASTs, Manual Tree Construction, C++, etc...
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4220">[ date ]</a>
+              <a href="thread.html#4220">[ thread ]</a>
+              <a href="subject.html#4220">[ subject ]</a>
+              <a href="author.html#4220">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I'm currently working on a project and I wanted to bounce a few ideas off the people in the list to see what people think of how I'm approaching this problem.
+ 
+First, I should state one particular bias...I don't really like homogenous ASTs.  Perhaps I just don't understand enough about how people use homogenous ASTs or something, but I don't really feel comfortable with them.  I agree that the automatic AST building stuff in ANTLR is very nice and I really appreciate that some care has been taken to try and provide the best of both worlds.  My main problem with homogenous ASTs is that while I can very easily build a parser and even a tree walker built around homogenous ASTs, I don't really feel comfortable *doing something* with them because they don't seem structured enough.  Here is an example, consider the following statement in my grammar:
+ 
+element
+    : import_clause
+    | extends_clause
+    | (&quot;final&quot;)?
+      ( &quot;inner&quot; | &quot;outer&quot;)?
+      ( ( class_definition | component_clause )
+        | &quot;replaceable&quot; ( class_definition | component_clause )
+            (constraining_clause (string_comment)? (annotation)?)?
+      )
+    ;
+
+Now things like &quot;final&quot; or &quot;inner&quot; or &quot;replaceable&quot; are simple qualifiers.  I just want to note whether they are present or not.  Should I really just leave the lexical token in my AST to indicate this?  I'm assuming that is what you would do if you strictly used automatic AST construction (perhaps I'm wrong).  I don't like this because they I have to search through the AST (agreed, I can write macros/functions for much of this) to look for the presence of these items.  I just don't like this because it requires maintaining complex tree structures, worrying about garbage collection, calling functions to determine simple properties.
+ 
+To deal with these situations, I have fields in my heterogeneous AST like &quot;bool p_final&quot;.  Now I have exactly what I need at my fingertips (i.e. a boolean that indicates whether this declaration is final or not).  I can change this boolean very easily (without having to deal at all with post-parsing AST construction).  Now you LISP folks out there problem think that the &quot;p_&quot; means predicate, but it doesn't...more on this in a second.
+ 
+As I build my AST, I sprinkle in a few statements here and there where I capture the presence of these qualifiers (once and for all) in members associated with each AST node.  ANTLR makes this relatively easy (could be better though) so I'm pretty happy with that.  At first, this may seem to limit some of the possibilities of my tree parser because these bits have been taken out of the AST structure formally (i.e. they don't show up with getFirstChild or getNextSibling).  This is true, but so far I have yet to see a big impact.
+ 
+Now, let me talk more generally about this issue.  Lets get away from the parsing and think more about tree processing.  My approach has been (or will be in some cases) to build each heterogeneous AST out of two fundamental types of information.
+ 
+The first type (prefixed with a &quot;p_&quot;) is information that comes from the parsing stage.  Essentially, these are bits and pieces that are syntactically present in the source but (for the reasons I outlined above) I choose not to represent with my AST.  My criteria for deciding this is pretty simple.  If something is essentially a &quot;terminal&quot;, I pluck it out since the structure isn't &quot;variable&quot; (i.e. I don't need to represent its internal structure).  I use an explicit &quot;p_&quot; prefix to indicate that these are syntactic elements and to remind me that I need to spit them back out in the case of text-to-text processing.
+ 
+The second type (prefix with an &quot;m_&quot;) is information that I have gleaned from &quot;passes&quot; over the AST.  This might include pointers to other nodes representing relationships (parent nodes, instance&lt;-&gt;type relationships, etc).  This information is semantic and so I don't have to spit it back out.  Furthermore, it usually requires more analysis to figure out how to fill in these pieces of information.
+ 
+How does this relate to ANTLR and tree construction?  Well, I've been implementing this scheme with ANTLR and I've found some of the features useful, but I think there is room for improvement.  By my count, I now have 31 different AST node types.  Even after I wrote several macros and a base class for all my ASTs, I can still tell you that defining each one was a pain.  Here are my major issues with hetero AST construction:
+ 
+1) Defining the AST types is a bit of a pain.  You cannot really leverage either templates or inheritance in this process (at least not in an easy way I have found).  The systems for &quot;cloning&quot; and &quot;garbage collection&quot;, etc. just didn't seem to provide an elegant way of facilitating reuse.  It is entirely possible that people have found elegant ways around this, but it isn't obvious, documented or directly supported by ANTLR as far as I can tell.
+ 
+2) Even when I define custom AST nodes, there is a problem (at least in my grammar) that ANTLR doesn't create the appropriate initializeASTFactory method.  I mentioned this in a previous message so I'm not really going to go into detail here.
+ 
+3) Even when I convince ANTLR to create the appropriate initializeASTFactory (via a hack), it still doesn't treat my nodes as what they are.  Perhaps this is a consequence of #2, but my ASTs are still just &quot;RefAST&quot; instances as far as ANTLR is concerned so I've had to write a bunch of casting functions (e.g. &quot;asDeclaration(##).p_final = true;&quot;) to allow me to access the node specific members/methods.
+ 
+In looking over the work that I've done, it strikes me that perhaps the best way for ANTLR to deal with heterogeneous ASTs is to use a &quot;mix-in&quot; sort of idiom.  In other words, let me define my node type, e.g.
+ 
+struct DeclarationNode {
+  bool p_final;
+  DeclarationNode() : p_final(false); {}
+};
+ 
+...then when I specify that I want one of my tokens to include this data (e.g. DECLARATION&lt;AST=DeclarationNode&gt;;) have ANTLR use multiple-inheritance of templates to include this information, e.g. have ANTLR create a custom data structure that blends the AST with my type:
+ 
+class DECLARATION_AST : public commonAST, public DeclarationNode {
+...
+};
+ 
+Then ANTLR could take responsibility for create &quot;RefDECLARATION_AST&quot; and writing down the obvious methods (e.g. clone)?
+ 
+Now my intention here is not to complain about the lack of support for heterogeneous ASTs in ANTLR.  Overall, I'm happy with ANTLR.  I'm just trying to provide some feedback about what I think is cumbersome and also to solicit feedback from people on whether they think, based on looking at what my issues are, I'm going about some things the wrong way.
+ 
+--
+Mike
+ 
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20030617/20f4375c/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20030617/20f4375c/attachment.html</A>
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004222.html">[antlr-interest] Re: LR problem with SQL92 parsing?
+</A></li>
+	<LI>Next message: <A HREF="004223.html">[antlr-interest] Re: Hetero ASTs, Manual Tree Construction, C++, etc...
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4220">[ date ]</a>
+              <a href="thread.html#4220">[ thread ]</a>
+              <a href="subject.html#4220">[ subject ]</a>
+              <a href="author.html#4220">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

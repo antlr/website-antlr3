@@ -1,0 +1,212 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] NullPointerException in rewrite rule
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20NullPointerException%20in%20rewrite%20rule&In-Reply-To=%3C47699B24.3010807%40ebuconnect.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="025291.html">
+   <LINK REL="Next"  HREF="025285.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] NullPointerException in rewrite rule</H1>
+    <B>Stefan Eder</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20NullPointerException%20in%20rewrite%20rule&In-Reply-To=%3C47699B24.3010807%40ebuconnect.de%3E"
+       TITLE="[antlr-interest] NullPointerException in rewrite rule">stefan.eder at ebuconnect.de
+       </A><BR>
+    <I>Wed Dec 19 14:28:52 PST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="025291.html">[antlr-interest] NullPointerException in rewrite rule
+</A></li>
+        <LI>Next message: <A HREF="025285.html">[antlr-interest] C++ Parser Update V3.2
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25293">[ date ]</a>
+              <a href="thread.html#25293">[ thread ]</a>
+              <a href="subject.html#25293">[ subject ]</a>
+              <a href="author.html#25293">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I figured it out:
+floatSequence returns [String sequence]
+    :
+    v1=NumberLiteral '.' v2=NumberLiteral
+    {
+        $sequence = $v1.text + '.' + $v2.text;
+    }
+    -&gt; ^(FLOAT[$sequence])
+    ;
+This way it works because $sequence is writable available in actions and 
+readable in rewrite rules.
+
+You brought me on the even more easier way that can solve even more 
+difficult situations, because $text seems to be an attribute of the rule 
+representing the text of the all matched tokens. You get an error if you 
+try to assign a value to $text within an action.
+
+So:
+identifier returns [String name]
+    :
+    (NumberLiteral|LetterLiteral)+
+    {
+        $name=$text;
+    }
+    -&gt; ^(ID[$text])
+    ;
+or
+floatSequence returns [String sequence]
+    :
+    NumberLiteral '.' NumberLiteral
+    {
+        $sequence = $text;
+    }
+    -&gt; ^(FLOAT[$sequence])
+    ;
+
+brings exactly what I want, one single token with the text of the 
+complete subtree as text.
+:<i>~)
+</I>
+Yes, what I am going to parse has identifiers that may start with digits.
+
+Stefan
+
+Jim Idle schrieb:
+&gt;<i> Well, value isnt going to track quite what you want here I think :-)
+</I>&gt;<i>
+</I>&gt;<i> Assuming that you need this in the parser (this is quite often 
+</I>&gt;<i> legitimate) and not the lexer, then:
+</I>&gt;<i>
+</I>&gt;<i> @init
+</I>&gt;<i> {
+</I>&gt;<i> 	String text;
+</I>&gt;<i> }
+</I>&gt;<i> v1=NumberLiteral '.' v2=NumberLiteral
+</I>&gt;<i>
+</I>&gt;<i> {
+</I>&gt;<i> 	$text = $v1.text '.' $v2.text;
+</I>&gt;<i> }
+</I>&gt;<i> 	-&gt; ^FLOAT[$text]
+</I>&gt;<i>
+</I>&gt;<i> Or something similar.
+</I>&gt;<i>
+</I>&gt;<i> Jim  
+</I>&gt;<i>
+</I>&gt;<i>   
+</I>&gt;&gt;<i> -----Original Message-----
+</I>&gt;&gt;<i> From: Stefan Eder [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">stefan.eder at ebuconnect.de</A>]
+</I>&gt;&gt;<i> Sent: Wednesday, December 19, 2007 3:42 AM
+</I>&gt;&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;&gt;<i> Subject: [antlr-interest] NullPointerException in rewrite rule
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Hi,
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I get a NullPointerException in a rewrite rule with Antlr 3.01.
+</I>&gt;&gt;<i> My intention is to concat several tokens to one new token during AST
+</I>&gt;&gt;<i> construction.
+</I>&gt;&gt;<i> Any ideas what I am doing wrong?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Grammar:
+</I>&gt;&gt;<i> 	grammar Test;
+</I>&gt;&gt;<i> 	options {output=AST;}
+</I>&gt;&gt;<i> 	tokens {FLOAT;}
+</I>&gt;&gt;<i> 	floatSequence
+</I>&gt;&gt;<i> 		:
+</I>&gt;&gt;<i> 		value=(NumberLiteral ('.' NumberLiteral))
+</I>&gt;&gt;<i> 		-&gt; ^(FLOAT[$value])
+</I>&gt;&gt;<i> 		;
+</I>&gt;&gt;<i> 	NumberLiteral	: ('0'..'9') + ;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Main method:
+</I>&gt;&gt;<i> public static void main(String[] args)
+</I>&gt;&gt;<i> throws RecognitionException {
+</I>&gt;&gt;<i> 	CharStream charStream = new ANTLRStringStream(&quot;0.815&quot;);
+</I>&gt;&gt;<i> 	TestLexer testLexer = new TestLexer(charStream);
+</I>&gt;&gt;<i> 	TokenStream tokenStream = new CommonTokenStream(testLexer);
+</I>&gt;&gt;<i> 	TestParser parser = new TestParser(tokenStream);
+</I>&gt;&gt;<i> 	parser.floatSequence();
+</I>&gt;&gt;<i> }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Exception stack:
+</I>&gt;&gt;<i> Exception in thread &quot;main&quot; java.lang.NullPointerException
+</I>&gt;&gt;<i> 	at org.antlr.runtime.CommonToken.&lt;init&gt;(CommonToken.java:72)
+</I>&gt;&gt;<i> 	at
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>     
+</I>&gt;<i> org.antlr.runtime.tree.CommonTreeAdaptor.createToken(CommonTreeAdaptor.j
+</I>&gt;<i> av
+</I>&gt;<i>   
+</I>&gt;&gt;<i> a:60)
+</I>&gt;&gt;<i> 	at
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>     
+</I>&gt;<i> org.antlr.runtime.tree.BaseTreeAdaptor.create(BaseTreeAdaptor.java:102)
+</I>&gt;<i>   
+</I>&gt;&gt;<i> 	at TestParser.floatSequence(TestParser.java:105)
+</I>&gt;&gt;<i> 	at Main.main(Main.java:16)
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Reviewing the generated code:
+</I>&gt;&gt;<i>     //...
+</I>&gt;&gt;<i>     Token value=null;
+</I>&gt;&gt;<i>     //...
+</I>&gt;&gt;<i>     root_1 =
+</I>&gt;&gt;<i>       (Object)adaptor.becomeRoot(adaptor.create(FLOAT, value), 
+</I>&gt;&gt;<i>     
+</I>&gt;<i> root_1);
+</I>&gt;<i>   
+</I>&gt;&gt;<i> The variable value has not been initialized between declaration and 
+</I>&gt;&gt;<i>     
+</I>&gt;<i> use.
+</I>&gt;<i>   
+</I>&gt;&gt;<i> Calling adaptor.create(FLOAT, null) causes the exception.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> If I remove the rewrite rule, the exception disappears and the input 
+</I>&gt;&gt;<i>     
+</I>&gt;<i> is
+</I>&gt;<i>   
+</I>&gt;&gt;<i> parsed ok.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Stefan
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>     
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>   
+</I>-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20071219/24841bee/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20071219/24841bee/attachment.html</A> 
+</PRE>
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="025291.html">[antlr-interest] NullPointerException in rewrite rule
+</A></li>
+	<LI>Next message: <A HREF="025285.html">[antlr-interest] C++ Parser Update V3.2
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25293">[ date ]</a>
+              <a href="thread.html#25293">[ thread ]</a>
+              <a href="subject.html#25293">[ subject ]</a>
+              <a href="author.html#25293">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

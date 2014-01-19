@@ -1,0 +1,126 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Compiler-exploding grammar
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Compiler-exploding%20grammar&In-Reply-To=%3Cb8ceeef70711281639w411fecffueac10b8aded90afb%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="024989.html">
+   <LINK REL="Next"  HREF="024993.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Compiler-exploding grammar</H1>
+    <B>Steve Bennett</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Compiler-exploding%20grammar&In-Reply-To=%3Cb8ceeef70711281639w411fecffueac10b8aded90afb%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Compiler-exploding grammar">stevagewp at gmail.com
+       </A><BR>
+    <I>Wed Nov 28 16:39:18 PST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="024989.html">[antlr-interest] Compiler-exploding grammar
+</A></li>
+        <LI>Next message: <A HREF="024993.html">[antlr-interest] Compiler-exploding grammar
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24991">[ date ]</a>
+              <a href="thread.html#24991">[ thread ]</a>
+              <a href="subject.html#24991">[ subject ]</a>
+              <a href="author.html#24991">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 11/29/07, Andy Tripp &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr at jazillian.com</A>&gt; wrote:
+&gt;<i> I don't follow. Are you saying that ANTLR generated a single line that
+</I>&gt;<i> was 14000 characters
+</I>&gt;<i> wide, and javac choked on it? If so, that sounds like a javac bug to me.
+</I>
+No, it's more than a single line and apparently more than 14000
+characters wide, too. My editor shows about 30 lines in a row at least
+that long, but it truncates them at that 14384 characters.
+
+Looking into it a bit, it looks like some sort of combinatorial
+expansion gone wrong caused by the combination of two parser rules.
+Rule #1:
+
+close_bold_italics
+@after {text_bold=false; text_italics = false;}
+:<i>
+</I>        {text_bold==true &amp;&amp; text_italics==true}? =&gt;  -&gt; B_OFF I_OFF
+       |{text_bold==false &amp;&amp; text_italics==true}? =&gt; -&gt; I_OFF
+       |{text_bold==true &amp;&amp; text_italics==false}? =&gt; -&gt; B_OFF
+
+       ;
+
+bold_and_italics:
+     {textis(&quot;''&quot;) &amp;&amp; text_italics}? =&gt; APOSTROPHES
+{text_italics=false;} -&gt;         ^(I_OFF)
+    |{textis(&quot;''&quot;) &amp;&amp; !text_italics}? =&gt; APOSTROPHES
+{text_italics=true;} -&gt;          ^(I_ON)
+    |{textis(&quot;'''&quot;) &amp;&amp; text_bold}? =&gt; APOSTROPHES
+{text_bold=false;} -&gt;            ^(B_OFF)
+    |{textis(&quot;'''&quot;) &amp;&amp; !text_bold}? =&gt; APOSTROPHES   {text_bold=true;}
+-&gt;             ^(B_ON)
+    |{textis(&quot;''''&quot;) &amp;&amp; text_bold}? =&gt; APOSTROPHES
+{text_bold=false;} -&gt; APOSTROPHE ^(B_OFF)
+    |{textis(&quot;''''&quot;) &amp;&amp; !text_bold}? =&gt; APOSTROPHES  {text_bold=true;}
+-&gt; APOSTROPHE  ^(B_ON)
+    |{textis(&quot;'''''&quot;) &amp;&amp; text_bold &amp;&amp; text_italics}? =&gt;  APOSTROPHES
+{text_bold=false; text_italics=false; } -&gt; ^(B_OFF) ^(I_OFF)
+    |{textis(&quot;'''''&quot;) &amp;&amp; text_bold &amp;&amp; !text_italics}? =&gt; APOSTROPHES
+{text_bold=false; text_italics=true; }  -&gt; ^(B_OFF) ^(I_ON)
+    |{textis(&quot;'''''&quot;) &amp;&amp; !text_bold &amp;&amp; text_italics}? =&gt; APOSTROPHES
+{text_bold=true; text_italics=false; }  -&gt; ^(B_ON)  ^(I_OFF)
+    |{textis(&quot;'''''&quot;) &amp;&amp; !text_bold &amp;&amp; !text_italics}? =&gt;APOSTROPHES
+{text_bold=true; text_italics=true; }   -&gt; ^(B_ON)  ^(I_ON)
+    ;
+
+The resulting mess:
+
+(text_bold==false &amp;&amp; text_italics==true&amp;&amp;textis(&quot;''''&quot;) &amp;&amp; !text_bold)
+||<i>(text_bold==true &amp;&amp; text_italics==false&amp;&amp;textis(&quot;'''&quot;) &amp;&amp; text_bold)
+</I>||<i>(text_bold==true &amp;&amp; text_italics==false&amp;&amp;textis(&quot;'''''&quot;) &amp;&amp;
+</I>text_bold &amp;&amp; !text_italics)
+||<i>(text_bold==true &amp;&amp; text_italics==true&amp;&amp;textis(&quot;''''&quot;) &amp;&amp; !text_bold)
+</I>||<i>(text_bold==true &amp;&amp; text_italics==true&amp;&amp;textis(&quot;'''''&quot;) &amp;&amp;
+</I>!text_bold &amp;&amp; !text_italics)
+...
+
+going through *all* the combinations, even the nonsensical ones:
+...
+||<i>(text_bold==true &amp;&amp; text_italics==true&amp;&amp;textis(&quot;'''&quot;) &amp;&amp; !text_bold)
+</I>...
+
+Even so, I don't really get why it explodes quite so massively. I also
+can't really say why these two rules are even joined in this cartesian
+product like that. The only thing they really have in common is that
+they produce the same AST node type.
+
+Steve
+</PRE>
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="024989.html">[antlr-interest] Compiler-exploding grammar
+</A></li>
+	<LI>Next message: <A HREF="024993.html">[antlr-interest] Compiler-exploding grammar
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24991">[ date ]</a>
+              <a href="thread.html#24991">[ thread ]</a>
+              <a href="subject.html#24991">[ subject ]</a>
+              <a href="author.html#24991">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

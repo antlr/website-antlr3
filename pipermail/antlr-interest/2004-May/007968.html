@@ -1,0 +1,165 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Syntatic predicates...
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Syntatic%20predicates...&In-Reply-To=f789634004051714292c5880d6%40mail.gmail.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="007954.html">
+   <LINK REL="Next"  HREF="007978.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Syntatic predicates...</H1>
+    <B>Mark Lentczner</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Syntatic%20predicates...&In-Reply-To=f789634004051714292c5880d6%40mail.gmail.com"
+       TITLE="[antlr-interest] Syntatic predicates...">markl at glyphic.com
+       </A><BR>
+    <I>Tue May 18 09:08:51 PDT 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="007954.html">[antlr-interest] Syntatic predicates...
+</A></li>
+        <LI>Next message: <A HREF="007978.html">[antlr-interest] Syntatic predicates...
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#7968">[ date ]</a>
+              <a href="thread.html#7968">[ thread ]</a>
+              <a href="subject.html#7968">[ subject ]</a>
+              <a href="author.html#7968">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+&gt;<i> To put things in context: I am trying to convert the parts of the bnf
+</I>&gt;<i> description of the VHDL language into ANTLR. The BNF is full of
+</I>&gt;<i> ambiguities.
+</I>
+Ah, this does put things in context.  I looked a little at a VHDL BNF  
+(the nicely done
+	<A HREF="http://tech-www.informatik.uni-hamburg.de/vhdl/tools/grammar/vhdl93-">http://tech-www.informatik.uni-hamburg.de/vhdl/tools/grammar/vhdl93-</A> 
+bnf.html
+) and I think I understand what you are up against a bit better.
+
+I think there are three general sources of ambiguity in grammars:
+
+1) The language is inherently ambiguous.  This is the kind of error my  
+prior comments were directed at.
+
+2) The language is ambiguous given only fixed, finite k tokens of look  
+ahead.  This is kind of error that Terrence was talking about with C++  
+declarations.
+
+3) The language is fine, but the form of the grammar is ambiguous for  
+fixed, finite k tokens of look ahead.  This is the problem the VHDL BNF  
+has.  (Actually, it may suffer from the second type as well, but on  
+casual inspection, I didn't see any of those issues.)
+
+This third type of problem is something that has come up more than once  
+in this forum.  BNFs in specifications are generally not designed for  
+parsing.  They are designed for specification, and serve both pedagogic  
+and  definitive roles.  Suitability for parsing isn't usually a goal.
+
+For example, in the VHDL BNF we see (rewritten into Antlr syntax):
+
+numeric_literal  : abstract_literal | physical_literal ;
+abstract_literal : decimal_literal | based_literal ;
+physical_literal : (abstract_literal)? unit_name ;
+
+Unless you set the look ahead longer than the maximum number of tokens  
+that can make up abstract_literal, this is ambiguous.  If  
+abstract_literal can be an arbitrary number tokens long (which it is,  
+if you follow the BNF faithfully, as you arrive at: &quot;integer : digit (  
+(underline)? digit )* ;&quot;, which is any number of digits), then no value  
+of k works.  (For illustrative reasons I'm assuming that we can't  
+recognize integer in the lexer, just making it one token in length.   
+See below...)
+
+But this form of expressing the grammar of the language isn't what a  
+VHDL parser would want anyway.  It would be easier to use:
+
+numeric_literal :
+           abstract_literal (unit_name)?
+         | unit_name
+         ;
+abstract_literal :
+         decimal_literal | based_literal
+         ;
+
+In practice, once semantic actions are added, this looks like:
+
+numeric_literal [returns Number n] :
+     {Unit u;}
+           n=abstract_literal ( u=unit_name {n.setUnit(u);} )?
+         | u=unit_name                      {n.setUnit(u);  
+n.setValue(1);}
+         ;
+abstract_literal [returns Number n] :
+	    decimal_literal | based_literal
+         ;
+
+When converting a BNF such as VHDL to a working parser, there are two  
+things that remove the ambiguities in the form of the BNF:
+
+First is picking the right division between lexing and parsing: The  
+proper division can make most parsing takes unambiguous with small  
+fixed k look ahead.  For example, making integer above be a production  
+of the lexer returning a single token as another way to resolve the  
+issue.  (See the recent thread titled &quot;Antlr noobie, nondeterminism  
+abounds&quot; in this list.)  But this isn't always possible for all  
+productions.
+
+Second is rewriting rules so that they can be parsed.  Often this means  
+delaying the determining the distinction between two things (i.e.  
+abstract_literal and physical_literal) until later in the token stream,  
+rather than early on as the BNF does.
+
+The VHDL BNF is big.  I can't say off hand if finding the proper  
+lexer/parser division will solve most problems, or if you'll have alot  
+of rule re-writing ahead of you.  Please report back on your progress:  
+I'd love to know what worked in the end.
+
+	- Mark
+
+Mark Lentczner
+<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">markl at wheatfarm.org</A>
+<A HREF="http://www.wheatfarm.org/">http://www.wheatfarm.org/</A>
+
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+     <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+     <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+     <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="007954.html">[antlr-interest] Syntatic predicates...
+</A></li>
+	<LI>Next message: <A HREF="007978.html">[antlr-interest] Syntatic predicates...
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#7968">[ date ]</a>
+              <a href="thread.html#7968">[ thread ]</a>
+              <a href="subject.html#7968">[ subject ]</a>
+              <a href="author.html#7968">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

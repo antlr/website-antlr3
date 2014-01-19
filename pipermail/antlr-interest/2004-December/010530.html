@@ -1,0 +1,196 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Error recovery contortion
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Error%20recovery%20contortion&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="010532.html">
+   <LINK REL="Next"  HREF="010594.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Error recovery contortion</H1>
+    <B>Paul J. Lucas</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Error%20recovery%20contortion&In-Reply-To="
+       TITLE="[antlr-interest] Error recovery contortion">pauljlucas at mac.com
+       </A><BR>
+    <I>Thu Dec  2 12:01:09 PST 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="010532.html">[antlr-interest] These tokens ... and nothing else
+</A></li>
+        <LI>Next message: <A HREF="010594.html">[antlr-interest] Error recovery contortion
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#10530">[ date ]</a>
+              <a href="thread.html#10530">[ thread ]</a>
+              <a href="subject.html#10530">[ subject ]</a>
+              <a href="author.html#10530">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+	So my problem is that I want to do error recovery.  (I've
+	posted some things about this before.)
+
+	Some background: the language I'm parsing is XQuery
+	&lt;<A HREF="http://www.w3.org/TR/xquery/">http://www.w3.org/TR/xquery/</A>&gt; that, among other annoyances, is
+	keyword-free.  This makes recovery much harder because the lexer
+	is stateful.
+
+	As a first pass, I want to recover from syntax errors inside
+	function declarations only.  I can't simply use ANTLR's default
+	error-recovery mechanism because I have to sync to a known
+	token and reset the lexer's state.  (ANTLR's default mechanism
+	sync to one of the tokens in the follow set.)  Function
+	declarations in XQuery end with a ';' so, upon error, I throw
+	away all tokens until I get to that.  (I will hopefully be able
+	to imporove this in the furture, but for now, it's good
+	enough.)
+
+	Setting defaultErrorHandler=false makes this work fine for
+	syntax errors inside function declarations.  I have something
+	like this:
+
+		functionDeclBody
+		    : enclosedExpr
+		    ;
+		    exception
+		    catch [ RecognitionException re ] {
+		        ## = #([ERROR,&quot;ERROR&quot;]);
+			recover( re );
+		    }
+
+	where recover() is my own, working recovery function.  Hence,
+	if an exception is thrown during enclosedExpr, it will be
+	caught and recovered from and the generated AST is just fine.
+	So far, so good.
+
+	But, if there's a syntax error *outside* a function
+	declaration, the generated AST is trashed.  Another requirement
+	is that I keep the generated AST up to the point of the error
+	outside a function declaration.  As I've mentioned previously,
+	the reason the AST gets trashed is because when an exception is
+	thrown and there's no recovery in place, the AST isn't stitched
+	together because it's done only upon successful function
+	*return*: stack unwinding upon an exception bypassed normal
+	function returns.
+
+	OK, so I tried setting defaultErrorHandler=true.  This makes
+	the generated AST be fine for errors outside of function
+	declarations, but now the problem is that ANTLR recovers all by
+	itself while doing enclosedExpr and functionDeclBody above is
+	never given the opportunity to catch the exception and do the
+	correct recovery.  Hence, this breaks my recovery mechanism.
+
+	Sigh...
+
+	So I looked at the ANTLR-generated Java code: it calls
+	reportError() during its own error recovery.  So what I need to
+	do is continue to allow it to recover as normal (so my AST is
+	preserved) *except* when the current call stack contains
+	functionDeclBody, i.e., if reportError() is called &quot;through&quot;
+	functionDeclBody, do my own recovery instead.  OK, so set a flag
+	in my parser:
+
+		functionDeclBody
+		{
+		    m_recoverable = true;
+		}
+		    : enclosedExpr
+		        {
+		            m_recoverable = false;
+		        }
+		    ;
+		    exception
+		    catch [ RecognitionException re ] {
+		        ## = #([ERROR,&quot;ERROR&quot;]);
+			recover( re );
+		    }
+
+	and override reportError() like:
+
+		public void reportError( RecognitionException re ) {
+		    final boolean recoverable = m_recoverable;
+		    m_recoverable = false;
+		    if ( recoverable )
+		       throw new ANTLR_WorkaroundException( re );
+
+		    // ... other recovery not relevant to this post ...
+		}
+
+	i.e., if I'm doing my own recovery, I want any exception caught
+	by ANTLR's recovery mechanism to be rethrown so the stack
+	unwinds back up to functionDeclBody.  One slight problem:
+	reportError() isn't declared to throw any exception.  Hence, I
+	created the ANTLR_WorkaroundException class that extends
+	RuntimeException to work around this annoyance.
+
+	OK, I'm pretty sure this all works, but it requires a lot of
+	programming contortion, more than should be necessary.
+
+	A suggestion is to change the default exception-handling code
+	emitted to something like:
+
+		catch ( RecognitionException ex ) {
+		    reportError( ex );
+		    recover( ex, _someTokenSet );
+		}
+
+	where recover() is a new method in Parser.java that, by
+	default, is:
+
+		void recover( RecognotionException ex, BitSet set )
+		    throws TokenStreamException
+		{
+		    consume();
+		    consume( set );
+		}
+
+	This will allow a user to override what recovery does without
+	having to use the hack of stuffing such code into reportError()
+	(where it doesn't conceptually belong).
+
+	- Paul
+
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+    <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+    <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+    <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="010532.html">[antlr-interest] These tokens ... and nothing else
+</A></li>
+	<LI>Next message: <A HREF="010594.html">[antlr-interest] Error recovery contortion
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#10530">[ date ]</a>
+              <a href="thread.html#10530">[ thread ]</a>
+              <a href="subject.html#10530">[ subject ]</a>
+              <a href="author.html#10530">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,239 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Notes on running Antlr / StringTemplate under Ant (explains the CharScanner; panic: ClassNotFoundException: org.antlr.stringtemplate.language.ChunkToken)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Notes%20on%20running%20Antlr%20/%20StringTemplate%20under%20Ant%0A%20%28explains%20the%20CharScanner%3B%0A%20panic%3A%20ClassNotFoundException%3A%20org.antlr.stringtemplate.language.ChunkToken%29&In-Reply-To=%3C474C1157.2050700%40Yahoo.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="024929.html">
+   <LINK REL="Next"  HREF="024938.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Notes on running Antlr / StringTemplate under Ant (explains the CharScanner; panic: ClassNotFoundException: org.antlr.stringtemplate.language.ChunkToken)</H1>
+    <B>Austin Hastings</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Notes%20on%20running%20Antlr%20/%20StringTemplate%20under%20Ant%0A%20%28explains%20the%20CharScanner%3B%0A%20panic%3A%20ClassNotFoundException%3A%20org.antlr.stringtemplate.language.ChunkToken%29&In-Reply-To=%3C474C1157.2050700%40Yahoo.com%3E"
+       TITLE="[antlr-interest] Notes on running Antlr / StringTemplate under Ant (explains the CharScanner; panic: ClassNotFoundException: org.antlr.stringtemplate.language.ChunkToken)">Austin_Hastings at Yahoo.com
+       </A><BR>
+    <I>Tue Nov 27 04:45:11 PST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="024929.html">[antlr-interest] Non-disjoint tokens
+</A></li>
+        <LI>Next message: <A HREF="024938.html">[antlr-interest] Line/char positions in C runtime
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24933">[ date ]</a>
+              <a href="thread.html#24933">[ thread ]</a>
+              <a href="subject.html#24933">[ subject ]</a>
+              <a href="author.html#24933">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Howdy,
+
+A while ago I posted a cry for help because I was using StringTemplate 
+to generate some java code and I would sometimes get this error:
+
+CharScanner; panic: ClassNotFoundException: 
+org.antlr.stringtemplate.language.ChunkToken
+
+The problem relates to class loading. Here's a nice primer on the 
+subject: <A HREF="http://www.onjava.com/pub/a/onjava/2005/01/26/classloading.html">http://www.onjava.com/pub/a/onjava/2005/01/26/classloading.html</A>
+
+The situation is this:
+
+- I am using Antlr3
+- I am using StringTemplate 3.1b1
+- I am using Ant
+- I have adapted my program to run both stand-alone and as an Ant task.
+
+When I ran the program from the Linux command line, there was no 
+problem. But when I ran the program from within Ant, I got the 
+CharScanner panic.
+
+What I have learned is that an Ant task can by dynamically loaded, which 
+I am doing. That looks like this:
+
+    &lt;taskdef
+        classpathRef = &quot;antlr3.class.path&quot;
+        loaderRef = &quot;antlr3&quot;
+        name = &quot;antlr3&quot;
+        /&gt;
+
+When you do this, Ant creates a new instance of &quot;AntClassLoader&quot; with 
+the loaderRef you specify (a unique meaningless name) and with the 
+classpath you provide. (In this example, the classpath is very, very 
+specific.)
+
+On the other hand, you can include jar files in your ant installation by 
+placing them either in your /usr/share/ant/lib directory, or in your 
+$HOME/.ant/lib directory. Putting the files in these pre-defined 
+locations means that Ant can load them using the classloader that Ant 
+uses to pick up libraries - an instance of java.net.URLClassLoader.
+
+I put this code in my ant task:
+
+private void printLoaderChain(ClassLoader cl, String msg)
+{
+    if (msg != null) System.err.println(msg);
+    System.err.println(&quot;Classloader chain starts with:&quot;);
+    while (cl != null)
+    {
+        System.err.println(cl);
+        cl = cl.getParent();
+    }
+    System.err.println(&quot;--- chain ends&quot;);
+}
+public final void execute()
+{
+    System.err.println(&quot;Classloader data:&quot;);
+    printLoaderChain(this.getClass().getClassLoader(), &quot;Here is the 
+current chain&quot;);
+    printLoaderChain(antlr.CharScanner.class.getClassLoader(), &quot;Here is 
+the CharScanner chain&quot;);
+
+
+And ran Ant with two different invocations. The first invocation, which 
+cause the problem, was a mixed model. Some ant tasks were loaded with 
+dynamic loading, while other tasks were in the ~/.ant/lib directory. The 
+results look like this:
+
+   [gunit3] Classloader data:
+   [gunit3] Here is the current chain
+   [gunit3] Classloader chain starts with:
+** [gunit3] AntClassLoader[/home/austin/gunit/release/gunit-1.1.jar]   
+   [gunit3] sun.misc.Launcher$<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">AppClassLoader at 7d772e</A>
+   [gunit3] sun.misc.Launcher$<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">ExtClassLoader at 11b86e7</A>
+   [gunit3] --- chain ends
+   [gunit3] Here is the CharScanner chain
+   [gunit3] Classloader chain starts with:
+** [gunit3] <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">java.net.URLClassLoader at 61de33</A>              
+   [gunit3] sun.misc.Launcher$<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">AppClassLoader at 7d772e</A>
+   [gunit3] sun.misc.Launcher$<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">ExtClassLoader at 11b86e7</A>
+   [gunit3] --- chain ends
+   [gunit3] File: /home/austin/gunit/tests/org/antlr/gunit/CodeBlocks.ts
+   [gunit3] Generating: CodeBlocks
+   [gunit3] CharScanner; panic: ClassNotFoundException: 
+org.antlr.stringtemplate.language.ChunkToken
+
+Notice that the &quot;current&quot; chain and the &quot;CharScanner&quot; chain start with 
+different nodes (AntClassLoader vs. URLClassLoader).
+
+When I removed ~/.ant/lib/checkstyle-all-4.3.jar from my ~/.ant/lib 
+directory, I got different output:
+
+   [gunit3] Classloader data:
+   [gunit3] Here is the current chain
+   [gunit3] Classloader chain starts with:
+   [gunit3] AntClassLoader[/home/austin/gunit/release/gunit-1.1.jar]
+   [gunit3] sun.misc.Launcher$<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">AppClassLoader at 7d772e</A>
+   [gunit3] sun.misc.Launcher$<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">ExtClassLoader at 11b86e7</A>
+   [gunit3] --- chain ends
+   [gunit3] Here is the CharScanner chain
+   [gunit3] Classloader chain starts with:
+   [gunit3] AntClassLoader[/home/austin/gunit/release/gunit-1.1.jar]
+   [gunit3] sun.misc.Launcher$<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">AppClassLoader at 7d772e</A>
+   [gunit3] sun.misc.Launcher$<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">ExtClassLoader at 11b86e7</A>
+   [gunit3] --- chain ends
+   [gunit3] File: /home/austin/gunit/tests/org/antlr/gunit/CodeBlocks.ts
+   [gunit3] Generating: CodeBlocks
+   [gunit3] Writing junit test class to: ./CodeBlocks_Test.java
+   [gunit3] File: /home/austin/gunit/tests/org/antlr/gunit/Gunit.ts
+   [gunit3] Generating: Gunit
+   [gunit3] Writing junit test class to: ./Gunit_Test.java
+
+
+In this case, the CharScanner class has the same classloader chain that 
+the current (AntTask) class has.
+
+The problem is NOT caused by having different class loader chains. The 
+problem is caused by 'poisoning' class loader chains. The StringTemplate 
+library uses antlr2, and configures it to use a new token type 
+(org.stringtemplate.language.ChunkToken). Find and reread this section 
+of the article:
+
+&quot;In other words, the JVM cannot execute the code:
+
+|<i>    Target target3 = (Target) target2;
+</I>|<i>
+</I>
+
+The above code will throw a |ClassCastException|. This is because the 
+JVM sees these two as separate, distinct class types, since they are 
+defined by different |ClassLoader| instances.&quot;
+
+When the checkstyle task is in my ~/.ant/lib path, it gets loaded by 
+ant. And checkstyle uses antlr. Hooray for antlr! But when my 
+stringtemplate code, which also uses antlr, tried to load the antlr 
+classes, there was no need - the classloader chain already had the antlr 
+classes loaded - BY A DIFFERENT LOADER. That's not a problem - you can 
+still use the classes. But when the antlr lexer tried to instantiate a 
+stringtemplate class, it could not find the class because the 
+stringtemplate library was loaded by a child of the antlr ClassLoader. 
+That is:
+
+1: System loaders
+2: Ant loader with ~/.ant/lib/checkstyle classes, including ANTLR
+3: Dynamic loader with StringTemplate classes, but not ANTLR.
+
+My code was loaded by #3, and went looking for the antlr classes. The #3 
+class loader delegated first to its parent loader, #2, which had loaded 
+them already.
+
+My code (StringTemplate) passed a class name to antlr. Antlr tried to 
+instantiate the named class, and so called its class loader (#2) which 
+can only search in #2 and #1. Doh! ClassNotFoundException.
+
+The solution in the near term is to get antlr out of the loader chain. I 
+accomplished this by removing checkstyle from my ant library directory, 
+and using dynamic loading to load it with a new AntClassLoader. This 
+&quot;cleans up&quot; the loader chain, so that my task only finds classes in its 
+own loader.
+
+The longer-term solution is to clean up antlr. Obviously there's an 
+antlr-2 versus antlr-3 thing here, and so this will have to happen in 
+antlr-3. But passing class names is a no-no -- pass class objects 
+instead. Giving a class object would allow the class' own loader (my 
+loader, #3, in this case) to be called for the instantiation. There are 
+probably some other rules out there for doing this stuff. The ant guys 
+may be a good resource, since they do this dynamic loading all the time. 
+Or maybe eclipse has a document about it.
+
+=Austin
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="024929.html">[antlr-interest] Non-disjoint tokens
+</A></li>
+	<LI>Next message: <A HREF="024938.html">[antlr-interest] Line/char positions in C runtime
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24933">[ date ]</a>
+              <a href="thread.html#24933">[ thread ]</a>
+              <a href="subject.html#24933">[ subject ]</a>
+              <a href="author.html#24933">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

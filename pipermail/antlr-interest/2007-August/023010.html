@@ -1,0 +1,215 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] StringTemplate conditional
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20StringTemplate%20conditional&In-Reply-To=%3CA21CD234-DB29-48D2-AF6F-CC53E98D16A2%40classdump.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="023009.html">
+   <LINK REL="Next"  HREF="023011.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] StringTemplate conditional</H1>
+    <B>Kay Roepke</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20StringTemplate%20conditional&In-Reply-To=%3CA21CD234-DB29-48D2-AF6F-CC53E98D16A2%40classdump.org%3E"
+       TITLE="[antlr-interest] StringTemplate conditional">kroepke at classdump.org
+       </A><BR>
+    <I>Fri Aug  3 06:42:17 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="023009.html">[antlr-interest] StringTemplate conditional
+</A></li>
+        <LI>Next message: <A HREF="023011.html">[antlr-interest] case sensitivity for ANTLR v3 lexers
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#23010">[ date ]</a>
+              <a href="thread.html#23010">[ thread ]</a>
+              <a href="subject.html#23010">[ subject ]</a>
+              <a href="author.html#23010">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Jeff!
+
+On Aug 3, 2007, at 2:54 PM, Barnes, Jeff wrote:
+
+&gt;<i> The StringTemplate declaration is not valid. Does this break model/ 
+</I>&gt;<i> view
+</I>&gt;<i> separation?
+</I>
+Sort of, yes.
+
+&gt;<i> Why doesn't StringTemplate support this? Is there another
+</I>&gt;<i> way to conceptualize this problem?
+</I>
+StringTemplate doesn't support arbitrary comparisons. (The  
+user=form.selectedUser is throwing it off.)
+
+You will have to pass in the information whether a user is selected  
+or not, doing the actual comparison
+in code. This ensures that no (business) logic is in the view.  
+StringTemplate is very rigorous with this,
+providing (almost) no means to cirumvent this. But you wouldn't wanna  
+do that anyway.
+
+So, what are your options?
+You could add a controller layer to shield your User object from  
+needing to know whether it is selected or not.
+That would add a lot of overhead, though.
+
+Disclaimer: Written in mail, might not compile or might bring the  
+world to an end.
+
+It'd look like this (adding to your example):
+
+	static class FormController {
+		Form form;
+		public FormController(Form form) { this.form = form; }
+		public UserController[] getUsers() {
+			int numUsers = form.getUsers().length;
+			UserController[] users = new UserController[numUsers];
+			for (int i=0; i&lt;numUsers; i++) {
+				User user = form.getUsers()[i];
+				users[i] = new UserController(user, form.getSelectedUser() == user);
+			}
+			return users;
+		}
+	}
+	
+	static class UserController {
+		User user;
+		boolean selected;
+		public UserController(User user, boolean selected) { this.user =  
+user; this.selected = selected;}
+		public String getName() { return user.getName(); }
+		public boolean getSelected() { return selected; }
+	}
+
+     public static void main(String[] args)
+     {
+         User[] users = new User[2];
+         users[0] = new User();
+         users[0].name = &quot;Terence&quot;;
+         users[1] = new User();
+         users[1].name = &quot;Parr&quot;;
+
+         Form f = new Form();
+         f.users = users;
+         f.selectedUser = users[1];
+
+         StringTemplate st = new StringTemplate(&quot;$form.users:{user |  
+&lt;option&quot;+
+                &quot;$if(user.selected)$ selected$endif$&gt;&quot; +
+                &quot;$user.name$&lt;/option&gt;};separator=\&quot;\n\&quot;$&quot;);
+         st.setAttribute(&quot;form&quot;, new FormController(f));
+         System.out.println(st.toString());
+     }
+
+That prints the correct string, but is adding a lot of overhead.
+Alternatively, if you are comfortable with adding presentation code  
+to Form, you can do this:
+
+import org.antlr.stringtemplate.StringTemplateGroup;
+import org.antlr.stringtemplate.StringTemplate;
+
+public class Test
+{
+     static class User {
+         String name;
+         public String getName() {
+             return name;
+         }
+     }
+
+     static class Form {
+         User[] users;
+         User selectedUser;
+         public User[] getUsers() { return users; }
+         public User getSelectedUser() { return selectedUser; }
+
+		public StringTemplate[] getUserTemplates() {
+			StringTemplate[] ts = new StringTemplate[users.length];
+			for (int i = 0; i &lt; users.length; i++) {
+				ts[i] = new StringTemplate(&quot;&lt;option$if(selected)$ selected$endif$&gt; 
+$name$&lt;/option&gt;&quot;);
+				ts[i].setAttribute(&quot;selected&quot;, users[i] == selectedUser);
+				ts[i].setAttribute(&quot;name&quot;, users[i].getName());
+			}
+			return ts;
+		}
+     }
+
+     public static void main(String[] args)
+     {
+         User[] users = new User[2];
+         users[0] = new User();
+         users[0].name = &quot;Terence&quot;;
+         users[1] = new User();
+         users[1].name = &quot;Parr&quot;;
+
+         Form f = new Form();
+         f.users = users;
+         f.selectedUser = users[1];
+
+         StringTemplate st = new StringTemplate 
+(&quot;$form.userTemplates;separator=\&quot;\n\&quot;$&quot;);
+         st.setAttribute(&quot;form&quot;, f);
+         System.out.println(st.toString());
+     }
+}
+
+
+Or naturally any abstraction you'd like to see.
+
+OTOH if you do not depend on the order of the options (though most  
+probably you do), you could
+iterate over two different lists (one for the unselected users and on  
+for the selected ones).
+But I think iterating over one &quot;annotated list&quot; is better. It just  
+depends on how you structure your
+code, so that you have a clean separation of model and view in your  
+Java code. But then again, this
+is just another example of MVC at work :)
+
+HTH,
+-k
+
+P.S.: This mail probably belongs on stringtemplate-interest but I  
+didn't bother to crosspost or
+set the reply-to. It's a bit off-topic for antlr-interest.
+-- 
+Kay R&#246;pke
+<A HREF="http://classdump.org/">http://classdump.org/</A>
+
+
+
+
+</PRE>
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="023009.html">[antlr-interest] StringTemplate conditional
+</A></li>
+	<LI>Next message: <A HREF="023011.html">[antlr-interest] case sensitivity for ANTLR v3 lexers
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#23010">[ date ]</a>
+              <a href="thread.html#23010">[ thread ]</a>
+              <a href="subject.html#23010">[ subject ]</a>
+              <a href="author.html#23010">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

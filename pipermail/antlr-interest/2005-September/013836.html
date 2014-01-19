@@ -1,0 +1,287 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] bad generated code?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20bad%20generated%20code%3F&In-Reply-To=CC67D26D-0558-42B8-BDAF-F0EB186EAF8D%40codetransform.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="013835.html">
+   
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] bad generated code?</H1>
+    <B>Christian Bird</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20bad%20generated%20code%3F&In-Reply-To=CC67D26D-0558-42B8-BDAF-F0EB186EAF8D%40codetransform.com"
+       TITLE="[antlr-interest] bad generated code?">cabird at gmail.com
+       </A><BR>
+    <I>Fri Sep 30 20:04:53 PDT 2005</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="013835.html">[antlr-interest] bad generated code?
+</A></li>
+        
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#13836">[ date ]</a>
+              <a href="thread.html#13836">[ thread ]</a>
+              <a href="subject.html#13836">[ subject ]</a>
+              <a href="author.html#13836">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I get why they have to be lookahead 1.  In my case, I know that all
+the places that need lookahead 2 only look at the &quot;same level&quot; of the
+tree.  That is, there's not subtrees at those locations.  In general
+though, I see why the problem is a difficult one.  There should at
+least be a check so that if the code generator is asked to do
+lookahead &gt; 1 for a treeparser it generates an exception or error with
+the rule that caused the issue.  In my case I was looking all over my
+grammar and eventually looked through the source.
+
+On a tangent: I'm not so convinced that treeparsers are actually
+working in two dimensions.  In reality, a treeparser simply does an
+pre-order traversal of the AST trying to match tokens, right?  There
+are many applications in computer science where a &quot;2-dimensional&quot; tree
+is turned into linear sequence of &quot;things&quot; (in this case tokens, both
+real and imaginary).  XML, for instance is a tree turned into a linear
+sequence of tokens with special tokens to indicate where subtrees
+start and end.  If I add two tokens, one designating that a new
+subtree is beginning (BEGIN) and one designating that the current
+subtree is ending (END) then the following rule:
+
+rule1 : #(A #(B C D) E F);
+
+can be translated into
+
+rule2: A BEGIN B BEGIN C D END E F END;
+
+I could create a token generator that does a pre-order traversal of
+the tree spitting back tokens to a standard parser that knows about
+BEGIN and AND and it's essentially the same thing as a tree parser. 
+In this case it shouldn't be tough to do arbitrary lookahead, right? 
+Sorry for the over-analysis.  A fellow grad-student here at Davis is a
+tree-nut (HAHA) and I must have been around him a little too much
+lately.
+
+-- Chris
+
+
+
+
+
+On 9/30/05, Monty Zukowski &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">monty at codetransform.com</A>&gt; wrote:
+&gt;<i> Tree parsers have to be k=1 because they are actually two dimensional
+</I>&gt;<i> and it gets too weird to allow k&gt;1.  Syntactic predicates should
+</I>&gt;<i> work, though.
+</I>&gt;<i>
+</I>&gt;<i> You might even try this with 2.7.4.  This seems pretty basic to get
+</I>&gt;<i> wrong.  I wonder if it is a newly introduced bug.
+</I>&gt;<i>
+</I>&gt;<i> Monty
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> On Sep 30, 2005, at 6:59 PM, Christian Bird wrote:
+</I>&gt;<i>
+</I>&gt;<i> &gt; In case anyone cares, I tracked down the problem in the source.  Here
+</I>&gt;<i> &gt; is the lookahead code generator from JavaCodeGenerator.java:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;     private String lookaheadString(int k) {
+</I>&gt;<i> &gt;         if (grammar instanceof TreeWalkerGrammar) {
+</I>&gt;<i> &gt;             return &quot;_t.getType()&quot;;
+</I>&gt;<i> &gt;         }
+</I>&gt;<i> &gt;         return &quot;LA(&quot; + k + &quot;)&quot;;
+</I>&gt;<i> &gt;     }
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Note that if it's a tree walker, k isn't examined at all. My solution
+</I>&gt;<i> &gt; (though I'm not sure that it's always NullPointerException safe) is
+</I>&gt;<i> &gt; this:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;     private String lookaheadString(int k) {
+</I>&gt;<i> &gt;         if (grammar instanceof TreeWalkerGrammar) {
+</I>&gt;<i> &gt;             System.out.println(&quot;k is &quot; + Integer.toString(k) );
+</I>&gt;<i> &gt;             String retStr = &quot;_t&quot;;
+</I>&gt;<i> &gt;             while (k &gt; 1) {
+</I>&gt;<i> &gt;                 retStr += &quot;.getNextSibling()&quot;;
+</I>&gt;<i> &gt;                 k--;
+</I>&gt;<i> &gt;             }
+</I>&gt;<i> &gt;             retStr += &quot;.getType()&quot;;
+</I>&gt;<i> &gt;             return retStr;
+</I>&gt;<i> &gt;         }
+</I>&gt;<i> &gt;         return &quot;LA(&quot; + k + &quot;)&quot;;
+</I>&gt;<i> &gt;     }
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; A quick recompile and that seems to do the trick.  It's possible that
+</I>&gt;<i> &gt; the check for getNextSibling could run off the end of the list and
+</I>&gt;<i> &gt; generate a NullPointerException, but in my grammar I know that the
+</I>&gt;<i> &gt; places where lookahead two is required, there's gauranteed to be a
+</I>&gt;<i> &gt; next sibling.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Terrence,
+</I>&gt;<i> &gt; Any chance that this or something similar and safer (I'm not too
+</I>&gt;<i> &gt; familiar with the codebase) could make it into 2.7.6?  I know that
+</I>&gt;<i> &gt; it's probably not often that a tree parser needs k &gt; 1, but (at least
+</I>&gt;<i> &gt; in my case) it can occur.  Thanks.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; -- Chris
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; On 9/30/05, Christian Bird &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">cabird at gmail.com</A>&gt; wrote:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;&gt; That didn't seem to work either.  I tried using a syntactic
+</I>&gt;<i> &gt;&gt; predicate:
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; name :
+</I>&gt;<i> &gt;&gt;         (ID DOT) =&gt; complexName
+</I>&gt;<i> &gt;&gt;         | (ID ~DOT) =&gt; identifier
+</I>&gt;<i> &gt;&gt;         ;
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; and adding a rule that changes the followset of name:
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; aname :
+</I>&gt;<i> &gt;&gt;         name SEMI;
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; But the code still has issues:
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; boolean synPredMatched98 = false;
+</I>&gt;<i> &gt;&gt; if (((_t.getType()==ID) &amp;&amp; (_t.getType()==SEMI||_t.getType()
+</I>&gt;<i> &gt;&gt; ==ARROW))) {
+</I>&gt;<i> &gt;&gt;         AST __t98 = _t;
+</I>&gt;<i> &gt;&gt;         synPredMatched98 = true;
+</I>&gt;<i> &gt;&gt;         inputState.guessing++;
+</I>&gt;<i> &gt;&gt;         try {
+</I>&gt;<i> &gt;&gt;                 {
+</I>&gt;<i> &gt;&gt;                 AST tmp63_AST_in = (AST)_t;
+</I>&gt;<i> &gt;&gt;                 match(_t,ID);
+</I>&gt;<i> &gt;&gt;                 _t = _t.getNextSibling();
+</I>&gt;<i> &gt;&gt;                 AST tmp64_AST_in = (AST)_t;
+</I>&gt;<i> &gt;&gt;                 matchNot(_t,DOT);
+</I>&gt;<i> &gt;&gt;                 _t = _t.getNextSibling();
+</I>&gt;<i> &gt;&gt;                 }
+</I>&gt;<i> &gt;&gt;         }
+</I>&gt;<i> &gt;&gt;         catch (RecognitionException pe) {
+</I>&gt;<i> &gt;&gt;                 synPredMatched98 = false;
+</I>&gt;<i> &gt;&gt;         }
+</I>&gt;<i> &gt;&gt;         _t = __t98;
+</I>&gt;<i> &gt;&gt;         inputState.guessing--;
+</I>&gt;<i> &gt;&gt; }
+</I>&gt;<i> &gt;&gt; if ( synPredMatched98 ) {
+</I>&gt;<i> &gt;&gt;         identifier(_t);
+</I>&gt;<i> &gt;&gt;         _t = _retTree;
+</I>&gt;<i> &gt;&gt; }
+</I>&gt;<i> &gt;&gt; else {
+</I>&gt;<i> &gt;&gt;         throw new NoViableAltException(_t);
+</I>&gt;<i> &gt;&gt; }
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; Oh well...
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; -- Chris
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; On 9/30/05, Monty Zukowski &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">monty at codetransform.com</A>&gt; wrote:
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; I dunno.  Try putting parenthesis around the two alternatives?
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; Monty
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; On Sep 30, 2005, at 5:48 PM, Christian Bird wrote:
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt; Good suggestion, but unfortunately the code generated for name is
+</I>&gt;<i> &gt;&gt;&gt;&gt; still the same.  I don't understand antlr could ever generate code
+</I>&gt;<i> &gt;&gt;&gt;&gt; that looks like:
+</I>&gt;<i> &gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt; if ((_t.getType()==A) &amp;&amp; (_t.getType()==B)) {}
+</I>&gt;<i> &gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt; When A is not the same as B.  I'm guessing, however, that a
+</I>&gt;<i> &gt;&gt;&gt;&gt; treeparser
+</I>&gt;<i> &gt;&gt;&gt;&gt; generator is more complicated to write and probably not as often
+</I>&gt;<i> &gt;&gt;&gt;&gt; used/tested by antlr users as a normal parser generator (most
+</I>&gt;<i> &gt;&gt;&gt;&gt; people
+</I>&gt;<i> &gt;&gt;&gt;&gt; I've talked to here at UC Davis only use it for parsers and lexers,
+</I>&gt;<i> &gt;&gt;&gt;&gt; not AST traversals).
+</I>&gt;<i> &gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt; Any other ideas?  I appreciate your taking a look at it.
+</I>&gt;<i> &gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt; -- Chris
+</I>&gt;<i> &gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt; On 9/30/05, Monty Zukowski &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">monty at codetransform.com</A>&gt; wrote:
+</I>&gt;<i> &gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; On Sep 30, 2005, at 4:57 PM, Christian Bird wrote:
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt;  zimport :
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt;     #(&quot;import&quot;
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt;         (name ARROW complexNameList SEMI |
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt;         &quot;all&quot; identifier SEMI) )
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt;     ;
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; It does seem like a code gen bug.  I would recommend breaking this
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; up into
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; another rule if you can:
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; zimport: #(&quot;import&quot; importSuffix)
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; importSuffix: name ARROW complexNameList SEMI
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt;                        | &quot;all&quot; identifier SEMI
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt;                        ;
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; See if that still triggers the problem.
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; Monty
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt; --
+</I>&gt;<i> &gt;&gt;&gt;&gt; Christian Bird
+</I>&gt;<i> &gt;&gt;&gt;&gt; <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">cabird at gmail.com</A>
+</I>&gt;<i> &gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; --
+</I>&gt;<i> &gt;&gt; Christian Bird
+</I>&gt;<i> &gt;&gt; <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">cabird at gmail.com</A>
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; --
+</I>&gt;<i> &gt; Christian Bird
+</I>&gt;<i> &gt; <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">cabird at gmail.com</A>
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i>
+</I>&gt;<i>
+</I>
+
+--
+Christian Bird
+<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">cabird at gmail.com</A>
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="013835.html">[antlr-interest] bad generated code?
+</A></li>
+	
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#13836">[ date ]</a>
+              <a href="thread.html#13836">[ thread ]</a>
+              <a href="subject.html#13836">[ subject ]</a>
+              <a href="author.html#13836">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

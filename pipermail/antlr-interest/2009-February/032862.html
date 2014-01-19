@@ -1,0 +1,178 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Antlr won't backtrack?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Antlr%20won%27t%20backtrack%3F&In-Reply-To=%3CB0DE8B66453D0F4AA67D2A150934999B01195F14FB32%40ex01.dbsophicHQ.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="032810.html">
+   <LINK REL="Next"  HREF="032795.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Antlr won't backtrack?</H1>
+    <B>Vitaliy</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Antlr%20won%27t%20backtrack%3F&In-Reply-To=%3CB0DE8B66453D0F4AA67D2A150934999B01195F14FB32%40ex01.dbsophicHQ.com%3E"
+       TITLE="[antlr-interest] Antlr won't backtrack?">Vitaliy at dbsophic.com
+       </A><BR>
+    <I>Wed Feb 11 04:18:12 PST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="032810.html">[antlr-interest] Antlr won't backtrack?
+</A></li>
+        <LI>Next message: <A HREF="032795.html">[antlr-interest] Antlr won't backtrack?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#32862">[ date ]</a>
+              <a href="thread.html#32862">[ thread ]</a>
+              <a href="subject.html#32862">[ subject ]</a>
+              <a href="author.html#32862">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Jim,
+
+Thanks for your response.
+The problem is that the grammar I've presented below is a very simplified version of the real grammar I'm handling.
+In the actual grammar there are many rules which might end in some cases with an identifier, while in other cases - not.
+It's simply impractical to analyze all these cases, go over them and add the semantic predicate you've suggested.
+Moreover, there is unfortunately no statement terminator in my grammar, which no doubt could have made my life so much easier, like you said.
+
+Is there any other alternative?
+Can't I just tell it somehow to try all alternatives upon failure in an exhaustive search until success?
+Or somehow increase the lookahead in this case?
+
+BTW, I still don't get it why Antlr won't backtrack upon failure in this case.. Again, isn't it just what the 'backtrack' option is all about??
+
+I would really appreciate any suggestion,
+Vitaliy
+
+From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Jim Idle
+Sent: Monday, February 09, 2009 18:51
+Cc: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: Re: [antlr-interest] Antlr won't backtrack?
+
+Vitaliy wrote:
+Hi Ter,
+
+Thanks for your quick response!
+
+I'm still confused:
+
+What can I do to suggest Antlr to consider the other alternative, and backtrack instead of failing?
+
+Shouldn't the backtrack option do just that - make Antlr backtrack if it has failed upon a given input?
+
+Why would the variable alternative effect its behavior?
+
+I would recommend that you do not use backtrack at this point. While it can be useful for prototyping, one off conversion grammars and some horrible grammars such as VBSCript, it will generally be more difficult to work out why the grammar isn't working. The errors and warnings that non-backtrack gives are real and you can backtrack on specific rule rather than the entire grammar if you must. Left factor the rules:
+
+statement
+ : Identifier (COLON {isLabel =true;} |  {isVariable=true; })
+ | KEYWORD ((Identifier)=&gt;Identifier)?
+ | etc.
+
+In some grammars it is necessary to look for some kind of terminator. For instance a statement might end in ';' or at '\n'. If it did then you grammar would avoid the ambiguity between the optional Identifier that follows KEYWORD and Identifier and Identifier COLON.
+
+The answers to your quests are that your grammar is so ambiguous that even the best guess of backtrack mode cannot make the correct guess in all cases. As soon as it if fins an alt that looks correct it will take it.
+
+So if you have:
+
+KEYWORD IDENTIFIER COLON
+
+It consumes IDENTIFIER with the KEYWORD and leaves you with a COLON, as will my example above. If you must really have the grammar this way, then you will have to use a semantic predicate:
+
+|<i> KEYWORD ( {input.LA(1) == Identifier &amp;&amp; input.LA(2) != COLON}=&gt; Identifier)?
+</I>
+Jim
+
+
+
+Thanks allot for your help,
+Vitaliy
+
+From: Terence Parr [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">parrt at cs.usfca.edu</A>]
+Sent: Sunday, February 08, 2009 19:46
+To: Vitaliy
+Cc: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>&lt;mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>&gt;
+Subject: Re: [antlr-interest] Antlr won't backtrack?
+
+
+On Feb 8, 2009, at 2:48 AM, Vitaliy wrote:
+root                        : statements EOF;
+statements            : (statement)+;
+statement             : label
+                                  | keyword
+                                  | variable
+                                  ;
+
+identifier               : Identifier;
+label                       : identifier COLON;
+keyword                : KEYWORD (identifier)?;
+variable                 : identifier;
+
+
+&quot;keyword label:&quot; will always match rule keyword and then fail.  ANTLR will match greedily because you told it to shut up and backtrack.  It's hiding the warning that identifier can match now or later (during statements loop).
+
+Ter
+
+
+__________ Information from ESET NOD32 Antivirus, version of virus signature database 3837 (20090208) __________
+
+The message was checked by ESET NOD32 Antivirus.
+
+<A HREF="http://www.eset.com">http://www.eset.com</A>
+
+
+
+
+
+
+________________________________
+
+
+
+
+
+
+
+
+List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+
+Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+
+
+
+
+
+__________ Information from ESET NOD32 Antivirus, version of virus signature database 3844 (20090211) __________
+
+The message was checked by ESET NOD32 Antivirus.
+
+<A HREF="http://www.eset.com">http://www.eset.com</A>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20090211/7d53da3f/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20090211/7d53da3f/attachment.html</A> 
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="032810.html">[antlr-interest] Antlr won't backtrack?
+</A></li>
+	<LI>Next message: <A HREF="032795.html">[antlr-interest] Antlr won't backtrack?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#32862">[ date ]</a>
+              <a href="thread.html#32862">[ thread ]</a>
+              <a href="subject.html#32862">[ subject ]</a>
+              <a href="author.html#32862">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

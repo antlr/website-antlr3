@@ -1,0 +1,160 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Why don't parsers support character ranges?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Why%20don%27t%20parsers%20support%20character%20ranges%3F&In-Reply-To=%3C108051.95259.qm%40web55909.mail.re3.yahoo.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="028026.html">
+   <LINK REL="Next"  HREF="028002.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Why don't parsers support character ranges?</H1>
+    <B>Loring Craymer</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Why%20don%27t%20parsers%20support%20character%20ranges%3F&In-Reply-To=%3C108051.95259.qm%40web55909.mail.re3.yahoo.com%3E"
+       TITLE="[antlr-interest] Why don't parsers support character ranges?">lgcraymer at yahoo.com
+       </A><BR>
+    <I>Wed Apr 23 08:08:34 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="028026.html">[antlr-interest] simple grammar with wildcard
+</A></li>
+        <LI>Next message: <A HREF="028002.html">[antlr-interest] Why don't parsers support character ranges?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#27992">[ date ]</a>
+              <a href="thread.html#27992">[ thread ]</a>
+              <a href="subject.html#27992">[ subject ]</a>
+              <a href="author.html#27992">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I think that Gavin answered the range question pretty well.  As to the separation of lexer and parser, that is not an historical artifact.  Had you tried to use your CS 101 LL1 parser for production use, you would have been very disappointed with both its performance and memory footprint.  Lexers work with characters; parsers work with tokens.  If your characters are packaged as tokens, memory usage expands dramatically and it takes longer to dereference the token to look at the character.  That can easily cost you a factor of 10-100 in performance; ANTLR 2 just packaged characters into strings, and that cost a factor of 5 over more optimal approaches (ANTLR 3 does much better).  The impact of using a single stage of analysis on the parser is equally dramatic:  &quot;foo is blue&quot; goes from a 3 token analysis problem (&quot;foo&quot; &quot;is&quot; &quot;blue&quot;) to an 11 token analysis problem (can you say 'combinatorial explosion') with a corresponding dramatic decrease in performance.
+
+As to the  &quot;before '@' after&quot; example you give (assuming that you really do need to distinguish BEFORE and AFTER tokens), the best approach might be to support multiple token emission from lexer rules so  that you do something like
+
+AT :  'a' .. 'l' { emit(BEFORE); } '@' { emit(AT); } 'm'..'z' {emit(AFTER); } ;
+
+foo : BEFORE AT AFTER
+
+but ANTLR 3 does not quite do that yet.
+
+Note that the natural approach to reading text is in fact to lex characters into tokens which we call &quot;words&quot; (reading text without spaces requires some effort) and then to parse sentences made of words.  Spaces and punctuation make a big difference because they support hierarchical processing.
+
+--Loring
+
+
+----- Original Message ----
+&gt;<i> From: Hannes Schmidt &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr5 at hannesschmidt.net</A>&gt;
+</I>&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> Sent: Tuesday, April 22, 2008 7:16:16 PM
+</I>&gt;<i> Subject: [antlr-interest] Why don't parsers support character ranges?
+</I>&gt;<i> 
+</I>&gt;<i> Hi all,
+</I>&gt;<i> 
+</I>&gt;<i> I would like to use character ranges in a parser as illustrated in the 
+</I>&gt;<i> following example (a very reduced version of my real-world grammar):
+</I>&gt;<i> 
+</I>&gt;<i> grammar test1;
+</I>&gt;<i> foo : before '@' after;
+</I>&gt;<i> before : 'a'..'z';
+</I>&gt;<i> after : 'm'..'z';
+</I>&gt;<i> 
+</I>&gt;<i> ANTLR generates a parser that ignores the range as if the grammar were
+</I>&gt;<i> 
+</I>&gt;<i> grammar test2;
+</I>&gt;<i> foo : before '@' after;
+</I>&gt;<i> before : ;
+</I>&gt;<i> after : ;
+</I>&gt;<i> 
+</I>&gt;<i> IOW, the grammar fails to parse the input &quot;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">a at m</A>&quot;. If I break the grammar 
+</I>&gt;<i> up into a lexer and a parser as in
+</I>&gt;<i> 
+</I>&gt;<i> grammar test3;
+</I>&gt;<i> foo : BEFORE '@' AFTER;
+</I>&gt;<i> BEFORE : 'a'..'z';
+</I>&gt;<i> AFTER : 'm'..'z';
+</I>&gt;<i> 
+</I>&gt;<i> the generated code fails to parse &quot;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">a at m</A>&quot; with a MismatchedTokeException 
+</I>&gt;<i> at the 'm'. This is because ANTLR silently prioritizes BEFORE even 
+</I>&gt;<i> though its set of characters intersects that of AFTER. Swapping BEFORE 
+</I>&gt;<i> and AFTER would generate a parser that fails to recognize &quot;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">m at m</A>&quot;.
+</I>&gt;<i> 
+</I>&gt;<i> So here are  my questions:
+</I>&gt;<i> 
+</I>&gt;<i> Why can't I use ranges in parsers?
+</I>&gt;<i> 
+</I>&gt;<i> Why doesn't ANTLR emit a warning when it ignores ranges in grammar rules?
+</I>&gt;<i> 
+</I>&gt;<i> How can I emulate the missing range feature without obfuscating my 
+</I>&gt;<i> grammar too much? Semantic predicates?
+</I>&gt;<i> 
+</I>&gt;<i> Now let me put my tinfoil hat on and theorize a little bit: I think that 
+</I>&gt;<i> the root cause of  my confusion is ANTLR's distinction between lexer and 
+</I>&gt;<i> parser. I think this distinction is purely historical and ANTLR might be 
+</I>&gt;<i> better of without it. When writing grammars, I often find myself in 
+</I>&gt;<i> situations where I know that certain lexer rules make sense in a certain 
+</I>&gt;<i> parser context only but that context is not available to the lexer 
+</I>&gt;<i> because the state that defines it is maintained in the parser.
+</I>&gt;<i> 
+</I>&gt;<i> I fondly remember my CS101 classes when we wrote recursive descent 
+</I>&gt;<i> parsers for LL(*) in Opal (a functional language similar to Haskell). We 
+</I>&gt;<i> didn't have to distinguish between lexer and parser and it felt very 
+</I>&gt;<i> liberating. ;-)
+</I>
+
+
+      ____________________________________________________________________________________
+Be a better friend, newshound, and 
+know-it-all with Yahoo! Mobile.  Try it now.  <A HREF="http://mobile.yahoo.com/;_ylt=Ahu06i62sR8HDtDypao8Wcj9tAcJ">http://mobile.yahoo.com/;_ylt=Ahu06i62sR8HDtDypao8Wcj9tAcJ</A>
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="028026.html">[antlr-interest] simple grammar with wildcard
+</A></li>
+	<LI>Next message: <A HREF="028002.html">[antlr-interest] Why don't parsers support character ranges?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#27992">[ date ]</a>
+              <a href="thread.html#27992">[ thread ]</a>
+              <a href="subject.html#27992">[ subject ]</a>
+              <a href="author.html#27992">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,227 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Progressive Slowdown in Parsing (code change	proposal)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Progressive%20Slowdown%20in%20Parsing%20%28code%20change%0A%09proposal%29&In-Reply-To=%3CCOL101-DS4A78D9C74F5BA1A0481F3B3E80%40phx.gbl%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="032141.html">
+   <LINK REL="Next"  HREF="032143.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Progressive Slowdown in Parsing (code change	proposal)</H1>
+    <B>A. Saake</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Progressive%20Slowdown%20in%20Parsing%20%28code%20change%0A%09proposal%29&In-Reply-To=%3CCOL101-DS4A78D9C74F5BA1A0481F3B3E80%40phx.gbl%3E"
+       TITLE="[antlr-interest] Progressive Slowdown in Parsing (code change	proposal)">asaake at hotmail.de
+       </A><BR>
+    <I>Sat Dec 27 11:50:57 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="032141.html">[antlr-interest] newbie - before I start
+</A></li>
+        <LI>Next message: <A HREF="032143.html">[antlr-interest] Progressive Slowdown in Parsing (code change	proposal)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#32142">[ date ]</a>
+              <a href="thread.html#32142">[ thread ]</a>
+              <a href="subject.html#32142">[ subject ]</a>
+              <a href="author.html#32142">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>After changing my grammar to avoid backtracking there was no performance 
+gain. I didn't want to change everything to an AST output, because my actual 
+grammar works fine and I didn't want to repeat all tests I have done so far.
+
+So I went back to the profiler and had a look to the C# sources from 
+TokenRewriteStream. My problem was the code in 
+ReduceToSingleOperationPerIndex and GetKindOfOps.
+
+I have to confess that I didn't try to understand the full 
+TokenRewriteStream mechanism, but only the mentioned procedures. After some 
+tests with my grammar I found a solution, which seems to result in nearly 
+linear performance with my grammar. I'm back at 1 minute (was 18 minutes 
+before) for my 3500 lines of code!
+
+The change was to start with two empty arraylists in 
+ReduceToSingleOperationPerIndex, one for InsertBeforeOps, one for RelaceOps. 
+Then follow the loops as in original code. But in this loops the two 
+arraylists grow with every processed rewrite, so no need for calling 
+GetKindOfOps exists. The purpose of this loops is to eliminate rewrites by 
+setting them to null. This has to be done in the new arraylists, too. And 
+the arraylists were traversed backwards, what is a difference to the 
+original code.
+
+The only part I'm having a bad feeling about is the &quot;continue&quot;-statement 
+after &quot;rewrites[i] = null;&quot;, probably because I don't understand the whole 
+thing. But it was part of the original code, so I didn't change it. Perhaps 
+some one with more insight can verify that this is intended behaviour.
+
+Here is my code:
+
+    protected IDictionary ReduceToSingleOperationPerIndex(IList rewrites) {
+      ArrayList insertBeforeOps = new ArrayList();
+      ArrayList replaceOps = new ArrayList();
+
+      // WALK REPLACES
+      for (int i = 0, ni = rewrites.Count; i &lt; ni; i++) {
+        object op = rewrites[i];
+
+        //ignored null'd ops
+        if (op == null) continue;
+
+        //InsertBeforeOp added to ArrayList, but ignored
+        if (op is InsertBeforeOp) {
+          insertBeforeOps.Add(op);
+          continue;
+        }
+
+        //process only, when ReplaceOp
+        ReplaceOp rop = op as ReplaceOp;
+        if (rop == null) continue;
+
+        //GetKindOfOps(rewrites, insertBeforeOps, replaceOps, lastVisited, 
+i);
+
+        // Wipe prior inserts within range
+        for (int j = insertBeforeOps.Count -1; j &gt;= 0; j--) {
+          InsertBeforeOp iop = (InsertBeforeOp)insertBeforeOps[j];
+          if (iop.index &gt;= rop.index &amp;&amp; iop.index &lt;= rop.lastIndex) {
+            // delete insert as it's a no-op.
+            rewrites[iop.instructionIndex] = null;
+            insertBeforeOps.RemoveAt(j);
+          }
+        }
+
+        // Drop any prior replaces contained within
+        for (int j = replaceOps.Count-1; j &gt;= 0; j--) {
+          ReplaceOp prevRop = (ReplaceOp)replaceOps[j];
+          if (prevRop.index &gt;= rop.index &amp;&amp; prevRop.lastIndex &lt;= 
+rop.lastIndex) {
+            // delete replace as it's a no-op.
+            rewrites[prevRop.instructionIndex] = null;
+            replaceOps.RemoveAt(j);
+            continue;
+          }
+
+          // throw exception unless disjoint or identical
+          bool disjoint =
+            prevRop.lastIndex &lt; rop.index || prevRop.index &gt; rop.lastIndex;
+          bool same =
+            prevRop.index == rop.index &amp;&amp; prevRop.lastIndex == 
+rop.lastIndex;
+          if (!disjoint &amp;&amp; !same) {
+            throw new ArgumentOutOfRangeException(&quot;replace op boundaries of 
+&quot; + rop +
+                               &quot; overlap with previous &quot; + prevRop);
+          }
+        }
+        //we are sure, it's a ReplaceOp, so add it to replaceOps list
+        replaceOps.Add(rop);
+      }
+
+      //Reset lists
+      insertBeforeOps = new ArrayList();
+      replaceOps = new ArrayList();
+
+      // WALK INSERTS
+      for (int i = 0, ni = rewrites.Count; i &lt; ni; i++) {
+        object op = rewrites[i];
+
+        //ignored null'd ops
+        if (op == null) continue;
+
+        //ReplaceOp added to ArrayList, but ignored
+        if (op is ReplaceOp) {
+          replaceOps.Add(op);
+          continue;
+        }
+
+        //process only, when InsertBeforeOp
+        InsertBeforeOp iop = rewrites[i] as InsertBeforeOp;
+        if (iop == null) continue;
+
+        //GetKindOfOps(rewrites, insertBeforeOps, replaceOps, lastVisited, 
+i);
+
+        for (int j = insertBeforeOps.Count - 1; j &gt;= 0; j--) {
+          InsertBeforeOp prevIop = (InsertBeforeOp)insertBeforeOps[j];
+          if (prevIop.index == iop.index) { // combine objects
+            // convert to strings...we're in process of toString'ing
+            // whole token buffer so no lazy eval issue with any templates
+            iop.text = CatOpText(iop.text, prevIop.text);
+            // delete redundant prior insert
+            rewrites[prevIop.instructionIndex] = null;
+            insertBeforeOps.RemoveAt(j);
+          }
+        }
+
+        //foreach (ReplaceOp rop in replaceOps) {
+        for (int j = replaceOps.Count - 1; j &gt;= 0; j--) {
+          ReplaceOp rop = (ReplaceOp)replaceOps[j];
+          if (iop.index == rop.index) {
+            rop.text = CatOpText(iop.text, rop.text);
+            rewrites[i] = null;  // delete current insert
+            continue;
+          }
+          if (iop.index &gt;= rop.index &amp;&amp; iop.index &lt;= rop.lastIndex) {
+            throw new ArgumentOutOfRangeException(&quot;insert op &quot; + iop +
+                               &quot; within boundaries of previous &quot; + rop);
+          }
+        }
+        if (rewrites[i] != null) {
+          insertBeforeOps.Add(iop);
+        }
+      }
+
+      // System.out.println(&quot;rewrites after=&quot;+rewrites);
+      IDictionary m = new Hashtable();
+      for (int i = 0; i &lt; rewrites.Count; i++) {
+        RewriteOperation op = (RewriteOperation)rewrites[i];
+        if (op == null)
+          continue; // ignore deleted ops
+        if (m[op.index] != null) {
+          throw new Exception(&quot;should only be one op per index&quot;);
+        }
+        m[op.index] = op;
+      }
+      //System.out.println(&quot;index to op: &quot;+m);
+      return m;
+    }
+
+
+I'd be happy if it would be part of the code base, if it's acceptable and I 
+haven't overseen something important.
+
+Best regards,
+
+Andreas Saake
+
+ 
+
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="032141.html">[antlr-interest] newbie - before I start
+</A></li>
+	<LI>Next message: <A HREF="032143.html">[antlr-interest] Progressive Slowdown in Parsing (code change	proposal)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#32142">[ date ]</a>
+              <a href="thread.html#32142">[ thread ]</a>
+              <a href="subject.html#32142">[ subject ]</a>
+              <a href="author.html#32142">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,196 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Day 2: Trying to get an AST in C#. Progress,	but still not working.
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Day%202%3A%20Trying%20to%20get%20an%20AST%20in%20C%23.%20Progress%2C%0A%09but%20still%20not%20working.&In-Reply-To=%3C032501cd2c96%2492b0f6c0%24b812e440%24%40highpointsoftware.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="044578.html">
+   <LINK REL="Next"  HREF="044580.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Day 2: Trying to get an AST in C#. Progress,	but still not working.</H1>
+    <B>Peter Bosch</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Day%202%3A%20Trying%20to%20get%20an%20AST%20in%20C%23.%20Progress%2C%0A%09but%20still%20not%20working.&In-Reply-To=%3C032501cd2c96%2492b0f6c0%24b812e440%24%40highpointsoftware.com%3E"
+       TITLE="[antlr-interest] Day 2: Trying to get an AST in C#. Progress,	but still not working.">pbosch at highpointsoftware.com
+       </A><BR>
+    <I>Mon May  7 14:15:46 PDT 2012</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="044578.html">[antlr-interest] Addendum: Trying to get an AST in C#. Not working	- could use a sanity check.
+</A></li>
+        <LI>Next message: <A HREF="044580.html">[antlr-interest] Parse rule to add multiple homogeneous branches	under a root node?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#44579">[ date ]</a>
+              <a href="thread.html#44579">[ thread ]</a>
+              <a href="subject.html#44579">[ subject ]</a>
+              <a href="author.html#44579">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>PROGRESS! Thanks, Kevin Carroll.
+
+It now compiles and runs, so we're getting somewhere. So far, I have ...
+- Renamed two HIDDEN keywords in MarblesLexer.cs (i.e. hidden channel) to
+Hidden. (Is this due to a bug, or an error in my input?)
+- Made my parse rule public so it could be called.
+- Updated my parsing code to call 
+	AstParserRuleReturnScope&lt;object,IToken&gt; ParseReturn =
+Parser.parse();
+
+Now, I get a parse tree, but it appears that the second and then the third
+Box and Rock are overwriting the first. I debug into the parser's execution,
+and I can see the BOX token with three ROCK tokens, so I'm wondering why
+they're not making it into the AST. 
+
+Anyway, I only get
+
+ROOT
+  BOX
+    ROCK
+      COLOR
+        &quot;Black&quot;
+      WEIGHT
+        23
+      R_TYPE
+        &quot;Quartz&quot;
+
+Where I expect to get a ROOT with 3 BOXes, and 3 ROCKs in each BOX and
+properties under each ROCK.
+
+To remind, my grammar is as follows - can anyone point out my error? (If you
+need the input file contents, it's included in yesterday's email. Didn't
+want to unnecessarily clog up the email tubes...
+
+grammar Marbles;
+
+// options, then tokens, then @header then @members.
+options {
+  language=CSharp3;
+  output=AST;
+}
+
+tokens {
+    ROOT;
+}
+
+@header {
+    //using System;
+}
+
+@parser::namespace { Marbles }
+@lexer::namespace { Marbles }
+
+@parser::members {
+	protected void Print(string s){ System.Console.WriteLine(&quot;Token: &quot; +
+s); } }
+
+// Parser Rules.
+
+public parse
+    :  r=box* EOF -&gt; ^(ROOT $r*)
+    ;
+ 
+color	: K_COLOR '=' s=STRINGLITERAL {Print(&quot;C&quot;);} -&gt;^(K_COLOR $s) 
+    ;
+
+weight	: K_WEIGHT '=' w=INTEGER -&gt; ^(K_WEIGHT $w)
+    ;
+ 
+htype	: K_HTYPE '=' t=STRINGLITERAL -&gt; ^(K_HTYPE $t)
+    ;
+ 
+rtype	: K_RTYPE '=' t=STRINGLITERAL -&gt; ^(K_RTYPE $t)
+    ;
+    
+rock	: 
+    '{' K_ROCK c=color w=weight t=rtype '}' {Print(&quot;R&quot;);} -&gt;^(K_ROCK $c $w
+$t)
+    ;
+    
+hammer	:
+    '{' K_HAMMER t=htype? w=weight? '}'  -&gt;^(K_HAMMER $t? $w?)
+    ;
+    
+box	:
+    '[' K_BOX r=rock* ']' {Print(&quot;B&quot;);} -&gt; ^(K_BOX $r*)
+    ;
+    
+bag	:
+    '[' K_HAMMER h=(hammer)* ']' -&gt; ^(K_HAMMER $h*)
+    ;
+    
+
+ 
+// Lexer Rules
+EOL	: ('\r'? '\n') {$channel=HIDDEN;}
+    ;
+    
+WS      : (' '|'\t'|'\f'| EOL)+ {$channel=HIDDEN;}
+    ;
+    
+K_BOX	: 'BOX'
+    ;
+K_BAG	: 'BAG'
+    ;
+K_ROCK	: 'ROCK'
+    ;
+K_COLOR	: 'COLOR'
+    ;
+K_HAMMER        : 'HAMMER'
+    ;
+K_HTYPE	: 'H_TYPE'
+    ;
+K_RTYPE	: 'R_TYPE'
+    ;
+K_WEIGHT          : 'WEIGHT'
+    ;
+    
+STRINGLITERAL
+    : '&quot;' (~('&quot;' | '\\'))* '&quot;'
+    ;
+    
+INTEGER	: ('0'..'9')+
+    ;
+
+COMMENT
+    : '//' ~('\n'|'\r')* '\r'? '\n' {Skip();} //{$channel=HIDDEN;}
+    | '/*' ( options {greedy=false;} : . )* '*/' {Skip();}
+//{$channel=HIDDEN;}
+    ;    
+
+Peter Bosch
+Highpoint Software Systems
+E-mail : <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">pbosch at highpointsoftware.com</A>
+Phone : 262-893-5400
+P-Mail : S42 W27451 Oak Grove Lane Waukesha, WI, 53189
+Useful and Usable Decision Support &amp; Technical Software
+
+
+
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="044578.html">[antlr-interest] Addendum: Trying to get an AST in C#. Not working	- could use a sanity check.
+</A></li>
+	<LI>Next message: <A HREF="044580.html">[antlr-interest] Parse rule to add multiple homogeneous branches	under a root node?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#44579">[ date ]</a>
+              <a href="thread.html#44579">[ thread ]</a>
+              <a href="subject.html#44579">[ subject ]</a>
+              <a href="author.html#44579">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

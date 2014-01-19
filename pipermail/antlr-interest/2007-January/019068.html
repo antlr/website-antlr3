@@ -1,0 +1,233 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Antlr3: Help - line 0:-1 mismatched input '&lt;EOF&gt;' ?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Antlr3%3A%20Help%20-%20line%200%3A-1%20mismatched%20input%20%27%3CEOF%3E%27%20%3F&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="019074.html">
+   <LINK REL="Next"  HREF="019069.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Antlr3: Help - line 0:-1 mismatched input '&lt;EOF&gt;' ?</H1>
+    <B>Mark Mandel</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Antlr3%3A%20Help%20-%20line%200%3A-1%20mismatched%20input%20%27%3CEOF%3E%27%20%3F&In-Reply-To="
+       TITLE="[antlr-interest] Antlr3: Help - line 0:-1 mismatched input '&lt;EOF&gt;' ?">mark.mandel at gmail.com
+       </A><BR>
+    <I>Sun Jan  7 21:32:29 PST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="019074.html">[antlr-interest] antlr works ignoring whitespace
+</A></li>
+        <LI>Next message: <A HREF="019069.html">[antlr-interest] Antlr3: Help - line 0:-1 mismatched input	'&lt;EOF&gt;' ?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#19068">[ date ]</a>
+              <a href="thread.html#19068">[ thread ]</a>
+              <a href="subject.html#19068">[ subject ]</a>
+              <a href="author.html#19068">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hey all -
+
+I'm still working on my HQL like syntax, just being very basic at the
+moment, just parsing a statement that looks like, to get a flat AST
+tree.
+
+&quot;select emails.Email.emailName, emails.Email.emailFrom from
+emails.Email where emails.Email.emailName = :name&quot;;
+
+To get my feet wet and get going.
+
+I've been following the XML Parser tutorial pretty closely on a lot of
+things, and it's been a great help.
+
+I get the error:
+line 0:-1 mismatched input '&lt;EOF&gt;' expecting SELECT
+
+Whenever I run my parser over my tokens, and I have no idea why.  Is
+line:0:-1 at the beginning or the end of the string?
+
+I've gone hunting as much as I can, but I have yet to find anything
+that tells me where I should be looking to solve this issue.
+
+Any and all help is appreciated.
+
+My grammar and test bed is the following:
+
+[Test.java]
+
+	public static void main(String[] args)
+	{
+		try
+		{
+			String tql = &quot;select emails.Email.emailName, emails.Email.emailFrom
+from emails.Email where emails.Email.emailName = :name&quot;;
+			System.out.println(tql);
+			CharStream input = new ANTLRStringStream(tql);
+	        TqlLexerLexer lexer = new TqlLexerLexer(input);
+	        Token token;
+	        while ((token = lexer.nextToken())!=Token.EOF_TOKEN) {
+	        	System.out.println(&quot;Token[&quot;+ token.getType() +&quot;]: &quot;+token.getText());
+	        }
+	
+	        CommonTokenStream tokens = new  CommonTokenStream(lexer);
+	        TqlParserParser parser = new TqlParserParser(tokens);
+	        TqlParserParser.selectStatement_return root = parser.selectStatement();
+	        System.out.println(&quot;tree=&quot;+((Tree)root.tree).toStringTree());
+		}
+		catch(Throwable t)
+	    {
+	        System.out.println(&quot;Exception: &quot;+t.getMessage());
+	        t.printStackTrace();
+	    }
+	}
+
+[TqlParser.g]
+
+parser grammar TqlParser;
+
+options
+{
+	tokenVocab=TqlLexer;
+	output=AST;
+}
+
+selectStatement
+	:
+	selectExpression
+	;
+
+selectExpression
+	:
+	selectHeader
+	fromStatement
+	whereStatement
+	;
+
+selectHeader
+	:
+	SELECT PROPERTY_IDENTIFIER (COMMA PROPERTY_IDENTIFIER)*
+	;
+
+fromStatement
+	:
+	FROM CLASS_IDENTIFIER (COMMA CLASS_IDENTIFIER)*
+	;
+	
+whereStatement
+	:
+	WHERE PROPERTY_IDENTIFIER OPERATOR MAPPED_VALUE
+	;
+
+[TqlLexer.g]
+lexer grammar TqlLexer;
+
+@members {
+	private static final int STRING_MODE = 1;
+	private static final int PROPERTY_IDENTIFIER_MODE = 2;
+	private static final int CLASS_IDENTIFIER_MODE = 3;
+	
+	private int currentMode = STRING_MODE;
+	private int pastMode;
+	
+	private void setMode(int mode)
+	{
+		pastMode = currentMode;
+		currentMode = mode;
+	}
+}
+
+SELECT	:
+		{ currentMode == STRING_MODE }?=&gt;
+		'select'
+		{ setMode(PROPERTY_IDENTIFIER_MODE);  }
+		;
+FROM	:
+		{ currentMode == STRING_MODE }?=&gt;
+		'from'
+		{ setMode(CLASS_IDENTIFIER_MODE); }
+		;
+WHERE	:		
+		{ currentMode == STRING_MODE }?=&gt;
+		'where'
+		{ setMode(PROPERTY_IDENTIFIER_MODE);  }
+		;
+COMMA	:
+		','
+		{ setMode(pastMode); }
+		;
+OPERATOR
+		:
+		'='|'&gt;'|'&lt;'|'!='|'&lt;&gt;'|'&gt;='|'&lt;='
+		;
+MAPPED_VALUE
+		:	
+		':'(LETTER|DIGIT|'_')+
+		;
+CLASS_IDENTIFIER
+		:
+		{ currentMode == CLASS_IDENTIFIER_MODE }?=&gt;
+		IDENTIFIER
+		{ setMode(STRING_MODE);  }
+		;		
+PROPERTY_IDENTIFIER
+		:
+		{ currentMode == PROPERTY_IDENTIFIER_MODE }?=&gt;
+		IDENTIFIER
+		{ setMode(STRING_MODE);  }
+		;		
+WS  	:
+		(' '|'\r'|'\t'|'\u000C'|'\n') {$channel=HIDDEN;}
+    	;		
+fragment IDENTIFIER
+		:
+		LETTER(LETTER|DIGIT|'.'|'_')+
+		;
+fragment DIGIT
+	    :
+	    '0'..'9'
+    	;
+fragment LETTER
+	    :
+	    'a'..'z'| 'A'..'Z'
+	    ;
+Again, any help would be appreciated.
+
+Regards,
+
+Mark
+
+
+-- 
+E: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">mark.mandel at gmail.com</A>
+W: www.compoundtheory.com
+</PRE>
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="019074.html">[antlr-interest] antlr works ignoring whitespace
+</A></li>
+	<LI>Next message: <A HREF="019069.html">[antlr-interest] Antlr3: Help - line 0:-1 mismatched input	'&lt;EOF&gt;' ?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#19068">[ date ]</a>
+              <a href="thread.html#19068">[ thread ]</a>
+              <a href="subject.html#19068">[ subject ]</a>
+              <a href="author.html#19068">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

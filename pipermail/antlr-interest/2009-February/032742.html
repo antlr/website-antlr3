@@ -1,0 +1,139 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] C generator is not generating @after actions
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20C%20generator%20is%20not%20generating%20%40after%20actions&In-Reply-To=%3C20090205225838.1D62D34184B8%40www.antlr.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="032737.html">
+   <LINK REL="Next"  HREF="032738.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] C generator is not generating @after actions</H1>
+    <B>Gavin Lambert</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20C%20generator%20is%20not%20generating%20%40after%20actions&In-Reply-To=%3C20090205225838.1D62D34184B8%40www.antlr.org%3E"
+       TITLE="[antlr-interest] C generator is not generating @after actions">antlr at mirality.co.nz
+       </A><BR>
+    <I>Thu Feb  5 14:58:15 PST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="032737.html">[antlr-interest] C generator is not generating @after  actions
+</A></li>
+        <LI>Next message: <A HREF="032738.html">[antlr-interest] custom AST with re-write rules in C runtime
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#32742">[ date ]</a>
+              <a href="thread.html#32742">[ thread ]</a>
+              <a href="subject.html#32742">[ subject ]</a>
+              <a href="author.html#32742">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>At 05:31 6/02/2009, Jim Idle wrote:
+&gt;<i>You are correct that it isn't exactly semantically equivalent, 
+</I>&gt;<i>but I have never seen a case where people wanted to do anything 
+</I>&gt;<i>different. The exception clause would generally be more useful. 
+</I>&gt;<i>In a realt @after clause, you would have to make sure you checked 
+</I>&gt;<i>any references for NULL before trying to do anything anyway. So, 
+</I>&gt;<i>at least for the more usual case, it makes more sense to have the 
+</I>&gt;<i>action that you want to happen at the rule end, when it is 
+</I>&gt;<i>successful, in an action at the end. Then, if there is something 
+</I>&gt;<i>special you need to do upon failure, you want an exception clause 
+</I>&gt;<i>like the Java target. I think most people are reading @after and 
+</I>&gt;<i>just see &quot;when this rule finishes successfully&quot;.
+</I>
+I think the theory is that if the @init does something that needs 
+cleaning up after -- such as allocating memory or opening a file 
+-- then the @after does the cleanup.  In practice for C# / Java 
+targets it's not critical, as the GC will eventually get around to 
+tidying things up anyway (though not useless, if the rule is 
+re-entered faster than the GC can tidy up), but for C it'd be more 
+useful.
+
+Having said that, there's always another way to write the code to 
+avoid that kind of dependency anyway, so in practice I've never 
+needed to do it that way.
+
+&gt;<i>I still plan on working through all the possible combinations 
+</I>&gt;<i>before 3.1.2 is released. The difficulty is not adding an @after 
+</I>&gt;<i>section of course, but that using a static template, can I make 
+</I>&gt;<i>sure that all possible code paths, given all possible rule 
+</I>&gt;<i>element combinations, including backtracking, @after, exceptions 
+</I>&gt;<i>and so on, thread their way correctly through the generated C 
+</I>&gt;<i>code and are semantically equivalent to the Java code. The answer 
+</I>&gt;<i>may well be yes, but I want consider performance and complexity, 
+</I>&gt;<i>as if there is a semantically equivalent way of expressing this 
+</I>&gt;<i>in the grammar, then it might make more sense to just instruct 
+</I>&gt;<i>people in the documentation.
+</I>
+I can't see how you could ever make the C target tolerate 
+exceptions being thrown mid-rule without turning it into a partial 
+C++ target :)
+
+Besides, nobody ever reads documentation anyway ;)
+
+&gt;<i>So, in the C target I have removed pretty much all the NULL 
+</I>&gt;<i>guards as it is better to get a violation than mask 
+</I>&gt;<i>grammar/coding errors. In the case of the return from a rule, the 
+</I>&gt;<i>return is in fact a struct, which is declared as such in the 
+</I>&gt;<i>calling rule. The struct in the calling rule will therefore never 
+</I>&gt;<i>be NULL, and memsetting it to 0 does not solve that issue, though 
+</I>&gt;<i>it could have a special field that says if it has been used yet 
+</I>&gt;<i>and so on.
+</I>
+Memsetting it to 0 will clear the contents of the struct, though, 
+thereby ensuring that any embedded pointers etc will actually be 
+NULL and will fail quickly instead of being some random address 
+that happened to be on the heap (or worse, a valid address put 
+into a previous instance of the same structure that's being 
+reused), which will fail subtly rather than obviously and be just 
+as hard to track down.
+
+I can understand your reasoning, though; once the grammar *is* 
+doing the right things then the memsets are just wasting 
+time.  But during initial development and debugging they're 
+invaluable to prevent subtle bugs, as you yourself basically 
+admitted in the paragraph prior to the one I quoted.
+
+Maybe grammars should have an additional option, telling ANTLR 
+whether to aim for robustness (thereby including extra sanity 
+checks, such as the memsets) or for performance (leaving them out, 
+once the author is happy that their grammar works properly, if 
+slowly).  The default should be for robustness, so that newly 
+developed grammars get sanity checked.  In fact, rather than 
+memsetting to 0, you could take a page from VC++ and memset to 
+0xCD when in robust mode (and do nothing in performance mode), 
+thereby basically guaranteeing a crash in robust mode if someone 
+tries to use something without initialising it first, since NULL 
+checks wouldn't work.
+
+(A grammar compiled with -debug should probably also use robust 
+mode regardless of the option, but there should still be the 
+separate option for non -debug compiles, since not everyone uses 
+-debug at all.)
+
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="032737.html">[antlr-interest] C generator is not generating @after  actions
+</A></li>
+	<LI>Next message: <A HREF="032738.html">[antlr-interest] custom AST with re-write rules in C runtime
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#32742">[ date ]</a>
+              <a href="thread.html#32742">[ thread ]</a>
+              <a href="subject.html#32742">[ subject ]</a>
+              <a href="author.html#32742">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

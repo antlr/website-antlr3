@@ -1,0 +1,99 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Sample scannerless parser with AST	construction in	unmodified ANTLR
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Sample%20scannerless%20parser%20with%20AST%0A%09construction%20in%09unmodified%20ANTLR&In-Reply-To=%3CD8F93750-2A37-4611-8B7F-37CE3B5A8217%40cs.usfca.edu%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="041425.html">
+   <LINK REL="Next"  HREF="041406.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Sample scannerless parser with AST	construction in	unmodified ANTLR</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Sample%20scannerless%20parser%20with%20AST%0A%09construction%20in%09unmodified%20ANTLR&In-Reply-To=%3CD8F93750-2A37-4611-8B7F-37CE3B5A8217%40cs.usfca.edu%3E"
+       TITLE="[antlr-interest] Sample scannerless parser with AST	construction in	unmodified ANTLR">parrt at cs.usfca.edu
+       </A><BR>
+    <I>Sun Apr 17 11:02:08 PDT 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="041425.html">[antlr-interest] Sample scannerless parser with	AST	construction in	unmodified ANTLR
+</A></li>
+        <LI>Next message: <A HREF="041406.html">[antlr-interest]   EXTENDED DEADLINE : UML&amp;FM'2011
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#41426">[ date ]</a>
+              <a href="thread.html#41426">[ thread ]</a>
+              <a href="subject.html#41426">[ subject ]</a>
+              <a href="author.html#41426">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>You are correct that it would only work properly when it was backtracking. In fact, I was just thinking about this because I need to make some decisions about v4. Even if you turn on backtracking, there might be trouble. In the following case, the &quot;and not&quot; &amp;! predicate inside kreturn is not needed:
+
+foo	: kreturn semi 
+	| id semi
+	;
+kreturn : 'r' 'e' 't' 'u' 'r' 'n' &amp;!LetterOrDigit ws? ;
+
+ANTLR detects the ambiguity and looks for the semi following id or kreturn. As you point out, though, this rule is a problem without the predicate
+
+stat: kreturn e semi
+    | id eq e semi
+    | id colon
+    ;
+kreturn : 'r' 'e' 't' 'u' 'r' 'n' ws? ;
+
+because it accepts &quot;returnme;&quot; (no space in between a keyword and the identifier following). ANTLR's DFA predicts the first alternative for &quot;returnme&quot; because it is the only thing that matches the input.  Because there is no ambiguity, turning on backtracking won't force it to backtrack across kreturn. The grammar clearly states that returnme; is legal. 
+
+We would have to force backtracking if grammar analysis ever detected a &amp; or &amp;! predicate as it was creating the DFA. Actually, now that I think about it, perhaps it's time to consider hoisting predicates at look at depth greater than one. Errm, maybe not. Probably just these lookahead operators. For example,
+
+a : 'a' &amp;'x'
+  | 'a' &amp;'y'
+  ;
+
+ANTLR could create a DFA that tested lookahead
+
+s0 -a-&gt; s1
+s1 -&amp;x-&gt; s2 (predict 1)
+s1 -&amp;y-&gt; s2 (predict 2)
+
+If the lookahead test  referred to a recursive rule or something, it would need to go off and test the syntactic predicate. This then causes problems for semantic predicates tested during that syntactic predicate because all of the lookahead indexes would be off. input.LA(1) used in the semantic predicate specified manually would not work anymore because the input would be shifted. grrr....
+
+Maybe the simplest answer is to have a true PEG mode that always backtracks (perhaps with a simple LL(1) lookahead check to avoid always having to backtrack), then you can add in whatever predicates you want. If you want scannerless, maybe using pure PEG is the cost.
+
+Ter
+
+On Apr 17, 2011, at 10:25 AM, Peter Kooiman wrote:
+
+&gt;&gt;<i> Still, we could easily do it with a simple {...}? so ANTLR can still do it without formalism, 
+</I>&gt;&gt;<i> just as PEGs force you to manually say that as well. :)
+</I>&gt;<i> 
+</I>&gt;<i> Are you thinking of a validating semantic predicate after matching the keyword? Not sure if that would work always, could that not give rise to a failed predicate error message when we really just want the parser to use the identifier rule instead? Or are you thinking of a semantic predicate checking look-ahead for keyword followed by not-letter not-digit?
+</I>&gt;<i> 
+</I>&gt;<i> Peter
+</I>
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="041425.html">[antlr-interest] Sample scannerless parser with	AST	construction in	unmodified ANTLR
+</A></li>
+	<LI>Next message: <A HREF="041406.html">[antlr-interest]   EXTENDED DEADLINE : UML&amp;FM'2011
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#41426">[ date ]</a>
+              <a href="thread.html#41426">[ thread ]</a>
+              <a href="subject.html#41426">[ subject ]</a>
+              <a href="author.html#41426">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

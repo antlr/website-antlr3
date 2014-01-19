@@ -1,0 +1,279 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] ANTLR 3 newbie question: Decision can match	usingmultiple alternatives
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20ANTLR%203%20newbie%20question%3A%20Decision%20can%20match%0A%09usingmultiple%20alternatives&In-Reply-To=%3CB36CCC332A32904F8FA3DE134A2353362523EB%40wavemachine.temporal-wave.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="020398.html">
+   <LINK REL="Next"  HREF="020399.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] ANTLR 3 newbie question: Decision can match	usingmultiple alternatives</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20ANTLR%203%20newbie%20question%3A%20Decision%20can%20match%0A%09usingmultiple%20alternatives&In-Reply-To=%3CB36CCC332A32904F8FA3DE134A2353362523EB%40wavemachine.temporal-wave.com%3E"
+       TITLE="[antlr-interest] ANTLR 3 newbie question: Decision can match	usingmultiple alternatives">jimi at temporal-wave.com
+       </A><BR>
+    <I>Fri Apr 27 08:14:35 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="020398.html">[antlr-interest] ANTLR 3 newbie question: Decision can match	using multiple alternatives
+</A></li>
+        <LI>Next message: <A HREF="020399.html">[antlr-interest]  Current antlr bugs [b7]
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#20400">[ date ]</a>
+              <a href="thread.html#20400">[ thread ]</a>
+              <a href="subject.html#20400">[ subject ]</a>
+              <a href="author.html#20400">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>First your lexer issues:
+
+warning(208): SqlV3.g:842:1: The following token definitions are
+unreachable: NL,LETTER
+
+This is happening because your lexer is not defined quite correctly. In
+these rules:
+
+WS    : (' ' |'\t' |'\n' |'\r' )+ { skip(); } ;
+NL    : '\r' ? '\n';
+
+You are saying that '\n' and '\r' can be both WS and NL, and they can
+only be in one rule. If you want NL to show up as a token then take
+these out of the WS spec. But then remember that you have to code the
+parser rules to see the NL anywhere that is possible. If you want the
+newline related characters to just disappear then delete the NL rule
+altogether. It is more likely that you want to hide the tokens but
+distinguish the newlines in some way, so probably what you want is:
+
+
+WS    : (' ' |'\t' )+	{ $channel = HIDDEN; } ;
+NL    : '\r' ? '\n'	{ $channel = HIDDEN; mynewlineaction(); }
+
+The LETTER issue is because this lexer rule should probably be marked a
+'fragment'. You can think of a fragment as if it were a lexer
+subroutine. It doesn't generate a token itself, but can be inserted in
+other rules to save you typing out the lexeme it defines in many places.
+If you use it like you are then the analyzer sees that it is being asked
+to produce a token for LETTER, but that you are also trying to use the
+same thing in other rules and this means it is impossible to work out
+what you mean (it could guess I suppose, but would probably be wrong
+most of the time ;-). So:
+
+STRING: '\'' ( LETTER | '0'..'9' | '_' | '\\' | ' ' | '-' | '&gt;' | '='
+|<i> '&lt;' | '+' )+ '\'';
+</I>ID    : LETTER ( LETTER | '0'..'9' | '_' )*;
+
+fragment
+LETTER: ('a'..'z' | 'A'..'Z');
+
+However your string token is only allowing a subset of characters in a
+string and I doubt this is what you want. You probably want anything at
+all that isn't the string terminator:
+
+STRING: '\'' ( ~'\'' )* '\'' ;
+
+If you want escaped characters in there, look at the example grammars
+(download from ANTLR3 page) for the lexer for say Java or C.
+
+Your parser is more complicated. First I would strongly recommend that
+you do not tackle SQL as your first project as it is a difficult thing
+to parse correctly and is highly ambiguous. ANTLR3 can do it, but it is
+a tricky one. I would suggest that you study the examples first, make
+sure you understand the book, then as an aid to understanding the book,
+try something a little less complicated such as making up your own
+language on the fly in small increments.
+
+However, to solve the ambiguities, you basically have to inform the
+analyzer which of n alternatives you wish it to assume with a given
+input set. But, your issue might be that your grammar needs restating,
+rather than an ambiguity you have discovered in SQL (though there enough
+that this is certainly possible ;-). So, you could end up struggling to
+fix something with predicates that is really needing a grammar
+reorganization.
+
+At a guess here though (your snippet does not give enough information),
+what you have found is that you have a conflict between:
+
+ANY comma_sep_list
+
+And 
+
+ANY expression
+
+This is because in our atom rule you correctly allow precedence
+establishing '('. So the parser cannot decide which this can be. It is
+probably guessing correctly and taking the comma list option, but you do
+want to get rid of any ambiguities of course. So, try this:
+
+ANY ( ('(')=&gt; comma_sep_list
+
+That may not be the issue, but it might give you a start.
+
+Jim
+
+-----Original Message-----
+From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>
+[mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Ivo Jimenez
+Sent: Friday, April 27, 2007 2:52 AM
+To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: [antlr-interest] ANTLR 3 newbie question: Decision can match
+usingmultiple alternatives
+
+Hi,
+
+I have a question regarding a non-determinism. I'm new to ANTLR 3 and
+I'm trying to write the grammar for SQL. I don't want to put the whole
+set of rules since I have implemented only a subset of the select and
+create statements and its already 800 lines long but if you consider
+that it would be better if I post it please let me know. Well, so I
+will try to explain myself using only the non-deterministic rules.
+
+Everything was going fine until I decided to expand the language and
+include the recognition of expression lists (that appear in the where
+condition), for example I want to recognize something like this:
+
+select partnumber, vendornumber
+   from purchdb.supplyprice
+   where partnumber = any ('1343-d-01', '1623-td-01', '1723-ad-01',
+'1733-ad-01')
+      and not vendornumber = 9011;
+
+I need to recognize a expression list (which can or can't be enclosed
+by parenthesis), where each expression is separated by a comma.
+
+The rules I have for these are the following:
+
+predicate
+   : row_value_constructor ( comparison_predicate | in_predicate |
+null_predicate )
+   | exists_predicate
+   ;
+
+comparison_predicate
+   : ( '=' | '&lt;&gt;' | '&lt;' | '&lt;=' | '&gt;' | '&gt;=' ) ( quantifier )?
+            ( row_value_constructor | '(' subquery ')' )
+   ;
+
+in_predicate
+   : ('not')? 'in' '(' subquery ')'
+   ;
+
+null_predicate
+   : 'is' ('not')? 'null'
+   ;
+
+exists_predicate
+   : 'exists' '(' subquery ')'
+   ;
+
+row_value_constructor
+   : expression_list
+   ;
+
+quantifier
+   : 'any' | 'some' | 'all'
+   ;
+
+expression_list
+   : expression ( ',' expression )*
+   ;
+
+expression
+   : character_expression
+   | numeric_expression
+   ;
+
+character_expression
+   : atom ( '|' '|' atom )*
+   ;
+
+numeric_expression
+   : numeric_term ( ( '+' | '-' ) numeric_term )*
+   ;
+
+numeric_term
+   : numeric_factor ( ( '*' | '\\' ) numeric_factor )*
+   ;
+
+numeric_factor
+   : ( '+' | '-' )? atom
+   ;
+
+atom
+   : NUMBER
+   | STRING
+   | column_reference
+   | aggregate_function
+   | other_function
+   | '(' expression ')'
+   ;
+
+// Lexer
+WS    : (' ' |'\t' |'\n' |'\r' )+ { skip(); } ;
+NL    : '\r' ? '\n';
+NUMBER: ( '0'..'9' )+ ( '.' ( '0'..'9' )+ )?;
+STRING: '\'' ( LETTER | '0'..'9' | '_' | '\\' | ' ' | '-' | '&gt;' | '='
+|<i> '&lt;' | '+' )+ '\'';
+</I>ID    : LETTER ( LETTER | '0'..'9' | '_' )*;
+LETTER: ('a'..'z' | 'A'..'Z');
+
+When I call ANTLR I get the following:
+
+ANTLR Parser Generator  Version 3.0b7 (April 12, 2007)  1989-2007
+warning(200): SqlV3.g:248:34: Decision can match input such as &quot;','
+{ID, 'avg'..'nullifzero'}&quot; using multiple alternatives: 1, 2
+As a result, alternative(s) 2 were disabled for that input
+warning(208): SqlV3.g:842:1: The following token definitions are
+unreachable: NL,LETTER
+
+Where line 248 is the expression_list: expression ( ',' expression )*;
+line and 842 the LETTER line. I've even bought the ANTLR 3 book in
+search of an answer and I know it is there (section 11.5 Ambiguities
+and Non-determinisms) but I can't see it.
+
+Thanks a lot for your time.
+
+-Ivo
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="020398.html">[antlr-interest] ANTLR 3 newbie question: Decision can match	using multiple alternatives
+</A></li>
+	<LI>Next message: <A HREF="020399.html">[antlr-interest]  Current antlr bugs [b7]
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#20400">[ date ]</a>
+              <a href="thread.html#20400">[ thread ]</a>
+              <a href="subject.html#20400">[ subject ]</a>
+              <a href="author.html#20400">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

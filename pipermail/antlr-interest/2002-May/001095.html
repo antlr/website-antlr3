@@ -1,0 +1,156 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Re: Still having problems with the lexer code
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20Still%20having%20problems%20with%20the%20lexer%20code&In-Reply-To=abeuqi%2B5bo0%40eGroups.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001086.html">
+   <LINK REL="Next"  HREF="001087.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Re: Still having problems with the lexer code</H1>
+    <B>Ric Klaren</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20Still%20having%20problems%20with%20the%20lexer%20code&In-Reply-To=abeuqi%2B5bo0%40eGroups.com"
+       TITLE="[antlr-interest] Re: Still having problems with the lexer code">klaren at cs.utwente.nl
+       </A><BR>
+    <I>Mon May 13 02:11:45 PDT 2002</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001086.html">[antlr-interest] Re: Still having problems with the lexer code
+</A></li>
+        <LI>Next message: <A HREF="001087.html">[antlr-interest] tree parsers vs visitors &amp; xml translators etc...
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1095">[ date ]</a>
+              <a href="thread.html#1095">[ thread ]</a>
+              <a href="subject.html#1095">[ subject ]</a>
+              <a href="author.html#1095">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+On Thu, May 09, 2002 at 10:56:18PM -0000, johnclarke72 wrote:
+&gt;<i> I hope that I am not asking much how could I get this to work ?  
+</I>&gt;<i> Would it also be possible to explain why it would work in the 
+</I>&gt;<i> ammended version ?
+</I>
+There's a number of things that can go wrong in the setup of a project with
+multiple parsers/lexers.
+
+- depending on how you organized the files and did import/export vocabs,
+  and depending on the order of compilation the different parsers/lexers
+  in your project might end up with a different understanding of the tokens.
+- mistakes in begin/end tokens and lexer switching.
+
+In files you sent in there's probably a problem with probably both and the
+mistake Terence noted.
+
+DISCLAIMER: I did not really try to understand the exact parsing problem
+you have I'm assuming your parsing html and want to treat comments
+differently or something.
+
+Your HTMLParserApp.java looks good.
+
+Suppose:
+
+&lt;htmlstuff&gt;
+&lt;!-- a comment --&gt;
+&lt;/htmlstuff&gt;
+
+Now just after the parser is started the selector is using the textlexer.
+So this one starts recognizing 'words'. Until The begin tag &quot;&lt;!-&quot; is seen.
+This tag is read from the input stream then the taglexer is started. At
+that point the file pointer is after the &quot;&lt;!-&quot;. (So in taglexer you have to
+remove the &quot;&lt;!--&quot; as Terence noted (note also the difference in tokens
+&quot;&lt;!-&quot; vs. &quot;&lt;!--&quot; probably typo, antlr does very little to protect you from
+typos like this :( ))
+
+Ok. Now we're inside the taglexer here you'd want to keep on parsing using
+the taglexer up to and including the close tag &quot;--&gt;&quot; after that you need to
+switch back to the textlexer, since we have more file to parse and we're
+definitely not in a html comment anymore. E.g. add an action to the close
+token:
+
+HTMLCOMMENT : 
+   (options { greedy=false; }: .) *
+   &quot;--&gt;&quot; { selector.select(&quot;HTMLTagLexer&quot;); }
+;
+
+So now you switched back to the textlexer (note that we now enter the
+textlexer with the input stream after the close tag) Now the mechanics of
+switching between lexers should be ok. (Never try to switch lexers from the
+parser unless you really know what you are doing, in general this does not
+work)
+
+Next problem. You may have noted that in the multiLexer example a Common
+vocabulary is imported in several places. This one is used to make sure
+that all lexers/parsers have the same understanding about the tokens (e.g.
+that both lexers return the same values for common tokens to the parser)
+
+This you can do by A) using the CommonTokenTypes import trick as in the
+multilexer example B) chaining the lexers/parsers and observing the right
+order in processing them with antlr.
+
+An option is doing it like this:
+
+In the textlexer:
+
+   exportVocab = Text;
+
+In the taglexer:
+
+   importVocab = Text;     // get previous definitions
+   exportVocab = HTMLTags; // Export the Vocabulary to HTMLTags
+
+In the parser:
+
+   importVocab = HTMLTags; // The Vocabulary to import
+
+Then *always* observe the following order in processing the files with antlr:
+1: textlexer 2: taglexer 3: parser.
+
+You can always check the generated xxxTokenTypes.txt files to see what
+numbers are given to tokens.
+
+Hope this helps,
+
+Ric
+-- 
+-----+++++*****************************************************+++++++++-------
+    ---- Ric Klaren ----- <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">klaren at cs.utwente.nl</A> ----- +31 53 4893722  ----
+-----+++++*****************************************************+++++++++-------
+     Human beings, who are almost unique in having the ability to learn
+   from the experience of others, are also remarkable for their apparent
+         disinclination to do so. --- Douglas Adams, Last Chance to See
+
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001086.html">[antlr-interest] Re: Still having problems with the lexer code
+</A></li>
+	<LI>Next message: <A HREF="001087.html">[antlr-interest] tree parsers vs visitors &amp; xml translators etc...
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1095">[ date ]</a>
+              <a href="thread.html#1095">[ thread ]</a>
+              <a href="subject.html#1095">[ subject ]</a>
+              <a href="author.html#1095">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

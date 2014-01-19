@@ -1,0 +1,355 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] ANTLR build process performance improvement
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20ANTLR%20build%20process%20performance%20improvement&In-Reply-To=%3C078201cc586a%24175536e0%2445ffa4a0%24%40pixelminegames.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="042394.html">
+   <LINK REL="Next"  HREF="042396.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] ANTLR build process performance improvement</H1>
+    <B>Sam Harwell</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20ANTLR%20build%20process%20performance%20improvement&In-Reply-To=%3C078201cc586a%24175536e0%2445ffa4a0%24%40pixelminegames.com%3E"
+       TITLE="[antlr-interest] ANTLR build process performance improvement">sharwell at pixelminegames.com
+       </A><BR>
+    <I>Thu Aug 11 14:03:15 PDT 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="042394.html">[antlr-interest] ANTLR build process performance improvement
+</A></li>
+        <LI>Next message: <A HREF="042396.html">[antlr-interest] ANTLR build process performance improvement
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#42395">[ date ]</a>
+              <a href="thread.html#42395">[ thread ]</a>
+              <a href="subject.html#42395">[ subject ]</a>
+              <a href="author.html#42395">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>ANTLR is designed so with the lexer and parser as independent units. Your
+lexer should be able to run to completion (the entire document) before the
+parser is even created.
+
+ 
+
+There are ways around it, but I intentionally avoid getting into situations
+where I have to think about what they might be.
+
+ 
+
+Sam
+
+ 
+
+From: chris king [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">kingces95 at gmail.com</A>] 
+Sent: Thursday, August 11, 2011 2:59 PM
+To: Sam Harwell; <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: Re: ANTLR build process performance improvement
+
+ 
+
+Hey Sam, thanks! I'm using it now and it's faster. Love the VS tool-chain!
+I'd be dead in the water without it. And haven't bumped into any bugs with
+the new version. So cool! 
+
+ 
+
+I've bummed into a slightly different problem and no matter how I arrange my
+grammar (included) I can't seem to work around it. I think it might be a bug
+in the SpecialStateTransition logic...
+
+ 
+
+Below is what I'm trying to parse along with the trace using your enter-exit
+partial methods (wonderful addition BTW) for my C# preprocessor interleaved
+with when the tokens get pulled from the stream. Also interleaved are my
+calls to toggle SkipSection which is trying to keep track of when code is
+#ifdefed out. So what we see is that [#if] is pulled and then [false] and
+[\r\n]. At that point in the parse I'm at the end of the pre-processor line
+and so I look up the pp_conditional stack to see if I'm in a #ifdefed out
+section of code. In this case I am so I set SkipSection to True. That
+enables (via semantic predicate) my lexer rule PP_SKIPPED_CHARACTERS=45
+which should suck up any code that is not a pragma statement (doesn't start
+with #). That's all well and good and so the next thing that get tokenized
+is [#pragma warning disable] which is good. 
+
+ 
+
+Now at this point I expect that no tokens should get pulled until I reach
+the pp_pragma production. I expect this because I figure ANLTER should be
+able to predict where it needs to go without pulling any more tokens --
+after all the only thing that can follow a [#pragma warning disable] token
+is a list of integers. The actual behavior is that in my
+pp_condition_section production ANTLR pulls [10] as a PP_SKIPPED_CHARACTERS
+instead of an INTEGER because SkipSection is set to True. If things had gone
+as expected and [10] had been pulled in the pp_pragma production. If that
+had happened then SkipSection would have been set to False and [10] would be
+pulled as an INTEGER. 
+
+ 
+
+The code that's actually pulling the [10] is DFA.Predict in the
+SpecialStateTransition loop when trying to predict where to go for the
+pp_conditional_section production:
+
+pp_conditional_section
+
+:<i> { !SkipSection }? =&gt; input_section
+</I>
+|<i> { SkipSection }? =&gt; pp_skipped_section
+</I>
+;
+
+I'm guessing that this production is &quot;special&quot; because it's got those gated
+semantic predicates and that's why DFA.Predict enters into the
+SpecialStateTransition logic. What I don't understand is why it would need
+to pull any more tokens to know where to go next. Do you think that's a bug
+that it's pulling tokens in this case?
+
+ 
+
+After writing this e-mail it occurred to me that I might manually try to do
+the prediction. I did this by putting a break point in the
+pp_conditional_section rule at the dfa.Predict line. But instead of asking
+the DFA to do the prediction I just set-ip to the case I wanted (e.g. {...}?
+=&gt; pp_skipped_section). Then hit F5. And it works! I included the trace of
+that run below. Given that I really do think that the SpecialStateTransition
+logic (or there abouts) is being to aggressive about pulling tokens... what
+do you think? 
+
+ 
+
+Thanks,
+
+Chris
+
+ 
+
+CSharpAst.Parse(&quot;#if false\r\n#pragma warning disable
+10\r\n/*foo*/\r\n#endif&quot;);
+
+ 
+
+Enter start 1
+
+[@-1,0:2='#if',&lt;38&gt;,1:0]
+
+ Enter input_section 2
+
+  Enter input_section_part 3
+
+   Enter pp_directive 6
+
+    Enter pp_conditional 8
+
+     Enter pp_if_section 9
+
+[@-1,4:8='false',&lt;4&gt;,1:4]
+
+      Enter pp_expression 17
+
+       Enter pp_or_expression 18
+
+        Enter pp_and_expression 19
+
+         Enter pp_equality_expression 20
+
+          Enter pp_unary_expression 21
+
+           Enter pp_primary_expression 22
+
+[@-1,9:10='\\r\\n',&lt;29&gt;,1:9]
+
+           Leave pp_primary_expression 22
+
+          Leave pp_unary_expression 21
+
+         Leave pp_equality_expression 20
+
+        Leave pp_and_expression 19
+
+       Leave pp_or_expression 18
+
+      Leave pp_expression 17
+
+      Enter pp_conditional_block 12
+
+       Enter pp_new_line 31
+
+SkipSection = True
+
+[@-1,11:33='#pragma warning disable',&lt;42&gt;,2:0]
+
+       Leave pp_new_line 31
+
+       Enter pp_conditional_section 13
+
+[@-1,34:36=' 10',&lt;45&gt;,2:23]
+
+[@-1,37:38='\\r\\n',&lt;29&gt;,2:26]
+
+        Enter pp_skipped_section 14
+
+         Enter pp_skipped_section_part 15
+
+          Enter pp_directive 6
+
+           Enter pp_leaf_directive 7
+
+            Enter pp_pragma 29
+
+SkipSection = False
+
+             Enter pp_warning_list 30
+
+ 
+
+ Here is the trace when I make the prediction by hand:
+
+ 
+
+Enter start 1
+[@-1,0:2='#if',&lt;38&gt;,1:0]
+ Enter input_section 2
+  Enter input_section_part 3
+   Enter pp_directive 6
+    Enter pp_conditional 8
+     Enter pp_if_section 9
+[@-1,4:8='false',&lt;4&gt;,1:4]
+      Enter pp_expression 17
+       Enter pp_or_expression 18
+        Enter pp_and_expression 19
+         Enter pp_equality_expression 20
+          Enter pp_unary_expression 21
+           Enter pp_primary_expression 22
+[@-1,9:10='\\r\\n',&lt;29&gt;,1:9]
+           Leave pp_primary_expression 22
+          Leave pp_unary_expression 21
+         Leave pp_equality_expression 20
+        Leave pp_and_expression 19
+       Leave pp_or_expression 18
+      Leave pp_expression 17
+      Enter pp_conditional_block 12
+       Enter pp_new_line 31
+SkipSection = True
+[@-1,11:33='#pragma warning disable',&lt;42&gt;,2:0]
+       Leave pp_new_line 31
+       Enter pp_conditional_section 13
+        Enter pp_skipped_section 14
+         Enter pp_skipped_section_part 15
+          Enter pp_directive 6
+           Enter pp_leaf_directive 7
+            Enter pp_pragma 29
+SkipSection = False
+[@-1,35:36='10',&lt;28&gt;,2:24]
+             Enter pp_warning_list 30
+[@-1,37:38='\\r\\n',&lt;29&gt;,2:26]
+             Leave pp_warning_list 30
+             Enter pp_new_line 31
+SkipSection = True
+[@-1,39:45='/*foo*/',&lt;45&gt;,3:0]
+             Leave pp_new_line 31
+            Leave pp_pragma 29
+           Leave pp_leaf_directive 7
+          Leave pp_directive 6
+         Leave pp_skipped_section_part 15
+         Enter pp_skipped_section_part 15
+[@-1,46:47='\\r\\n',&lt;29&gt;,3:7]
+[@-1,48:53='#endif',&lt;35&gt;,4:0]
+         Leave pp_skipped_section_part 15
+        Leave pp_skipped_section 14
+       Leave pp_conditional_section 13
+      Leave pp_conditional_block 12
+     Leave pp_if_section 9
+     Enter pp_endif 16
+      Enter pp_new_line 31
+SkipSection = True
+      Leave pp_new_line 31
+     Leave pp_endif 16
+    Leave pp_conditional 8
+   Leave pp_directive 6
+  Leave input_section_part 3
+ Leave input_section 2
+Leave start 1
+
+ 
+
+ 
+
+On Thu, Aug 11, 2011 at 9:31 AM, Sam Harwell &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">sharwell at pixelminegames.com</A>&gt;
+wrote:
+
+ 
+
+Hi &quot;brave testers&quot; :)
+
+ 
+
+I updated the MSBuild integration for the CSharp3 target to significantly
+improve its performance in several areas. I haven't tested the update to see
+if it fixes the issues with ReSharper's IntelliSense engine, but it sure
+would be sweet if it did!
+
+ 
+
+1.       Time to compile grammars should be reduced by 1-2 seconds per
+project containing grammars.
+
+2.       The &quot;lag&quot; in the IDE when you change windows away from a modified
+grammar file and when you save a grammar file should be reduced by 1-2
+seconds each time.
+
+3.       When you open a project IntelliSense will be ready immediately as
+opposed to waiting until you save a grammar or build the project.
+
+4.       When you add or remove a file from the project, IntelliSense won't
+break.
+
+ 
+
+If you'd like to test out the new tool, it's available in the following 7z
+file. Simply close Visual Studio and replace your existing Antlr3.targets
+and AntlrBuildTask.dll with the ones from this archive and you're ready to
+go.
+
+ 
+
+<A HREF="http://www.tunnelvisionlabs.com/downloads/antlr/AntlrBuildTask-experimental-">http://www.tunnelvisionlabs.com/downloads/antlr/AntlrBuildTask-experimental-</A>
+9029.7z
+
+ 
+
+Thanks,
+
+Sam
+
+ 
+
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="042394.html">[antlr-interest] ANTLR build process performance improvement
+</A></li>
+	<LI>Next message: <A HREF="042396.html">[antlr-interest] ANTLR build process performance improvement
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#42395">[ date ]</a>
+              <a href="thread.html#42395">[ thread ]</a>
+              <a href="subject.html#42395">[ subject ]</a>
+              <a href="author.html#42395">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

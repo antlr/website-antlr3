@@ -1,0 +1,397 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Re: another nondeterminism question
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20another%20nondeterminism%20question&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004639.html">
+   <LINK REL="Next"  HREF="004641.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Re: another nondeterminism question</H1>
+    <B>mzukowski at yci.com</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20another%20nondeterminism%20question&In-Reply-To="
+       TITLE="[antlr-interest] Re: another nondeterminism question">mzukowski at yci.com
+       </A><BR>
+    <I>Wed Jul 23 08:50:44 PDT 2003</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004639.html">[antlr-interest] My hairy dilemma...
+</A></li>
+        <LI>Next message: <A HREF="004641.html">[antlr-interest] Re: another nondeterminism question
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4638">[ date ]</a>
+              <a href="thread.html#4638">[ thread ]</a>
+              <a href="subject.html#4638">[ subject ]</a>
+              <a href="author.html#4638">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I also couldn't figure out how to get this to work with syntactic predicates
+because of ANTLR's linear approximation.  So, basically I had to do full
+LL(k) analysis by hand and put it into semantic predicates.  For this simple
+example it wasn't too hard.  
+
+S: {LA(1)=='a'||(LA(1)=='b' &amp;&amp; (LA(2)=='b'))}?
+    ('a' | {LA(1)=='b' &amp;&amp; (LA(2)=='b')}?&quot;bb&quot;)+ 
+   | 'b' {$setType(B);}
+   ;
+
+output:
+S: a
+B: b
+S: a
+
+Test it out and let me know if there are other inputs that fail.
+
+Look at the generated code and note that semantic predicates are preceded by
+the lookahead for that alternative.  Because of that the following should
+work:
+
+S: {LA(2)=='b'}?
+    ('a' | {LA(2)=='b'}?&quot;bb&quot;)+ 
+   | 'b' {$setType(B);}
+   ;
+
+However I prefer the other as being more clear.  The compiler should be
+optimizing the tests so there is no performance penalty.
+
+Monty
+
+-----Original Message-----
+From: Adrian Sandor [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">aditsu at yahoo.com</A>] 
+Sent: Tuesday, July 22, 2003 3:10 PM
+To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>
+Subject: [antlr-interest] Re: another nondeterminism question
+
+
+--- In <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>, <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">mzukowski at y...</A> wrote:
+&gt;<i> Argh.  Could you summarize your different attempts so I can try
+</I>them out and
+&gt;<i> see what is happening?
+</I>
+I'll try, but maybe I can't remember them exactly
+
+first, the common part (excluding the S, A, B rules):
+
+---8&lt;---
+class l1 extends Lexer;
+NL: '\r'|'\n';
+
+class p1 extends Parser;
+start: (s|b)+ NL;
+s: x:S{System.out.println(&quot;S: &quot;+x.getText());};
+b: x:B{System.out.println(&quot;B: &quot;+x.getText());};
+---&gt;8---
+
+you can try them all with k=1 and k=2
+also the input I tried is the same: aba
+
+
+Attempt 1:
+
+protected A: 'a' | &quot;bb&quot;;
+B: 'b';
+S: (A)+;
+
+results:
+nondeterminism; exception: line 1:3: expecting 'b', found 'a'
+
+
+Attempt 2:
+
+protected A: 'a' | (&quot;bb&quot;)=&gt;&quot;bb&quot; | 'b'{$setType(B);};
+S: (A)+;
+
+results:
+S: aba
+
+
+Attempt 3:
+
+protected A: 'a' | {LA(2)=='b'}? &quot;bb&quot; | {LA(2)!='b'}? 'b'{$setType (B);};
+S: (A)+;
+
+results:
+S: aba
+
+
+Attempt 4:
+
+protected A: 'a' | {LA(2)=='b'}? &quot;bb&quot;;
+B: {LA(2)!='b'}? 'b';
+S: (A)+;
+
+results:
+exception: line 1:2: unexpected char: 'b'
+
+
+Attempt 5:
+
+protected A: 'a' | &quot;bb&quot; | ('b' ~('b'))=&gt;'b'{$setType(B);};
+S: (A)+;
+
+results:
+nondeterminism; exception: line 1:3: expecting 'b', found 'a'
+
+
+Attempt 6:
+
+protected A: 'a' | BB;
+B: (&quot;bb&quot;)=&gt;&quot;bb&quot;{$setType(BB);} | {LA(2)!='b'}? 'b';
+protected BB: &quot;bb&quot;;
+S: (A)+;
+
+results:
+nondeterminism; exception: line 1:3: expecting 'b', found 'a'
+
+
+Attempt 7:
+
+S: ('a' | &quot;bb&quot;)=&gt;('a' | &quot;bb&quot;)+ | 'b' {$setType(B);};
+
+results:
+exception: line 1:3: expecting 'b', found 'a'
+
+
+Attempt 8:
+
+S: ('a' | &quot;bb&quot;)=&gt;(('a')=&gt;'a' | (&quot;bb&quot;)=&gt;&quot;bb&quot;)+ | 'b' {$setType(B);};
+
+results:
+exception: line 1:3: expecting 'b', found 'a'
+
+
+Attempt 9:
+
+S: ('a'|(&quot;bb&quot;)=&gt;&quot;bb&quot;)+ | 'b'{$setType(B);};
+
+results:
+nondeterminism; exception: line 1:3: expecting 'b', found 'a'
+
+
+Attempt 10:
+
+S: ('a' | &quot;bb&quot;)=&gt;(('a')=&gt;'a' | (&quot;bb&quot;)=&gt;&quot;bb&quot;)+ | 'b' {$setType(B);};
+
+results:
+exception: line 1:3: expecting 'b', found 'a'
+
+
+argh.. I'm tired, 10 should be enough
+let me know if you find any solution
+
+thanks
+Adrian
+
+&gt;<i> -----Original Message-----
+</I>&gt;<i> From: Adrian Sandor [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">aditsu at y...</A>]
+</I>&gt;<i> Sent: Saturday, July 19, 2003 5:53 AM
+</I>&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>
+</I>&gt;<i> Subject: [antlr-interest] Re: another nondeterminism question
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> the problem is that the new syn preds make NO difference
+</I>&gt;<i> I compared the generated lexers (java source code) and besides a
+</I>renamed
+&gt;<i> counter variable, they're identical
+</I>&gt;<i> 
+</I>&gt;<i> my initial approach was something like this:
+</I>&gt;<i> 
+</I>&gt;<i> class l1 extends Lexer;
+</I>&gt;<i> protected A: 'a' | (&quot;bb&quot;)=&gt;&quot;bb&quot; | 'b'{$setType(B);};
+</I>&gt;<i> S: (A)+;
+</I>&gt;<i> 
+</I>&gt;<i> but it also fails because when the lexer matches a single 'b'
+</I>inside the S,
+&gt;<i> it doesn't care that it has a different type and continues the loop
+</I>&gt;<i> 
+</I>&gt;<i> I'm wondering if antlr is simply unable to generate a lexer for
+</I>this &quot;too
+&gt;<i> complicated&quot; language
+</I>&gt;<i> 
+</I>&gt;<i> Adrian
+</I>&gt;<i> 
+</I>&gt;<i> --- In <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>, <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">mzukowski at y...</A> wrote:
+</I>&gt;<i> &gt; Ack.  Apparently we need a syn pred in the loop as well!  Try
+</I>some 
+&gt;<i> &gt; variations of this and inspect the generated code to make sure it
+</I>is
+&gt;<i> working
+</I>&gt;<i> &gt; correctly.  Ignore the warning about superfluous syn preds if one
+</I>&gt;<i> comes up.
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; class l1 extends Lexer;
+</I>&gt;<i> &gt; S: ('a' | &quot;bb&quot;)=&gt;(('a')=&gt;'a' | (&quot;bb&quot;)=&gt;&quot;bb&quot;)+ | 'b' {$setType
+</I>(B);};
+&gt;<i> &gt; 
+</I>&gt;<i> &gt; Monty
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; -----Original Message-----
+</I>&gt;<i> &gt; From: Adrian Sandor [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">aditsu at y...</A>]
+</I>&gt;<i> &gt; Sent: Wednesday, July 16, 2003 10:14 PM
+</I>&gt;<i> &gt; To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>
+</I>&gt;<i> &gt; Subject: [antlr-interest] Re: another nondeterminism question
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; well, everything is ok... except that once the lexer starts 
+</I>&gt;<i> &gt; recognizing an S, it fails to detect a B:
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; the grammar:
+</I>&gt;<i> &gt; ---8&lt;---
+</I>&gt;<i> &gt; class l1 extends Lexer;
+</I>&gt;<i> &gt; S: ('a' | &quot;bb&quot;)=&gt;('a' | &quot;bb&quot;)+ | 'b' {$setType(B);};
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; class p1 extends Parser;
+</I>&gt;<i> &gt; start: (S|B)+;
+</I>&gt;<i> &gt; ---&gt;8---
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; input data: aba
+</I>&gt;<i> &gt; result: exception: line 1:3: expecting 'b', found 'a'
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; this is still ok for the &quot;//&quot; comments in my grammar, but it's
+</I>not ok
+&gt;<i> &gt; in other cases, like Sanjiv's message
+</I>&gt;<i> &gt; <A HREF="http://groups.yahoo.com/group/antlr-interest/message/8965">http://groups.yahoo.com/group/antlr-interest/message/8965</A>
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; I'm going to read about that linear approximation thing...
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Adrian
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; --- In <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>, <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">mzukowski at y...</A> wrote:
+</I>&gt;<i> &gt; &gt; In fact you may need a syntactic predicate because of the linear 
+</I>&gt;<i> &gt; &gt; approximation issue:
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; S: ('a'|&quot;bb&quot;)=&gt;('a' | &quot;bb&quot;)+
+</I>&gt;<i> &gt; &gt;    | 'b' {$setType(B);}
+</I>&gt;<i> &gt; &gt;    ;
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; Let me know, I don't have time to try it out right now.
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; Monty
+</I>&gt;<i> &gt; &gt; -----Original Message-----
+</I>&gt;<i> &gt; &gt; From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">mzukowski at y...</A> [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">mzukowski at y...</A>]
+</I>&gt;<i> &gt; &gt; Sent: Wednesday, July 16, 2003 11:46 AM
+</I>&gt;<i> &gt; &gt; To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>
+</I>&gt;<i> &gt; &gt; Subject: RE: [antlr-interest] Re: another nondeterminism
+</I>question
+&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; OK, this is an linear approximation issue.  If you had A:&quot;aa&quot;
+</I>&gt;<i> &gt; | &quot;bb&quot; things
+</I>&gt;<i> &gt; &gt; would work.  This example is very abstract.  I would code it
+</I>like
+&gt;<i> &gt; this:
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; S: ('a' | &quot;bb&quot;)+
+</I>&gt;<i> &gt; &gt;    | 'b' {$setType(B);}
+</I>&gt;<i> &gt; &gt;    ;
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; Look up linear approximation in the FAQ &amp; archives.
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; Monty
+</I>&gt;<i> &gt; &gt; -----Original Message-----
+</I>&gt;<i> &gt; &gt; From: Adrian Sandor [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">aditsu at y...</A>]
+</I>&gt;<i> &gt; &gt; Sent: Wednesday, July 16, 2003 11:26 AM
+</I>&gt;<i> &gt; &gt; To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>
+</I>&gt;<i> &gt; &gt; Subject: [antlr-interest] Re: another nondeterminism question
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; ok, I tried with the following grammar:
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; class l1 extends Lexer;
+</I>&gt;<i> &gt; &gt; options{k=2;}
+</I>&gt;<i> &gt; &gt; protected A: 'a' | &quot;bb&quot;;
+</I>&gt;<i> &gt; &gt; B: 'b';
+</I>&gt;<i> &gt; &gt; S: (A)=&gt;(A)+;
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; and I got:
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; ANTLR Parser Generator   Version 2.7.2   1989-2003 jGuru.com
+</I>&gt;<i> &gt; &gt; t1.g: warning:lexical nondeterminism between rules B and S upon
+</I>&gt;<i> &gt; &gt; t1.g:     k==1:'b'
+</I>&gt;<i> &gt; &gt; t1.g:     k==2:&lt;end-of-token&gt;
+</I>&gt;<i> &gt; &gt; t1.g:5: warning:Syntactic predicate ignored for single
+</I>alternative
+&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; Adrian
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; --- In <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>, <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">mzukowski at y...</A> wrote:
+</I>&gt;<i> &gt; &gt; &gt; That's a weird bug you ran into, I think.  It should give
+</I>warnings
+&gt;<i> &gt; &gt; in both
+</I>&gt;<i> &gt; &gt; &gt; cases.  You could solve this with a syntactic predicate:
+</I>&gt;<i> &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; S: (A)=&gt;(A)+;
+</I>&gt;<i> &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; -----Original Message-----
+</I>&gt;<i> &gt; &gt; &gt; From: Adrian Sandor [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">aditsu at y...</A>]
+</I>&gt;<i> &gt; &gt; &gt; Sent: Friday, July 11, 2003 9:54 AM
+</I>&gt;<i> &gt; &gt; &gt; To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>
+</I>&gt;<i> &gt; &gt; &gt; Subject: [antlr-interest] another nondeterminism question
+</I>&gt;<i> &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; why do I get a nondeterminism warning for this grammar:
+</I>&gt;<i> &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; class l1 extends Lexer;
+</I>&gt;<i> &gt; &gt; &gt; options{k=2;}
+</I>&gt;<i> &gt; &gt; &gt; protected A: 'a' | &quot;bb&quot;;
+</I>&gt;<i> &gt; &gt; &gt; B: 'b';
+</I>&gt;<i> &gt; &gt; &gt; S: (A)+;
+</I>&gt;<i> &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; but I don't get any warning when I change S to:
+</I>&gt;<i> &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; S: A (A)+;
+</I>&gt;<i> &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; and how can I solve it for the first case?
+</I>&gt;<i> &gt; &gt; &gt; I tried many things but to no avail...
+</I>&gt;<i> &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; thanks
+</I>&gt;<i> &gt; &gt; &gt; Adrian
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i>  
+</I>&gt;<i> 
+</I>&gt;<i> Your use of Yahoo! Groups is subject to
+</I><A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004639.html">[antlr-interest] My hairy dilemma...
+</A></li>
+	<LI>Next message: <A HREF="004641.html">[antlr-interest] Re: another nondeterminism question
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4638">[ date ]</a>
+              <a href="thread.html#4638">[ thread ]</a>
+              <a href="subject.html#4638">[ subject ]</a>
+              <a href="author.html#4638">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

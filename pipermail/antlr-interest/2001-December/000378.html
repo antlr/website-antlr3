@@ -1,0 +1,179 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] matching the longest token in the lexer
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20matching%20the%20longest%20token%20in%20the%20lexer&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000377.html">
+   <LINK REL="Next"  HREF="000379.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] matching the longest token in the lexer</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20matching%20the%20longest%20token%20in%20the%20lexer&In-Reply-To="
+       TITLE="[antlr-interest] matching the longest token in the lexer">parrt at jguru.com
+       </A><BR>
+    <I>Wed Dec 26 12:40:02 PST 2001</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000377.html">[antlr-interest] comments on suggestion to reduce tree constr
+	 uction code size
+</A></li>
+        <LI>Next message: <A HREF="000379.html">[antlr-interest] Returning from a sub-parser with no end token.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#378">[ date ]</a>
+              <a href="thread.html#378">[ thread ]</a>
+              <a href="subject.html#378">[ subject ]</a>
+              <a href="author.html#378">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Howdy,
+
+I have resolved the biggest remaining issue in my 'to do' list for 
+2.7.2: how to handle an ambiguous lexer construct that people expect to 
+be matched properly.  Recall the discussion concerning k=3 problem where 
+input &quot;**&quot; (two stars) did not work as expected; i.e., it did not lex as 
+two STAR tokens, but rather ANTLR claimed a failed TRIPLE_STAR:
+
+STAR : '*' ;
+TRIPLE_STAR : &quot;***&quot; ;
+
+Here's a piece of our conversation:
+
+&gt;<i> &gt; Terence grunted:
+</I>&gt;<i> &gt; Heh, I just realized that it's ambiguous not nondeterministic.  I mean
+</I>&gt;<i> &gt; that *** is both *** token and 3 * tokens.  The language itself is
+</I>&gt;<i> &gt; ambiguous.
+</I>&gt;<i>
+</I>&gt;<i> &quot;Bogdan Mitu&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">bogdan at nobugconsulting.ro</A>&gt; hath spoken:
+</I>&gt;<i> Ter, the &quot;stars&quot; language is not more ambiguous then Java or many other
+</I>&gt;<i> languages. In Java we have &quot;&gt;&gt;&gt;&quot;, which is both &gt;&gt;&gt; and 3 &gt; tokens, to 
+</I>&gt;<i> quote
+</I>&gt;<i> you ;-). The salvation is that &quot;&gt;&gt;&quot; is also a token, if we remove it, 
+</I>&gt;<i> the
+</I>&gt;<i> rules '&gt;' and &quot;&gt;&gt;&gt;&quot; would have to be rewritten.
+</I>
+So, the STAR vs TRIPLE_STAR language is strictly speaking ambiguous, but 
+so is if-then-else and &gt; vs &gt;&gt;&gt; etc... in Java.  In those cases, the 
+parser/lexer just happen to work properly by &quot;matching input as soon as 
+possible.&quot;
+
+In the STAR case, you need to resolve the ambiguity by having the 
+language manual and lexer say &quot;match the longest possible char sequence 
+(token)&quot;, which is not what ANTLR does by default in all cases.  The 
+&quot;match as soon as possible&quot; rule often coincides with this rule and 
+therefore works most of the time.
+
+You expect that k=3 should see *** and say TRIPLE_STAR not 3 STAR 
+tokens.  DFA based lexers such as lex, flex, etc... all implement a form 
+of backtracking to do this &quot;match longest&quot; thing.  As the characters 
+direct the automaton, at least the most recent &quot;accept state&quot; is tracked 
+and lexing continues if the input would allow another transition.  If 
+that continuation fails, the lexer simply rolls back to the last known 
+good accept state.  So, DFA lexers backtrack to solve this problem.
+
+In principle, finite static lookahead of k=3 can solve this problem as 
+in the patch sent to me by Bogdan himself.  Unfortunately, it only fixes 
+the degenerate case of &quot;match longest&quot; where an alternative is a proper 
+substring of the another.  I feel strongly that it would surprise people 
+that it worked there and not in other nearly cases.  I also worry about 
+changes to the analysis as I have no good set of unit tests for it. :(
+
+My philosophy with ANTLR has always been to &quot;let people say what they 
+mean&quot; and not try to do too much automatic stuff that makes ANTLR either 
+inefficient in many cases or simply mysterious.  [The other day, I 
+flicked an inappropriate sequence of buttons on my Volvo remote entry 
+thing and it entered an unanticipated state in the car's automaton.  It 
+took me 15 minutes to figure out how to get the stupid car into a known 
+state and to get the interior lights to shut off etc...  One would go 
+off but not the other and then vice versa.  I hate things that try to be 
+smart with all of this automatic light stuff.  If I want the lights on, 
+by gawd, I'll turn the bastards on!].
+
+Ahem...where was I? ;)  Oh right.  Fortunately, you can simply tell 
+ANTLR to do what other lexers do in this situation: backtrack.
+
+STAR
+     :    (&quot;***&quot;) =&gt; &quot;***&quot; {$setType(TRIPLE_STAR);}
+     |    '*'
+     ;
+
+Now, you are really explicitly stating that you intend 3 stars to match 
+TRIPLE_STAR, a formal means to resolve the language ambiguity.  The best 
+part is that ANTLR will eventually handle these simple, fixed syn preds 
+by using finite lookahead (i.e., w/o backtracking).  Regardless, ANTLR 
+generates something that is pretty efficient already.  In the case of 
+single star, it immediately jumps to alt 2.  In case of two stars, it 
+enters a try block to match ***, which fails costing us an exception 
+throw; it falls to alt 2, matching one of the stars.  For 3 stars, it 
+costs us two match(&quot;***&quot;) calls but no exception.  It works and is not 
+that expensive. :)
+
+Here is what ANTLR (partially) generates:
+
+     boolean synPredMatched3 = false;
+     if (((LA(1)=='*') &amp;&amp; (LA(2)=='*'))) {
+       int _m3 = mark();
+       synPredMatched3 = true;
+       inputState.guessing++;
+       try {
+         match(&quot;***&quot;);
+       }
+       catch (RecognitionException pe) {
+         synPredMatched3 = false;
+       }
+       rewind(_m3);
+       inputState.guessing--;
+     }
+     if ( synPredMatched3 ) {
+       match(&quot;***&quot;);
+       if ( inputState.guessing==0 ) {
+         _ttype = TRIPLE_STAR;
+       }
+     }
+     else if ((LA(1)=='*') &amp;&amp; (true)) {
+       match('*');
+     }
+
+In summary, after much thought, I have decided not to alter the analysis 
+for this special case.
+
+Best regards,
+Terence
+--
+Chief Scientist &amp; Co-founder, <A HREF="http://www.jguru.com">http://www.jguru.com</A>
+Creator, ANTLR Parser Generator: <A HREF="http://www.antlr.org">http://www.antlr.org</A>
+
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000377.html">[antlr-interest] comments on suggestion to reduce tree constr
+	 uction code size
+</A></li>
+	<LI>Next message: <A HREF="000379.html">[antlr-interest] Returning from a sub-parser with no end token.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#378">[ date ]</a>
+              <a href="thread.html#378">[ thread ]</a>
+              <a href="subject.html#378">[ subject ]</a>
+              <a href="author.html#378">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

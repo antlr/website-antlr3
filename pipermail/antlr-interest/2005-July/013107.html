@@ -1,0 +1,171 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Tricky vector constructor syntax
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Tricky%20vector%20constructor%20syntax&In-Reply-To=42DCBEE4.7090002%40cyconix.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="013105.html">
+   <LINK REL="Next"  HREF="013093.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Tricky vector constructor syntax</H1>
+    <B>Richard Matthias</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Tricky%20vector%20constructor%20syntax&In-Reply-To=42DCBEE4.7090002%40cyconix.com"
+       TITLE="[antlr-interest] Tricky vector constructor syntax">richard at exaflop.org
+       </A><BR>
+    <I>Tue Jul 19 05:04:16 PDT 2005</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="013105.html">[antlr-interest] Tricky vector constructor syntax
+</A></li>
+        <LI>Next message: <A HREF="013093.html">[antlr-interest] Type cast exception in CSharp
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#13107">[ date ]</a>
+              <a href="thread.html#13107">[ thread ]</a>
+              <a href="subject.html#13107">[ subject ]</a>
+              <a href="author.html#13107">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>&gt;<i>-----Original Message-----
+</I>&gt;<i>From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> 
+</I>&gt;<i>[mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Paul Johnson
+</I>&gt;<i>Sent: 19 July 2005 09:51
+</I>&gt;<i>To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i>Subject: Re: [antlr-interest] Tricky vector constructor syntax
+</I>&gt;<i>
+</I>&gt;<i>At first sight, this grammar seems a bit (a lot?) wacky.  
+</I>&gt;<i>Bison runs with 122 warnings and 44 reduce/reduce conflicts. 
+</I>&gt;<i>The warnings can be fixed with appropriate action code, which 
+</I>&gt;<i>has presumably been removed from the grammar. The R/R 
+</I>&gt;<i>conflicts arise from:
+</I>&gt;<i>
+</I>&gt;&gt;<i> typecast
+</I>&gt;&gt;<i> 	: '(' typename ')' lvalue				
+</I>&gt;&gt;<i> 	| '(' typename ')' constant				
+</I>&gt;&gt;<i> 	| '(' typename ')' unarypostfixexpression
+</I>&gt;&gt;<i> 
+</I>&gt;&gt;<i> unarypostfixexpression
+</I>&gt;&gt;<i>						
+</I>&gt;&gt;<i> 	| lvalue
+</I>
+&gt;&gt;<i> 	| constant						
+</I>&gt;&gt;<i> 	&lt;etc&gt;
+</I>&gt;<i>
+</I>&gt;<i>In other words, in 'a = (int)b', is 'b' an lvalue/constant or 
+</I>&gt;<i>a unarypostfixexpression? Bison selects the typecast by 
+</I>&gt;<i>default, but this is badly designed.
+</I>
+Yes. I'd been trying to stick as closely as possible to the given grammar
+rather than relying on my understanding of the language to create my own one
+from scratch, but when I came to that part I scratched my head for a bit and
+then stripped it out and put something more conventional in it's place. This
+language doesn't have user-defined types, so typecasts can be detected with
+fixed lookahead even without a symbol table.
+
+&gt;<i>Bison fixes your priority problem by explicitly assigning a 
+</I>&gt;<i>high priority to vector_initializer:
+</I>&gt;<i>
+</I>&gt;&gt;<i> vector_initializer
+</I>&gt;&gt;<i> 	: '&lt;' expression ',' expression ',' expression '&gt;'	
+</I>&gt;<i>%prec INITIALIZER
+</I>&gt;&gt;<i> 	| ZERO_VECTOR
+</I>&gt;&gt;<i> 	;
+</I>&gt;<i>
+</I>&gt;<i>where INITIALIZER has the highest operator priority (see the 
+</I>&gt;<i>%left/right/nonassoc list). I can't quite get my head around 
+</I>&gt;<i>this, but I suspect that if you modify your test from
+</I>&gt;<i>
+</I>&gt;&gt;<i> vector v = &lt;1,2, 5&gt;6 &gt; &gt; &lt;1,2,3&gt;;
+</I>&gt;<i>
+</I>&gt;<i>to either 'vector v = &lt;1,2, 5&lt;6 &gt; &gt; &lt;1,2,3&gt;;' or 'vector v = 
+</I>&gt;<i>&lt;1,2, 5&gt;6 &gt; &lt; &lt;1,2,3&gt;;'
+</I>&gt;<i>
+</I>&gt;<i>then you'll get a syntax error. I can't immediately see how the '&lt;' 
+</I>&gt;<i>relational works at all - does it?
+</I>
+Your first example works, the second gives a parse error. The relational
+operators work fine in most well-formed examples because when you get down to
+the postfixExpression rule (which contains the vector initializer), there
+isn't a '&lt;' or '&gt;' in the immediate lookahead. In the relationalExpression
+rule:
+
+relationalExpression
+	: shiftExpression 
+	  ( options { greedy=true;} : 
+          (LEFT_ANGLE^ | LESSTHAN_EQUALS^ | GREATER_EQUALS^ | RIGHT_ANGLE^)
+shiftExpression 
+         )*
+	;
+
+For input &quot;5 &lt; 6&quot;, shiftExpression (and decendents) is in both cases
+presented with a constant. And because it parses OK on it's own, it also
+parses OK as a component of a vector. The following even parses OK:-
+
+vector v = &lt;1, 2, &lt;3,4,5&gt; &gt;;
+
+Even though it isn't valid within the type system. And it parses the
+following OK, even though the game's original parser barfs on it for
+unspecified reasons:-
+
+vector v = &lt;1,2, &lt;6,7,8&gt; == &lt;6,7,8&gt; &gt;;
+
+The only problem it does have is where a vector initializer is followed by
+'&lt;'. As in:-
+
+vector v = &lt;1,2,3&gt; &lt; 6;
+
+&gt;<i>From the debugger I can see that what's happening is that it gets to the
+</I>third sub-expression started by the '3', it then sees the '&gt;' as part of the
+sub-expression and the following '&lt;' as the start of another vector
+initializer which then throws the exception when the '6' is followed by the
+';' instead of a ','. 
+
+What I don't understand is why the '&gt;' following the '3' is swallowed as part
+of the sub-expression only when there's a following '&lt;' as if you change the
+final '&lt;' for any other operator it parses just fine! It's like I understand
+how it gets seen as the start of another vector initializer, but not how the
+antlr generated code an see it as such at the relationalExpression level.
+
+Only '==' and '!=' are valid operators for acting on vectors. Other operators
+seem to be excluded at the type-checking stage by the game's compiler, but I
+could cheat a bit and exclude them from mine at the syntax level by passing a
+parameter down from relational expression that stops the vector initializer
+sub-rule matching '&lt;' via a semantic action when it follows a '&gt;' matched as
+part of a relational expression. I think possibly it would be too late by
+that stage as the real problem is that what should be the closing '&gt;' of the
+main initializer is treated as part of the sub-expression for some reason,
+what happens after that just obscures the error.
+
+richard
+
+</PRE>
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="013105.html">[antlr-interest] Tricky vector constructor syntax
+</A></li>
+	<LI>Next message: <A HREF="013093.html">[antlr-interest] Type cast exception in CSharp
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#13107">[ date ]</a>
+              <a href="thread.html#13107">[ thread ]</a>
+              <a href="subject.html#13107">[ subject ]</a>
+              <a href="author.html#13107">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

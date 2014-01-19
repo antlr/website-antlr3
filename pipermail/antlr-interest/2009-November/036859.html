@@ -1,0 +1,223 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] same char but different context
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20same%20char%20but%20different%20context&In-Reply-To=%3C7d9605366ac86941ac13f510ea7ae24a%40temporal-wave.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="036858.html">
+   <LINK REL="Next"  HREF="036860.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] same char but different context</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20same%20char%20but%20different%20context&In-Reply-To=%3C7d9605366ac86941ac13f510ea7ae24a%40temporal-wave.com%3E"
+       TITLE="[antlr-interest] same char but different context">jimi at temporal-wave.com
+       </A><BR>
+    <I>Sat Nov 28 10:38:20 PST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="036858.html">[antlr-interest] same char but different context
+</A></li>
+        <LI>Next message: <A HREF="036860.html">[antlr-interest] Rule parameter troubles
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36859">[ date ]</a>
+              <a href="thread.html#36859">[ thread ]</a>
+              <a href="subject.html#36859">[ subject ]</a>
+              <a href="author.html#36859">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hard to tell what the format is from this, but presumably each new single character type introducer is the first non-whitespace after a newline. If this is the case then you need to take the lexer tokens out of the tokens section and create real LEXER rules that have a predicate based on a Boolean switch, which is set to true after seeing a newline and set to false after seeing the single character. Then you don't want an ANY rule, you want a rule that consumes to end of line. So you want something like this:
+
+grammar T;
+
+ options {
+         output = AST;
+}
+ 
+@lexer::members {
+   boolean isType = true;
+}
+ 
+ start       :   header record+  EOF;
+ 
+ header      :   KEYWORD_TYPE RECORD ;
+ 
+ record      :   item+ END_OF_RECORD;
+ 
+ item        :   item_type RECORD ;
+ 
+ item_type   :   (TYPE_DATE
+                 |TYPE_AMOUNT
+                 |TYPE_MEMO
+                 |TYPE_CLEARED
+                 |TYPE_CHECK_NUMBER
+                 |TYPE_PAYEE
+                 |TYPE_PAYEE_ADDRESS
+                 |TYPE_CATEGORY
+                 |TYPE_REIMBURSE
+                 |TYPE_SPLIT_CATEGORY
+                 |TYPE_SPLIT_MEMO
+                 |TYPE_SPLIT_AMOUNT
+                 |TYPE_SPLIT_PERCENTAGE
+                 |TYPE_SECURITY_NAME
+                 |TYPE_PRICE
+                 |TYPE_SHARE_QUANTITY
+                 |TYPE_COMMISSION_COSTS
+                 );
+ 
+KEYWORD_TYPE            : ('!Type:')=&gt;'!Type:'         { isType=false;  };
+END_OF_RECORD           : '^';
+TYPE_DATE               : {isType}?=&gt;  'D' { isType=false; };
+TYPE_AMOUNT             : {isType}?=&gt;  'T' { isType=false; };
+TYPE_MEMO               : {isType}?=&gt;  'M' { isType=false; };
+TYPE_CLEARED            : {isType}?=&gt;  'C' { isType=false; };
+TYPE_CHECK_NUMBER       : {isType}?=&gt;  'N' { isType=false; };
+TYPE_PAYEE              : {isType}?=&gt;  'P' { isType=false; };
+TYPE_PAYEE_ADDRESS      : {isType}?=&gt;  'A' { isType=false; };
+TYPE_CATEGORY           : {isType}?=&gt;  'L' { isType=false; };
+TYPE_REIMBURSE          : {isType}?=&gt;  'F' { isType=false; };
+TYPE_SPLIT_CATEGORY     : {isType}?=&gt;  'S' { isType=false; };
+TYPE_SPLIT_MEMO         : {isType}?=&gt;  'E' { isType=false; };
+TYPE_SPLIT_AMOUNT       : {isType}?=&gt;  '$' { isType=false; };
+TYPE_SPLIT_PERCENTAGE   : {isType}?=&gt;  '%' { isType=false; };
+TYPE_SECURITY_NAME      : {isType}?=&gt;  'Y' { isType=false; };
+TYPE_PRICE              : {isType}?=&gt;  'I' { isType=false; };
+TYPE_SHARE_QUANTITY     : {isType}?=&gt;  'Q' { isType=false; };
+TYPE_COMMISSION_COSTS   : {isType}?=&gt;  'O' { isType=false; };
+ 
+
+fragment NLCHARS        : '\r'|'\n';
+NEWLINE                 : ('\r'? '\n')+ { isType=true; $channel=99; };
+RECORD                  : {!isType}?=&gt;(~NLCHARS)+ ;
+
+
+This only works if NEWLINE is the end of one record, signifying the start of another. To be honest, this is so simple that a simple program to scan it and build it all at once may be simpler and better for you - it looks like the record format was designed for a simple scanner. Note that your example uses the command 'H', which is not in your command set, that I have assumed you end of record is on a new line of its own (if not then the record token also needs to exclude '^' in its set). Also note that this is just my best guess from trying to interpolate from the grammar you posted.
+
+Jim
+
+&gt;<i> -----Original Message-----
+</I>&gt;<i> From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:antlr-interest-
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">bounces at antlr.org</A>] On Behalf Of <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">codeman at bytefusion.de</A>
+</I>&gt;<i> Sent: Saturday, November 28, 2009 1:08 AM
+</I>&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> Subject: [antlr-interest] same char but different context
+</I>&gt;<i> 
+</I>&gt;<i> Given is a record-per-line format like this:
+</I>&gt;<i> 
+</I>&gt;<i> &lt;single-char&gt;&lt;sequence-of-chars&gt;&lt;crlf&gt;
+</I>&gt;<i> 
+</I>&gt;<i> &lt;single-char&gt; =&gt; single letter
+</I>&gt;<i> &lt;sequence-of-chars&gt; =&gt; any except end-of-line
+</I>&gt;<i> &lt;crlf&gt; =&gt; end of line
+</I>&gt;<i> 
+</I>&gt;<i> My problem is the following:
+</I>&gt;<i> 
+</I>&gt;<i> WHello World
+</I>&gt;<i> 
+</I>&gt;<i> &quot;W&quot; =&gt; recognized as single char
+</I>&gt;<i> &quot;Hello &quot; is broken, W seems to be a new start char
+</I>&gt;<i> 
+</I>&gt;<i> Here is my grammer. Aimed target is to parse a quicken interchange
+</I>&gt;<i> format file. Any ideas?
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> grammar myExample;
+</I>&gt;<i> 
+</I>&gt;<i> options {
+</I>&gt;<i>         output=AST;
+</I>&gt;<i> }
+</I>&gt;<i> 
+</I>&gt;<i> tokens {
+</I>&gt;<i> TYPE_DATE               =   'D';
+</I>&gt;<i> TYPE_AMOUNT             =   'T';
+</I>&gt;<i> TYPE_MEMO               =   'M';
+</I>&gt;<i> TYPE_CLEARED            =   'C';
+</I>&gt;<i> TYPE_CHECK_NUMBER       =   'N';
+</I>&gt;<i> TYPE_PAYEE              =   'P';
+</I>&gt;<i> TYPE_PAYEE_ADDRESS      =   'A';
+</I>&gt;<i> TYPE_CATEGORY           =   'L';
+</I>&gt;<i> TYPE_REIMBURSE          =   'F';
+</I>&gt;<i> TYPE_SPLIT_CATEGORY     =   'S';
+</I>&gt;<i> TYPE_SPLIT_MEMO         =   'E';
+</I>&gt;<i> TYPE_SPLIT_AMOUNT       =   '$';
+</I>&gt;<i> TYPE_SPLIT_PERCENTAGE   =   '%';
+</I>&gt;<i> TYPE_SECURITY_NAME      =   'Y';
+</I>&gt;<i> TYPE_PRICE              =   'I';
+</I>&gt;<i> TYPE_SHARE_QUANTITY     =   'Q';
+</I>&gt;<i> TYPE_COMMISSION_COSTS   =   'O';
+</I>&gt;<i> 
+</I>&gt;<i> }
+</I>&gt;<i> 
+</I>&gt;<i> start       :   header record+ NEWLINE* EOF;
+</I>&gt;<i> 
+</I>&gt;<i> header      :   KEYWORD_TYPE description NEWLINE;
+</I>&gt;<i> 
+</I>&gt;<i> description :   ANY+;
+</I>&gt;<i> 
+</I>&gt;<i> record      :   item+ END_OF_RECORD;
+</I>&gt;<i> 
+</I>&gt;<i> item        :   item_type description NEWLINE;
+</I>&gt;<i> 
+</I>&gt;<i> item_type   :   (TYPE_DATE
+</I>&gt;<i>                 |TYPE_AMOUNT
+</I>&gt;<i>                 |TYPE_MEMO
+</I>&gt;<i>                 |TYPE_CLEARED
+</I>&gt;<i>                 |TYPE_CHECK_NUMBER
+</I>&gt;<i>                 |TYPE_PAYEE
+</I>&gt;<i>                 |TYPE_PAYEE_ADDRESS
+</I>&gt;<i>                 |TYPE_CATEGORY
+</I>&gt;<i>                 |TYPE_REIMBURSE
+</I>&gt;<i>                 |TYPE_SPLIT_CATEGORY
+</I>&gt;<i>                 |TYPE_SPLIT_MEMO
+</I>&gt;<i>                 |TYPE_SPLIT_AMOUNT
+</I>&gt;<i>                 |TYPE_SPLIT_PERCENTAGE
+</I>&gt;<i>                 |TYPE_SECURITY_NAME
+</I>&gt;<i>                 |TYPE_PRICE
+</I>&gt;<i>                 |TYPE_SHARE_QUANTITY
+</I>&gt;<i>                 |TYPE_COMMISSION_COSTS
+</I>&gt;<i>                 );
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> KEYWORD_TYPE            :   '!Type:';
+</I>&gt;<i> NEWLINE                 :   ('\r'|'\n'|'\r\n');
+</I>&gt;<i> END_OF_RECORD           :   '^';
+</I>&gt;<i> ANY                     :   ~(NEWLINE);
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-">http://www.antlr.org/mailman/options/antlr-interest/your-</A>
+</I>&gt;<i> email-address
+</I>
+
+
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="036858.html">[antlr-interest] same char but different context
+</A></li>
+	<LI>Next message: <A HREF="036860.html">[antlr-interest] Rule parameter troubles
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36859">[ date ]</a>
+              <a href="thread.html#36859">[ thread ]</a>
+              <a href="subject.html#36859">[ subject ]</a>
+              <a href="author.html#36859">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

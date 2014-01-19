@@ -1,0 +1,201 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Recognition of dynamic ID-definitions
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Recognition%20of%20dynamic%20ID-definitions&In-Reply-To=%3CAANLkTimQjGnTKoB4QFxO%3DnqpHbTgNr1-OSpKA06BbAzZ%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="040590.html">
+   <LINK REL="Next"  HREF="040633.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Recognition of dynamic ID-definitions</H1>
+    <B>Michael Bedward</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Recognition%20of%20dynamic%20ID-definitions&In-Reply-To=%3CAANLkTimQjGnTKoB4QFxO%3DnqpHbTgNr1-OSpKA06BbAzZ%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Recognition of dynamic ID-definitions">michael.bedward at gmail.com
+       </A><BR>
+    <I>Sun Jan 30 21:52:36 PST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="040590.html">[antlr-interest] Recognition of dynamic ID-definitions
+</A></li>
+        <LI>Next message: <A HREF="040633.html">[antlr-interest] Recognition of dynamic ID-definitions
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40632">[ date ]</a>
+              <a href="thread.html#40632">[ thread ]</a>
+              <a href="subject.html#40632">[ subject ]</a>
+              <a href="author.html#40632">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello Christian,
+
+I've been waiting to see if anyone else would answer this question
+before venturing a response.
+
+I'd first create a pre-processor that runs at parser execution time,
+feeding your 'real' parser with source transformed according to a
+current list of characters recognized as operators.  Below is some a
+toy grammar for such a pre-processor where the start rule takes as an
+argument a List&lt;String&gt; of current operators.
+
+Given the input &quot;a+b&quot; and a List of operators that includes &quot;+&quot; it
+will produce output var&lt;a&gt; op&lt;+&gt; var&lt;b&gt;.  If the List excludes &quot;+&quot; the
+output will be var&lt;a+b&gt;.
+
+It scores low on efficiency and elegance but might get you started.
+
+Michael
+
+
+grammar Dynamic;
+
+@header {
+package dynamic;
+import java.util.ArrayList;
+}
+
+@lexer::header {
+package dynamic;
+}
+
+@members {
+List&lt;String&gt; operators;
+
+StringBuilder topSB = new StringBuilder();
+
+void addVar(String var) {
+    if (var.length() &gt; 0) {
+        topSB.append(&quot;var&lt;&quot;).append(var).append(&quot;&gt; &quot;);
+    }
+}
+
+void addOp(String op) {
+    topSB.append(&quot;op&lt;&quot;).append(op).append(&quot;&gt; &quot;);
+}
+
+}
+
+// Parser rules
+prog[List&lt;String&gt; operators]
+@init {
+    this.operators = operators == null ? new ArrayList&lt;String&gt;() : operators;
+}
+@after {
+    System.out.println( topSB.toString() );
+}
+            : statement+
+            ;
+
+statement
+@init {
+    StringBuilder sb = new StringBuilder();
+}
+@after {
+    addVar(sb.toString());
+}
+            : (element {
+                if ($element.isOp) {
+                    addVar(sb.toString());
+                    addOp($element.src);
+                    sb = new StringBuilder();
+                } else {
+                    sb.append($element.src);
+                }
+              })+ DELIM
+            ;
+
+element returns [String src, boolean isOp]
+            : WORD {$src = $WORD.text; $isOp = false; }
+            | OP {$src = $OP.text; $isOp = operators.contains($OP.text);}
+            ;
+
+// Lexer rules
+WORD        : LETTER+
+            ;
+
+// All potential operator chars
+OP          : ('+' | '-')
+            ;
+
+DELIM       : ';'
+            ;
+
+fragment
+LETTER      : ('a'..'z' | 'A'..'Z')
+            ;
+
+WS          :   (' '|'\r'|'\t'|'\n') {$channel=HIDDEN;}
+            ;
+
+
+
+On 26 January 2011 09:21, Christian Mrugalla &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">christian at mrugalla.info</A>&gt; wrote:
+&gt;<i> -----BEGIN PGP SIGNED MESSAGE-----
+</I>&gt;<i> Hash: SHA1
+</I>&gt;<i>
+</I>&gt;<i> Dear all,
+</I>&gt;<i>
+</I>&gt;<i> is it possible to recognize a language which is (so to say)
+</I>&gt;<i> 'parameterized' &#160;by a finite set of arbitrary named identifiers, using
+</I>&gt;<i> ANTLR?
+</I>&gt;<i>
+</I>&gt;<i> Trivial Example:
+</I>&gt;<i>
+</I>&gt;<i> expr : ID ( '+' ID)* ;
+</I>&gt;<i>
+</I>&gt;<i> ID is not defined at parser-generation-time, it is only known that at
+</I>&gt;<i> parser-execution-time there exists a finite set S of arbitrary Strings
+</I>&gt;<i> which contains the allowed values for ID.
+</I>&gt;<i>
+</I>&gt;<i> That is in particular: It depends on S, if &quot;a+b&quot; is:
+</I>&gt;<i> - - build by '+'-connected 'a'- and 'b'-IDs
+</I>&gt;<i> - - an ID named 'a+b'
+</I>&gt;<i> - - invalid, because S contains the IDs &quot;a+&quot; and &quot;b&quot;
+</I>&gt;<i>
+</I>&gt;<i> I did not found any hint concerning such kind of
+</I>&gt;<i> language-parameterization in the &quot;The Definitive ANTLR Reference&quot;.
+</I>&gt;<i>
+</I>&gt;<i> Thank you in advance for your help!
+</I>&gt;<i>
+</I>&gt;<i> Kind Regards,
+</I>&gt;<i> Christian Mrugalla
+</I>&gt;<i>
+</I>&gt;<i> -----BEGIN PGP SIGNATURE-----
+</I>&gt;<i> Version: GnuPG v1.4.9 (GNU/Linux)
+</I>&gt;<i> Comment: Using GnuPG with Mozilla - <A HREF="http://enigmail.mozdev.org">http://enigmail.mozdev.org</A>
+</I>&gt;<i>
+</I>&gt;<i> iEYEARECAAYFAk0/TOUACgkQz2D7mOZ/GFxR0ACbB+GVUODsY1Njr8nGF7M6axJR
+</I>&gt;<i> h2sAn3Ae3PAxGayB3lMODRQgAIFIvRm/
+</I>&gt;<i> =ehYs
+</I>&gt;<i> -----END PGP SIGNATURE-----
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i>
+</I></PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="040590.html">[antlr-interest] Recognition of dynamic ID-definitions
+</A></li>
+	<LI>Next message: <A HREF="040633.html">[antlr-interest] Recognition of dynamic ID-definitions
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40632">[ date ]</a>
+              <a href="thread.html#40632">[ thread ]</a>
+              <a href="subject.html#40632">[ subject ]</a>
+              <a href="author.html#40632">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

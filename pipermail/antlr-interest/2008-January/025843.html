@@ -1,0 +1,235 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Antlr dropping tokens?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Antlr%20dropping%20tokens%3F&In-Reply-To=%3C4794B9DF.4060808%40mtu.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="025842.html">
+   <LINK REL="Next"  HREF="025846.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Antlr dropping tokens?</H1>
+    <B>Jon Schewe</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Antlr%20dropping%20tokens%3F&In-Reply-To=%3C4794B9DF.4060808%40mtu.net%3E"
+       TITLE="[antlr-interest] Antlr dropping tokens?">jpschewe at mtu.net
+       </A><BR>
+    <I>Mon Jan 21 07:27:27 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="025842.html">[antlr-interest] Scanning URI tokens and grammar resuse
+</A></li>
+        <LI>Next message: <A HREF="025846.html">[antlr-interest] Antlr dropping tokens?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25843">[ date ]</a>
+              <a href="thread.html#25843">[ thread ]</a>
+              <a href="subject.html#25843">[ subject ]</a>
+              <a href="author.html#25843">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Here's a piece of my grammar that I'm testing with junit.  It appears
+that some tokens are getting dropped.
+The input is this:
+b[1 ... (param1 - 5 - 1) * 4]
+
+The resulting tree is this:
+(b (SUM (PRODUCT (NUMBER 1))) (SUM (PRODUCT (SUM (PRODUCT param1)
+(PRODUCT (NUMBER -1) (NUMBER 5)) (PRODUCT (NUMBER -1) (NUMBER 1))))))
+
+Where did the &quot;* 4&quot; go?  I didn't think ANTLR could drop tokens like
+that.  This is using antlr 3.0.1.
+
+The grammar fragment is below:
+/**
+* Name used in a variable declaration.
+*/
+nameDecl :
+  IDENT -&gt; IDENT
+|<i> IDENT LBRACK lb=subscriptAddExpr[false] ELLIPSIS
+</I>ub=subscriptAddExpr[false] RBRACK -&gt; ^(IDENT $lb $ub)
+;
+subscriptAddExpr[boolean negate]
+:<i>
+</I>subscriptMultExpr[negate] (PLUS subscriptMultExpr[negate] | MINUS
+subscriptMultExpr[!negate])* -&gt; ^(SUM subscriptMultExpr+)
+
+;
+
+/**
+* @param negate if true, negate all expressions by multiplying by -1
+*/
+subscriptMultExpr[boolean negate]
+:<i>
+</I>  a+=subscriptAtom (a+=subscriptMultHelp)* -&gt; {negate}? ^(PRODUCT
+^(NUMBER NUM_INT[&quot;-1&quot;]) $a)
+                                           -&gt;           ^(PRODUCT $a)
+;
+
+subscriptMultHelp : PRODUCT subscriptAtom -&gt; subscriptAtom ;
+
+/**
+* Base type that can be inside a subscript.
+*/
+subscriptAtom
+:<i>
+</I>  IDENT
+|<i> numint
+</I>|<i> subscriptParExpression
+</I>;
+
+subscriptParExpression
+:<i>
+</I>LPAREN subscriptAddExpr[false] RPAREN -&gt; subscriptAddExpr
+;
+
+
+/**
+* A finite integer number.  May be negative.
+*/
+numint
+:<i>
+</I>  MINUS NUM_INT -&gt; ^(NUMBER ^(MINUS NUM_INT))
+|<i> NUM_INT -&gt; ^(NUMBER NUM_INT)
+</I>;
+
+// ----------- Lexer ---------------------
+// Operators
+LPAREN          :   '('     ;
+RPAREN          :   ')'     ;
+LBRACK          :   '['     ;
+RBRACK          :   ']'     ;
+ELLIPSIS        :   '...'   ;
+EQ              :   '='     ;
+MINUS           :   '-'     ;
+PLUS            :   '+'     ;
+SEMI            :   ';'     ;
+LCURLY          :   '{'     ;
+RCURLY          :   '}'     ;
+LE              :   '&lt;='    ;
+COLON           :   ':'     ;
+COMMA           :   ','     ;
+PRODUCT         :   '*'     ;
+
+// Keywords
+IN              :   'in'    ;
+
+// Functions
+SUMMATION       :   'SUM'   ;
+LOOP            :   'LOOP'  ;
+TAN             :   'tan'   ;
+COS             :   'cos'   ;
+SIN             :   'sin'   ;
+LOG             :   'log'   ;
+LOG10           :   'log10' ;
+EXP             :   'exp'   ;
+POW             :   'pow'   ;
+
+
+/** Single-line comments */
+SL_COMMENT
+  : '//' ~( '\n'|'\r' )* '\r'? '\n' { $channel=HIDDEN; }
+    ;
+
+/** multiple-line comments */
+ML_COMMENT
+    :    '/*'
+        ( options {greedy=false;} : . )*
+        '*/'
+        {$channel=HIDDEN;}
+    ;
+
+IDENT :
+  ('a'..'z'|'A'..'Z'|'_') ('a'..'z'|'A'..'Z'|'_'|'0'..'9')*
+  ;
+
+// a numeric literal
+NUM_INT
+  : ('0'..'9')+ EXPONENT?
+  ;
+
+NUM_FLOAT
+    :     DIGITS '.' DIGITS? EXPONENT?
+    | '.' DIGITS EXPONENT?
+    ;
+
+fragment
+DIGITS : ('0'..'9')+ ;
+
+
+// a protected method to assist in matching floating point numbers
+fragment
+EXPONENT
+  : ('e'|'E') ('+'|'-')? ('0'..'9')+
+  ;
+
+// Whitespace -- ignored
+WS    :    (    ' '
+        |    '\t'
+        |    '\f'
+            // handle newlines
+        |    (    '\r\n'  // Evil DOS
+            |    '\n'    // Unix (the right way)
+            )
+        )+
+        { $channel=HIDDEN; }
+    ;
+
+
+
+-- 
+Jon Schewe | <A HREF="http://mtu.net/~jpschewe">http://mtu.net/~jpschewe</A>
+If you see an attachment named signature.asc, this is my digital
+signature.
+See <A HREF="http://www.gnupg.org">http://www.gnupg.org</A> for more information.
+
+For I am convinced that neither death nor life, neither angels
+nor demons, neither the present nor the future, nor any
+powers, neither height nor depth, nor anything else in all
+creation, will be able to separate us from the love of God that
+is in Christ Jesus our Lord. - Romans 8:38-39
+
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="025842.html">[antlr-interest] Scanning URI tokens and grammar resuse
+</A></li>
+	<LI>Next message: <A HREF="025846.html">[antlr-interest] Antlr dropping tokens?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25843">[ date ]</a>
+              <a href="thread.html#25843">[ thread ]</a>
+              <a href="subject.html#25843">[ subject ]</a>
+              <a href="author.html#25843">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

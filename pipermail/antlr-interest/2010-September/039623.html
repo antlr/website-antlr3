@@ -1,0 +1,155 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Matching balanced parentheses in a tree grammar
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Matching%20balanced%20parentheses%20in%20a%20tree%20grammar&In-Reply-To=%3COF46692F21.29177BC7-ON85257791.006A42F7-85257791.006A723F%40LocalDomain%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="039633.html">
+   <LINK REL="Next"  HREF="039626.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Matching balanced parentheses in a tree grammar</H1>
+    <B>Alan Lehotsky</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Matching%20balanced%20parentheses%20in%20a%20tree%20grammar&In-Reply-To=%3COF46692F21.29177BC7-ON85257791.006A42F7-85257791.006A723F%40LocalDomain%3E"
+       TITLE="[antlr-interest] Matching balanced parentheses in a tree grammar">ALehotsky at ABINITIO.COM
+       </A><BR>
+    <I>Wed Sep  1 12:22:40 PDT 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="039633.html">[antlr-interest] problem with token
+</A></li>
+        <LI>Next message: <A HREF="039626.html">[antlr-interest] if/else if/else vs. if/elif/else
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#39623">[ date ]</a>
+              <a href="thread.html#39623">[ thread ]</a>
+              <a href="subject.html#39623">[ subject ]</a>
+              <a href="author.html#39623">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>The contributed plsql.g doesn't handle FOR i IN ( SELECT ... ) LOOP  .... 
+quite right - it slurps EVERYTHING after the IN up to the LOOP by
+
+
+                   ~(LOOP)+
+
+Since I want to disambiguate between normal for-loops where you have 
+
+                 FOR i IN 1 .. 10 LOOP ....
+
+and those with a SQL select expression, I need to be smarter here.  It's 
+not sufficient to have a rule like
+
+
+         for_statement :  FOR ID IN LPAREN (~RPAREN)+ RPAREN LOOP ......
+
+because the SELECT expression can have nested parentheses.  So we need 
+something smarter.
+
+I studied 
+<A HREF="http://www.antlr.org/pipermail/antlr-interest/2009-October/036333.html">http://www.antlr.org/pipermail/antlr-interest/2009-October/036333.html</A> 
+which tackles this problem for lexers, and implemented
+something similar.  I almost have it with the following (using a C 
+runtime)  I have the  rules:
+
+for_loop_statement scope { ANTLR3_UINT32 depth; }
+       @init { $for_loop_statement::depth = plsql_paren_depth;
+               plsql_paren_depth = 0;
+             }
+       @after{ plsql_paren_depth = $for_loop_statement::depth; }
+    :
+       FOR ID IN LPAREN {++plsql_paren_depth;} SELECT swallow_to_rparen 
+RPAREN
+
+          LOOP ( statement SEMI )+ END LOOP label_name?   -&gt; ^(FOR ID 
+^(SELECT swallow_to_rparen ) statement+)
+    ;
+
+swallow_to_rparen : 
+       {parenMatch(ctx)}?
+    ;
+
+Where we have a validating semantic predicate (op. cit Antlr Ref, p285) 
+match that checks parenMatch(ctx).  And parenMatch is implemented as a 
+method with
+
+@parser::members {
+  int plsql_paren_depth;
+  static ANTLR3_BOOLEAN parenMatch (pplsqlParser ctx) {
+    pANTLR3_PARSER parser = ctx-&gt;pParser;
+    pANTLR3_TOKEN_STREAM ts = parser-&gt;getTokenStream(parser);
+    ANTLR3_UINT32 tok;
+
+    if (plsql_paren_depth == 0) return false; // no pending RPAREN needed
+
+      while ((tok=LA(1)) != EOF) {
+        switch (tok) {
+        case LPAREN: ++plsql_paren_depth; break;
+        case RPAREN: --plsql_paren_depth; break;
+        default: break;
+        }
+
+        if (plsql_paren_depth == 0) return true;
+        ts-&gt;istream-&gt;consume(ts-&gt;istream); // munch the token
+      }
+
+      if (tok == EOF) return false;
+    return false;               // unreachable
+  }
+}
+
+This looks ahead to find the LPARENs or RPARENs and adjusts the depth 
+appropriately.  Once the depth is zero
+it can return success.
+
+The only problem (of course) is that we are consuming the tokens not 
+buffering them up for the swallow_to_rparen rule to return. So I end up 
+constructing a
+parse tree for the for_statement that has an empty list for the SELECT 
+subtree
+
+How can I fix this?  Or is there a better way to obtain the balanced paren 
+match without having to extend my grammar to understand the guts of the 
+SELECT.
+(I plan to take the select tokens and send them off to an existing Bison 
+parser that knows all about SQL statements)
+
+Do I need to have an ANTLR_LIST that I concat tokens onto (inside my 
+validating semantic predicate)  and somehow make that the result of the 
+swallow_to_rparen rule?
+
+
+ForwardSourceID:NT000798C2 
+
+  
+NOTICE  from Ab Initio: If received in error, please destroy and notify sender, and make no further use, disclosure, or distribution. This email (including attachments) may contain information subject to confidentiality obligations, and sender does not waive confidentiality or privilege.   
+</PRE>
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="039633.html">[antlr-interest] problem with token
+</A></li>
+	<LI>Next message: <A HREF="039626.html">[antlr-interest] if/else if/else vs. if/elif/else
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#39623">[ date ]</a>
+              <a href="thread.html#39623">[ thread ]</a>
+              <a href="subject.html#39623">[ subject ]</a>
+              <a href="author.html#39623">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

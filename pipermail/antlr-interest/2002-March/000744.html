@@ -1,0 +1,231 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] ignoring lexer rules
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20ignoring%20lexer%20rules&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   
+   <LINK REL="Next"  HREF="000756.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] ignoring lexer rules</H1>
+    <B>Ed Sinjiashvili</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20ignoring%20lexer%20rules&In-Reply-To="
+       TITLE="[antlr-interest] ignoring lexer rules">edsin at swes.saren.ru
+       </A><BR>
+    <I>Fri Mar  1 03:50:47 PST 2002</I>
+    <P><UL>
+        
+        <LI>Next message: <A HREF="000756.html">[antlr-interest] ignoring lexer rules
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#744">[ date ]</a>
+              <a href="thread.html#744">[ thread ]</a>
+              <a href="subject.html#744">[ subject ]</a>
+              <a href="author.html#744">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+I've tried to ask Terence about this issue and he pointed me to this
+ML. So here I am. Suppose I have the following grammar(that describes
+literal strings with escaped octal numbers inside):
+
+-----
+class Dummy extends Lexer;
+options
+{
+    charVocabulary = '\3'..'\177';
+}
+
+{
+    char scanOct(String txt)
+	{
+		char result = 0;
+		try 
+		{
+			result = (char) Integer.parseInt(txt, 8);
+		}
+		catch (NumberFormatException e)
+		{
+			result = 0;
+		}
+		return result;
+	}
+}
+
+STR: '&quot;' ( c = ESCAPE { text.append(c); } 
+         | ~('\\' | '&quot;')
+         )*
+     '&quot;'
+    ;
+
+protected
+ESCAPE! returns [char c = 0]
+ 	: 	'\\'!
+        '0'..'7' 
+        (options {warnWhenFollowAmbig = false;} : '0'..'7'
+            (options {warnWhenFollowAmbig = false;} : '0'..'7')? )? 
+        { c = scanOct($getText); } 
+ 	;
+-----
+
+I'd like the tokenizer to return my strings already interpolated -
+that is escaped octals should be converted to a char - and parser
+should not be able to tell whether particular character was in string
+literally or resulted from escape substitution. Naturally I used '!'
+on ESCAPE rule to discard matched octals and backslash. This resulted
+in the following java code (narrowed to not include irrelevant stuff):
+
+-----
+protected final char  mESCAPE(boolean _createToken) throws RecognitionException, CharStreamException, TokenStreamException {
+	char c = 0; int _ttype; Token _token=null; int _begin=text.length();
+	_ttype = ESCAPE; 
+	int _saveIndex;
+		
+	_saveIndex=text.length();
+	match('\\');
+	text.setLength(_saveIndex);
+	_saveIndex=text.length();
+	matchRange('0','7');
+	text.setLength(_saveIndex);
+        [ ... skipped ... ]
+
+	c = scanOct(new String(text.getBuffer(),_begin,text.length()-_begin));
+	if ( _createToken &amp;&amp; _token==null &amp;&amp; _ttype!=Token.SKIP ) {
+		_token = makeToken(_ttype);
+		_token.setText(new String(text.getBuffer(), _begin, text.length()-_begin));
+	}
+	_returnToken = _token;
+	return c;
+	}
+-----
+
+ANTLR just wraps every alternative with &quot;_saveIndex = text.length();&quot;
+and &quot;text.setLength(_saveIndex);&quot;. This causes my scanOct method to
+fail - all matched stuff was discarded by subsequent &quot;_saveIndex&quot;
+wrappers. Besides it looks a little wrong to me - we know that we
+gonna discard all the text, we know where it starts and we know where
+it ends. Why just don't cut it before trying to create a token
+instance? This way actions can access matched text and mess with it. 
+
+I've patched ANTLR.2.7.2a2's JavaCodeGenerator so it produces the
+following java code (no narrowing now):
+
+-----
+protected final char  mESCAPE(boolean _createToken) throws RecognitionException, CharStreamException, TokenStreamException {
+		char c = 0;
+		int _ttype; Token _token=null; int _begin=text.length();
+		_ttype = ESCAPE;
+		int _saveIndex;
+		
+		_saveIndex=text.length();
+		match('\\');
+		text.setLength(_saveIndex);
+		matchRange('0','7');
+		{
+		if (((LA(1) &gt;= '0' &amp;&amp; LA(1) &lt;= '7'))) {
+			matchRange('0','7');
+			{
+			if (((LA(1) &gt;= '0' &amp;&amp; LA(1) &lt;= '7'))) {
+				matchRange('0','7');
+			}
+			else if (((LA(1) &gt;= '\u0003' &amp;&amp; LA(1) &lt;= '\u007f'))) {
+			}
+			else {
+				throw new NoViableAltForCharException((char)LA(1), getFilename(), getLine(), getColumn());
+			}
+			
+			}
+		}
+		else if (((LA(1) &gt;= '\u0003' &amp;&amp; LA(1) &lt;= '\u007f'))) {
+		}
+		else {
+			throw new NoViableAltForCharException((char)LA(1), getFilename(), getLine(), getColumn());
+		}
+		
+		}
+		c = scanOct(new String(text.getBuffer(),_begin,text.length()-_begin));
+		text.setLength(_begin);
+		if ( _createToken &amp;&amp; _token==null &amp;&amp; _ttype!=Token.SKIP ) {
+		   _token = makeToken(_ttype);
+		   _token.setText(new String(text.getBuffer(), _begin, text.length()-_begin));
+		}
+		_returnToken = _token;
+		return c;
+	}
+-----	
+
+As you can see I'm still able to exclude arbitrary matches (backslash
+in the example) from text, then text is available to action. Finally
+I just discard all the text with &quot;text.setLength(_begin)&quot;. Thus
+exclamaited rule (the one with ! mark) is seen to actions like ordinal
+rule - the only difference is that text is not propogated. To put it
+more formally - these two pairs of rules are not equivalent in current
+ANTLR-2.7.2a2 (IMHO they should be identical):
+
+----- first pair
+STR: '&quot;' ( (! c = ESCAPE) { text.append(c); } 
+         | ~('\\' | '&quot;')
+         )*
+     '&quot;'
+    ;
+
+protected
+ESCAPE returns [char c = 0]
+ 	: '\\'!
+        '0'..'7' ('0'..'7' ('0'..'7')? )? 
+        { c = scanOct($getText); } 
+ 	;
+
+----- second pair
+STR: '&quot;' ( c = ESCAPE { text.append(c); } 
+         | ~('\\' | '&quot;')
+         )*
+     '&quot;'
+    ;
+
+protected
+ESCAPE! returns [char c = 0]
+ 	: '\\'!
+        '0'..'7' 
+        (options {warnWhenFollowAmbig = false;} : '0'..'7'
+            (options {warnWhenFollowAmbig = false;} : '0'..'7')? )? 
+        { c = scanOct($getText); } 
+ 	;
+-----
+
+
+--Ed 
+
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	
+	<LI>Next message: <A HREF="000756.html">[antlr-interest] ignoring lexer rules
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#744">[ date ]</a>
+              <a href="thread.html#744">[ thread ]</a>
+              <a href="subject.html#744">[ subject ]</a>
+              <a href="author.html#744">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

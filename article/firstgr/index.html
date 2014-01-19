@@ -1,0 +1,243 @@
+<html>
+
+<head>
+<title>Parsing Simple Data</title>
+</head>
+
+<body bgcolor="#FFFFFF">
+
+<i>Terence Parr</i>
+
+<p>
+
+This entry leads you through the development of a simple parser for
+reading in name/age pairs.  You'll see how to use
+
+<ul>
+<li>(...)+ loop to match sequences of characters and tokens. 
+<li>Access token objects via labeling elements. 
+<li>Have the lexer ignore whitespace and track line numbers. 
+</ul>
+
+<p>
+You will print out the contents of an input file in a certain
+format.  The input is:
+
+<tt><pre>
+Griffin 2
+Terence 33
+Karen   31
+Tom     32
+Pat     26
+</pre></tt>
+
+<B>Parsing</B>
+
+<p>
+A grammar to recognize a sequence of name/age pairs is pretty simple.
+Define a grammar class derived from <CODE>Parser</CODE> to indicate
+you will be recognizing token streams (not characters or tree nodes).
+
+<tt><pre>
+class P extends Parser;
+
+// match one-or-more 'name followed by age' pairs
+startRule
+    :   ( NAME AGE )+
+    ;
+</pre></tt>
+
+<p>
+We will define the references to <CODE>NAME</CODE> and <CODE>AGE</CODE>
+later, but for now assume they represent a series of letters and a series of
+digits, respectively.  Also assume whitespace is ignored.
+
+<p>
+It's probably worth mentioning at this point that tools such as awk and PERL
+work on a line by line basis, not character by character.  Hence, you could
+write a quick parser to read name/age pairs <B>if</B> they happen to be
+consistently on a line together or on separate lines.  Here is a quick
+awk invocation that works if the data is on one line:
+
+<tt><pre>
+awk '{print "("$1","$2")"}' &lt; input
+</pre></tt>
+
+<p>
+Unfortunately, it will print "(,)" for empty lines at the end also.
+
+<p>
+A real parser,
+on the other hand, looks only at a stream of vocabulary symbols (tokens);
+they generally ignore whitespace unless it is part of the vocabulary such
+as in Python or make (tabs count--ick).  Anyway, "right tool for the right
+job" etc...
+
+<p>
+Grammar <CODE>P</CODE> recognizes name/age sequences, but does nothing with them.
+In other words, no output is generated.  Let's extend the grammar to generate
+output in the form of "(name,age)".  In order to access the attributes of an
+input token, label the token reference, which gives you a token object
+that you can manipulate with standard methods such as <CODE>getText</CODE>.
+A simple <CODE>System.out.println</CODE> method call generates the desired
+output:
+
+<tt><pre>
+class P extends Parser;
+
+// match one-or-more 'name followed by age' pairs
+startRule
+    :   (   n:NAME a:AGE
+            {System.out.println("("+n.getText()+","+a.getText()+")");}
+        )+
+    ;
+</pre></tt>
+
+<B>Lexical Analysis</B>
+
+<p>
+A parser applies a grammatical structure to a sequence of input tokens,
+but where do the input tokens come from?  From a beast called a <I>lexical
+analyzer</I> or <I>lexer</I> that scans the input characters looking for
+patterns.  [<i>Sounds like a parser doesn't it?  It is, but lexers
+parse characters
+not tokens.  ANTLR treats lexical analysis, parsing, and tree parsing as
+simply variations on recognition.  This generalization provides a pleasing
+notational consistency across recognizer types.</i>]
+
+<p>
+To define a vocabulary of tokens, create another grammar class, but
+this time derive it from <CODE>Lexer</CODE> and then create a rule
+for each token:
+
+<tt><pre>
+// Lexer framework (rule contents are missing here)
+class L extends Lexer;
+
+NAME:   ... ;
+
+AGE :   ... ;
+
+WS  :   ... ;   // white space, which will be ignored
+</pre></tt>
+
+To match any character in a range, use the range operator;
+for example, <CODE>'0'..'9'</CODE> matches a digit.
+Therefore, to match a series of
+digits, we can embed the range in the <CODE>(...)+</CODE>
+positive closure (one-or-more) block or "loop".  <CODE>AGE</CODE>
+can then be completely specified as:
+
+<tt><pre>
+// match a decimal age of any length
+AGE :   ( '0'..'9' )+
+    ;
+</pre></tt>
+
+Similarly, <CODE>NAME</CODE> can be specified as:
+
+<tt><pre>
+// match an upper/lower case name of any length
+NAME:   ( 'a'..'z' | 'A'..'Z' )+
+    ;
+</pre></tt>
+
+The alternative operator '<CODE>|</CODE>' is used to indicate
+that either range can be matched.  Each time through the loop
+the lexer will match either a lowercase or an uppercase letter.
+
+<p>
+Whitespace such as tab, space, and newline is very often ignored
+by parsers.  Rather than have the parser try to match and ignore
+whitespace tokens everywhere, it is customary for the lexer to
+match and throw out whitespace.  Ignoring whitespace in the lexer
+is a matter of specifying what constitutes whitespace and then
+setting the token type for that token to be a special value:
+<CODE>Token.SKIP</CODE>.  Use ANTLR-action method
+<CODE>$setType</CODE> to set the token type.  In the following
+rule, you'll note that rather than a <CODE>$setType</CODE> on
+each alternative, we grouped the alternatives and placed a single
+action at the end.
+
+<tt><pre>
+WS  :   (   ' '
+        |   '\t'
+        |   '\r' '\n' { newline(); }
+        |   '\n'      { newline(); }
+        )
+        {$setType(Token.SKIP);} //ignore this token
+    ;
+</pre></tt>
+
+The Lexer has a predefined notion of newline or carriage return that
+is used in both the lexer and the parser for error handling and by
+user actions.  A standard method <CODE>newline</CODE> can be called
+to increment the current line number.
+
+<p>
+This concludes both the parser and lexer.  Easy, right?  Put them
+both in the same file called <CODE>t.g</CODE> and run ANTLR on
+it to generate the implementation Java files:
+
+<tt><pre>
+$ java antlr.Tool t.g
+ANTLR Parser Generator   Version 2.20   1997 MageLang Institute
+</pre></tt>
+
+To invoke the parser, a main program such as the following suffices:
+
+<tt><pre>
+import java.io.*;
+class Main {
+    public static void main(String[] args) {
+        try {
+            L lexer = new L(new DataInputStream(System.in));
+            P parser = new P(lexer);
+            parser.startRule();
+        } catch(Exception e) {
+            System.err.println("exception: "+e);
+        }
+    }
+}
+</pre></tt>
+
+<p>
+Compile everything and run the input file through the program
+as standard input.  You should get something similar to the
+following:
+
+<tt><pre>
+$ javac *.java
+$ java Main &lt; input
+(Griffin,2)
+(Terence,33)
+(Karen,31)
+(Tom,32)
+(Pat,26)
+$ 
+</pre></tt>
+
+<B>Conclusion</B>
+
+<p>
+This Field Guide entry demonstrates all of the basic elements
+needed to build a typical parser and lexer.  Future entries
+are more terse, but develop more complicated and useful recognizers
+and translators.
+
+<p>
+<B>Source</B>
+
+<p>
+The following files contain the complete solution to the problem
+discussed here.
+
+<ul>
+<li><a href="t.g">t.g</a>
+<li><a href="Main.java">Main.java</a>
+<li><a href="input">input</a>
+</ul>
+
+</font>
+</body>
+</html>

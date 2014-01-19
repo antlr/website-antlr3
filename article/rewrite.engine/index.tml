@@ -1,0 +1,229 @@
+Syntax Directed TokenStream Rewriting
+
+_Terence Parr_ \
+University of San Francisco  \
+{parrt@cs.usfca.edu}
+
+December 14, 2003 
+
+_ANTLR 2.7.3 now includes the rewrite engine described here_
+
+o {antlr.TokenStreamRewriteEngine}
+o {antlr.TokenWithIndex}
+
+#### Introduction
+
+There are many common situations where you want to tweak or augment a
+program or data file.  For example, to build a Java profiling tool
+here at USF, students wanted to wrap method bodies with "start/stop
+timer" code and to wrap {new T()} expressions.  Another obvious
+example would converting comma-separated or other data formats to XML.
+(_This article will demonstrate C header file generation from C files_).
+
+Parsing an input file is pretty easy, but how do you to spit the text
+back out exactly as it was in the input stream?  JavaCC pioneered a
+really great simple mechanism where you could make certain tokens like
+whitespace and comments "special", thus, informing the parser to keep
+them around, but not to parse them.  ANTLR extended this idea to allow
+multiple streams of tokens to emanate from a lexer; a parser can
+"listen to" (i.e., parse from) any of the streams and query the
+others.
+
+While these schemes allow you to easily parse input without discarding
+formatting tokens, spitting the exact stream back out has been a
+hassle (at least with ANTLR).  You have to add actions everywhere in
+the grammar to spit elements back out.
+@(http://www.antlr.org/article/preserving.token.order/preserving.token.order.tml,
+My first attempt to solve this) was fairly general and allowed you to
+print out the tokens associated with any AST subtree.  You need this
+capability when doing serious surgery on an input stream.
+
+What about the simple cases where you want to augment, delete, or
+replace a few pieces of the input stream and leave the rest alone?  In
+a way you want a stream editor like as UNIX's {sed}, but one that is
+not based on lines and one that uses a full LL(k) parser not limited
+regular expressions.  Wouldn't it be great if you could just add
+actions in the grammar where you wanted to do some tweaks and then
+have the whole modified input stream spit back out automatically?
+And, all without generating trees!
+
+This article describes a new mechanism called
+{TokenStreamRewriteEngine} targeted at a specific class of
+{TokenStream} rewriting where:
+
+1 the output language and the input language are similar
+
+1 the relative order of language elements does not change
+
+#### Sample Problem
+
+Imagine you have a tinyc program like this:
+
+<<
+int i;
+int *i;
+
+int f(char c, char *d)
+{
+...
+}
+
+void g() {
+...
+}
+>>
+
+and you want to generate header files that look like this:
+
+<<
+extern int i;
+extern int *i;
+
+extern int f(char c, char *d);
+extern void g();
+>>
+
+You just need to insert the {extern} keyword and replace "\{...\}"
+with "{;}".  Making the recognizer is easy enough or you can just
+borrow the standard ANTLR GNU C grammar.  However, to build the header
+file generator, you need to do more than just add actions to print
+{extern} and replace code blocks with semicolon.  You need to spit all
+of that input code back out by adding actions all over the grammar to
+print the elements.
+
+#### TokenStreamRewriteEngine
+
+Now there is an extremely convenient and powerful means for rewriting
+token streams.  I have built a {TokenStream} filter called
+{TokenStreamRewriteEngine} that collects, buffers, and then passes
+through all tokens from the lexer to the parser except for things like
+whitespace.  As the tokens flow through, the filter sets their token
+indexes (index from the beginning of the file starting at index 0).
+This requires a new {Token} object called {TokenWithIndex}.  Then, in
+the grammar, your actions can "insert before" a token, "insert after"
+a token, "replace" a token range, or "delete" a token range.  Getting
+the rewritten stream is easy: use {toString()} on the filter.
+
+To get ANTLR to use the new infrastructure for the C header generation
+task, do the following:
+
+<<
+TinyCLexer lexer =
+    new TinyCLexer(new BufferedReader(new FileReader(args[0])));
+lexer.setTokenObjectClass("TokenWithIndex");
+TokenStreamRewriteEngine rewriteEngine =
+		new TokenStreamRewriteEngine(lexer);
+rewriteEngine.discard(TinyCLexer.WS);
+TinyCParser parser = new TinyCParser(rewriteEngine);
+parser.program(); // do the parsing
+System.out.print(rewriteEngine.toString()); // print modified stream
+System.out.print(rewriteEngine.toOriginalString()); // unmodified stream
+>>
+
+You would then add actions to your grammar like this:
+
+<<
+/** Convert "int foo;" into "extern int foo;" */
+globalVariable
+    :   {engine.insertBefore(LT(1),"extern ");}
+        variable
+    ;
+>>
+
+and
+
+<<
+/** Convert "int foo() {...}" into "extern int foo();" */
+function
+{
+    int rcurly=0;
+}
+    :   {engine.insertBefore(LT(1),"extern ");}
+        type id:ID LPAREN
+        (formalParameter (COMMA formalParameter)*)?
+        RPAREN
+        block[true]
+    ;
+>>
+
+and
+
+<<
+block[boolean functionLevel]
+	:	a:LCURLY ( statement )* b:RCURLY
+        {
+            if ( functionLevel ) {
+                int prevTokenIndex = ((TokenWithIndex)a).getIndex()-1;
+                TokenWithIndex prevToken = engine.getToken(prevTokenIndex);
+                if ( prevToken.getType()==RPAREN ) {
+                    engine.replace(a,b,";");
+                }
+                else {
+                    engine.replace(prevToken,b,";"); // replace whitespace too
+                }
+            }
+        }
+	;
+>>
+
+Here is the complete project:
+
+o @(tinyc.g, tinyc.g): The grammar with a few rewrite actions.
+o @(input.c, input.c): Sample input.
+o @(GenHdr.java, GenHdr.java): The main program.
+o @(TokenStreamRewriteEngine.java, TokenStreamRewriteEngine.java): The
+new engine.
+o @(TokenWithIndex.java, TokenWithIndex.java): a {CommonToken} with an index.
+
+#### Rewrite Instruction Streams
+
+{TokenStreamRewriteEngine} can be used like a simple buffer of tokens,
+so you can ask for an individual token ({getToken()}) and the text for
+a given range ({toOriginalString()}).  Naturally you can get the
+modified text stream via just {toString()}.
+
+### Lazy evaluation
+
+This engine is very efficient because operations are done lazily--your
+operations are queued up like an instruction stream or program for a
+small "machine" and then "executed" when you convert the token buffer
+to a String.  This is very efficient because you are not moving data
+around in an array every time you do an insertion or deletion and yet
+you can still grab the ith value quickly (i.e., without walking a
+list).  It also leaves the buffer untouched in case you want the
+original stream back.
+
+### Multiple instruction streams
+
+More importantly, doing lazy evaluation allows multiple programs to
+operate on the buffer in a very efficient manner.  It's like having
+multiple Turing machine instruction streams (programs) operating on a
+single input tape. :)
+
+Instruction streams are named:
+
+<<
+rewriteEngine.insertAfter("pass1", t, "foobar");}
+rewriteEngine.insertAfter("pass2", u, "start");}
+>>
+
+Later you can execute the instructions via:
+
+<<
+System.out.println(rewriteEngine.toString("pass1"));
+System.out.println(rewriteEngine.toString("pass2"));
+>>
+
+One could, for example, generate not only C headers, but generate an
+instrumented C file all from the same TokenStreamRewriteEngine.
+
+### Transactions
+
+Because the instructions are queued up, you can easily simulate
+transactions and roll back any changes if there is an error just by
+removing instructions from the queue.  I have a primitive {rollback()}
+method available, but since I sort the instructions by the token index
+to which they apply, one should really use a list of instructions
+rather than a simple rollback index.  In other words, you'll have to
+implement something useful yourself, but the infrastructure is there.
+

@@ -1,0 +1,137 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] [PATCH] Fixes FOLLOW set computation
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20%5BPATCH%5D%20Fixes%20FOLLOW%20set%20computation&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="006950.html">
+   <LINK REL="Next"  HREF="006749.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] [PATCH] Fixes FOLLOW set computation</H1>
+    <B>Robin Green</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20%5BPATCH%5D%20Fixes%20FOLLOW%20set%20computation&In-Reply-To="
+       TITLE="[antlr-interest] [PATCH] Fixes FOLLOW set computation">greenrd at greenrd.org
+       </A><BR>
+    <I>Sat Mar  6 14:03:41 PST 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="006950.html">[antlr-interest] stuff I don't like about ANTLR 2.x
+</A></li>
+        <LI>Next message: <A HREF="006749.html">[antlr-interest] [PATCH] Fixes FOLLOW set computation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6748">[ date ]</a>
+              <a href="thread.html#6748">[ thread ]</a>
+              <a href="subject.html#6748">[ subject ]</a>
+              <a href="author.html#6748">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>This patch against 2.7.2 fixes (I think) an issue where ANTLR would
+sometimes fail to complete a FOLLOW set computation, resulting in a
+symptom of bogus &quot;unexpected token&quot; exceptions being thrown by the
+generated parser. (My grammar is unusual - it's a literalistic
+grammar for a YAML parser for Java - so I suspect I have triggered
+an unusual edge case here.)
+
+(The patch also includes some additional information I added to the
+debug statements, but that's not important.)
+
+Re-reading it, though, the pre-existing comment saying &quot;this is not
+crucial&quot; should probably be changed to say the exact opposite! It
+seems that this is the critical code path for breaking cycles, and the
+person who wrote the comment thought that it wasn't (maybe it wasn't
+then). Correct me if I'm wrong.
+
+In any case, IMHO documenting the contract of the containing method
+here would have avoided or mitigated this kind of issue. Either this
+code was at fault or a caller was - but without documentation it
+was hard to tell which was to blame.
+
+Regards,
+-- 
+Robin
+
+
+--- antlr/LLkAnalyzer.old	2004-03-06 21:33:38.000000000 +0000
++++ antlr/LLkAnalyzer.java	2004-03-06 16:12:52.000000000 +0000
+@@ -400,20 +400,15 @@
+             RuleEndElement re = rs.getBlock().endNode;
+             // The other entry may not exist because it is still being
+             // computed when this cycle cache entry was found here.
+-            if (re.cache[k] == null) {
+-                // return the cycle...that's all we can do at the moment.
+-                return (Lookahead)end.cache[k].clone();
+-            }
+-            else {
++            if (re.cache[k] != null) {
+                 // replace this cache entry with the entry from the referenced computation.
+                 // Eventually, this percolates a complete (no cycle reference) cache entry
+                 // to this node (or at least gets it closer and closer).  This is not
+                 // crucial, but makes cache lookup faster as we might have to look up
+                 // lots of cycle references before finding a complete reference.
+-                end.cache[k] = re.cache[k];
+-                // Return the cache entry associated with the cycle reference.
+-                return (Lookahead)re.cache[k].clone();
++                end.cache[k] = FOLLOW (k, re);
+             }
++            return (Lookahead)end.cache[k].clone();
+         }
+ 
+         end.lock[k] = true;	// prevent FOLLOW computation cycles
+@@ -427,17 +422,20 @@
+             RuleRefElement rr = rs.getReference(i);
+             if (DEBUG_ANALYZER) System.out.println(&quot;next[&quot; + rule + &quot;] is &quot; + rr.next.toString());
+             Lookahead q = rr.next.look(k);
+-            if (DEBUG_ANALYZER) System.out.println(&quot;FIRST of next[&quot; + rule + &quot;] ptr is &quot; + q.toString());
++            if (DEBUG_ANALYZER)
++              System.out.println(&quot;FIRST of next[&quot; + rule + &quot;,&quot; + k + &quot;] ptr is &quot; + q.toString());
+             /* If there is a cycle then if the cycle is to the rule for
+ 			 * this end block, you have a cycle to yourself.  Remove the
+ 			 * cycle indication--the lookahead is complete.
+ 			 */
+             if (q.cycle != null &amp;&amp; q.cycle.equals(rule)) {
++                if (DEBUG_ANALYZER) System.out.println (rule + &quot;: Deleting cycle to self&quot;);
+                 q.cycle = null;	// don't want cycle to yourself!
+             }
+             // add the lookahead into the current FOLLOW computation set
+             p.combineWith(q);
+-            if (DEBUG_ANALYZER) System.out.println(&quot;combined FOLLOW[&quot; + rule + &quot;] is &quot; + p.toString());
++            if (DEBUG_ANALYZER)
++              System.out.println(&quot;combined FOLLOW[&quot; + rule + &quot;,&quot; + k + &quot;] is &quot; + p.toString());
+         }
+ 
+         end.lock[k] = false; // we're not doing FOLLOW anymore
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: not available
+Type: application/pgp-signature
+Size: 189 bytes
+Desc: not available
+Url : <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20040306/9b2b65b2/attachment-0001.bin">http://www.antlr.org/pipermail/antlr-interest/attachments/20040306/9b2b65b2/attachment-0001.bin</A>
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="006950.html">[antlr-interest] stuff I don't like about ANTLR 2.x
+</A></li>
+	<LI>Next message: <A HREF="006749.html">[antlr-interest] [PATCH] Fixes FOLLOW set computation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6748">[ date ]</a>
+              <a href="thread.html#6748">[ thread ]</a>
+              <a href="subject.html#6748">[ subject ]</a>
+              <a href="author.html#6748">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

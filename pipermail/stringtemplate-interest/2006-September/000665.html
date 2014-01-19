@@ -1,0 +1,176 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [stringtemplate-interest] Comments and questions from i18n	document
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:stringtemplate-interest%40antlr.org?Subject=%5Bstringtemplate-interest%5D%20Comments%20and%20questions%20from%20i18n%0A%09document&In-Reply-To=BDEBKCCLDDBHIMBFPIEICEEOCEAA.jjsnyders%40rcn.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000663.html">
+   <LINK REL="Next"  HREF="000666.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[stringtemplate-interest] Comments and questions from i18n	document</H1>
+    <B>Kay Roepke</B> 
+    <A HREF="mailto:stringtemplate-interest%40antlr.org?Subject=%5Bstringtemplate-interest%5D%20Comments%20and%20questions%20from%20i18n%0A%09document&In-Reply-To=BDEBKCCLDDBHIMBFPIEICEEOCEAA.jjsnyders%40rcn.com"
+       TITLE="[stringtemplate-interest] Comments and questions from i18n	document">kroepke at classdump.org
+       </A><BR>
+    <I>Fri Sep 22 13:11:29 PDT 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000663.html">[stringtemplate-interest] Comments and questions from i18n document
+</A></li>
+        <LI>Next message: <A HREF="000666.html">[stringtemplate-interest] ST multi-valued attributes modification	inconsistency
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#665">[ date ]</a>
+              <a href="thread.html#665">[ thread ]</a>
+              <a href="subject.html#665">[ subject ]</a>
+              <a href="author.html#665">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi John!
+On 22. Sep 2006, at 17:37 Uhr, John Snyders wrote:
+
+&gt;<i> I have a question on the following example from Section 3.
+</I>&gt;<i>
+</I>&gt;<i> Locale locale = Locale.getDefault();
+</I>&gt;<i> String language = locale.getLanguage();
+</I>&gt;<i> String root = &quot;/var/data/templates/&quot;;
+</I>&gt;<i> StringTemplateGroup templates =
+</I>&gt;<i> new StringTemplateGroup(language, root+language);&#8221;
+</I>&gt;<i>
+</I>&gt;<i> Can this be done when the templates come from the class path? If so  
+</I>&gt;<i> how?
+</I>
+Yes, it can. ANTLRv3 does something like this for l10n of its  
+diagnostic messages. Below is the code responsible for finding  
+the .stg file:
+
+	public static void setLocale(Locale locale) {
+		ErrorManager.locale = locale;
+		String language = locale.getLanguage();
+		String fileName = &quot;org/antlr/tool/templates/messages/&quot;+language 
++&quot;.stg&quot;;
+		ClassLoader cl = Thread.currentThread().getContextClassLoader();
+		InputStream is = cl.getResourceAsStream(fileName);
+		if ( is==null ) {
+			cl = ErrorManager.class.getClassLoader();
+			is = cl.getResourceAsStream(fileName);
+		}
+		if ( is==null &amp;&amp; language.equals(Locale.US.getLanguage()) ) {
+			rawError(&quot;ANTLR installation corrupted; cannot find English  
+messages file &quot;+fileName);
+			panic();
+		}
+		else if ( is==null ) {
+			rawError(&quot;no such locale file &quot;+fileName+&quot; retrying with English  
+locale&quot;);
+			setLocale(Locale.US); // recurse on this rule, trying the US locale
+			return;
+		}
+		BufferedReader br = null;
+		try {
+			br = new BufferedReader(new InputStreamReader(is));
+			messages = new StringTemplateGroup(br,
+											   AngleBracketTemplateLexer.class,
+											   initSTListener);
+			br.close();
+		}
+		catch (IOException ioe) {
+			rawError(&quot;cannot close message file &quot;+fileName, ioe);
+		}
+
+		messages.setErrorListener(blankSTListener);
+		boolean messagesOK = verifyMessages();
+		if ( !messagesOK &amp;&amp; language.equals(Locale.US.getLanguage()) ) {
+			rawError(&quot;ANTLR installation corrupted; English messages file  
+&quot;+language+&quot;.stg incomplete&quot;);
+			panic();
+		}
+		else if ( !messagesOK ) {
+			setLocale(Locale.US); // try US to see if that will work
+		}
+	}
+
+&gt;<i> A comment:
+</I>&gt;<i> Section 3 (Site design per locale) does not seem well motivated to  
+</I>&gt;<i> me. The example given is text direction left-to-right vs. right-to- 
+</I>&gt;<i> left. I have done i18n desktop and web apps before but I have not  
+</I>&gt;<i> yet had to deal with text direction yet. Perhaps there are some  
+</I>&gt;<i> issues with text direction that I am not aware of. I wish this  
+</I>&gt;<i> section were expanded to give a more concrete example including  
+</I>&gt;<i> text direction. What issues are there that group inheritance solves  
+</I>&gt;<i> that can&#8217;t be solved with parameterized setting of the HTML dir  
+</I>&gt;<i> attribute or css direction property.
+</I>&gt;<i>
+</I>&gt;<i> It seems to me that group inheritance is more about skinning and  
+</I>&gt;<i> less important for localization. Even for skinning I think that  
+</I>&gt;<i> methods involving only css should be used first because (I think)  
+</I>&gt;<i> designers will have an easier time working with css.
+</I>&gt;<i>
+</I>&gt;<i> Still, I like the group inheritance language feature.
+</I>
+I think this an issue of code hygiene ;) I an ideal world all you'd  
+have to do is to supply the proper CSS attributes for text direction.  
+Most probably, though, you'd have to tweak some other layout bits to  
+accomodate for different lengths of strings, maybe you'd even like to  
+do some heavier layout changes for right-to-left locales. This would  
+lead to heavy usage of &lt;if()&gt; constructs in your templates. By using  
+group inheritance you can override certain templates completely to  
+specify radical different layouts without having to change any of the  
+common layout, thus increasing template sharing and maintability.  
+Using regions in addition to that can make for immensely powerful  
+adaptibility. Again, ANTLR v3 uses this approach to incorporate tree  
+building and debugging code into the generated parsers.
+What you gain is not having to respecify any common template content  
+and not littering your templates with unnecessary 'if's.
+Text direction support can get *really* messy if you want to present  
+high-quality pages that feel good for both directions. It's more  
+often than not not a simple matter if the direction. Sadly ;)
+
+
+HTH,
+
+-k
+-- 
+Kay R&#246;pke &lt;<A HREF="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">kroepke at classdump.org</A>&gt;
+classdump Software
+Key fingerprint = A849 0F2C C322 4022 379E  8661 7E1B FE0D 4CD2 A6D0
+
+
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000663.html">[stringtemplate-interest] Comments and questions from i18n document
+</A></li>
+	<LI>Next message: <A HREF="000666.html">[stringtemplate-interest] ST multi-valued attributes modification	inconsistency
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#665">[ date ]</a>
+              <a href="thread.html#665">[ thread ]</a>
+              <a href="subject.html#665">[ subject ]</a>
+              <a href="author.html#665">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">More information about the stringtemplate-interest
+mailing list</a><br>
+</body></html>

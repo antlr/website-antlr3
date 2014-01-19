@@ -1,0 +1,177 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Antlr 3 and the newline token problem
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Antlr%203%20and%20the%20newline%20token%20problem&In-Reply-To=41fed8f80511251214p101cd96fr67a576b8017f7d1f%40mail.gmail.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="014478.html">
+   <LINK REL="Next"  HREF="014506.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Antlr 3 and the newline token problem</H1>
+    <B>Ric Klaren</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Antlr%203%20and%20the%20newline%20token%20problem&In-Reply-To=41fed8f80511251214p101cd96fr67a576b8017f7d1f%40mail.gmail.com"
+       TITLE="[antlr-interest] Antlr 3 and the newline token problem">ric.klaren at gmail.com
+       </A><BR>
+    <I>Sat Nov 26 05:07:03 PST 2005</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="014478.html">[antlr-interest] Antlr 3 and the newline token problem
+</A></li>
+        <LI>Next message: <A HREF="014506.html">[antlr-interest] Antlr 3 and the newline token problem
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#14487">[ date ]</a>
+              <a href="thread.html#14487">[ thread ]</a>
+              <a href="subject.html#14487">[ subject ]</a>
+              <a href="author.html#14487">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Prashant Deva wrote:
+&gt;<i> Me and Terence were recently having a discussion about this.
+</I>&gt;<i> Its about how to handle newlines in antlr 3.
+</I>
+Can't you do it in a similar way as I intend to do it in C++? E.g. plug
+in a user defined object that knows about the type of token tracking you
+want to do? And one that knows how to put this location info inside a
+newly created token?
+
+In C++ I can now plug in an object that only deals with binary offsets
+in the file. Or instantiate the lexer with a object that tracks
+everything. No changes to the basic lexer code. On the test lexers (one
+of them the java lexer) using full tracking or minimalist position
+tracking cut 10-11% of the binary size, just by changing a template
+parameter.
+
+&gt;<i> Now as you probably know that currently ANTLR 2 cant handle all 3 types of
+</I>&gt;<i> newlines.
+</I>&gt;<i> ie, if we have a rule like this-
+</I>&gt;<i> 
+</I>&gt;<i> WS : '\r' '\n' {newline();}
+</I>&gt;<i>        | '\r'    {newline();}
+</I>&gt;<i>        | '\n'   {newline();}
+</I>&gt;<i>      ;
+</I>&gt;<i> 
+</I>&gt;<i> we would get a non determinism warning.
+</I>
+A warning *shrug* ;)
+
+&gt;<i> The reason this problem arises is solely because currently we have chosen to
+</I>&gt;<i> store 'lines &amp; columns' in tokens instead of offsets.
+</I>
+It's more due to the choice to mark the newlines in this way with action
+ code.
+
+&gt;<i> I mean, think about it this way, if we didnt have to put that newline()
+</I>&gt;<i> call, we could easily write this rule as-
+</I>&gt;<i> 
+</I>&gt;<i> WS : '\r' | '\n' ;
+</I>&gt;<i> 
+</I>&gt;<i> This would handle all 3 types of newlines.
+</I>&gt;<i> 
+</I>&gt;<i> So i propose that in antlr 3 you identify the position of the tokens by
+</I>&gt;<i> offset instead of 'line/columns'
+</I>&gt;<i> 
+</I>&gt;<i> This has the following advantages -
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i>    1. Some people may like line nos to start from 1 while some may want
+</I>&gt;<i>    them to start from 0, but 'offsets' are universally considered to start from
+</I>&gt;<i>    0.
+</I>&gt;<i>    2. We need to keep track of just 1 value ( the offset) instead of 2
+</I>&gt;<i>    values (row/column), so lesser complexity.
+</I>&gt;<i>    3. And of course we can handle all 3 types of 'newlines' easily :-)
+</I>
+And the people who want to track line/col/filename have to jump through
+hoops to do that ? This is only moving the problem around. Where the
+problem is: how do we tell antlr to track what in the first place.
+
+&gt;<i> On the other hand Terence suggests that call to newline() can be put inside
+</I>&gt;<i> the CharBuffer class where it is handled automatically so people who need to
+</I>&gt;<i> track line nos can do so easily.
+</I>
+E.g. put an extra if and logic for the types of newlines (if so
+required) in a critical path of the lexer? This is currently happening
+in antlr2 at some spots as well and it's ugly. Someone parsing binary
+stuff who'd want pure performance is then bothered with some newline
+checks he'd not need.
+
+&gt;<i> This would be nice but then again it increases the complexity if we decide
+</I>&gt;<i> to keep both offsets and row/cols.
+</I>&gt;<i> 
+</I>&gt;<i> Which approach do you think would be best?
+</I>
+I'd be in favour of trying to make the java stuff do what I now
+do/intend in C++. e.g. have some object that knows how to track the
+offset or whatever you want in the stream and combine it with some
+factory that knows how to make the token from the offset tracker and the
+start and end position of the token.
+
+That way you have a consistent and transparent way in which stream
+locations are tracked and the locations are put in the tokens. With some
+extra tinkering you can even reduce a token to just an int if you need
+or to something more fullblown that tracks line/col/file.
+
+So for C++ if I'd want full position tracking I'd say:
+
+typedef CharStream&lt;FullPosition&gt; MyStream;
+class MyTokenBuilder {
+public:
+   static TokenFullPos* build( token_type tp,
+                               const FullPosition&amp; start,
+                               const MyStream&amp; stream,
+                               channel_type chan = DEFAULT_CHANNEL )
+{
+   return new TokenFullPos( tp,
+            stream.substring(start.getOffset(),stream.getOffset()),
+            start.getLine(), start.getColumn(),
+            stream.getFilename() );
+}
+};
+...
+MyStream input( file, filename );
+JavaParserLexer&lt;MyStream,TokenFullPos,MyTokenBuilder&gt; lexer( &amp;input );
+...
+TokenFullPos* t = lexer.nextToken();
+
+For minimalist tracking I'd just plug in a different token builder and a
+different Position tracker in stead of FullPosition and that's it. Doing
+a few typedefs at the top of the code hides all the template parameter
+details for the most common cases.
+
+Cheers,
+
+Ric
+</PRE>
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="014478.html">[antlr-interest] Antlr 3 and the newline token problem
+</A></li>
+	<LI>Next message: <A HREF="014506.html">[antlr-interest] Antlr 3 and the newline token problem
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#14487">[ date ]</a>
+              <a href="thread.html#14487">[ thread ]</a>
+              <a href="subject.html#14487">[ subject ]</a>
+              <a href="author.html#14487">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,138 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Code generation design philosophy?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Code%20generation%20design%20philosophy%3F&In-Reply-To=%3C9AB6EA23FF6F13458DEF94FC6F20C8C92670A7DAFC%40NA-MAIL-1-1.rws.ad.ea.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="035552.html">
+   <LINK REL="Next"  HREF="035555.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Code generation design philosophy?</H1>
+    <B>Butterfoss, Ryan</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Code%20generation%20design%20philosophy%3F&In-Reply-To=%3C9AB6EA23FF6F13458DEF94FC6F20C8C92670A7DAFC%40NA-MAIL-1-1.rws.ad.ea.com%3E"
+       TITLE="[antlr-interest] Code generation design philosophy?">RButterfoss at ea.com
+       </A><BR>
+    <I>Wed Aug 12 17:48:34 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="035552.html">[antlr-interest] Why and how exactly does ANTLR manage to fail on non recursive grammar for finite language?
+</A></li>
+        <LI>Next message: <A HREF="035555.html">[antlr-interest] tree rewrite ambiguous enclosing rule/referenced	in production
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#35554">[ date ]</a>
+              <a href="thread.html#35554">[ thread ]</a>
+              <a href="subject.html#35554">[ subject ]</a>
+              <a href="author.html#35554">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi all,
+
+I'm currently working on a project to revamp an existing code generation system my team uses and add some new features.  The generator takes a set of pseudo-class/struct definitions like
+
+class foo
+{
+      Int X;
+      SomeClass Y;
+      map&lt;int,int&gt; Z;
+};
+
+And generates an output C++ class with a bunch  of decoration.
+
+class foo
+{
+public:
+        int getX() const { return mX; }
+        void setX(int val) { mX = val; }
+
+        SomeClass &amp;getY() { return mY; }
+
+        Map&lt;int,int&gt; &amp;getZ() { return mZ; }
+
+Private:
+ Int X;
+ SomeClass Y;
+ map&lt;int,int&gt; Z;
+};
+
+(There's a lot more to the specification, but this is good enough to demonstrate my issues).
+
+One of our goals is to support a lot more than C++, and to allow people to override the generation as necessary to fit into their projects.  ANTLR + StringTemplates seems to suit our needs perfectly.  Our old model used flex/bison, a custom tree of classes (since classes can have inner classes, and we support namespaces), and a gnarly set of hand-written C++ output code.  Yuck.
+
+So I've spent the past few weeks getting into ANTRL, reading the manual, reading the reference, trying out the samples, building samples, toy languages etc.  I'm now in the process of prototyping out our new tool, but I've run into a dilemma on the overall structure.
+
+What I'd like to do is parse everything into an AST, then build a tree walker that outputs templates (and maybe another walker to do some error verification).  But what I can't figure out is how you separate the MVC model parts using a tree walker and templates.  I want to have a main template interface such that the &quot;big items&quot; (class, member, etc) are put out through there, and a subtemplate interface for overriding something like C++.  In that way, if I want to change the type of &quot;map&quot; to be &quot;custommap&quot; I just need to change the template that prints out a map type.  What I don't get though is that with a tree walker you get one stab at outputting text.  So if I have a template like:
+
+class $className$
+{
+public:
+        $members$
+};
+
+I can see how the top section gets printed out:
+
+class : ^(CLASS n=SYMBOL m=members*) - &gt; classTemplate(name={$n.text}, members={$m}) ;
+member : ^(int n=SYMBOL) -&gt; intMemberTemplate(name={$n.text}) ;
+  | ^(t=SYMBOL n=SYMBOL) -&gt; classMemberTemplate(name={$n.text}, type={$t}) ;
+        ;
+
+Where intMemberTemplate and classMemberTemplate print out the getter/setter funcs from above.
+
+What I don't see how to do is have two sections where the class walks through the members.  It goes through them once, emits their templates once, and moves on.  To generate the C++ class above, I need two passes - one to generate the getters/setters, one to do the variable declarations.  I could do it in one pass with lots of public/private keywords, but the generated code is less readable.  I could duplicate the tree, but then I'm forcing view structure into the model, which seems to go against the whole ST philosophy.  I could also create a &quot;member&quot; object and use its attributes in the template, but I guess that seems a little less clean because then I'm really walking through some other data structure instead of using the tree walker.
+
+One other reason I want to use the tree walker to print out the various getters/setters and declarations is that it has built in context as to what each member is.  If I just have something like
+
+private:
+$members:declVar()$
+};
+
+Then the template &quot;declVar&quot; either needs to have a bunch of if..else statements to split up the member type and print out the right thing, or I need to do something like have a Member.toString() function to do the dirty work of formatting the declaration.  That of course means potentially putting in view code in the model, which I'd really like to avoid.
+
+So bottom line:  am I leaning to far in the &quot;do everything in the tree walker&quot; direction?  Has anyone had a problem where one input can generate several templates, and each template might have several different variations depending on the input?    I feel like I should have seen this done somewhere, but I looked through a lot of examples and didn't see exactly what I wanted.
+
+Any advice here is appreciated.
+
+Thanks
+Ryan
+
+
+
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20090812/8f8d02cd/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20090812/8f8d02cd/attachment.html</A> 
+</PRE>
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="035552.html">[antlr-interest] Why and how exactly does ANTLR manage to fail on non recursive grammar for finite language?
+</A></li>
+	<LI>Next message: <A HREF="035555.html">[antlr-interest] tree rewrite ambiguous enclosing rule/referenced	in production
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#35554">[ date ]</a>
+              <a href="thread.html#35554">[ thread ]</a>
+              <a href="subject.html#35554">[ subject ]</a>
+              <a href="author.html#35554">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

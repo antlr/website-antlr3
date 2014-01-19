@@ -1,0 +1,249 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Lookahead problems - Bug in C++ Runtime?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Lookahead%20problems%20-%20Bug%20in%20C%2B%2B%20Runtime%3F&In-Reply-To=53883.194.39.131.39.1095334157.14431.squirrel%40server02.webmailer.hosteurope.de">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="009326.html">
+   <LINK REL="Next"  HREF="009340.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Lookahead problems - Bug in C++ Runtime?</H1>
+    <B>Martin Probst</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Lookahead%20problems%20-%20Bug%20in%20C%2B%2B%20Runtime%3F&In-Reply-To=53883.194.39.131.39.1095334157.14431.squirrel%40server02.webmailer.hosteurope.de"
+       TITLE="[antlr-interest] Lookahead problems - Bug in C++ Runtime?">mail at martin-probst.com
+       </A><BR>
+    <I>Fri Sep 17 04:03:25 PDT 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="009326.html">[antlr-interest] Lookahead problems
+</A></li>
+        <LI>Next message: <A HREF="009340.html">[antlr-interest] Lookahead problems - Bug in C++ Runtime?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#9337">[ date ]</a>
+              <a href="thread.html#9337">[ thread ]</a>
+              <a href="subject.html#9337">[ subject ]</a>
+              <a href="author.html#9337">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+I've done some work to track this down and it seems to be a bug in the
+C++ runtime. I have created a very simple sample grammar and run it
+through ANTLR one time as language=&quot;Cpp&quot; and once as language=&quot;Java&quot;.
+The result is that in java mode everything works fine and the parser is
+LL(1). In C++ mode somehow two tokens are read from the lexer in
+advance. 
+See this trace, first, Java is alright:
+=== snip ===
+<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">martin at perseus</A> Parser $ echo {{{foo}}} | java -classpath
+/usr/share/antlr/lib/antlr.jar:. TestMain
+ &gt; expr;  &gt; lexer mLCURLY; c=={
+ &lt; lexer mLCURLY; c=={
+LA(1)=={
+  &gt; enclosedExpr; LA(1)=={
+   &gt; expr;  &gt; lexer mLCURLY; c=={
+[...]
+=== snap ===
+Then C++:
+=== snip ===
+<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">martin at perseus</A> Parser $ echo {{{foo}}} | ./TestMain
+ &gt; expr; LA(1)== &gt; lexer mLCURLY; c==123
+ &lt; lexer mLCURLY; c==123
+ &gt; lexer mLCURLY; c==123
+ &lt; lexer mLCURLY; c==123
+{
+  &gt; enclosedExpr; LA(1)=={
+   &gt; expr; LA(1)== &gt; lexer mLCURLY; c==123
+ &lt; lexer mLCURLY; c==102
+{
+=== snap ===
+You can see that it's reading one more token than it should. This should
+usually be no problem but when you want to (read: have to) change the
+state of the lexer within special grammar rules things get broken
+because the next token is already recognised in a wrong way. This way I
+can't use ANTLR :-/
+
+I'm attaching the grammar, a TestMain.java and a TestMain.cpp source.
+Everything should be really straightforward.
+
+mfg
+Martin
+
+Am Do, den 16.09.2004 schrieb Martin Probst um 13:29:
+&gt;<i> Hello,
+</I>&gt;<i> I have a lookahead problem with my grammar. I have a parser which has k=1
+</I>&gt;<i> but it actually seems to be looking ahead further than it should. See this
+</I>&gt;<i> output of ANTLR with -traceParser -traceLexer:
+</I>&gt;<i> 
+</I>&gt;<i> In the state before these steps my parser has recognized a &quot;dirAttribute&quot;.
+</I>&gt;<i> It looks ahead, finds a &quot;=&quot; and a '&quot;' and then descends into a
+</I>&gt;<i> dirAttributeValue. That's expected and good.
+</I>&gt;<i> 
+</I>&gt;<i> === snip ===
+</I>&gt;<i> &gt; dirAttributeValue; LA(1)== &gt; lexer mNEXT; c==104
+</I>&gt;<i>   &gt; lexer mQUOT_ATTR_CONTENT; c==104
+</I>&gt;<i>   &lt; lexer mQUOT_ATTR_CONTENT; c==123
+</I>&gt;<i>  &lt; lexer mNEXT; c==123
+</I>&gt;<i> &quot;
+</I>&gt;<i>  &gt; lexer mNEXT; c==123
+</I>&gt;<i>   &gt; lexer mLCURLY; c==123
+</I>&gt;<i>   &lt; lexer mLCURLY; c==32
+</I>&gt;<i>  &lt; lexer mNEXT; c==32
+</I>&gt;<i>  &gt; quotAttrValueContent; LA(1)==<A HREF="http://www.w3">http://www.w3</A>
+</I>&gt;<i>  &lt; quotAttrValueContent; LA(1)== &gt; lexer mNEXT; c==32
+</I>&gt;<i>   &gt; lexer mWS; c==32
+</I>&gt;<i>   &lt; lexer mWS; c==34
+</I>&gt;<i>  &lt; lexer mNEXT; c==34
+</I>&gt;<i>  &gt; lexer mNEXT; c==34
+</I>&gt;<i>   &gt; lexer mSTRING_LITERAL; c==34
+</I>&gt;<i>    &gt; lexer mQUOT; c==34
+</I>&gt;<i>    &lt; lexer mQUOT; c==46
+</I>&gt;<i>    &gt; lexer mQUOT; c==34
+</I>&gt;<i>    &lt; lexer mQUOT; c==32
+</I>&gt;<i>   &lt; lexer mSTRING_LITERAL; c==32
+</I>&gt;<i>  &lt; lexer mNEXT; c==32
+</I>&gt;<i> {
+</I>&gt;<i>  &gt; quotAttrValueContent; LA(1)=={
+</I>&gt;<i>   &gt; attrCommonContent; LA(1)=={
+</I>&gt;<i>    &gt; expr; LA(1)== &gt; lexer mNEXT; c==32
+</I>&gt;<i>   &gt; lexer mWS; c==32
+</I>&gt;<i>   &lt; lexer mWS; c==125
+</I>&gt;<i>  &lt; lexer mNEXT; c==125
+</I>&gt;<i>  &gt; lexer mNEXT; c==125
+</I>&gt;<i>   &gt; lexer mRCURLY; c==125
+</I>&gt;<i>   &lt; lexer mRCURLY; c==32
+</I>&gt;<i>  &lt; lexer mNEXT; c==32
+</I>&gt;<i> .org
+</I>&gt;<i> [ ca. 15 grammatical steps removed ]
+</I>&gt;<i>     &gt; literal; LA(1)==.org
+</I>&gt;<i>      &gt; stringLiteral; LA(1)==.org
+</I>&gt;<i>      &lt; stringLiteral; LA(1)== &gt; lexer mNEXT; c==32
+</I>&gt;<i>   &gt; lexer mWS; c==32
+</I>&gt;<i>   &lt; lexer mWS; c==47
+</I>&gt;<i>  &lt; lexer mNEXT; c==47
+</I>&gt;<i>  &gt; lexer mNEXT; c==47
+</I>&gt;<i>   &gt; lexer mSLASH; c==47
+</I>&gt;<i>   &lt; lexer mSLASH; c==49
+</I>&gt;<i>  &lt; lexer mNEXT; c==49
+</I>&gt;<i> }
+</I>&gt;<i>     &lt; literal; LA(1)==}
+</I>&gt;<i> 
+</I>&gt;<i> === snap ===
+</I>&gt;<i> 
+</I>&gt;<i> Now the rule for &quot;attrCommonContent&quot; states:
+</I>&gt;<i> attrCommonContent:
+</I>&gt;<i>   /* some more alts */
+</I>&gt;<i>   | LCURLY expr RCURLY
+</I>&gt;<i> The lookeahed of the RCURLY should by that be sufficient to exit the
+</I>&gt;<i> attrCommonContent rule. So why does the parser require more lookahead from
+</I>&gt;<i> the lexer when exiting stringLiteral?
+</I>&gt;<i> 
+</I>&gt;<i> The problem with that is that within dirAttributeValue the lexer has to
+</I>&gt;<i> throw tokens in a different manner than within the following expr rules.
+</I>&gt;<i> This means I have to switch the lexer to a different state (done with
+</I>&gt;<i> actions within {} in the grammar). I can't switch the state before the
+</I>&gt;<i> parser leaves the attrCommonContent section (that means, the statement has
+</I>&gt;<i> to be directly behind the RCURLY within that one). But at that point the
+</I>&gt;<i> parser has obviously already fetched more tokens behind the RCURLY which
+</I>&gt;<i> leads to errors.
+</I>&gt;<i> 
+</I>&gt;<i> My lexer has k=2 and the whole stuff uses C++ with the runtime and
+</I>&gt;<i> generator from antlr-2.7.4. Can anyone help me with this? Am I
+</I>&gt;<i> missunderstanding ANTLRs behaviour in general or is this a bug or what?
+</I>&gt;<i> 
+</I>&gt;<i> Thanks,
+</I>&gt;<i> Martin
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i>  
+</I>&gt;<i> Yahoo! Groups Links
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i>  
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+    <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+    <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+    <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: TestMain.cpp
+Type: text/x-c++src
+Size: 670 bytes
+Desc: not available
+Url : <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20040917/720897ea/TestMain.bin">http://www.antlr.org/pipermail/antlr-interest/attachments/20040917/720897ea/TestMain.bin</A>
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: TestMain.java
+Type: text/x-java
+Size: 280 bytes
+Desc: not available
+Url : <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20040917/720897ea/TestMain-0001.bin">http://www.antlr.org/pipermail/antlr-interest/attachments/20040917/720897ea/TestMain-0001.bin</A>
+-------------- next part --------------
+options {
+	language = &quot;Cpp&quot;;
+}
+
+class TestParser extends Parser;
+options {
+	k=1;
+}
+
+expr:
+	(primaryExpr | enclosedExpr)*;
+	
+enclosedExpr:
+	LCURLY expr RCURLY;
+
+primaryExpr:
+	FOO; 
+
+class TestLexer extends Lexer;
+options { k=1; }
+
+LCURLY: &quot;{&quot;;
+
+RCURLY: &quot;}&quot;;
+
+FOO: &quot;foo&quot;;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="009326.html">[antlr-interest] Lookahead problems
+</A></li>
+	<LI>Next message: <A HREF="009340.html">[antlr-interest] Lookahead problems - Bug in C++ Runtime?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#9337">[ date ]</a>
+              <a href="thread.html#9337">[ thread ]</a>
+              <a href="subject.html#9337">[ subject ]</a>
+              <a href="author.html#9337">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

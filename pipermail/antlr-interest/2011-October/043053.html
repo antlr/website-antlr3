@@ -1,0 +1,315 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Ambiguity between floating point literal and	method call
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Ambiguity%20between%20floating%20point%20literal%20and%0A%09method%20call&In-Reply-To=%3CCAMtjaCCzb4LjWpZUCCECogFarEbvaUgt40AkbRwDrThX59epoQ%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="043055.html">
+   <LINK REL="Next"  HREF="043054.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Ambiguity between floating point literal and	method call</H1>
+    <B>Ross Bamford</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Ambiguity%20between%20floating%20point%20literal%20and%0A%09method%20call&In-Reply-To=%3CCAMtjaCCzb4LjWpZUCCECogFarEbvaUgt40AkbRwDrThX59epoQ%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Ambiguity between floating point literal and	method call">roscoml at gmail.com
+       </A><BR>
+    <I>Wed Oct 26 15:36:55 PDT 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="043055.html">[antlr-interest] Several different tokens for the same literal
+</A></li>
+        <LI>Next message: <A HREF="043054.html">[antlr-interest] Ambiguity between floating point literal and method call
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#43053">[ date ]</a>
+              <a href="thread.html#43053">[ thread ]</a>
+              <a href="subject.html#43053">[ subject ]</a>
+              <a href="author.html#43053">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi all,
+
+Have posted here recently, and thanks again for all your help in getting my
+various problems fixed. I'm implementing a basic scripting language for use
+in embedded systems, and I've come across another problem that, after much
+googling and tinkering I still can seem to fix. In this language, numbers
+are first-class objects, and I need to be able to call methods on them, in
+the standard way, e.g. 1.foo() . However, I'm coming up against a problem
+whereby the parser can't distinguish between this and floating point
+literals. I've tried various combinations of predicates and the like, but
+just don't seem to be able to get it working. Any help would be much
+appreciated!
+
+Thanks in advance,
+Ross Bamford
+
+/* ** GRAMMAR FOLLOWS ** */
+grammar BasicLang;
+
+options {
+    output=AST;
+    ASTLabelType=CommonTree;
+    backtrack=true;
+    memoize=true;
+}
+
+tokens {
+  ASSIGN;
+  METHOD_CALL;
+  ARGS;
+  BLOCK;
+  ORBLOCK;
+  SELF;
+  ASSIGN_RECEIVER;
+  ASSIGN_LOCAL;
+  FIELD_ACCESS;
+  LVALUE;
+}
+
+start_rule
+  :   script
+  ;
+
+script
+  :   statement+
+  |   EOF!
+  ;
+
+statement
+  :   expr terminator!
+  ;
+
+expr
+  :   assign_expr
+  |   math_expr
+  ;
+
+assign_expr
+@init {boolean explicitReceiver=false;}
+  :   (rec=IDENTIFIER DOT {explicitReceiver=true;})? id=IDENTIFIER ASSIGN
+expr -&gt; {explicitReceiver}? ^(ASSIGN ASSIGN_RECEIVER[$rec.getText()]
+LVALUE[$id.getText()] expr) -&gt; ^(ASSIGN ASSIGN_LOCAL LVALUE[$id.getText()]
+expr)
+  ;
+
+math_expr
+  :   mult_expr ((ADD^|SUB^) mult_expr)*
+  ;
+
+mult_expr
+  :   pow_expr ((MUL^|DIV^|MOD^) pow_expr)*
+  ;
+
+pow_expr
+  :   unary_expr ((POW^) unary_expr)*
+  ;
+
+unary_expr
+  :   NOT? atom
+  ;
+
+meth_call
+@init {boolean explicitReceiver=false;}
+  :   (IDENTIFIER DOT {explicitReceiver=true;})? func_call_expr -&gt;
+{explicitReceiver}? ^(METHOD_CALL IDENTIFIER func_call_expr) -&gt;
+^(METHOD_CALL SELF func_call_expr)
+  |   literal DOT func_call_expr -&gt; ^(METHOD_CALL literal func_call_expr)
+  ;
+
+fragment
+func_call_expr
+  :   IDENTIFIER^ argument_list block? orblock?
+  ;
+
+fragment
+block
+  :   LCURLY TERMINATOR? statement* RCURLY -&gt; ^(BLOCK statement*)
+  ;
+
+fragment
+orblock
+  :   OR LCURLY TERMINATOR? statement* RCURLY -&gt; ^(ORBLOCK statement*)
+  ;
+
+fragment
+argument_list
+  :   LPAREN (expr (COMMA expr)*)? RPAREN -&gt; ^(ARGS expr expr*)?
+  ;
+
+class_identifier
+  :     rec=IDENTIFIER DOT id=IDENTIFIER -&gt; ^(FIELD_ACCESS $rec $id)
+  ;
+
+literal
+  :     DECIMAL_LITERAL
+  |     OCTAL_LITERAL
+  |     HEX_LITERAL
+  |     FLOATING_POINT_LITERAL
+  |     STRING_LITERAL
+  |     CHARACTER_LITERAL
+  ;
+
+atom
+  :     literal
+  |     meth_call
+  |     IDENTIFIER
+  |     class_identifier
+  |     LPAREN! expr RPAREN!
+  ;
+
+terminator
+  :     TERMINATOR
+  |     EOF
+  ;
+
+OR  :   'or';
+
+POW :   '^' ;
+MOD :   '%' ;
+ADD :   '+' ;
+SUB :   '-' ;
+DIV :   '/' ;
+MUL :   '*' ;
+NOT :   '!' ;
+
+ASSIGN
+    :   '='
+    ;
+
+LPAREN
+    :   '('
+    ;
+
+RPAREN
+    :   ')'
+    ;
+
+LCURLY
+    :   '{'
+    ;
+
+RCURLY
+    :   '}'
+    ;
+
+COMMA
+    :   ','
+    ;
+
+DOT :   '.' ;
+
+IDENTIFIER
+  : ID_LETTER (ID_LETTER|'0'..'9')*
+  ;
+
+fragment
+ID_LETTER
+  : '$'
+  | 'A'..'Z'
+  | 'a'..'z'
+  | '_'
+  ;
+
+CHARACTER_LITERAL
+    :   '\'' ( EscapeSequence | ~('\''|'\\') ) '\''
+    ;
+
+STRING_LITERAL
+    :  '&quot;' ( EscapeSequence | ~('\\'|'&quot;') )* '&quot;'
+    ;
+
+HEX_LITERAL : '0' ('x'|'X') HexDigit+ IntegerTypeSuffix? ;
+
+DECIMAL_LITERAL : ('0' | '1'..'9' '0'..'9'*) IntegerTypeSuffix? ;
+
+OCTAL_LITERAL : '0' ('0'..'7')+ IntegerTypeSuffix? ;
+
+fragment
+HexDigit : ('0'..'9'|'a'..'f'|'A'..'F') ;
+
+fragment
+IntegerTypeSuffix
+  : ('l'|'L')
+  | ('u'|'U')  ('l'|'L')?
+  ;
+
+FLOATING_POINT_LITERAL
+    :   ('0'..'9')+ '.' ('0'..'9')* Exponent? FloatTypeSuffix?
+    |   '.' ('0'..'9')+ Exponent? FloatTypeSuffix?
+    |   ('0'..'9')+ Exponent? FloatTypeSuffix?
+  ;
+
+fragment
+Exponent : ('e'|'E') ('+'|'-')? ('0'..'9')+ ;
+
+fragment
+FloatTypeSuffix : ('f'|'F'|'d'|'D') ;
+
+fragment
+EscapeSequence
+    :   '\\' ('b'|'t'|'n'|'f'|'r'|'\&quot;'|'\''|'\\'|'/')
+    |   OctalEscape
+    |   UnicodeEscape
+    ;
+
+fragment
+OctalEscape
+    :   '\\' ('0'..'3') ('0'..'7') ('0'..'7')
+    |   '\\' ('0'..'7') ('0'..'7')
+    |   '\\' ('0'..'7')
+    ;
+
+fragment
+UnicodeEscape
+    :   '\\' 'u' HexDigit HexDigit HexDigit HexDigit
+    ;
+COMMENT
+    :   '/*' ( options {greedy=false;} : . )* '*/' {$channel=HIDDEN;}
+    ;
+
+LINE_COMMENT
+    : '//' ~('\n'|'\r')* '\r'? '\n' {$channel=HIDDEN;}
+    ;
+
+TERMINATOR
+  : '\r'? '\n'
+  | ';'
+  ;
+
+WS  :  (' '|'\r'|'\t'|'\u000C') {$channel=HIDDEN;}
+    |  '...' '\r'? '\n'  {$channel=HIDDEN;}
+    ;
+</PRE>
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="043055.html">[antlr-interest] Several different tokens for the same literal
+</A></li>
+	<LI>Next message: <A HREF="043054.html">[antlr-interest] Ambiguity between floating point literal and method call
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#43053">[ date ]</a>
+              <a href="thread.html#43053">[ thread ]</a>
+              <a href="subject.html#43053">[ subject ]</a>
+              <a href="author.html#43053">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

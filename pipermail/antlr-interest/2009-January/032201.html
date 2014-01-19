@@ -1,0 +1,159 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Bug Report: Composite Grammar does not	delegate Lexer methods (like mLETTER)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Bug%20Report%3A%20Composite%20Grammar%20does%20not%0A%09delegate%20Lexer%20methods%20%28like%20mLETTER%29&In-Reply-To=%3CDBE7824DAB584BF7BD1AE59D8E2907BA%40gsce0ae1cfad8d%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="032210.html">
+   <LINK REL="Next"  HREF="032203.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Bug Report: Composite Grammar does not	delegate Lexer methods (like mLETTER)</H1>
+    <B>George S. Cowan</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Bug%20Report%3A%20Composite%20Grammar%20does%20not%0A%09delegate%20Lexer%20methods%20%28like%20mLETTER%29&In-Reply-To=%3CDBE7824DAB584BF7BD1AE59D8E2907BA%40gsce0ae1cfad8d%3E"
+       TITLE="[antlr-interest] Bug Report: Composite Grammar does not	delegate Lexer methods (like mLETTER)">cowang at comcast.net
+       </A><BR>
+    <I>Fri Jan  2 09:41:23 PST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="032210.html">[antlr-interest] generated code for tree walker...
+</A></li>
+        <LI>Next message: <A HREF="032203.html">[antlr-interest] Dynamic scopes, pANTLR3_COMMON_TOKEN,	and the C runtime
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#32201">[ date ]</a>
+              <a href="thread.html#32201">[ thread ]</a>
+              <a href="subject.html#32201">[ subject ]</a>
+              <a href="author.html#32201">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Tue Dec 30, 2008, at 10:56 PST, Terrence Parr wrote
+&gt;<i> Hi. you'll have to call the lexer methods directly on the generated  
+</I>&gt;<i> lexer not using delegates I think
+</I> 
+As it turns out, I can insert the delegates myself as a workaround.
+ 
+--------- begin C.g ---------
+grammar C ;
+import L, P2 ;
+
+@lexer::members {
+  public final void mLETTER() throws RecognitionException { gL.mLETTER(); }
+}
+
+stuff : ( letters spaces )+ ;
+--------- end C.g ------------
+ 
+This is a pain for a large grammar, but it will only have to be done once
+(assuming all my new development is happening at the top level, and there
+are no lexicon updates coming in at the bottom levels). I can find the name
+of the delegates, e.g., &quot;gL&quot;, in my CLexer.java file. I can find the method
+signature lines, e.g. &quot;public final void mLETTER() throws
+RecognitionException&quot;, in my C_L.java file. Of course, if I override a lexer
+rule, I have to remove the delegator, but if I forget, I get a reminder from
+the Java compiler:
+------------- begin Java compile error message ----------
+CLexer.java:52: mLETTER() is already defined in CLexer
+    public final void mLETTER() throws RecognitionException {
+                      ^
+CLexer.java:14: cannot find symbol
+symbol  : method mLETTER()
+location: class C_L
+      public final void mLETTER() throws RecognitionException {
+gL.mLETTER(); }
+------------ end Java compile error message ----------
+ 
+This should work. But I hope the next release automates the delegation for
+the lexer.
+ 
+George
+ 
+--------------------------- begin original message
+----------------------------------------
+Hi. you'll have to call the lexer methods directly on the generated  
+lexer not using delegates I think
+Ter
+On Dec 30, 2008, at 7:16 AM, George S. Cowan wrote:
+
+&gt;<i> The generated lexer for composite grammars does not generate the  
+</I>&gt;<i> delegation methods for lexer rules in the topmost grammar. This is  
+</I>&gt;<i> only a problem if one is directly calling the lexer methods, for  
+</I>&gt;<i> instance, in unit testing and, in particular, testing lexer rules in  
+</I>&gt;<i> gUnit.
+</I>&gt;<i>
+</I>&gt;<i> Here is the example grammar from the Composite Grammar page
+</I>(<A HREF="http://www.antlr.org/wiki/display/ANTLR3/Composite+Grammars">http://www.antlr.org/wiki/display/ANTLR3/Composite+Grammars</A> 
+&gt;<i> ) with slight modifications so it will work:
+</I>&gt;<i>
+</I>&gt;<i> -------------------- begin L.g --------------
+</I>&gt;<i> lexer grammar L ;
+</I>&gt;<i> LETTER : 'a'..'z' ;
+</I>&gt;<i> ---- begin P1.g  ---
+</I>&gt;<i> parser grammar P1 ;
+</I>&gt;<i> letter : LETTER ;
+</I>&gt;<i> spaces : ' '+ ;
+</I>&gt;<i> --- begin P2.g ---
+</I>&gt;<i> parser grammar P2 ;
+</I>&gt;<i> import P1 ;
+</I>&gt;<i> letters : letter+ ;
+</I>&gt;<i> --------- begin C.g ---------
+</I>&gt;<i> grammar C ;
+</I>&gt;<i> import L, P2 ;
+</I>&gt;<i> stuff : ( letters spaces )+ ;
+</I>&gt;<i> --------- end grammar files ------------
+</I>&gt;<i>
+</I>&gt;<i> Here is the gUnit test file and the exception:
+</I>&gt;<i> ------ CTest.testsuite -----
+</I>&gt;<i> gunit C;
+</I>&gt;<i> LETTER
+</I>&gt;<i> : &quot;a&quot;   OK
+</I>&gt;<i>   &quot;A&quot;   FAIL
+</I>&gt;<i> ------------------------ runtime exception  
+</I>&gt;<i> -------------------------------
+</I>&gt;<i> java.lang.NoSuchMethodException: CLexer.mLETTER()
+</I>&gt;<i>         at java.lang.Class.getMethod(Unknown Source)
+</I>&gt;<i>         at org.antlr.gunit.gUnitExecuter.runLexer(gUnitExecuter.java: 
+</I>&gt;<i> 211)
+</I>&gt;<i>         at  
+</I>&gt;<i> org.antlr.gunit.gUnitExecuter.runCorrectParser(gUnitExecuter.java:131)
+</I>&gt;<i>         at  
+</I>&gt;<i> org.antlr.gunit.gUnitExecuter.executeTests(gUnitExecuter.java:149)
+</I>&gt;<i>         at org.antlr.gunit.gUnitExecuter.execTest(gUnitExecuter.java: 
+</I>&gt;<i> 97)
+</I>&gt;<i>         at org.antlr.gunit.Interp.main(Interp.java:62)
+</I>&gt;<i> ------------------------ END  
+</I>&gt;<i> --------------------------------------------------
+</I>&gt;<i>
+</I>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20090102/74e5634a/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20090102/74e5634a/attachment.html</A> 
+</PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="032210.html">[antlr-interest] generated code for tree walker...
+</A></li>
+	<LI>Next message: <A HREF="032203.html">[antlr-interest] Dynamic scopes, pANTLR3_COMMON_TOKEN,	and the C runtime
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#32201">[ date ]</a>
+              <a href="thread.html#32201">[ thread ]</a>
+              <a href="subject.html#32201">[ subject ]</a>
+              <a href="author.html#32201">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

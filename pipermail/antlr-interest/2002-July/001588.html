@@ -1,0 +1,164 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Predicates in a lexer?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Predicates%20in%20a%20lexer%3F&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001587.html">
+   <LINK REL="Next"  HREF="001589.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Predicates in a lexer?</H1>
+    <B>Andreas Rueckert</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Predicates%20in%20a%20lexer%3F&In-Reply-To="
+       TITLE="[antlr-interest] Predicates in a lexer?">a_rueckert at gmx.net
+       </A><BR>
+    <I>Tue Jul 23 08:19:22 PDT 2002</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001587.html">[antlr-interest] Looking for ANTLR C++ examples
+</A></li>
+        <LI>Next message: <A HREF="001589.html">[antlr-interest] How to remove me from this &quot;group&quot;
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1588">[ date ]</a>
+              <a href="thread.html#1588">[ thread ]</a>
+              <a href="subject.html#1588">[ subject ]</a>
+              <a href="author.html#1588">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi!
+
+Maybe I'm missing something obvious or I should read the manual again, but I
+have a question. I'm trying to scan a 'here' document in PHP. For those who
+haven't seen this:
+=======================================
+echo &lt;&lt;&lt;EOT
+&lt;meta http-equiv=&quot;content-type&quot; content=&quot;text/html; charset=iso-8859-1&quot;&gt;
+&lt;meta http-equiv=&quot;expires&quot; content=&quot;0&quot;&gt;
+...more text...
+EOT;
+=======================================
+is such a here document. Problem is, that the author can use the delimiter he
+likes, so replacing EOT with MY_DELIMITER still poses a valid here document. So
+you cannot code the delimiter as a static lexer rule (since you don't know by
+then).
+First idea:
+=======================================
+// A here document
+HERE_DOCUMENT
+{ 
+  String here_delimiter = null; 
+  StringBuffer here_document = new StringBuffer();;
+  StringBuffer latestLine = new StringBuffer();
+  boolean isComplete = false;
+}
+	:	&quot;&lt;&lt;&lt;&quot; d:IDENT { here_delimiter = d.getText() + &quot;;&quot;; }
+                ( options { generateAmbigWarnings=false; } : '\n' | '\r' | '\r' '\n' ) { newline(); }
+                ( 
+                  {isComplete == false}?  // Is the document completely parsed?
+		  (  
+                    ( options { generateAmbigWarnings=false; } : '\r' | '\n' | &quot;\r\n&quot; )  // If it's the end of a line
+                      { 
+                        newline();
+                        String line = latestLine.toString();
+
+                        // Check if the last line is the delimiter of the here document
+                        if( line.trim().equals( here_delimiter)) {
+                            isComplete = true;
+                            $setType( HERE_DOCUMENT);
+                            $setText( here_document.toString());
+                        } else {  // Nope.
+                            if( here_document.length() &gt; 0) {  // If it's not the first line add a newline as the line separator
+                                here_document.append( &quot;\n&quot;);
+                            }
+                            here_document.append( latestLine.toString());  // Add the last line to the document
+                            latestLine = new StringBuffer();               // Create a new buffer for the latest line
+                        }
+                      }
+                      | 
+                    character:~( '\r' | '\n' ) { latestLine.append( character); }  // Append any other character to the latest line.
+                  )
+                )*
+	;
+=======================================
+Problem: the {isComplete == false}? predicate is not found in the generated
+lexer, so this solution doesn't work here (maybe my Antlr version is just too
+old?) ... :-(
+
+Hack to workaround the problem: the ( )* in the rule is translated into a
+(endless) do { } while(true); loop, that could be exited with a break
+statement. So instead of setting the isComplete flag to true, simply exit the
+loop via the break;
+=======================================
+// A here document
+HERE_DOCUMENT
+{ 
+  String here_delimiter = null; 
+  StringBuffer here_document = new StringBuffer();;
+  StringBuffer latestLine = new StringBuffer();
+}
+	:	&quot;&lt;&lt;&lt;&quot; d:IDENT { here_delimiter = d.getText() + &quot;;&quot;; }
+                ( options { generateAmbigWarnings=false; } : '\n' | '\r' | '\r' '\n' ) { newline(); }
+                ( 
+		  (  
+                    ( options { generateAmbigWarnings=false; } : '\r' | '\n' | &quot;\r\n&quot; )  // If it's the end of a line
+                      { 
+                        newline();
+                        String line = latestLine.toString();
+
+                        // Check if the last line is the delimiter of the here document
+                        if( line.trim().equals( here_delimiter)) {
+                            $setType( HERE_DOCUMENT);
+                            $setText( here_document.toString());
+                            break;  // &lt;- end the loop for this token
+                        } else {  // Nope.
+                            if( here_document.length() &gt; 0) {  // If it's not the first line add a newline as the line separator
+                                here_document.append( &quot;\n&quot;);
+                            }
+                            here_document.append( latestLine.toString());  // Add the last line to the document
+                            latestLine = new StringBuffer();               // Create a new buffer for the latest line
+                        }
+                      }
+                      | 
+                    character:~( '\r' | '\n' ) { latestLine.append( character); }  // Append any other character to the latest line.
+                  )
+                )*
+	;
+=======================================
+Since this is ugly hack (imagine the Antlr Lexer generator is modified), I'd
+like to ask if there's a better solution.
+
+TIA,
+Andreas
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001587.html">[antlr-interest] Looking for ANTLR C++ examples
+</A></li>
+	<LI>Next message: <A HREF="001589.html">[antlr-interest] How to remove me from this &quot;group&quot;
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1588">[ date ]</a>
+              <a href="thread.html#1588">[ thread ]</a>
+              <a href="subject.html#1588">[ subject ]</a>
+              <a href="author.html#1588">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

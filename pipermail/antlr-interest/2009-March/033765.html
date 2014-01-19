@@ -1,0 +1,153 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Strength of ANTLR lexer
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Strength%20of%20ANTLR%20lexer&In-Reply-To=%3C49D0D7FC.1060202%40nsn.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="033775.html">
+   <LINK REL="Next"  HREF="033766.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Strength of ANTLR lexer</H1>
+    <B>&quot;Paul Bouch&#233; (NSN)&quot;</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Strength%20of%20ANTLR%20lexer&In-Reply-To=%3C49D0D7FC.1060202%40nsn.com%3E"
+       TITLE="[antlr-interest] Strength of ANTLR lexer">paul.bouche at nsn.com
+       </A><BR>
+    <I>Mon Mar 30 07:32:28 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="033775.html">[antlr-interest] Bug report; use of multiple global scopes in a rule fails to push one of them (generated C code)
+</A></li>
+        <LI>Next message: <A HREF="033766.html">[antlr-interest] Strength of ANTLR lexer
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#33765">[ date ]</a>
+              <a href="thread.html#33765">[ thread ]</a>
+              <a href="subject.html#33765">[ subject ]</a>
+              <a href="author.html#33765">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello,
+
+we repeatedly had the following problem. We had overlapping character 
+sets for different TOKEN definitions.
+i.e.:
+mapping : KEY '=' ATTRIBUTE;
+KEY : ('A'..'Z' | 'a'..'z')+;
+ATTRIBUTE : ('A'..'Z' | 'a'..'z' | '0'..'9')+;
+
+The lexer always generates KEY tokens for abc, but what we actually want 
+is ATTRIBUTE tokens. The behvavior is of course wanted in case of
+token definitions for certain keywords etc. But this is not always 
+really good.
+
+Things that can be easily expressed in an EBNF cannot be so easily 
+written in ANTLR considering the above example. In the EBNF I could write:
+mapping ::== KEY &quot;=&quot; ATTRIBUTE.
+KEY ::== (&quot;A&quot;| .. | &quot;Z&quot;| &quot;a&quot; | .. | &quot;z&quot;) (&quot;A&quot;| .. | &quot;Z&quot;| &quot;a&quot; | .. | &quot;z&quot;)*.
+ATTRIBUTE ::== (&quot;A&quot;| .. | &quot;Z&quot;| &quot;a&quot; | .. | &quot;z&quot; | &quot;0&quot; | .. | &quot;9&quot;) (&quot;A&quot;| .. 
+|<i> &quot;Z&quot;| &quot;a&quot; | .. | &quot;z&quot; | &quot;0&quot; | .. | &quot;9&quot;)*.
+</I>
+but to express the same thing in ANTLR because of how the ANTLR lexer 
+works I have to write:
+mapping : KEY '=' (ATTRIBUTE | KEY); // really counter intuitive
+KEY : ('A'..'Z' | 'a'..'z')+;
+ATTRIBUTE : ('A'..'Z' | 'a'..'z' | '0'..'9')+;
+
+The problem is that the lexer is toally indepent of the parser and it 
+operates totally without context or structure.  Of course everywhere one 
+can find this is how to solve this problem, but imo it is really not a 
+grammar problem but an ANTLR limitation. Of course another solution is 
+to just emit WORD tokens and check in the parser if the value is valid, 
+but why lex again what as already been lexed. Other solutions also 
+include building the grammar structure backinto the lexer via syn preds 
+which is also not what one likes.
+
+Any comments or solutions?
+@Ter why was it done this way? Would it not be possible to let the lexer 
+be operated by the parser, i.e. something like this:
+// ---- grammar start
+grammar LexerWithContext;
+options {
+    noTokenBuffer = true; // new option?
+}
+mapping : KEY '=' ATTRIBUTE;
+KEY ::== (&quot;A&quot;| .. | &quot;Z&quot;| &quot;a&quot; | .. | &quot;z&quot;) (&quot;A&quot;| .. | &quot;Z&quot;| &quot;a&quot; | .. | &quot;z&quot;)*.
+ATTRIBUTE ::== (&quot;A&quot;| .. | &quot;Z&quot;| &quot;a&quot; | .. | &quot;z&quot; | &quot;0&quot; | .. | &quot;9&quot;) (&quot;A&quot;| .. 
+|<i> &quot;Z&quot;| &quot;a&quot; | .. | &quot;z&quot; | &quot;0&quot; | .. | &quot;9&quot;)*.
+</I>// ---- grammar stop
+will for the Java target yield:
+
+public class LexerWithContextParser {
+LexerWithContextLexer lexer;
+    public final mapping() {
+        lexer.mKEY();
+        lexer.mT326();
+        lexer.ATTRIBUTE();
+    }
+}
+iff. they are defined together?
+
+BR,
+Paul
+
+-- 
+Paul Bouch&#233;
+Voice: +49 30 590080-1284
+ 
+Nokia Siemens Networks GmbH &amp; Co. KG, An den Treptowers 1, 12435 Berlin, Germany
+Sitz der Gesellschaft: M&#252;nchen / Registered office: Munich
+Registergericht: M&#252;nchen / Commercial registry: Munich, HRA 88537
+WEEE-Reg.-Nr.: DE 52984304
+
+Pers&#246;nlich haftende Gesellschafterin / General Partner: Nokia Siemens Networks Management GmbH
+Gesch&#228;ftsleitung / Board of Directors: Lydia Sommer, Olaf Horsthemke
+Vorsitzender des Aufsichtsrats / Chairman of supervisory board: Lauri Kivinen
+Sitz der Gesellschaft: M&#252;nchen / Registered office: Munich
+Registergericht: M&#252;nchen / Commercial registry: Munich, HRB 163416
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="033775.html">[antlr-interest] Bug report; use of multiple global scopes in a rule fails to push one of them (generated C code)
+</A></li>
+	<LI>Next message: <A HREF="033766.html">[antlr-interest] Strength of ANTLR lexer
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#33765">[ date ]</a>
+              <a href="thread.html#33765">[ thread ]</a>
+              <a href="subject.html#33765">[ subject ]</a>
+              <a href="author.html#33765">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

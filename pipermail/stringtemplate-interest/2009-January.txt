@@ -1,0 +1,1346 @@
+From jonathan at buhacoff.net  Fri Jan  2 21:05:44 2009
+From: jonathan at buhacoff.net (Jonathan Buhacoff)
+Date: Fri, 2 Jan 2009 21:05:44 -0800
+Subject: [stringtemplate-interest] Does a Perl port exist? Anyone
+	interested?
+In-Reply-To: <F09DC866-A2B4-440D-93D8-FA896113AD56@cs.usfca.edu>
+References: <5060DDDB-FB3B-4FB5-8970-2A21AE5B69DD@buhacoff.net>
+	<F09DC866-A2B4-440D-93D8-FA896113AD56@cs.usfca.edu>
+Message-ID: <76DB0B32-104F-400A-88F0-5E238CFA6208@buhacoff.net>
+
+Ok.  I started playing with the perl target and learning the tools.    
+Thanks to Sam Harwell for the ST grammars.
+
+I also had an idea to try the perl Inline::Java module for direct  
+access to the the latest stringtemplate & antlr jar files.  It turned  
+out to be very trivial.  I'm going to continue playing with the perl  
+target, but, for now, anyone who wants to use stringtemplate from perl  
+can just write something like this:
+
+#!/usr/bin/perl
+use strict;
+use warnings;
+use Inline
+     Java => 'STUDY',
+     STUDY => [ qw(
+         org.antlr.stringtemplate.StringTemplate
+     ) ],
+     AUTOSTUDY => 1,
+     PACKAGE => 'main';
+
+my $t = org::antlr::stringtemplate::StringTemplate->new('hello $name$
+');
+$t->setAttribute("name","Jonathan");
+my $out = $t->toString();
+print $out;
+
+
+This requires Inline::Java to be installed on the system, and for the  
+CLASSPATH environment variable to include the antlr and stringtemplate  
+jar files.
+
+Jonathan
+
+
+On Dec 2, 2008, at 10:51 AM, Terence Parr wrote:
+
+>
+> On Dec 2, 2008, at 7:52 AM, Jonathan Buhacoff wrote:
+>
+>> I did a quick search for a perl port on Google and CPAN and did not
+>> find one.
+>>
+>> If it doesn't exist yet I'd like to make it.
+>
+> You're on :)
+>
+>> I think the procedure would be to take the string template grammar,
+>> generate a perl target, then write the perl API and engine to use it,
+>> probably by translating Terrence's Java code for StringTemplate.
+>
+> I'm not sure that the Perl target is up to snuff. Further, the  
+> grammars in ST have to be updated to v3; they are in v2 at the  
+> moment, which does not even have a Perl target. As part of my  
+> sabbatical next year I will be rebuilding ST.
+>
+>> Or maybe I can use StringTemplate and ANTLR to make a Java-to-perl
+>> source translation and then just apply it to the StringTemplate
+>> sources?  I guess I'd have to de-compile any libraries that it uses  
+>> so
+>> I can use the translation on those sources as well.
+>>
+>> Jonathan
+>> (part time comp sci student and perl fan looking for fun project!)
+>
+> I'd first take a look at the Perl target and see if it works ;) If  
+> so, then perhaps build a Perl native version of ST that mimics the  
+> Java version.
+> Ter
+
+
+From parrt at cs.usfca.edu  Sat Jan  3 11:41:43 2009
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Sat, 3 Jan 2009 11:41:43 -0800
+Subject: [stringtemplate-interest] Does a Perl port exist? Anyone
+	interested?
+In-Reply-To: <76DB0B32-104F-400A-88F0-5E238CFA6208@buhacoff.net>
+References: <5060DDDB-FB3B-4FB5-8970-2A21AE5B69DD@buhacoff.net>
+	<F09DC866-A2B4-440D-93D8-FA896113AD56@cs.usfca.edu>
+	<76DB0B32-104F-400A-88F0-5E238CFA6208@buhacoff.net>
+Message-ID: <60A1734B-9A47-466A-8F41-86407BC73551@cs.usfca.edu>
+
+
+On Jan 2, 2009, at 9:05 PM, Jonathan Buhacoff wrote:
+
+> Ok.  I started playing with the perl target and learning the tools.
+> Thanks to Sam Harwell for the ST grammars.
+>
+> I also had an idea to try the perl Inline::Java module for direct
+> access to the the latest stringtemplate & antlr jar files.  It turned
+> out to be very trivial.  I'm going to continue playing with the perl
+> target, but, for now, anyone who wants to use stringtemplate from perl
+> can just write something like this:
+
+Wow...that is pretty cool. Adding to FAQ.
+
+http://www.antlr.org/wiki/pages/viewpage.action?pageId=15564834
+
+Ter
+
+
+From malbanes at cisco.com  Thu Jan  8 14:16:27 2009
+From: malbanes at cisco.com (Michael Albanese (malbanes))
+Date: Thu, 8 Jan 2009 14:16:27 -0800
+Subject: [stringtemplate-interest] Iteration over multi-valued attribute
+	using implied counter $i$ and first() rest()
+Message-ID: <5B4FDEC63FD1404589D79A1C4265DAD70663FCD3@xmb-sjc-212.amer.cisco.com>
+
+I have a need to traverse a multi-valued attribute utilizing the
+built-in iteration counter $i$ in addition to special casing for
+elements first() then rest().
+
+The following worker template that is passed a vector of strings almost
+works for my needs.  
+
+make_keys_comparison(keys) ::= <<
+$first(keys):{(record[$i$] == $it$)}$ $rest(keys):{ and (record[$i$] ==
+$it$)}$
+>>
+
+I am using the implied $i$ iteration counter for part of the source
+generation as it conveniently could serve as the field offset for my
+generated lua source code.
+
+...my desired output is an 'if' condition in lua source code. So in a
+good world I want the following output where keys = { agent slot module
+}.
+
+ if (record[1] == agent) and (record[2] == slot) and (record[3] ==
+module) then
+    return record
+ end
+
+...where the make_keys_comparison() template produces the conditionals
+inside the 'if' and the generated array offsets graduate sequentially
+from 1 to 'n'.
+
+
+What I get however is slightly off, and I believe has to do with the
+scoping of the implied $i$ counter. Apparently a new instance of the $i$
+counter is scoped for both the first() and rest() attribute operators,
+and for my needs this hurts as evidenced by the actual output.
+
+ if (record[1] == agent) and (record[1] == slot) and (record[2] ==
+module) then
+    return record
+ end
+
+Here one can see that the record[] offsets are not accurate. They are
+affected apparently by the scoping of $i$ between first() and rest().
+
+I'd like to know if using the $i$ is the wrong tact here (or perhaps
+there is a bug and this should work ?). 
+
+If not is there a way to count and display that count value along with
+each element(s) in the multi-valued 'keys' attribute while also
+retaining the special casing needed for first/rest ?
+
+Thanks,
+Michael
+
+
+
+
+
+
+
+
+
+From parrt at cs.usfca.edu  Thu Jan  8 16:32:41 2009
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Thu, 8 Jan 2009 16:32:41 -0800
+Subject: [stringtemplate-interest] Iteration over multi-valued attribute
+	using implied counter $i$ and first() rest()
+In-Reply-To: <5B4FDEC63FD1404589D79A1C4265DAD70663FCD3@xmb-sjc-212.amer.cisco.com>
+References: <5B4FDEC63FD1404589D79A1C4265DAD70663FCD3@xmb-sjc-212.amer.cisco.com>
+Message-ID: <D3584302-A9B3-4F7B-A623-2192896D5C18@cs.usfca.edu>
+
+Hi. I believe all you need is:
+
+make_keys_comparison(keys) ::= <<
+$keys:{record[$i$] == $it$)}; separator=" and "$
+ >>
+
+Ter
+On Jan 8, 2009, at 2:16 PM, Michael Albanese (malbanes) wrote:
+
+> I have a need to traverse a multi-valued attribute utilizing the
+> built-in iteration counter $i$ in addition to special casing for
+> elements first() then rest().
+>
+> The following worker template that is passed a vector of strings  
+> almost
+> works for my needs.
+>
+> make_keys_comparison(keys) ::= <<
+> $first(keys):{(record[$i$] == $it$)}$ $rest(keys):{ and (record[$i$]  
+> ==
+> $it$)}$
+>>>
+>
+> I am using the implied $i$ iteration counter for part of the source
+> generation as it conveniently could serve as the field offset for my
+> generated lua source code.
+>
+> ...my desired output is an 'if' condition in lua source code. So in a
+> good world I want the following output where keys = { agent slot  
+> module
+> }.
+>
+> if (record[1] == agent) and (record[2] == slot) and (record[3] ==
+> module) then
+>    return record
+> end
+>
+> ...where the make_keys_comparison() template produces the conditionals
+> inside the 'if' and the generated array offsets graduate sequentially
+> from 1 to 'n'.
+>
+>
+> What I get however is slightly off, and I believe has to do with the
+> scoping of the implied $i$ counter. Apparently a new instance of the  
+> $i$
+> counter is scoped for both the first() and rest() attribute operators,
+> and for my needs this hurts as evidenced by the actual output.
+>
+> if (record[1] == agent) and (record[1] == slot) and (record[2] ==
+> module) then
+>    return record
+> end
+>
+> Here one can see that the record[] offsets are not accurate. They are
+> affected apparently by the scoping of $i$ between first() and rest().
+>
+> I'd like to know if using the $i$ is the wrong tact here (or perhaps
+> there is a bug and this should work ?).
+>
+> If not is there a way to count and display that count value along with
+> each element(s) in the multi-valued 'keys' attribute while also
+> retaining the special casing needed for first/rest ?
+>
+> Thanks,
+> Michael
+>
+>
+>
+>
+>
+>
+>
+>
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org/mailman/listinfo/stringtemplate-interest
+
+
+From malbanes at cisco.com  Thu Jan  8 16:44:39 2009
+From: malbanes at cisco.com (Michael Albanese (malbanes))
+Date: Thu, 8 Jan 2009 16:44:39 -0800
+Subject: [stringtemplate-interest] Iteration over multi-valued attribute
+	using implied counter $i$ and first() rest()
+In-Reply-To: <D3584302-A9B3-4F7B-A623-2192896D5C18@cs.usfca.edu>
+References: <5B4FDEC63FD1404589D79A1C4265DAD70663FCD3@xmb-sjc-212.amer.cisco.com>
+	<D3584302-A9B3-4F7B-A623-2192896D5C18@cs.usfca.edu>
+Message-ID: <5B4FDEC63FD1404589D79A1C4265DAD70663FDB2@xmb-sjc-212.amer.cisco.com>
+
+ 
+
+> -----Original Message-----
+> From: Terence Parr [mailto:parrt at cs.usfca.edu] 
+> Sent: Thursday, January 08, 2009 4:33 PM
+> To: Michael Albanese (malbanes)
+> Cc: stringtemplate-interest at antlr.org
+> Subject: Re: [stringtemplate-interest] Iteration over 
+> multi-valued attribute using implied counter $i$ and first() rest()
+> 
+> Hi. I believe all you need is:
+> 
+> make_keys_comparison(keys) ::= <<
+> $keys:{record[$i$] == $it$)}; separator=" and "$  >>
+> 
+> Ter
+
+Thank you, yes this did it. 
+
+I had started down a similar path but struggled with the
+correct syntax concerning of the semi colon.
+
+As with all good answers it looks obvious now :{
+
+Thanks again,
+Michael
+
+
+> On Jan 8, 2009, at 2:16 PM, Michael Albanese (malbanes) wrote:
+> 
+> > I have a need to traverse a multi-valued attribute utilizing the 
+> > built-in iteration counter $i$ in addition to special casing for 
+> > elements first() then rest().
+> >
+> > The following worker template that is passed a vector of strings 
+> > almost works for my needs.
+> >
+> > make_keys_comparison(keys) ::= <<
+> > $first(keys):{(record[$i$] == $it$)}$ $rest(keys):{ and 
+> (record[$i$] 
+> > == $it$)}$
+> >>>
+> >
+> > I am using the implied $i$ iteration counter for part of the source 
+> > generation as it conveniently could serve as the field 
+> offset for my 
+> > generated lua source code.
+> >
+> > ...my desired output is an 'if' condition in lua source 
+> code. So in a 
+> > good world I want the following output where keys = { agent slot 
+> > module }.
+> >
+> > if (record[1] == agent) and (record[2] == slot) and (record[3] ==
+> > module) then
+> >    return record
+> > end
+> >
+> > ...where the make_keys_comparison() template produces the 
+> conditionals 
+> > inside the 'if' and the generated array offsets graduate 
+> sequentially 
+> > from 1 to 'n'.
+> >
+> >
+> > What I get however is slightly off, and I believe has to do 
+> with the 
+> > scoping of the implied $i$ counter. Apparently a new 
+> instance of the 
+> > $i$ counter is scoped for both the first() and rest() attribute 
+> > operators, and for my needs this hurts as evidenced by the actual 
+> > output.
+> >
+> > if (record[1] == agent) and (record[1] == slot) and (record[2] ==
+> > module) then
+> >    return record
+> > end
+> >
+> > Here one can see that the record[] offsets are not 
+> accurate. They are 
+> > affected apparently by the scoping of $i$ between first() 
+> and rest().
+> >
+> > I'd like to know if using the $i$ is the wrong tact here 
+> (or perhaps 
+> > there is a bug and this should work ?).
+> >
+> > If not is there a way to count and display that count value 
+> along with 
+> > each element(s) in the multi-valued 'keys' attribute while also 
+> > retaining the special casing needed for first/rest ?
+> >
+> > Thanks,
+> > Michael
+> >
+> >
+> >
+> >
+> >
+> >
+> >
+> >
+> > _______________________________________________
+> > stringtemplate-interest mailing list
+> > stringtemplate-interest at antlr.org
+> > http://www.antlr.org/mailman/listinfo/stringtemplate-interest
+> 
+> 
+
+From parrt at cs.usfca.edu  Thu Jan  8 16:46:33 2009
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Thu, 8 Jan 2009 16:46:33 -0800
+Subject: [stringtemplate-interest] Iteration over multi-valued attribute
+	using implied counter $i$ and first() rest()
+In-Reply-To: <5B4FDEC63FD1404589D79A1C4265DAD70663FDB2@xmb-sjc-212.amer.cisco.com>
+References: <5B4FDEC63FD1404589D79A1C4265DAD70663FCD3@xmb-sjc-212.amer.cisco.com>
+	<D3584302-A9B3-4F7B-A623-2192896D5C18@cs.usfca.edu>
+	<5B4FDEC63FD1404589D79A1C4265DAD70663FDB2@xmb-sjc-212.amer.cisco.com>
+Message-ID: <759F1904-51B8-4C15-A33B-9D4208CD9B8B@cs.usfca.edu>
+
+
+On Jan 8, 2009, at 4:44 PM, Michael Albanese (malbanes) wrote:
+
+>
+>
+>> -----Original Message-----
+>> From: Terence Parr [mailto:parrt at cs.usfca.edu]
+>> Sent: Thursday, January 08, 2009 4:33 PM
+>> To: Michael Albanese (malbanes)
+>> Cc: stringtemplate-interest at antlr.org
+>> Subject: Re: [stringtemplate-interest] Iteration over
+>> multi-valued attribute using implied counter $i$ and first() rest()
+>>
+>> Hi. I believe all you need is:
+>>
+>> make_keys_comparison(keys) ::= <<
+>> $keys:{record[$i$] == $it$)}; separator=" and "$  >>
+>>
+>> Ter
+>
+> Thank you, yes this did it.
+>
+> I had started down a similar path but struggled with the
+> correct syntax concerning of the semi colon.
+>
+> As with all good answers it looks obvious now :{
+
+Yep ;)  Syntax is basically $expression; options$
+
+Ter
+
+
+From roma at qwertty.com  Fri Jan  9 02:38:13 2009
+From: roma at qwertty.com (Roman Odaisky)
+Date: Fri, 9 Jan 2009 12:38:13 +0200
+Subject: [stringtemplate-interest] Iteration over multi-valued attribute
+	using implied counter $i$ and first() rest()
+In-Reply-To: <5B4FDEC63FD1404589D79A1C4265DAD70663FCD3@xmb-sjc-212.amer.cisco.com>
+References: <5B4FDEC63FD1404589D79A1C4265DAD70663FCD3@xmb-sjc-212.amer.cisco.com>
+Message-ID: <200901091238.17548.roma@qwertty.com>
+
+Hi,
+
+On Friday, 09.01.2009 00:16:27 Michael Albanese (malbanes) wrote:
+
+> make_keys_comparison(keys) ::= <<
+> $first(keys):{(record[$i$] == $it$)}$ $rest(keys):{ and (record[$i$] ==
+> $it$)}$
+
+In addition to using the separator clause, you can resort to the ages-old 
+trick of all code generators:
+
+if true $keys:{ and (record[$i$] == $it$)}$
+
+which results in
+
+if true and (...) and (...) and (...)
+
+In fact, it can also be helpful when writing code by hand:
+
+if(false
+    || condition 1
+    || condition 2
+    || condition 3
+){
+    statements
+}
+
+SELECT ...
+WHERE 0=0
+    AND a < b
+    AND c > d
+    AND e = f
+;
+
+and so on, because it allows for easy adding, removing and reordering of 
+items, without having to care about the delimiters. For the same reason many 
+programming languages allow comma-delimited lists to end in a redundant 
+trailing comma.
+
+-- 
+HTH
+Roman.
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: smime.p7s
+Type: application/pkcs7-signature
+Size: 2286 bytes
+Desc: not available
+Url : http://www.antlr.org/pipermail/stringtemplate-interest/attachments/20090109/3733177e/attachment.bin 
+
+From roma at qwertty.com  Fri Jan  9 07:40:03 2009
+From: roma at qwertty.com (Roman Odaisky)
+Date: Fri, 9 Jan 2009 17:40:03 +0200
+Subject: [stringtemplate-interest] <@region> in .st files
+Message-ID: <200901091740.07462.roma@qwertty.com>
+
+Greetings,
+
+Is it possible to use regions in .st template files (as opposed to .stg group 
+files)?
+
+The actual problem I want to solve is adding <link>/<style>/<script>/etc tags 
+to the <head> section of an HTML document. I have a main.st template that 
+looks like this:
+
+<html>
+<head>
+    ...
+</head>
+<body>
+    ...
+    $({pages/$page$})(...)$
+</body>
+</html>
+
+and I want pages/something.st templates to be able to add something to the 
+areas outside their jurisdiction. What is the correct way to implement this?
+
+-- 
+TIA
+Roman.
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: smime.p7s
+Type: application/pkcs7-signature
+Size: 2286 bytes
+Desc: not available
+Url : http://www.antlr.org/pipermail/stringtemplate-interest/attachments/20090109/268b8757/attachment-0001.bin 
+
+From parrt at cs.usfca.edu  Mon Jan 12 11:19:20 2009
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Mon, 12 Jan 2009 11:19:20 -0800
+Subject: [stringtemplate-interest] <@region> in .st files
+In-Reply-To: <200901091740.07462.roma@qwertty.com>
+References: <200901091740.07462.roma@qwertty.com>
+Message-ID: <039BE668-A204-47F8-9E13-C6802F6F8EC2@cs.usfca.edu>
+
+
+On Jan 9, 2009, at 7:40 AM, Roman Odaisky wrote:
+
+> Greetings,
+>
+> Is it possible to use regions in .st template files (as opposed  
+> to .stg group
+> files)?
+
+Nope..sorry.
+
+> The actual problem I want to solve is adding <link>/<style>/<script>/ 
+> etc tags
+> to the <head> section of an HTML document. I have a main.st template  
+> that
+> looks like this:
+>
+> <html>
+> <head>
+>    ...
+> </head>
+> <body>
+>    ...
+>    $({pages/$page$})(...)$
+> </body>
+> </html>
+>
+> and I want pages/something.st templates to be able to add something  
+> to the
+> areas outside their jurisdiction. What is the correct way to  
+> implement this?
+
+I think template group inheritance is the right answer here. Just  
+invoke $foo()$ and define foo.st in the subgroup.
+
+Ter
+
+From nils.liebelt at serie-a.de  Tue Jan 13 10:38:21 2009
+From: nils.liebelt at serie-a.de (Nils Liebelt)
+Date: Tue, 13 Jan 2009 19:38:21 +0100
+Subject: [stringtemplate-interest] deadlock during the static initialization
+Message-ID: <496CDF9D.8040902@serie-a.de>
+
+Hi all,
+
+I spotted an racing condition that occures during the (static) 
+initialization of StringTemplate and StringTemplateGroup.
+The result is an deadlock that occures when initializing the classes 
+from different threads. Please find attached a simple junit testcase
+that illustrates the behaviour. Also attached is a thread dump that 
+shows stacktraces after the deadlock occures. To get around this
+issue you must statically initialize one of the classes before actual 
+creating the instances of the mentioned classes  (see testcase)
+
+The problem affects StringTemplate Version 3.2. I can reproduce the 
+behaviour on sun jvm 1.6.0_03-b05 (64bit) and 1.6.0_07-b06 (32bit)
+
+Is this a known bug? Can I raise a jira?
+
+
+Regards,
+
+Nils
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: MultiThreadedSTInitTest.java
+Type: text/x-java
+Size: 1576 bytes
+Desc: not available
+Url : http://www.antlr.org/pipermail/stringtemplate-interest/attachments/20090113/f4b227a4/attachment.bin 
+-------------- next part --------------
+An embedded and charset-unspecified text was scrubbed...
+Name: thddmp.txt
+Url: http://www.antlr.org/pipermail/stringtemplate-interest/attachments/20090113/f4b227a4/attachment.txt 
+
+From parrt at cs.usfca.edu  Wed Jan 14 17:34:08 2009
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Wed, 14 Jan 2009 17:34:08 -0800
+Subject: [stringtemplate-interest] deadlock during the static
+	initialization
+In-Reply-To: <496CDF9D.8040902@serie-a.de>
+References: <496CDF9D.8040902@serie-a.de>
+Message-ID: <2B2A47E4-1866-4E1E-A56B-35DBD559558E@cs.usfca.edu>
+
+
+On Jan 13, 2009, at 10:38 AM, Nils Liebelt wrote:
+
+> Hi all,
+>
+> I spotted an racing condition that occures during the (static)  
+> initialization of StringTemplate and StringTemplateGroup.
+> The result is an deadlock that occures when initializing the classes  
+> from different threads. Please find attached a simple junit testcase
+> that illustrates the behaviour. Also attached is a thread dump that  
+> shows stacktraces after the deadlock occures. To get around this
+> issue you must statically initialize one of the classes before  
+> actual creating the instances of the mentioned classes  (see testcase)
+>
+> The problem affects StringTemplate Version 3.2. I can reproduce the  
+> behaviour on sun jvm 1.6.0_03-b05 (64bit) and 1.6.0_07-b06 (32bit)
+>
+> Is this a known bug? Can I raise a jira?
+
+Hi Nils, just added:
+
+http://www.antlr.org/jira/browse/ST-48
+
+Ter
+
+
+From nils.liebelt at serie-a.de  Thu Jan 15 00:53:50 2009
+From: nils.liebelt at serie-a.de (Nils Liebelt)
+Date: Thu, 15 Jan 2009 09:53:50 +0100
+Subject: [stringtemplate-interest] deadlock during the static
+	initialization
+In-Reply-To: <2B2A47E4-1866-4E1E-A56B-35DBD559558E@cs.usfca.edu>
+References: <496CDF9D.8040902@serie-a.de>
+	<2B2A47E4-1866-4E1E-A56B-35DBD559558E@cs.usfca.edu>
+Message-ID: <496EF99E.4090204@serie-a.de>
+
+Hi Terence,
+
+thanks for the support. One last note on testcase. It does not fail when 
+the error occures. But you can see from
+the log statements and the thread dump that the worker threads are not 
+terminating.
+
+
+Regards,
+
+Nils
+
+Terence Parr schrieb:
+>
+> On Jan 13, 2009, at 10:38 AM, Nils Liebelt wrote:
+>
+>> Hi all,
+>>
+>> I spotted an racing condition that occures during the (static) 
+>> initialization of StringTemplate and StringTemplateGroup.
+>> The result is an deadlock that occures when initializing the classes 
+>> from different threads. Please find attached a simple junit testcase
+>> that illustrates the behaviour. Also attached is a thread dump that 
+>> shows stacktraces after the deadlock occures. To get around this
+>> issue you must statically initialize one of the classes before actual 
+>> creating the instances of the mentioned classes  (see testcase)
+>>
+>> The problem affects StringTemplate Version 3.2. I can reproduce the 
+>> behaviour on sun jvm 1.6.0_03-b05 (64bit) and 1.6.0_07-b06 (32bit)
+>>
+>> Is this a known bug? Can I raise a jira?
+>
+> Hi Nils, just added:
+>
+> http://www.antlr.org/jira/browse/ST-48
+>
+> Ter
+>
+
+
+-- 
+Nils Liebelt
+Software Developer
+nils.liebelt at serie-a.de
+
+serie a logistics solutions AG
+H?lchrather Stra?e 15
+D-50670 K?ln
+
+T +49 221 500 60 7-19
+F +49 221 500 56 85
+
+Vorstand: Axel L?hr, Erwin Soldo
+Aufsichtsrat: Adam Musialik (Vors.), Fritz Pleitgen, Hans J?rg Klofat
+
+Amtsgericht K?ln HRB 61725
+
+www.serie-a.de
+
+
+From parrt at cs.usfca.edu  Fri Jan 16 09:21:10 2009
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Fri, 16 Jan 2009 09:21:10 -0800
+Subject: [stringtemplate-interest] antlr.org contact
+In-Reply-To: <20090116084712.61A753418410@www.antlr.org>
+References: <20090116084712.61A753418410@www.antlr.org>
+Message-ID: <382D7940-A7E4-4EF0-9A4C-D96E4456971D@cs.usfca.edu>
+
+we changed from port 8080 to 80 :)
+
+ST ignores anything outside of group spec "..." or <<...>>  Are you  
+sure you have the @nbsp; in the template?
+
+Ter
+On Jan 16, 2009, at 12:47 AM, mikhail.zislis at gmail.com wrote:
+
+> Mikhail wrote:
+>
+> Terence, sorry to bother you, but the community interest lists seem  
+> to be down (or the links are out of synch), so I get tomcat errors  
+> when I try to go there.
+>
+> My problem is this. I'm using StringTemplateGroups (Java) for  
+> convenience, and the files in template hierarchy contain HTML (no  
+> single file is really a group file; I only use subtemplate  
+> inclusions and variables). Everything works fine, except when I add  
+> an HTML entity, such as &nbsp; or &amp;. When I do, ST just swallows  
+> any rules and variables that come after that point. I suspect, this  
+> has to do with the semicolons that probably have special meaning for  
+> ST Groups. How do I get around this without sacrificing ST Groups?
+>
+> Would appreciate any pointers. Thanks.
+>
+> Mikhail
+>
+
+
+From nward at resqsoft.com  Thu Jan 22 14:51:47 2009
+From: nward at resqsoft.com (Nathan Ward)
+Date: Thu, 22 Jan 2009 17:51:47 -0500
+Subject: [stringtemplate-interest] setAttribute() method chaining
+Message-ID: <007001c97ce4$020f13a0$062d3ae0$@com>
+
+Terence,
+
+ 
+
+I have been integrating StringTemplate with a home grown JSP based template
+solution that we have used for several years. It would be convenient in this
+case to use "method chaining" if the setAttribute() method returned the
+instance of the StringTemplate.
+
+ 
+
+e.g.
+
+Instead of: 
+
+                StringTemplate jspTemplate =
+jspTemplateGroup.getInstanceOf("jsp");
+
+                jspTemplate.setAttribute("templateContext",
+this.templateContext);
+
+                jspTemplate.setAttribute("project", this.project);
+
+                jspTemplate.setAttribute("screen", screen);
+
+               String content = jspTemplate.toString();
+
+ 
+
+I could do:
+
+String content = jspTemplateGroup.getInstanceOf("jsp")
+
+.setAttribute("templateContext", this.templateContext)
+
+                .setAttribute("project", this.project)
+
+                .setAttribute("screen", screen)
+
+               .toString();
+
+ 
+
+This is particularly convenient in cases where I have a block of code that
+needs to use more than one StringTemplate template instance. It mainly saves
+me from having to think up separate names for the StringTemplate variables
+and also seems to be more readable than a set of separate statements since
+there is less non-value added text. All it would take is the setAttribute()
+method to return the current StringTemplate object (i.e. "return this;").
+For now, I've written a simple wrapper for StringTemplateGroup and
+StringTemplate classes and had to create a method named "newTemplate()" that
+mimics "getInstanceOf()" and a "setParam()" method that just calls
+setAttribute() but also returns itself.
+
+ 
+
+   Nathan
+
+ 
+
+Nathan Ward
+
+ResQSoft, Inc.
+
+www.resqsoft.com
+
+ 
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: http://www.antlr.org/pipermail/stringtemplate-interest/attachments/20090122/141fb472/attachment.html 
+
+From parrt at cs.usfca.edu  Thu Jan 22 22:09:25 2009
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Thu, 22 Jan 2009 22:09:25 -0800
+Subject: [stringtemplate-interest] setAttribute() method chaining
+In-Reply-To: <007001c97ce4$020f13a0$062d3ae0$@com>
+References: <007001c97ce4$020f13a0$062d3ae0$@com>
+Message-ID: <4E56981D-5F0D-40A8-AA70-44AA9887110A@cs.usfca.edu>
+
+Hi. a good idea.  Though, I think it's easier to just do
+
+jspTemplate.setAttributes(aMap);
+
+and set aMap appropriately using Java stuff.  Does HashMap allow  
+setter chaining?  If not, you can do:
+
+aMap = new HashMap() {
+	{
+	put("templateContext", this.templateContext);
+       put("project", this.project);
+       ...
+};
+
+On Jan 22, 2009, at 2:51 PM, Nathan Ward wrote:
+
+> Terence,
+>
+> I have been integrating StringTemplate with a home grown JSP based  
+> template solution that we have used for several years. It would be  
+> convenient in this case to use ?method chaining? if the  
+> setAttribute() method returned the instance of the StringTemplate.
+>
+> e.g.
+> Instead of:
+>                 StringTemplate jspTemplate =  
+> jspTemplateGroup.getInstanceOf("jsp");
+>                 jspTemplate.setAttribute("templateContext",  
+> this.templateContext);
+>                 jspTemplate.setAttribute("project", this.project);
+>                 jspTemplate.setAttribute("screen", screen);
+>                String content = jspTemplate.toString();
+>
+> I could do:
+> String content = jspTemplateGroup.getInstanceOf(?jsp?)
+> .setAttribute("templateContext", this.templateContext)
+>                 .setAttribute("project", this.project)
+>                 .setAttribute("screen", screen)
+>                .toString();
+>
+> This is particularly convenient in cases where I have a block of  
+> code that needs to use more than one StringTemplate template  
+> instance. It mainly saves me from having to think up separate names  
+> for the StringTemplate variables and also seems to be more readable  
+> than a set of separate statements since there is less non-value  
+> added text. All it would take is the setAttribute() method to return  
+> the current StringTemplate object (i.e. ?return this;?). For now,  
+> I?ve written a simple wrapper for StringTemplateGroup and  
+> StringTemplate classes and had to create a method named  
+> ?newTemplate()? that mimics ?getInstanceOf()? and a ?setParam()?  
+> method that just calls setAttribute() but also returns itself.
+>
+>    Nathan
+>
+> Nathan Ward
+> ResQSoft, Inc.
+> www.resqsoft.com
+>
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org/mailman/listinfo/stringtemplate-interest
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: http://www.antlr.org/pipermail/stringtemplate-interest/attachments/20090122/f5ba6bcd/attachment.html 
+
+From nward at resqsoft.com  Fri Jan 23 10:39:53 2009
+From: nward at resqsoft.com (Nathan Ward)
+Date: Fri, 23 Jan 2009 13:39:53 -0500
+Subject: [stringtemplate-interest] setAttribute() method chaining
+In-Reply-To: <4E56981D-5F0D-40A8-AA70-44AA9887110A@cs.usfca.edu>
+References: <007001c97ce4$020f13a0$062d3ae0$@com>
+	<4E56981D-5F0D-40A8-AA70-44AA9887110A@cs.usfca.edu>
+Message-ID: <00a301c97d89$fc242ab0$f46c8010$@com>
+
+The method chaining is clearer, simpler,  and more convenient which matters
+when I'm trying to get buy-in from other developers in our organization. So,
+the ability to do this would be appreciated if it could be worked in at some
+point.
+
+ 
+
+   Regards,
+
+ 
+
+   Nathan
+
+ 
+
+From: Terence Parr [mailto:parrt at cs.usfca.edu] 
+Sent: Friday, January 23, 2009 1:09 AM
+To: Nathan Ward
+Cc: stringtemplate-interest at antlr.org
+Subject: Re: [stringtemplate-interest] setAttribute() method chaining
+
+ 
+
+Hi. a good idea.  Though, I think it's easier to just do
+
+ 
+
+jspTemplate.setAttributes(aMap);
+
+ 
+
+and set aMap appropriately using Java stuff.  Does HashMap allow setter
+chaining?  If not, you can do:
+
+ 
+
+aMap = new HashMap() {
+
+            {
+
+            put("templateContext", this.templateContext);
+
+      put("project", this.project);
+
+      ...
+
+};
+
+ 
+
+On Jan 22, 2009, at 2:51 PM, Nathan Ward wrote:
+
+
+
+
+
+Terence,
+
+ 
+
+I have been integrating StringTemplate with a home grown JSP based template
+solution that we have used for several years. It would be convenient in this
+case to use "method chaining" if the setAttribute() method returned the
+instance of the StringTemplate.
+
+ 
+
+e.g.
+
+Instead of:
+
+                StringTemplate jspTemplate =
+jspTemplateGroup.getInstanceOf("jsp");
+
+                jspTemplate.setAttribute("templateContext",
+this.templateContext);
+
+                jspTemplate.setAttribute("project", this.project);
+
+                jspTemplate.setAttribute("screen", screen);
+
+               String content = jspTemplate.toString();
+
+ 
+
+I could do:
+
+String content = jspTemplateGroup.getInstanceOf("jsp")
+
+.setAttribute("templateContext", this.templateContext)
+
+                .setAttribute("project", this.project)
+
+                .setAttribute("screen", screen)
+
+               .toString();
+
+ 
+
+This is particularly convenient in cases where I have a block of code that
+needs to use more than one StringTemplate template instance. It mainly saves
+me from having to think up separate names for the StringTemplate variables
+and also seems to be more readable than a set of separate statements since
+there is less non-value added text. All it would take is the setAttribute()
+method to return the current StringTemplate object (i.e. "return this;").
+For now, I've written a simple wrapper for StringTemplateGroup and
+StringTemplate classes and had to create a method named "newTemplate()" that
+mimics "getInstanceOf()" and a "setParam()" method that just calls
+setAttribute() but also returns itself.
+
+ 
+
+   Nathan
+
+ 
+
+Nathan Ward
+
+ResQSoft, Inc.
+
+www.resqsoft.com
+
+ 
+
+_______________________________________________
+stringtemplate-interest mailing list
+stringtemplate-interest at antlr.org
+http://www.antlr.org/mailman/listinfo/stringtemplate-interest
+
+ 
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: http://www.antlr.org/pipermail/stringtemplate-interest/attachments/20090123/16ecbbec/attachment-0001.html 
+
+From parrt at cs.usfca.edu  Sun Jan 25 14:00:37 2009
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Sun, 25 Jan 2009 14:00:37 -0800
+Subject: [stringtemplate-interest] setAttribute() method chaining
+In-Reply-To: <00a301c97d89$fc242ab0$f46c8010$@com>
+References: <007001c97ce4$020f13a0$062d3ae0$@com>
+	<4E56981D-5F0D-40A8-AA70-44AA9887110A@cs.usfca.edu>
+	<00a301c97d89$fc242ab0$f46c8010$@com>
+Message-ID: <62F36439-5A58-4A07-BE12-F940215C5FE2@cs.usfca.edu>
+
+Yes, for next version.  good idea.
+Ter
+On Jan 23, 2009, at 10:39 AM, Nathan Ward wrote:
+
+> The method chaining is clearer, simpler,  and more convenient which  
+> matters when I?m trying to get buy-in from other developers in our  
+> organization. So, the ability to do this would be appreciated if it  
+> could be worked in at some point.
+>
+>    Regards,
+>
+>    Nathan
+>
+> From: Terence Parr [mailto:parrt at cs.usfca.edu]
+> Sent: Friday, January 23, 2009 1:09 AM
+> To: Nathan Ward
+> Cc: stringtemplate-interest at antlr.org
+> Subject: Re: [stringtemplate-interest] setAttribute() method chaining
+>
+> Hi. a good idea.  Though, I think it's easier to just do
+>
+> jspTemplate.setAttributes(aMap);
+>
+> and set aMap appropriately using Java stuff.  Does HashMap allow  
+> setter chaining?  If not, you can do:
+>
+> aMap = new HashMap() {
+>             {
+>             put("templateContext", this.templateContext);
+>       put("project", this.project);
+>       ...
+> };
+>
+> On Jan 22, 2009, at 2:51 PM, Nathan Ward wrote:
+>
+>
+> Terence,
+>
+> I have been integrating StringTemplate with a home grown JSP based  
+> template solution that we have used for several years. It would be  
+> convenient in this case to use ?method chaining? if the  
+> setAttribute() method returned the instance of the StringTemplate.
+>
+> e.g.
+> Instead of:
+>                 StringTemplate jspTemplate =  
+> jspTemplateGroup.getInstanceOf("jsp");
+>                 jspTemplate.setAttribute("templateContext",  
+> this.templateContext);
+>                 jspTemplate.setAttribute("project", this.project);
+>                 jspTemplate.setAttribute("screen", screen);
+>                String content = jspTemplate.toString();
+>
+> I could do:
+> String content = jspTemplateGroup.getInstanceOf(?jsp?)
+> .setAttribute("templateContext", this.templateContext)
+>                 .setAttribute("project", this.project)
+>                 .setAttribute("screen", screen)
+>                .toString();
+>
+> This is particularly convenient in cases where I have a block of  
+> code that needs to use more than one StringTemplate template  
+> instance. It mainly saves me from having to think up separate names  
+> for the StringTemplate variables and also seems to be more readable  
+> than a set of separate statements since there is less non-value  
+> added text. All it would take is the setAttribute() method to return  
+> the current StringTemplate object (i.e. ?return this;?). For now,  
+> I?ve written a simple wrapper for StringTemplateGroup and  
+> StringTemplate classes and had to create a method named  
+> ?newTemplate()? that mimics ?getInstanceOf()? and a ?setParam()?  
+> method that just calls setAttribute() but also returns itself.
+>
+>    Nathan
+>
+> Nathan Ward
+> ResQSoft, Inc.
+> www.resqsoft.com
+>
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org/mailman/listinfo/stringtemplate-interest
+>
+
+
+From ajs.general at gmail.com  Thu Jan 29 09:17:01 2009
+From: ajs.general at gmail.com (Andy Sipe)
+Date: Thu, 29 Jan 2009 12:17:01 -0500
+Subject: [stringtemplate-interest] C# Beta Version of ST
+Message-ID: <d976049c0901290917q7819bc38j71f5e924397e5414@mail.gmail.com>
+
+I'm considering using the C# version of ST and noticed that the most recent
+version has been in beta for almost a year now.
+
+I'm curious if this is just another case of "Tagged beta but ready for
+production usage" that seems to rampant these days or if the software is
+really beta quality?   Is the C# port still actively being maintained?
+
+Thanks -andy
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: http://www.antlr.org/pipermail/stringtemplate-interest/attachments/20090129/4f1ead38/attachment.html 
+
+From sharwell at pixelminegames.com  Thu Jan 29 09:46:07 2009
+From: sharwell at pixelminegames.com (Sam Harwell)
+Date: Thu, 29 Jan 2009 11:46:07 -0600
+Subject: [stringtemplate-interest] C# Beta Version of ST
+In-Reply-To: <d976049c0901290917q7819bc38j71f5e924397e5414@mail.gmail.com>
+References: <d976049c0901290917q7819bc38j71f5e924397e5414@mail.gmail.com>
+Message-ID: <86403CA0939415448BCCB83855EFE09AA6782E@Bloodymary.ironwillgames.com>
+
+I have a new, fully up-to-date port of the library. However, I've only
+tested it for two use cases:
+
+ 
+
+*         Code generation in my C# port of the ANTLR Tool
+
+*         The StringTemplate test suite
+
+ 
+
+If you are interested in testing the library for me, I can get you the
+assembly and/or source code.
+
+ 
+
+Sam
+
+ 
+
+From: stringtemplate-interest-bounces at antlr.org
+[mailto:stringtemplate-interest-bounces at antlr.org] On Behalf Of Andy
+Sipe
+Sent: Thursday, January 29, 2009 11:17 AM
+To: stringtemplate-interest at antlr.org
+Subject: [stringtemplate-interest] C# Beta Version of ST
+
+ 
+
+I'm considering using the C# version of ST and noticed that the most
+recent version has been in beta for almost a year now.
+
+I'm curious if this is just another case of "Tagged beta but ready for
+production usage" that seems to rampant these days or if the software is
+really beta quality?   Is the C# port still actively being maintained?
+
+Thanks -andy
+
+
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: http://www.antlr.org/pipermail/stringtemplate-interest/attachments/20090129/13d13033/attachment.html 
+
+From jaluber at gmx.de  Thu Jan 29 09:54:17 2009
+From: jaluber at gmx.de (Johannes Luber)
+Date: Thu, 29 Jan 2009 18:54:17 +0100
+Subject: [stringtemplate-interest] C# Beta Version of ST
+In-Reply-To: <86403CA0939415448BCCB83855EFE09AA6782E@Bloodymary.ironwillgames.com>
+References: <d976049c0901290917q7819bc38j71f5e924397e5414@mail.gmail.com>
+	<86403CA0939415448BCCB83855EFE09AA6782E@Bloodymary.ironwillgames.com>
+Message-ID: <4981ED49.9000803@gmx.de>
+
+Sam Harwell schrieb:
+> I have a new, fully up-to-date port of the library. However, I?ve only
+> tested it for two use cases:
+> 
+> ?         Code generation in my C# port of the ANTLR Tool
+> ?         The StringTemplate test suite
+> 
+> If you are interested in testing the library for me, I can get you the
+> assembly and/or source code.
+> 
+> Sam
+
+Why don't you simply publish a public 3.2 beta? That way bugs are going
+to be fixed sooner.
+
+Johannes
+> 
+>  
+> 
+> *From:* stringtemplate-interest-bounces at antlr.org
+> [mailto:stringtemplate-interest-bounces at antlr.org] *On Behalf Of *Andy Sipe
+> *Sent:* Thursday, January 29, 2009 11:17 AM
+> *To:* stringtemplate-interest at antlr.org
+> *Subject:* [stringtemplate-interest] C# Beta Version of ST
+> 
+>  
+> 
+> I'm considering using the C# version of ST and noticed that the most
+> recent version has been in beta for almost a year now.
+> 
+> I'm curious if this is just another case of "Tagged beta but ready for
+> production usage" that seems to rampant these days or if the software is
+> really beta quality?   Is the C# port still actively being maintained?
+> 
+> Thanks -andy
+> 
+> 
+> ------------------------------------------------------------------------
+> 
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org/mailman/listinfo/stringtemplate-interest
+
+
+From ajs.general at gmail.com  Fri Jan 30 06:27:56 2009
+From: ajs.general at gmail.com (Andy Sipe)
+Date: Fri, 30 Jan 2009 09:27:56 -0500
+Subject: [stringtemplate-interest] C# Beta Version of ST
+In-Reply-To: <4981ED49.9000803@gmx.de>
+References: <d976049c0901290917q7819bc38j71f5e924397e5414@mail.gmail.com>
+	<86403CA0939415448BCCB83855EFE09AA6782E@Bloodymary.ironwillgames.com>
+	<4981ED49.9000803@gmx.de>
+Message-ID: <d976049c0901300627y74e94712hecefe8b58c15152b@mail.gmail.com>
+
+Sam,
+
+A new version would be great.
+
+I'm more interested in the over all 'health' of the C# port.  Is it being
+actively maintained, etc....
+
+It sounds like you've updated it to the latest version of the .net
+framework.  My current requirements need something compatible with 3.5 so,
+if you don't post it publicly (as suggested by Johannes), I'll take a copy
+of the binaries and source you currently have and see what is what.
+
+BTW - I've not used ST before, it seems very impressive.  Well done!!
+
+Thanks -andy
+
+
+On Thu, Jan 29, 2009 at 12:54 PM, Johannes Luber <jaluber at gmx.de> wrote:
+
+> Sam Harwell schrieb:
+> > I have a new, fully up-to-date port of the library. However, I've only
+> > tested it for two use cases:
+> >
+> > ?         Code generation in my C# port of the ANTLR Tool
+> > ?         The StringTemplate test suite
+> >
+> > If you are interested in testing the library for me, I can get you the
+> > assembly and/or source code.
+> >
+> > Sam
+>
+> Why don't you simply publish a public 3.2 beta? That way bugs are going
+> to be fixed sooner.
+>
+> Johannes
+> >
+> >
+> >
+> > *From:* stringtemplate-interest-bounces at antlr.org
+> > [mailto:stringtemplate-interest-bounces at antlr.org] *On Behalf Of *Andy
+> Sipe
+> > *Sent:* Thursday, January 29, 2009 11:17 AM
+> > *To:* stringtemplate-interest at antlr.org
+> > *Subject:* [stringtemplate-interest] C# Beta Version of ST
+> >
+> >
+> >
+> > I'm considering using the C# version of ST and noticed that the most
+> > recent version has been in beta for almost a year now.
+> >
+> > I'm curious if this is just another case of "Tagged beta but ready for
+> > production usage" that seems to rampant these days or if the software is
+> > really beta quality?   Is the C# port still actively being maintained?
+> >
+> > Thanks -andy
+> >
+> >
+> > ------------------------------------------------------------------------
+> >
+> > _______________________________________________
+> > stringtemplate-interest mailing list
+> > stringtemplate-interest at antlr.org
+> > http://www.antlr.org/mailman/listinfo/stringtemplate-interest
+>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: http://www.antlr.org/pipermail/stringtemplate-interest/attachments/20090130/5e7936f4/attachment.html 
+

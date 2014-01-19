@@ -1,0 +1,155 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Help controlling parser decisions
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Help%20controlling%20parser%20decisions&In-Reply-To=%3C69fb4b090707252037h72c40dc2ie5ae77d6d3031bb7%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="022823.html">
+   <LINK REL="Next"  HREF="022830.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Help controlling parser decisions</H1>
+    <B>Ted Villalba</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Help%20controlling%20parser%20decisions&In-Reply-To=%3C69fb4b090707252037h72c40dc2ie5ae77d6d3031bb7%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Help controlling parser decisions">ted.villalba at gmail.com
+       </A><BR>
+    <I>Wed Jul 25 20:37:42 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="022823.html">[antlr-interest] antlr.org back up with a new network driver
+</A></li>
+        <LI>Next message: <A HREF="022830.html">[antlr-interest] Help controlling parser decisions
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#22828">[ date ]</a>
+              <a href="thread.html#22828">[ thread ]</a>
+              <a href="subject.html#22828">[ subject ]</a>
+              <a href="author.html#22828">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Thanks for the input Gavin.
+
+I'm still finding that no matter how I tweak the parser rules, it's really
+the order of the lexer rules that determine how a token is evaluated,
+semantic predicates be damned.
+
+It seems if I have more than one lexer rule that share a common token, then
+the rule that comes first wins all the time.
+
+My objective is to allow the term NEAR to be entered as a boolean, except if
+it begins or ends a sequence of  terms, then recognize it as a WCHAR.
+TAG=APPLES NEAR ORANGES //this should parse NEAR as an OP
+TAG=NEAR APPLES ORANGES//this should treat it as a WCHAR
+
+Here is my simplified grammar. Is it easy enough for someone to recognize
+the changes that need to be made to this grammar to meet that objective?
+Sorry if I'm just not getting it, this has been a challenging exercise.
+
+grammar WQL;
+
+options{
+   output=AST;
+   ASTLabelType=CommonTree;
+}
+
+
+query :  tag '=' terms ;
+
+tag    : WCHAR ;
+
+terms  : WCHAR+  (OP^ WCHAR+)*  ;
+
+OP    : 'NEAR'|'near';
+WS      : (' '|'\t'|'\r'|'\n')+ {skip();};
+WCHAR   : ~('='|'('| ')'|'&quot;'|' '|'\t'|'\n'|'\r'|'#')+;
+
+
+
+Thank you,
+Ted
+
+
+On 7/25/07, Gavin Lambert &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr at mirality.co.nz</A>&gt; wrote:
+&gt;<i>
+</I>&gt;<i> At 04:52 26/07/2007, Ted Villalba wrote:
+</I>&gt;<i> &gt;The major difference between our grammars is yours does not have
+</I>&gt;<i> &gt;any lexer rules for the operator NEAR, so there is no conflict.
+</I>&gt;<i> &gt;Adding the BOOL_OP lexer rule back in breaks that example.
+</I>&gt;<i> [...]
+</I>&gt;<i> &gt;query :  tag '=' keyBOOL terms+
+</I>&gt;<i> &gt;       ;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;terms  : WCHAR+
+</I>&gt;<i> &gt;        ;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;tag    : WCHAR
+</I>&gt;<i> &gt;        ;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;keyBOOL: near
+</I>&gt;<i> &gt;        ;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;near:   {input.LT(1).getText().toLowerCase().equals(&quot;near&quot;)}?
+</I>&gt;<i> &gt;WCHAR
+</I>&gt;<i> &gt;        ;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;BOOL_OP :  'NEAR'; //comment this out to get working
+</I>&gt;<i> &gt;WS      : (' '|'\t'|'\r'|'\n')+ {skip();};
+</I>&gt;<i> &gt;WCHAR   : ~('='|'('| ')'|'&quot;'|' '|'\t'|'\n'|'\r'|'#')+;
+</I>&gt;<i>
+</I>&gt;<i> I think you need to make your parser more lenient.
+</I>&gt;<i>
+</I>&gt;<i> 1. Rename 'BOOL_OP' to 'NEAR', and don't add any other keywords to
+</I>&gt;<i> it -- give those their own separate lexer rules.
+</I>&gt;<i>
+</I>&gt;<i> 2. Create a parser rule 'bool_op' that accepts NEAR.
+</I>&gt;<i>
+</I>&gt;<i> 3. Remove 'terms' because it's pointless (you've already got
+</I>&gt;<i> 'multiple characters' at the lexing level, and 'multiple terms' at
+</I>&gt;<i> the 'query' level).
+</I>&gt;<i>
+</I>&gt;<i> 4. Remove the 'near' rule and the 'keyBOOL' rule (since you've got
+</I>&gt;<i> 'bool_op' now).
+</I>&gt;<i>
+</I>&gt;<i> 5. Wherever a bool_op can be used in a non-keyword context, add it
+</I>&gt;<i> as an alternative.  Presumably, this means changing 'tag' to
+</I>&gt;<i> &quot;WCHAR | bool_op&quot;.
+</I>&gt;<i>
+</I>&gt;<i> You'll still end up with a NEAR token output, not a WCHAR, but it
+</I>&gt;<i> should match now.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20070725/5a90137b/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20070725/5a90137b/attachment.html</A> 
+</PRE>
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="022823.html">[antlr-interest] antlr.org back up with a new network driver
+</A></li>
+	<LI>Next message: <A HREF="022830.html">[antlr-interest] Help controlling parser decisions
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#22828">[ date ]</a>
+              <a href="thread.html#22828">[ thread ]</a>
+              <a href="subject.html#22828">[ subject ]</a>
+              <a href="author.html#22828">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

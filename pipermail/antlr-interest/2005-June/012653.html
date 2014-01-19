@@ -1,0 +1,426 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Help with pesky Lexer determinism
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Help%20with%20pesky%20Lexer%20determinism&In-Reply-To=001201c56b4f%2410601d50%240500a8c0%40nigel">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="012585.html">
+   <LINK REL="Next"  HREF="012647.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Help with pesky Lexer determinism</H1>
+    <B>Mark Bednarczyk</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Help%20with%20pesky%20Lexer%20determinism&In-Reply-To=001201c56b4f%2410601d50%240500a8c0%40nigel"
+       TITLE="[antlr-interest] Help with pesky Lexer determinism">voytechs at yahoo.com
+       </A><BR>
+    <I>Fri Jun 10 07:09:57 PDT 2005</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="012585.html">[antlr-interest] Help with pesky Lexer determinism
+</A></li>
+        <LI>Next message: <A HREF="012647.html">[antlr-interest] Help with pesky Lexer determinism
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#12653">[ date ]</a>
+              <a href="thread.html#12653">[ thread ]</a>
+              <a href="subject.html#12653">[ subject ]</a>
+              <a href="author.html#12653">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Nigel thanks for the reply,
+	Yes I am aware of the various formatting possibilities for IPv6
+and I've worked out how to support all the forms except the IPv4
+equivelency.
+
+I merged the IPv4, IPv6 and IDENT rules into NUM_INT rule and
+thus using predicates am able to differentiated without
+warnings. The symantical part will be left for higher level
+object to check and throw invalid IPv4 or IPv6 formats which is
+probably a better place to do throw an error message anyway
+since you can specifically say what type of address is
+incorrectly formatted.
+
+I don't want to go overboard with all the various forms and this
+should be good enough:
+
+protected NUM_3DIGIT: ('1'..'9') (('0'..'9') ('0'..'9')?)?
+    ;
+
+protected NUM_HEX_4DIGIT: HEX_DIGIT ((HEX_DIGIT) ((HEX_DIGIT)
+(HEX_DIGIT)?)?)?
+    ;
+
+NUM_IPADDR_IDENT_COLON
+options {
+    testLiterals = true;
+}
+    {boolean isDecimal=false; Token t=null; }
+
+    /* IPv4 RULE */
+    :   (NUM_3DIGIT '.' NUM_3DIGIT '.')=&gt;
+        (
+            NUM_3DIGIT '.' NUM_3DIGIT '.' NUM_3DIGIT '.'
+NUM_3DIGIT
+            { _ttype = IP_V4; }
+        )
+
+    /* IPv6 RULE */
+    |
+        (NUM_HEX_4DIGIT ':')=&gt;
+        (options { greedy = true; } :
+
+            ((NUM_HEX_4DIGIT ':')+ ':')=&gt;
+            (NUM_HEX_4DIGIT ':')+ ':'
+            (NUM_HEX_4DIGIT (':' NUM_HEX_4DIGIT)*)?
+
+        |   NUM_HEX_4DIGIT (':' NUM_HEX_4DIGIT)+
+        )
+            { _ttype = IP_V6; }
+
+        |   (':' ':' NUM_HEX_4DIGIT)=&gt;
+            (options { greedy = true; } :
+            ':' ':'
+            NUM_HEX_4DIGIT (':' NUM_HEX_4DIGIT)*
+            { _ttype = IP_V6; }
+            )
+
+        |   ':' ':'
+            { _ttype = IP_V6; }
+
+        |   ':'
+            { _ttype = COLON; }
+        /* IDENT rule */
+        |   ('a'..'z'|'A'..'Z'|'_'|'$')
+('a'..'z'|'A'..'Z'|'_'|'0'..'9'|'$')*
+            { _ttype = IDENT; }
+
+    /* Number beginning with '.' rule */
+    |   '.' {_ttype = DOT;}
+            (   ('0'..'9')+ (EXPONENT)? (f1:FLOAT_SUFFIX
+{t=f1;})?
+                {
+                if (t != null &amp;&amp;
+t.getText().toUpperCase().indexOf('F')&gt;=0) {
+                    _ttype = NUM_FLOAT;
+                }
+                else {
+                    _ttype = NUM_DOUBLE; // assume double
+                }
+                }
+            )?
+
+    /* Number beginning with a 0 rule */
+    |   (   '0' {isDecimal = true;} // special case for just '0'
+            (   ('x'|'X')
+                (                                           //
+hex
+                    // the 'e'|'E' and float suffix stuff look
+                    // like hex digits, hence the (...)+ doesn't
+                    // know when to stop: ambig.  ANTLR resolves
+                    // it correctly by matching immediately.  It
+                    // is therefor ok to hush warning.
+                    options {
+                        warnWhenFollowAmbig=false;
+                    }
+                :   HEX_DIGIT
+                )+
+
+            |   //float or double with leading zero
+                (('0'..'9')+ ('.'|EXPONENT|FLOAT_SUFFIX)) =&gt;
+('0'..'9')+
+
+            |   ('0'..'7')+                                 //
+octal
+            )?
+
+        /* A regular number non-zero starting rule */
+        |   ('1'..'9') ('0'..'9')*  {isDecimal=true;}       //
+non-zero decimal
+        )
+        (   ('l'|'L') { _ttype = NUM_LONG; }
+        // only check to see if it's a float if looks like
+decimal so far
+        |   {isDecimal}?
+            (   '.' ('0'..'9')* (EXPONENT)? (f2:FLOAT_SUFFIX
+{t=f2;})?
+            |   EXPONENT (f3:FLOAT_SUFFIX {t=f3;})?
+            |   f4:FLOAT_SUFFIX {t=f4;}
+            )
+            {
+            if (t != null &amp;&amp; t.getText().toUpperCase()
+.indexOf('F') &gt;= 0) {
+                _ttype = NUM_FLOAT;
+            }
+            else {
+                _ttype = NUM_DOUBLE; // assume double
+            }
+            }
+        )?
+    ;
+
+&gt;<i>-----Original Message-----
+</I>&gt;<i>From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>
+</I>&gt;<i>[mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>]On Behalf Of Nigel
+</I>&gt;<i>Sheridan-Smith
+</I>&gt;<i>Sent: Tuesday, June 07, 2005 6:53 AM
+</I>&gt;<i>To: 'ANTLR Interest'
+</I>&gt;<i>Subject: RE: [antlr-interest] Help with pesky Lexer determinism
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>Hey Mark,
+</I>&gt;<i>
+</I>&gt;<i>Something to be aware of: IPv6 addressing rules are
+</I>&gt;<i>very flexible... I came
+</I>&gt;<i>across this a few months ago...
+</I>&gt;<i>
+</I>&gt;&gt;<i>From RFC 2373 (<A HREF="http://www.ietf.org/rfc/rfc2373.txt">http://www.ietf.org/rfc/rfc2373.txt</A>),
+</I>&gt;<i>the following are all
+</I>&gt;<i>valid addresses:
+</I>&gt;<i>
+</I>&gt;<i>         1080:0:0:0:8:800:200C:417A  a unicast address
+</I>&gt;<i>         FF01:0:0:0:0:0:0:101        a multicast address
+</I>&gt;<i>         0:0:0:0:0:0:0:1             the loopback address
+</I>&gt;<i>         0:0:0:0:0:0:0:0             the unspecified addresses
+</I>&gt;<i>
+</I>&gt;<i>shortened versions:
+</I>&gt;<i>        1080::8:800:200C:417A       a unicast address
+</I>&gt;<i>         FF01::101                   a multicast address
+</I>&gt;<i>         ::1                         the loopback address
+</I>&gt;<i>         ::                          the unspecified addresses
+</I>&gt;<i>
+</I>&gt;<i>And IPv4 equivalence:
+</I>&gt;<i>
+</I>&gt;<i>	   0:0:0:0:0:0:13.1.68.3
+</I>&gt;<i>
+</I>&gt;<i>         0:0:0:0:0:FFFF:129.144.52.38
+</I>&gt;<i>
+</I>&gt;<i>      or in compressed form:
+</I>&gt;<i>
+</I>&gt;<i>         ::13.1.68.3
+</I>&gt;<i>
+</I>&gt;<i>         ::FFFF:129.144.52.38
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>and then there are prefixes and things to contend with
+</I>&gt;<i>as well, depending on
+</I>&gt;<i>your language.
+</I>&gt;<i>
+</I>&gt;<i>Currently, my language supports IPv4/v6 addressing to
+</I>&gt;<i>some degree, but its
+</I>&gt;<i>not finished and I've chosen to use '#' delimiters to
+</I>&gt;<i>avoid conflicts with
+</I>&gt;<i>numerical types. To deal with this issue, I just used
+</I>&gt;<i>a generic token
+</I>&gt;<i>matcher (that disambiguates IPv4, IPv6, dates and
+</I>&gt;<i>'hashed' or binary data,
+</I>&gt;<i>which all use the '#' delimiters), and then I'll add
+</I>&gt;<i>some more semantic
+</I>&gt;<i>checks further down the chain. However, you may not be
+</I>&gt;<i>at the same liberty
+</I>&gt;<i>in having such delimiters (depending on your
+</I>&gt;<i>requirements handed to you),
+</I>&gt;<i>and so you will hit non-determinisms pretty quickly!
+</I>&gt;<i>
+</I>&gt;<i>The best way to deal with this sort of thing is start
+</I>&gt;<i>with a protected lexer
+</I>&gt;<i>definitions, and combine them into one rule:
+</I>&gt;<i>
+</I>&gt;<i>   IPADDRHASHDATE: (IPV4) =&gt; IPV4
+</I>&gt;<i>{$setType(IPV4);}
+</I>&gt;<i>                 | (IPV6HASH) =&gt; IPV6HASH
+</I>&gt;<i>{$setType(IPV6HASH);}
+</I>&gt;<i>                 | (DATEVALUE) =&gt; DATEVALUE
+</I>&gt;<i>{$setType(DATEVALUE);};
+</I>&gt;<i>
+</I>&gt;<i>   protected DATEVALUE: '#'! ( ( (DIGIT)+ FSLASH ) =&gt;
+</I>&gt;<i>(DIGIT)+ FSLASH
+</I>&gt;<i>(DIGIT)+
+</I>&gt;<i>
+</I>&gt;<i>	( FSLASH
+</I>&gt;<i>(DIGIT)+ )? WS )?
+</I>&gt;<i>
+</I>&gt;<i> (DIGIT)+ COLON
+</I>&gt;<i>(DIGIT)+
+</I>&gt;<i>
+</I>&gt;<i>	(COLON
+</I>&gt;<i>(DIGIT)+ (DOT (DIGIT)+ )? )?
+</I>&gt;<i>						'#'!;
+</I>&gt;<i>
+</I>&gt;<i>   protected IPV4: '#'! (DIGIT)+ DOT (DIGIT)+ DOT
+</I>&gt;<i>(DIGIT)+ DOT (DIGIT)+
+</I>&gt;<i>						(FSLASH
+</I>&gt;<i>(DIGIT)+ )? '#'!;
+</I>&gt;<i>   /* Too messy to do IPv6 addresses any other way */
+</I>&gt;<i>   protected IPV6HASH: '#'! (':' | '.' | HEX | &quot;#\\&quot;!
+</I>&gt;<i>WS! &quot;#&quot;! )+
+</I>&gt;<i>						(FSLASH
+</I>&gt;<i>(DIGIT)+ )? '#'!;
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>I'm going to add action code then, which checks the
+</I>&gt;<i>tokens to ensure that
+</I>&gt;<i>they are 'valid'.
+</I>&gt;<i>
+</I>&gt;<i>Of course, you might hit performance difficulties if a
+</I>&gt;<i>large number of
+</I>&gt;<i>tokens pass through your syntatic predicate, but if
+</I>&gt;<i>you put the most common
+</I>&gt;<i>token type first you will not be so severely affected.
+</I>&gt;<i>
+</I>&gt;<i>I'll try and get back to you shortly with a more
+</I>&gt;<i>thorough answer/solution...
+</I>&gt;<i>maybe someone else here has some ideas? Some of the
+</I>&gt;<i>grammars on the ANTLR
+</I>&gt;<i>site have very long lexer definitions to deal with
+</I>&gt;<i>these sorts of issues. Of
+</I>&gt;<i>course, that makes them very difficult to understand
+</I>&gt;<i>for everyone but the
+</I>&gt;<i>author ;)
+</I>&gt;<i>
+</I>&gt;<i>Nigel
+</I>&gt;<i>
+</I>&gt;<i>--
+</I>&gt;<i>Nigel Sheridan-Smith
+</I>&gt;<i>PhD research student
+</I>&gt;<i>
+</I>&gt;<i>Faculty of Engineering
+</I>&gt;<i>University of Technology, Sydney
+</I>&gt;<i>Phone: 02 9514 7946
+</I>&gt;<i>Fax: 02 9514 2435
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;&gt;<i> -----Original Message-----
+</I>&gt;&gt;<i> From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>
+</I>&gt;<i>[mailto:antlr-interest-
+</I>&gt;&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">bounces at antlr.org</A>] On Behalf Of Mark Bednarczyk
+</I>&gt;&gt;<i> Sent: Tuesday, 7 June 2005 10:16 AM
+</I>&gt;&gt;<i> To: ANTLR Interest
+</I>&gt;&gt;<i> Subject: RE: [antlr-interest] Help with pesky Lexer
+</I>&gt;<i>determinism
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Well I have another problem that is a little more involved so
+</I>&gt;&gt;<i> maybe I can just get a couple of quick pointers.
+</I>&gt;<i>Same issue but
+</I>&gt;&gt;<i> now with IPv6 address that actually steps of the toes on the
+</I>&gt;&gt;<i> IDENT rule since IPv6 address is comprised of HEX digits so
+</I>&gt;&gt;<i> 'a'..'f' overlap with IDENT rule of 'a'..'z'.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> BTW: here is the format of IPv6 for those not
+</I>&gt;<i>familiar, (HEX HEX
+</I>&gt;&gt;<i> COLON (COLON HEX HEX)+) in simple case.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> This is what I'm trying to do, but not really sure
+</I>&gt;<i>how to code
+</I>&gt;&gt;<i> it.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 1) Add the IPv6 block to NUM_INT rule with
+</I>&gt;<i>appropriate predicate
+</I>&gt;&gt;<i> of (NUM_HEX_2DIGIT COLON NUM_HEX_2DIGIT COLON) and I
+</I>&gt;<i>do not get
+</I>&gt;&gt;<i> any warning from NUM_INT rule.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 2) Add propriate predicate to IDENT rele for IPv6
+</I>&gt;<i>format (same
+</I>&gt;&gt;<i> as #1) and provide an empty condition block or tell some how
+</I>&gt;&gt;<i> based on the predicate to fail the IDENT rule so it
+</I>&gt;<i>will move on
+</I>&gt;&gt;<i> and try NUM_INT which should succeed.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Somehow I need the IDENT rule to fail on IPv6 address while
+</I>&gt;&gt;<i> matching on NUM_INT. Almost looks like I need to
+</I>&gt;<i>move both rules
+</I>&gt;&gt;<i> into a bigger common rule and manually set the token type.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Errors I'm getting now:
+</I>&gt;&gt;<i>     [antlr] ANTLR Parser Generator   Version 2.7.5 (20050128)
+</I>&gt;&gt;<i> 1989-2005 jGuru.com
+</I>&gt;&gt;<i>     [antlr]
+</I>&gt;&gt;<i> /home/markbe/prjs/jnetutils-0.1.0/src/antlr/npl/npl.g:
+</I>&gt;&gt;<i> warning:lexical nondeterminism between rules IDENT
+</I>&gt;<i>and NUM_INT
+</I>&gt;&gt;<i> upon
+</I>&gt;&gt;<i>     [antlr]
+</I>&gt;&gt;<i> /home/markbe/prjs/jnetutils-0.1.0/src/antlr/npl/npl.g:
+</I>&gt;&gt;<i> k==1:'A'..'F','a'..'f'
+</I>&gt;&gt;<i>     [antlr]
+</I>&gt;&gt;<i> /home/markbe/prjs/jnetutils-0.1.0/src/antlr/npl/npl.g:
+</I>&gt;&gt;<i>
+</I>&gt;<i>k==2:&lt;end-of-token&gt;,'0'..'9','A'..'F','L','X','a'..'f','l','x'
+</I>&gt;&gt;<i>     [antlr]
+</I>&gt;&gt;<i> /home/markbe/prjs/jnetutils-0.1.0/src/antlr/npl/npl.g:
+</I>&gt;&gt;<i> k==3:&lt;end-of-token&gt;,'0'..'9','A'..'F','L','a'..'f','l'
+</I>&gt;&gt;<i>     [antlr]
+</I>&gt;&gt;<i> /home/markbe/prjs/jnetutils-0.1.0/src/antlr/npl/npl.g:
+</I>&gt;&gt;<i> k==4:&lt;end-of-token&gt;,'0'..'9','A'..'F','L','a'..'f','l'
+</I>&gt;&gt;<i>     [antlr] warning: public lexical rule IDENT is
+</I>&gt;<i>optional (can
+</I>&gt;&gt;<i> match &quot;nothing&quot;)
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> And relative portion of the NUM_INT skipping the bottom since
+</I>&gt;&gt;<i> its not the problem and exactly the same as in java.g
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> IDENT
+</I>&gt;&gt;<i> options {
+</I>&gt;&gt;<i>     testLiterals=true;
+</I>&gt;&gt;<i> }
+</I>&gt;&gt;<i>     :   (NUM_HEX_2DIGIT COLON NUM_HEX_2DIGIT COLON)=&gt;
+</I>&gt;&gt;<i>         // EMPTY match
+</I>&gt;&gt;<i>     |   ('a'..'z'|'A'..'Z'|'_'|'$')
+</I>&gt;&gt;<i> ('a'..'z'|'A'..'Z'|'_'|'0'..'9'|'$')*
+</I>&gt;&gt;<i>     ;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> // a numeric literal
+</I>&gt;&gt;<i> NUM_INT
+</I>&gt;&gt;<i>     {boolean isDecimalulse; Token t=null;}
+</I>&gt;&gt;<i>     :   (NUM_3DIGIT '.' NUM_3DIGIT '.' NUM_3DIGIT '.'
+</I>&gt;&gt;<i> NUM_3DIGIT)=&gt;
+</I>&gt;&gt;<i>         (
+</I>&gt;&gt;<i>             NUM_3DIGIT '.' NUM_3DIGIT '.' NUM_3DIGIT '.'
+</I>&gt;&gt;<i> NUM_3DIGIT
+</I>&gt;&gt;<i>             { _ttype = IP_V4; }
+</I>&gt;&gt;<i>         )
+</I>&gt;&gt;<i>     |   (NUM_HEX_2DIGIT COLON NUM_HEX_2DIGIT COLON)=&gt;
+</I>&gt;&gt;<i>         (
+</I>&gt;&gt;<i>             NUM_HEX_2DIGIT (COLON NUM_HEX_2DIGIT)+
+</I>&gt;&gt;<i>             { _ttype = IP_V6; }
+</I>&gt;&gt;<i>         )
+</I>&gt;&gt;<i>  &lt; T R U N K A T E D&gt;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> protected NUM_HEX_2DIGIT: HEX_DIGIT (HEX_DIGIT)?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="012585.html">[antlr-interest] Help with pesky Lexer determinism
+</A></li>
+	<LI>Next message: <A HREF="012647.html">[antlr-interest] Help with pesky Lexer determinism
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#12653">[ date ]</a>
+              <a href="thread.html#12653">[ thread ]</a>
+              <a href="subject.html#12653">[ subject ]</a>
+              <a href="author.html#12653">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

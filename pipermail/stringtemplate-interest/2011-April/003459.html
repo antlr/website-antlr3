@@ -1,0 +1,203 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [stringtemplate-interest] sequences and unique numbers
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20sequences%20and%20unique%20numbers&In-Reply-To=%3C9DE37404-633E-4940-BCD9-EAC6DFEA2603%40abego-software.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003458.html">
+   <LINK REL="Next"  HREF="003461.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[stringtemplate-interest] sequences and unique numbers</H1>
+    <B>Udo Borkowski</B> 
+    <A HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20sequences%20and%20unique%20numbers&In-Reply-To=%3C9DE37404-633E-4940-BCD9-EAC6DFEA2603%40abego-software.de%3E"
+       TITLE="[stringtemplate-interest] sequences and unique numbers">ub at abego-software.de
+       </A><BR>
+    <I>Sat Apr 30 03:26:51 PDT 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003458.html">[stringtemplate-interest] sequences and unique numbers
+</A></li>
+        <LI>Next message: <A HREF="003461.html">[stringtemplate-interest] sequences and unique numbers
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3459">[ date ]</a>
+              <a href="thread.html#3459">[ thread ]</a>
+              <a href="subject.html#3459">[ subject ]</a>
+              <a href="author.html#3459">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Rafael,
+
+&gt;<i> Was something like that ever implemented?
+</I>Several times, I guess.
+
+Notice this is nothing that needs to be added to the StringTemplate framework but it is just a way how you write your templates and render them.
+
+First you need to create the &quot;Counter&quot; class. 
+E.g. as Ter suggested:
+
+	public class Counter {
+		private int n = 1;
+
+		public String toString() {
+			return String.valueOf(n++);
+		}
+	}
+
+Then you create an instance of Counter every time you need a sequence of unique numbers. 
+In the example of Ter (<A HREF="http://www.antlr.org/pipermail/stringtemplate-interest/2009-August/002097.html">http://www.antlr.org/pipermail/stringtemplate-interest/2009-August/002097.html</A>) this instance is stored in the attribute &quot;uniq&quot;. 
+
+Every time you need a new unique number reference &quot;uniq&quot;, but make sure to use the &quot;&lt;(&#8230;)&gt;&quot; notation to ensure &quot;early evaluation&quot;. As you will typically want to refer to the unique number you need to store it. In Ter's example the parameter &quot;label&quot; is used for this purpose.
+
+if(cond, block, label={end&lt;(uniq)&gt;}) ::= &lt;&lt;
+	&lt;cond&gt;
+	brf &lt;label&gt;
+	&lt;block&gt;
+&lt;label&gt;:
+ &gt;&gt;
+
+
+When I tried to implement this I noticed a problem, at least when using StringTemplate v4 (not sure if this also happens for ST 3):
+
+The parameter label={end&lt;(uniq)&gt;} will not ensure the early evaluation of uniq. Only default argument definitions of format 
+     p = {&lt;(...)&gt;}
+will evaluated early.
+
+So you must split the creation of the unique number from the concatenation to the &quot;end&#8230;&quot; string. I.e. the template looks like this:
+
+ifStmt(cond, block, n={&lt;(uniq)&gt;}, label={label&lt;n&gt;}) ::= &lt;&lt;
+	&lt;cond&gt;
+	brf &lt;label&gt;
+	&lt;block&gt;
+&lt;label&gt;:
+&gt;&gt;<i>
+</I>
+(I also changed the name to &quot;ifStmt&quot; to avoid collision with the &quot;if&quot; statement of ST4)
+
+
+When calling the template like this:
+
+main(uniq) ::= &lt;&lt;
+&lt;ifStmt(&quot;ld a&quot;,&quot;ld #17&quot;)&gt;
+&lt;ifStmt(&quot;ld b&quot;,&quot;ld #42&quot;)&gt;
+&gt;&gt;<i>
+</I>
+It will generate the following output:
+
+	ld a
+	brf label1
+	ld #17
+label1:
+	ld b
+	brf label2
+	ld #42
+label2:
+
+Hope this helps,
+
+Udo
+
+
+P.S.: Here the complete example a test case:
+
+package org.stringtemplate.v4;
+
+import org.junit.Assert;
+import org.junit.Test;
+import org.stringtemplate.v4.debug.BaseTest;
+
+public class UniqueNumberTest extends BaseTest {
+
+	public class Counter {
+		private int n = 1;
+
+		public String toString() {
+			return String.valueOf(n++);
+		}
+	}
+
+	/**
+	 * see <A HREF="http://www.antlr.org/pipermail/stringtemplate-interest/2011-April/003458.html">http://www.antlr.org/pipermail/stringtemplate-interest/2011-April/003458.html</A>
+	 * 
+	 * @throws Exception
+	 */
+	@Test
+	public void testIt() throws Exception {
+		String subdir = tmpdir + &quot;/common&quot;;
+
+		writeFile(tmpdir, &quot;t.stg&quot;,
+				&quot;ifStmt(cond, block, n={&lt;(uniq)&gt;}, label={label&lt;n&gt;}) ::= &lt;&lt;\n&quot;
+						+ &quot;\t&lt;cond&gt;\n\tbrf &lt;label&gt;\n\t&lt;block&gt;\n&lt;label&gt;:\n&quot;
+						+ &quot;&gt;&gt;&quot;
+						+ //
+						&quot;main(uniq) ::= &lt;&lt;\n&quot;
+						+ &quot;&lt;ifStmt(\&quot;ld a\&quot;,\&quot;ld #17\&quot;)&gt;\n\n&quot;
+						+ &quot;&lt;ifStmt(\&quot;ld b\&quot;,\&quot;ld #42\&quot;)&gt;\n&quot; + &quot;&gt;&gt;&quot;);
+
+		STGroup group = new STGroupFile(tmpdir + &quot;/t.stg&quot;);
+		ST st = group.getInstanceOf(&quot;main&quot;);
+		st.add(&quot;uniq&quot;, new Counter());
+		String s = st.render();
+		Assert.assertEquals(
+				&quot;\tld a\n\tbrf label1\n\tld #17\nlabel1:\n\n\tld b\n\tbrf label2\n\tld #42\nlabel2:&quot;,
+				s);
+	}
+}
+
+
+
+
+
+
+
+On 30.04.2011, at 06:11, Rafael Chaves wrote:
+
+&gt;<i> I was looking for something similar to this:
+</I>&gt;<i> 
+</I>&gt;<i> <A HREF="http://www.antlr.org/pipermail/stringtemplate-interest/2009-August/002097.html">http://www.antlr.org/pipermail/stringtemplate-interest/2009-August/002097.html</A>
+</I>&gt;<i> 
+</I>&gt;<i> Was something like that ever implemented?
+</I>&gt;<i> 
+</I>&gt;<i> In my concrete case, I want to generate local variables and avoid
+</I>&gt;<i> collisions between them.
+</I>&gt;<i> 
+</I>&gt;<i> Cheers,
+</I>&gt;<i> 
+</I>&gt;<i> Rafael
+</I>&gt;<i> _______________________________________________
+</I>&gt;<i> stringtemplate-interest mailing list
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">stringtemplate-interest at antlr.org</A>
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">http://www.antlr.org/mailman/listinfo/stringtemplate-interest</A>
+</I>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/stringtemplate-interest/attachments/20110430/ef7f6f69/attachment.html">http://www.antlr.org/pipermail/stringtemplate-interest/attachments/20110430/ef7f6f69/attachment.html</A> 
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003458.html">[stringtemplate-interest] sequences and unique numbers
+</A></li>
+	<LI>Next message: <A HREF="003461.html">[stringtemplate-interest] sequences and unique numbers
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3459">[ date ]</a>
+              <a href="thread.html#3459">[ thread ]</a>
+              <a href="subject.html#3459">[ subject ]</a>
+              <a href="author.html#3459">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">More information about the stringtemplate-interest
+mailing list</a><br>
+</body></html>

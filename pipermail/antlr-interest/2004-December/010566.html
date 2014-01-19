@@ -1,0 +1,177 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] make rules for *.g -&gt; outputs
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20make%20rules%20for%20%2A.g%20-%3E%20outputs&In-Reply-To=1102098921.27405.6.camel%40narr.homeip.net">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="010545.html">
+   <LINK REL="Next"  HREF="010593.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] make rules for *.g -&gt; outputs</H1>
+    <B>Sebastian Kaliszewski</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20make%20rules%20for%20%2A.g%20-%3E%20outputs&In-Reply-To=1102098921.27405.6.camel%40narr.homeip.net"
+       TITLE="[antlr-interest] make rules for *.g -&gt; outputs">sk at z.pl
+       </A><BR>
+    <I>Sat Dec  4 08:19:18 PST 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="010545.html">[antlr-interest] make rules for *.g -&gt; outputs
+</A></li>
+        <LI>Next message: <A HREF="010593.html">[antlr-interest] make rules for *.g -&gt; outputs
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#10566">[ date ]</a>
+              <a href="thread.html#10566">[ thread ]</a>
+              <a href="subject.html#10566">[ subject ]</a>
+              <a href="author.html#10566">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+Dnia pi&#261; 3. grudzie&#324; 2004 19:35, Martin Probst napisa&#322;:
+&gt;<i> Hi,
+</I>&gt;<i> I had to write Makefiles too. I wrote a rule that the generated files
+</I>&gt;<i> depend on the grammar:
+</I>&gt;<i> MyParser.cpp MyParser.hpp MyLexer.cpp [...]: mygrammar.g
+</I>&gt;<i> 	(antlr action ...)
+</I>&gt;<i> MyParser.o: MyParser.cpp MyParser.hpp MyParserTokenTypes.hpp
+</I>&gt;<i> (...)
+</I>&gt;<i> This lead to the annoying result that if the grammar was changed make
+</I>&gt;<i> expected every file to change - but the didn't (e.g. only a small change
+</I>&gt;<i> in Parser - MyLexer.cpp won't be touched). So make kept calling the
+</I>&gt;<i> antlr target again and again for every file, even if they wouldn't be
+</I>&gt;<i> altered.
+</I>&gt;<i> So I came up with two solutions: either touch all the grammars products
+</I>&gt;<i> after the antlr run or use a &quot;.mygrammar_was_parsed&quot; file (touching it
+</I>&gt;<i> after antlr run), make it depend on the grammar and the object files
+</I>&gt;<i> depend on that magic file.
+</I>&gt;<i> Both ways lead to unnecessary compiles of source files :-(
+</I>&gt;<i> Either I misunderstood something with Makefiles (I'm not really a Guru
+</I>&gt;<i> with them) or there is no other solution ... at least a change always
+</I>&gt;<i> resulted in a rebuild and dependencies were kind of correct.
+</I>
+
+Below is (an edited) snippet from my makefile to do what you described
+above. Set properly 'SRC' to all the source files begin compiled, change
+'GENSRC' files to those actually produced by your grammar (only .cpp
+files, not .hpp!). Set all the marcos like 'ANTLR', 'CXX', 'LINK', etc. to
+be properly defined for your development environment and also properly
+set compilation as well as linking options ('CXXFLAGS' and 'LINKOPT') as
+needed. Then just substitute 'exe' with your target, substitute 'grammar'
+with your grammar, add your rules for other languages (if you have any
+other language files in your project).
+You should not specify any C++ header (.hpp) files anywhere, nor specify
+generic .hpp rules. This makefile autmatically generates properly all the
+dependencies -- %.d : %.cpp rule &amp; include directives at the end do the
+whole magic.
+This thing requires gnu make GCC (or option sompatible product) as well
+as *nixish toolset (sed, diff, touch and sleep are used). It also should
+be run from sh compatible (bash is good) shell (maybe it works form csh
+but I did't check).
+
+8&lt;--------------------------------
+#! /usr/bin/make
+#
+# Generic makefile for ANTLR based C++ project
+# Released to public domain by S. Kaliszewski in Dec 2004
+#
+
+SRC := 		all the cpp source files
+GENSRC :=	MyParser.cpp MyLexer.cpp MyTreeParser.cpp
+
+ANTLR :=		cantlr
+CXX := 		g++
+LINK := 		g++
+DIFF :=		diff -NEbBq
+DEL := 		rm -f --
+CP := 		cp --
+ECHO := 		echo
+TOUCH :=	touch
+SLEEP :=		sleep
+SED :=		sed
+
+CXXFLAGS :=	-pipe -O3 -DNDEBUG -ansi -pedantic
+LINKOPT :=	-lantlr -lm
+
+
+
+exe : $(GENSRC:.cpp=.o) $(SRC:.cpp=.o)
+	$(LINK)  -o $@ $+ $(LINKOPT)
+
+%.o : %.d
+	$(CXX) $(CXXFLAGS) -c -o $@ ${&lt;:.d=.cpp}
+
+%.d : %.cpp
+	@set -e; $(CXX) -MM $(CXXFLAGS) $&lt; \
+	| $(SED) 's!\($*\)\.o[ :]*!\1.o $@ : !g' &gt; $@; [ -s $@ ] 2&gt;/dev/null || $(DEL) $@
+
+grammar.g.dd : grammar.g
+	-@$(foreach FILE, $(GENSRC), $(DEL) $(FILE).old &gt;/dev/null 2&gt;&amp;1 ; true; )
+	-@$(foreach FILE, $(GENSRC), [ -f $(FILE:.cpp=o) ] &amp;&amp; [ $(FILE) -ot $(FILE:.cpp=o) ] \
+          &amp;&amp; $(CP) $(FILE) $(FILE).old &amp;&amp; $(ECHO) Copying $(FILE) to $(FILE).old; true; )
+	$(ANTLR) $&lt;
+	-@$(SLEEP) 1
+	-@$(foreach FILE, $(GENSRC), { $(DIFF) $(FILE) $(FILE).old &gt;/dev/null 2&gt;&amp;1 \
+          &amp;&amp; $(TOUCH) $(FILE:.cpp=.d) &amp;&amp; $(TOUCH) $(FILE:.cpp=.o); } \
+          || { $(DEL) $(FILE:.cpp=.o) \
+          ; $(ECHO) Found changes in $(FILE) since last $(FILE:.cpp=.o) compilation; }; true; )
+	-@$(foreach FILE, $(GENSRC), $(DEL) $(FILE).old &gt;/dev/null 2&gt;&amp;1 ; true; )
+	-@$(SLEEP) 1
+	@$(TOUCH) $@
+
+$(GENSRC) : grammar.g.dd
+
+include $(GENSRC:.cpp=.d)
+include $(SRC:.cpp=.d)
+
+8&lt;----------------------------
+
+
+Hope it's useful
+
+rgds
+-- 
+Sebastian Kaliszewski
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+    <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+    <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+    <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="010545.html">[antlr-interest] make rules for *.g -&gt; outputs
+</A></li>
+	<LI>Next message: <A HREF="010593.html">[antlr-interest] make rules for *.g -&gt; outputs
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#10566">[ date ]</a>
+              <a href="thread.html#10566">[ thread ]</a>
+              <a href="subject.html#10566">[ subject ]</a>
+              <a href="author.html#10566">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

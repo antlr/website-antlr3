@@ -1,0 +1,304 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] ANTLR Java Code Generation
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20ANTLR%20Java%20Code%20Generation&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000197.html">
+   <LINK REL="Next"  HREF="000186.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] ANTLR Java Code Generation</H1>
+    <B>christian.ernst at poet.de</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20ANTLR%20Java%20Code%20Generation&In-Reply-To="
+       TITLE="[antlr-interest] ANTLR Java Code Generation">christian.ernst at poet.de
+       </A><BR>
+    <I>Tue Nov 13 04:25:36 PST 2001</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000197.html">[antlr-interest] Re: ANTLR Runtime/SDK jar mixtures and suggestions
+</A></li>
+        <LI>Next message: <A HREF="000186.html">[antlr-interest] ANTLR Java Code Generation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#184">[ date ]</a>
+              <a href="thread.html#184">[ thread ]</a>
+              <a href="subject.html#184">[ subject ]</a>
+              <a href="author.html#184">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hy Folks !
+
+While working with ANTLR i recognized a few thinks which could be
+changed in the Java Code Generation:
+
+I
+The generated Code for your BitSet's looks like:
+
+private static final long _tokenSet_0_data_[] = { -549755813896L,
+-268435457L}
+public static final BitSet _tokenSet_0 = new 
+BitSet(_tokenSet_0_data_);
+
+On some grammars for example the java.g for the Java Lexer with 
+UNICODE
+these Array's are getting realy big but containing mostly Sequences of
+the same Value
+
+First Case :
+private static final long _tokenSet_0_data_[] = { -549755813896L,
+-268435457L, -1L, -1L, -1L, -1L, -1L, -1L, -1L, -1L,......};
+or
+Second Case:
+private static final long _tokenSet_0_data_[] = { -549755813896L,
+-268435457L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L,......};
+
+The Problem with these large Array's is what ByteCode for such
+Statements is generated. It looks like:
+1. create Array long _tokenSet_0_data_[] with size n
+2. put -549755813896L at 0
+3. put -268435457L at 1
+4. put -1L at 2
+.....
+n. put -1L at n
+
+Some Java Compilers ( Sun 1.2.2, Sun 1.8 ) recognize that for example 
+in
+the second Case, where the rest of the Array is 0L, no initialzing is
+needed,
+because 0L is the default of an long Array, but these was changed in 
+the
+current new Compilers( Sun JDK 1.3.1) back to the Long Version with
+initilalizing every member. ( i don't now why exactly, but should have
+something to do with a bug with inheritence)
+
+But in our case we know that is only used temporay until we use it in
+the same Class for initializing our static BitSet.
+So we should change this to the way how the Java Compiler rewrites our
+Code.
+One useful thing we could use is a static block( static{...} ) for 
+this
+job
+
+Example one:
+private static final long _tokenSet_0_data_[] =  {
+1,2,3,4,5,-1L,-1L,-1L,-1L,-1L,0L,0L,13,0L,0L,-1L,-1L,-1L,-1L,-1L };
+public static final BitSet _tokenSet_0 = new 
+BitSet(_tokenSet_0_data_);
+
+will be generated as following:
+public static final BitSet _tokenSet_0;
+static {
+     // initializing BitSet _tokenSet_0
+     long _tokenSet_0_data_[] = new long[20];
+     _tokenSet_0_data_[0] = 1L;
+     _tokenSet_0_data_[1] = 2L;
+     _tokenSet_0_data_[2] = 3L;
+     _tokenSet_0_data_[3] = 4L;
+     _tokenSet_0_data_[4] = 5L;
+     for(int i = 5 ; i &lt;= 9 ; i++) { _tokenSet_0_data_[i] = -1L; }
+     _tokenSet_0_data_[12] = 13L;
+     for(int i = 15 ; i &lt;= 19 ; i++) { _tokenSet_0_data_[i] = -1L; }
+     _tokenSet_0 = new BitSet(_tokenSet_0_data_);
+}
+
+So if BitSets are large but containing lots of long identical 
+Sequences
+this is  more efficient !
+For example see JAVA 1.3 ANTLR Grammar for the Lexer
+With this Solution you can cut down the size of the
+JAVA Lexer Source File from 100k to 53k and the Class File from 93k to
+18k
+
+---------------------------------------
+Patch:
+---------------------------------------
+---------------------------------------
+Package:
+antlr.collections.impl
+Class:
+BitSet
+Todo:
+add new Method for accessing the internal long Array named:
+toLongArray()
+--------------------------------------
+Code:
+--------------------------------------
+/**
+ * helper Method for getting the internal Array of Word's (bits 
+long[])
+ * is needed for generating nicer Java Code
+ * @return long[]
+ */
+public long[] toLongArray() {
+ return bits;
+}
+---------------------------------------
+---------------------------------------
+Package:
+antlr
+Class:
+JavaCodeGenerator
+Todo:
+modify the Java Code Generation method  named: genBitsets(Vector
+bitsetList, int maxVocabulary)
+---------------------------------------
+Code:
+---------------------------------------
+/** Generate all the bitsets to be used in the parser or lexer
+ * Generate the raw bitset data like &quot;long _tokenSet1_data[] = {...};&quot;
+ * and the BitSet object declarations like &quot;BitSet _tokenSet1 = new
+BitSet(_tokenSet1_data);&quot;
+ * Note that most languages do not support object initialization 
+inside
+a
+ * class definition, so other code-generators may have to separate the
+ * bitset declarations from the initializations (e.g., put the
+initializations
+ * in the generated constructor instead).
+ * @param bitsetList The list of bitsets to generate.
+ * @param maxVocabulary Ensure that each generated bitset can contain 
+at
+least this value.
+ */
+protected void genBitsets(Vector bitsetList, int maxVocabulary)
+{
+
+    for (int i = 0; i &lt; bitsetList.size(); i++)
+    {
+        BitSet p = (BitSet) bitsetList.elementAt(i);
+        // Ensure that generated BitSet is large enough for vocabulary
+        p.growToInclude(maxVocabulary);
+    }
+
+    // generate the Java Code
+
+    // in some Conditions these Bitsets are containing
+    // long sequence of identical bits
+    // if we initialize these long sequences with
+    // long bits[] = { 
+434324,3234,623,-1L,-1L,-1L,-1L,0L,0L,0L,0L,...};
+
+    // Bitset set = new Bitset(bits);
+    // the Class Files gets realy huge
+    // the reason is that for every element in the declaration
+    // inside {} the java compiler generates bytecode
+    // which is equal to bits[i] = element
+    // even when the element is 0 and for sequences
+    // generating these initializer on our own we can
+    // optimize that
+    // by not initializing 0
+    // by using loops for long sequences
+    // in addition these make in average the Java Source also smaller
+
+    // for example see JAVA 1.3 ANTLR Grammar for the Lexer
+    // with this solution you can cut down the size of the
+    // JAVA Lexer Source from 100k to k 53K
+    // and the Class File from 93k to k 18K
+
+    println(&quot;&quot;);
+    // declare our static variable for our Bitset's
+    for (int i = 0; i &lt; bitsetList.size(); i++)
+    {
+        println(&quot;public static final BitSet &quot; + getBitsetName(i) 
++&quot;;&quot;);
+    }
+
+    // generate the static block for initializing
+    println(&quot;&quot;);
+    println(&quot;// BitSet initializing &quot;);
+    println(&quot;static {&quot;);
+    for (int i = 0; i &lt; bitsetList.size(); i++)
+    {
+        long bits[] = ((BitSet) 
+bitsetList.elementAt(i)).toLongArray();
+
+        int bitLength = bits.length;
+
+        println(&quot;    // initializing BitSet &quot; + getBitsetName(i));
+        println(&quot;    long &quot; + getBitsetName(i) + &quot;_data_&quot; + &quot;[] = new
+long[&quot; + bitLength + &quot;];&quot;);
+
+        int seqStartIndex = 0;
+        boolean seq = false;
+        for (int index = 0; index &lt; bitLength; index++)
+        {
+            // next ? next is identical  ? =&gt; sequence
+            if((index + 1 &lt; bitLength) &amp;&amp; (bits[index] == bits[index +
+1]))
+            {
+                seq = true;
+            }
+            else
+            {
+                // next not identical
+                // sequence ending generate code for sequence ?
+                if (seq)
+                {
+                    // generate code only if sequence isn't 0L
+                    if (bits[index] != 0L)
+                    {
+                        print(&quot;    for(int i = &quot; + seqStartIndex + &quot;
+; 
+i
+&lt;= &quot; + index + &quot; ; i++) {&quot;);
+                        print(getBitsetName(i) + &quot;_data_&quot; + &quot;[i] = &quot; +
+bits[index] + &quot;L;&quot;);
+                        println(&quot;}&quot;);
+                    }
+                    // sequence over
+                    seq = false;
+                }
+                else
+                {
+                    // generate normal code
+                    println(&quot;    &quot;+getBitsetName(i) + &quot;_data_&quot; + &quot;[&quot; +
+index + &quot;] = &quot; + bits[index] + &quot;L;&quot;);
+                }
+                seqStartIndex = index + 1;
+            }
+        }
+        println(&quot;    &quot;+getBitsetName(i)+ &quot; = new
+BitSet(&quot;+getBitsetName(i) + &quot;_data_); &quot;);
+        println(&quot;&quot;);
+    }
+    // end of the static block
+    println(&quot;}&quot;);
+}
+------------------------------------------
+
+mfg
+christian
+
+
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000197.html">[antlr-interest] Re: ANTLR Runtime/SDK jar mixtures and suggestions
+</A></li>
+	<LI>Next message: <A HREF="000186.html">[antlr-interest] ANTLR Java Code Generation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#184">[ date ]</a>
+              <a href="thread.html#184">[ thread ]</a>
+              <a href="subject.html#184">[ subject ]</a>
+              <a href="author.html#184">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

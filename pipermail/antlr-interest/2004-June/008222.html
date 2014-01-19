@@ -1,0 +1,217 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] semantic predicate hoisting :)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20semantic%20predicate%20hoisting%20%3A%29&In-Reply-To=16581.62237.905433.654214%40despot.non.net">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="008221.html">
+   <LINK REL="Next"  HREF="008195.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] semantic predicate hoisting :)</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20semantic%20predicate%20hoisting%20%3A%29&In-Reply-To=16581.62237.905433.654214%40despot.non.net"
+       TITLE="[antlr-interest] semantic predicate hoisting :)">parrt at cs.usfca.edu
+       </A><BR>
+    <I>Tue Jun  8 11:48:03 PDT 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="008221.html">[antlr-interest] semantic predicate hoisting :)
+</A></li>
+        <LI>Next message: <A HREF="008195.html">Unsubscription by antlr-interest member
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#8222">[ date ]</a>
+              <a href="thread.html#8222">[ thread ]</a>
+              <a href="subject.html#8222">[ subject ]</a>
+              <a href="author.html#8222">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Jun 8, 2004, at 10:10 AM, John D. Mitchell wrote:
+
+&gt;&gt;&gt;&gt;&gt;&gt;<i> &quot;Terence&quot; == Terence Parr &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">parrt at cs.usfca.edu</A>&gt; writes:
+</I>&gt;<i> [...]
+</I>&gt;<i>
+</I>&gt;&gt;<i> Hooray!  I have an initial implementation of the combined LL(*) and
+</I>&gt;&gt;<i> semantic predicate hoisting mechanism.
+</I>&gt;<i>
+</I>&gt;<i> YEA!!!
+</I>&gt;<i>
+</I>&gt;<i> Do you happen to have a proof of correctness for this hoisting yet?
+</I>
+Define &quot;correct&quot;! ;)  Good question.  If I can define hoisting 
+properly, I should be able to demonstrate my algorithm implements it.  
+I plan on an LL(*) paper first as hoisting cannot be done properly 
+without the syntactic context.
+
+&gt;&gt;<i> The requirements are fairly nasty to handle difficult situations
+</I>&gt;&gt;<i> naturally, but I think my implementation covers them all nicely as
+</I>&gt;&gt;<i> opposed to the ad hoc hacking I did for PCCTS (uh...and ANTLR &lt;3.0) ;)
+</I>&gt;<i>
+</I>&gt;<i> How does it handle:
+</I>&gt;<i>
+</I>&gt;<i> 	* deeply nested semantic predicates?
+</I>
+It's beautiful.  Once a grammar is properly encoded as an NFA, the 
+LL(*)+hoisting algorithm is a variant of the subset construction 
+algorithm for DFA conversion (a few Terence tricks in there &lt;wink&gt;).  
+The hoisting of predicates is done by collecting all predicates 
+together as they are found when walking the NFA.  For example,
+
+a : {p1}? b ;
+b : {p2}? ID ;
+
+would AND together p1 and p2 as it walked downwards towards the ID 
+token.  This is the &quot;semantic context&quot; that gets carried along like a 
+wavefront.  Upon syntactic conflict, the semantic context is checked.  
+If sufficient, it is used to resolve stuff.
+
+Now, when multiple predicates in the NFA get you to the same DFA state, 
+you need to OR stuff together:
+
+a : b | ID ;
+b : {p1}? ID | {p2}? ID ;
+
+Here, you will get a DFA state with NFA configurations inside for both 
+p1 and p2 as well as the &quot;naked&quot; alt for 2nd alt of rule a.  To resolve 
+syntactic conflicts, the DFA converter combines all predicates within 
+the same DFA state for the same alt with an OR condition: p1||p2 
+predicts alt 1 of 'a' and !(p1||p2) predicts alt 2.
+
+The beauty of this is that once the NFA is created properly, the simple 
+DFA converter will handle any situation indicated by the grammar.  
+There is no longer an ad hoc set of rules about what to do upon (..)+ 
+then (...)* etc...
+
+Note that I am not allowing a hoisting distance &gt; 0.  This means that 
+predicates seen after at least one token cannot be used to disambiguate 
+decisions.  For example, the following rule is syntactically ambig and 
+cannot be resolved with predicates:
+
+a : ID {p1}?
+    | ID {p2}?
+   ;
+
+&gt;<i> 	* recursive rules (which contain semantic predicates)?
+</I>
+Here's one of my unit tests:
+
+     public void testLeftRecursivePred() throws Exception {
+         Grammar g = new Grammar(
+             &quot;grammar P;\n&quot;+
+             &quot;a : {p1}? a | ID ;\n&quot;);
+         g.createLookaheadDFAs();
+         String expecting =
+                 &quot;.s0-ID-&gt;.s1\n&quot; +
+                 &quot;.s1-{p1}?-&gt;:s2=&gt;1\n&quot; +
+                 &quot;.s1-{!(p1)}?-&gt;:s3=&gt;2\n&quot;;
+         checkDecision(g, 1, expecting, null);
+     }
+
+Normally left-recursion is verboten, but with a predicate, it knows how 
+to resolve the conflict (ID predicts both alts 1 and 2).  The state 
+machine is &quot;match ID then if p1, predict alt 1.  Else if !p1 predict 
+alt 2.
+
+The great thing about the algorithm is that it works with whatever NFA 
+you can build.  A left-recursive NFA is no biggie. :)
+
+&gt;&gt;<i> I have enclosed a small 16k PDF file showing the DFA ANTLR 3.0 core
+</I>&gt;&gt;<i> created to predicate the various alternatives of rule a.  Note that 
+</I>&gt;&gt;<i> the
+</I>&gt;&gt;<i> DFA edges may be tokens (or characters) or predicates unlike a normal
+</I>&gt;&gt;<i> DFA.
+</I>&gt;<i>
+</I>&gt;<i> How does this interact with syntactic predicates?
+</I>
+I haven't figured that out yet ;)  I'm assuming that the two will be 
+mutually orthogonal.
+
+&gt;&gt;<i> Prediction is no longer a series of tests, but rather the exact alt to
+</I>&gt;&gt;<i> predict is discovered with one shot.
+</I>&gt;<i>
+</I>&gt;<i> Please elaborate.  You're still, in essence, traversing the (LL*) DFA 
+</I>&gt;<i> but
+</I>&gt;<i> in an exact fashion rather than via approximations, right?
+</I>
+Well, yes, no more approx lookahead (except as an optimization).  What 
+I mean here though is that previously I would do an if-then-else for 
+this rule:
+
+a : A B | A C | A D | B E | B F ;
+
+Now, I will only compare two symbols of lookahead as a normal DFA would 
+do to &quot;search&quot; for the matching string.  A series of LA(1)==A &amp;&amp; 
+LA(2)==B type tests is O(2m) for m alts whereas this DFA is actually 
+O(2) (i.e., insensitive to the number of alternatives).  yehaaaa!
+
+&gt;&gt;<i> Oh, the i=&gt;alt notation means &quot;DFA state i predicts alternative alt&quot;. 
+</I>&gt;&gt;<i> :)
+</I>&gt;<i>
+</I>&gt;<i> You might want to qualify the alt with the rule name to make that 
+</I>&gt;<i> clear.
+</I>
+Yeah, that's just a serialization thing I do and is specific to each 
+decision state...
+
+&gt;&gt;<i> Wooohoooo!  NOW, can I go home, John? (Mitchell's been bugging me for 
+</I>&gt;&gt;<i> 9
+</I>&gt;&gt;<i> years to get hoisting back) &lt;snicker&gt;
+</I>&gt;<i>
+</I>&gt;<i> Not until you clean your plate, mister!  :-)
+</I>
+Almost clean ;)  I'm refactoring the code now since I have about 50 
+unit tests for the convertor.  I want to make the code more readable 
+now that it works ;)  Comments are up to date as well.
+
+Ter
+--
+CS Professor &amp; Grad Director, University of San Francisco
+Creator, ANTLR Parser Generator, <A HREF="http://www.antlr.org">http://www.antlr.org</A>
+Cofounder, <A HREF="http://www.jguru.com">http://www.jguru.com</A>
+Cofounder, <A HREF="http://www.knowspam.net">http://www.knowspam.net</A> enjoy email again!
+Cofounder, <A HREF="http://www.peerscope.com">http://www.peerscope.com</A> pure link sharing
+
+
+
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+     <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+     <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+     <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="008221.html">[antlr-interest] semantic predicate hoisting :)
+</A></li>
+	<LI>Next message: <A HREF="008195.html">Unsubscription by antlr-interest member
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#8222">[ date ]</a>
+              <a href="thread.html#8222">[ thread ]</a>
+              <a href="subject.html#8222">[ subject ]</a>
+              <a href="author.html#8222">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

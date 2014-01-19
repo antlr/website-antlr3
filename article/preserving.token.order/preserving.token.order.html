@@ -1,0 +1,362 @@
+<HTML>
+<HEAD>
+<body bgcolor=#FFFFFF text=#000000>
+<title>Preserving Original Token Sequence In ASTs</title>
+</HEAD>
+<BODY>
+<H1>Preserving Original Token Sequence In ASTs</H1>
+
+
+<P><em>Terence Parr</em> <BR>
+University of San Francisco <BR>
+parrt@cs.usfca.edu
+
+<P>September 5, 2003
+<H2>ABSTRACT</H2>
+
+
+<P>One of the most common translation task is to read some input, augment
+it, and spit it back out with the original format.  For example, you
+may want to read in Java, add some instrumentation method calls, and
+spit the same program back out.  Currently, there is no obvious means
+of doing this simply in ANTLR.  I have conjured up an experimental
+means of supporting x to x translation without modifying ANTLR itself.
+This example provides modified token, token stream, tree node, and ast
+factory objects along with a simple grammar to demonstrate their use.
+The grammar describes a simple calculator language and builds the
+usual ASTs.  There is also a tree walker grammar that asks a few of
+the operator nodes to print out the tokens, in original order, that
+were matched for that operation (as opposed to the tokens matched for
+the parser rule that matched that operation).
+
+<P>This experiment is not perfect.  For example, I have not bothered to
+figure out how to handle whitespace or tokens w/o nodes (SEMI) that
+occur in between statements.  The token stream tracks everything, but
+when I walk the trees to print, for example, all nodes associated
+with an assignment except the SEMI are printed; SEMI is not added to
+the tree even though it is parsed.  Clearly, one only has to look at
+the tokens stored by the token stream after the end of one statement
+and before the start of the next statement.  Exercise for the
+reader. ;) If someone wants to extend this, please do so and post at
+ANTLR.org or send to me. :)
+<H2>WHY IS THIS HARD IN ANTLR?</H2>
+
+
+<P>The problem comes down to the types of trees ANTLR encourages you to
+build: ASTs (ANTLR) versus parse trees.  A parse tree encodes the
+rules used to match some input and has tokens at the leaves with rule
+nodes as subtree roots.  In contrast, an AST consists only of token
+nodes where subtree roots are taken to be operators.  For example,
+given input "3+4" the parse tree might look like:
+
+<FONT SIZE=2><PRE>
+      expr
+        |
+     addExpr
+    /      \
+  atom  +  atom
+   |        |
+   3        4
+</PRE></FONT>
+
+
+
+<P>whereas the AST would look like:
+
+<FONT SIZE=2><PRE>
+  +
+ / \
+3   4
+</PRE></FONT>
+
+
+
+<P>Clearly, the parse tree is sensitive to changes in the grammar by
+definition.  More importantly, the rule nodes are noise really.  It is
+better from a tree walker perspective to have trees where the
+structure encodes the relationship between tokens without all the rule
+nodes getting in the way.  An AST is sort of a canonical form that is
+insensitive to changes in the way you express your grammar.
+Regardless of how you express a grammar, the AST could always remain
+the same.
+
+<P>So ASTs are what you want from a translation point of view, but they
+have one big disadvantage: the order of the original token stream is
+not preserved.  With a parse tree, you can simply walk the leaves in a
+depth-order traversal and you're done.  An AST specifically moves
+tokens out of order.  There is no well-defined order traversal for an
+AST that will print out the tokens in the original order.
+<H2>A SOLUTION</H2>
+
+
+<P>The first solution that came to mind was tracking the index of the
+first and last token associated with every node and its children.  So,
+for example, the "+" operator subtree root would track the min/max
+index for itself and all children.  This min/max definition is
+inductive (recursive) with the overall root node having min..max of
+0..n-1 where n is the number of tokens in the input stream.
+
+<P>This solution is nice because it doesn't matter how you build the
+trees--root nodes always can spit out all tokens for itself and below
+in the right order.  For example, "<TT>a+b*c</TT>" would look like the
+following, partially annotated with min..max token index:
+
+<FONT SIZE=2><PRE>
+  + 0..4
+ / \
+a   * 2..4
+   / \
+  b   c 4..4
+</PRE></FONT>
+
+
+
+<P>The identifier nodes have min=max=tokenIndex; so, node "a" has 0..0
+and "c" has 4..4.
+
+<P>To print out just the multiplication, you would print from tokens 2 to
+4 from the overall list of tokens you've tracked.
+
+<P>What about whitespace (this extends to comments, of course)?  Consider
+"<TT>a + b </TT>".  The token list is
+
+<FONT SIZE=2><PRE>
+index: 0  1  2    3  4  5
+token: ID WS PLUS WS ID WS
+</PRE></FONT>
+
+
+
+<P>and the tree is
+
+<FONT SIZE=2><PRE>
+  + 0..4
+ / \
+a   b
+</PRE></FONT>
+
+
+
+<P>So printing tokens associated with the "+" gets you "<TT>3 + 4</TT>", missing
+the final whitespace.  I left my solution like this as I was not sure
+how I wanted to handle inter-expression whitespace etc...
+
+<P>If you have two expressions like "<TT>a+b; c+d</TT>" then you'd get an AST like
+this:
+
+<FONT SIZE=2><PRE>
+  0..3    5..7
+  +-------+
+ / \     / \
+a   b   c   d
+</PRE></FONT>
+
+
+
+<P>where the token list is:
+
+<FONT SIZE=2><PRE>
+index: 0  1    2  3    4  5  6    7
+token: ID PLUS ID SEMI WS ID PLUS ID
+</PRE></FONT>
+
+
+
+<P>Again, the SEMI is not added to the tree, but is parsed and is tracked
+in the list of tokens.  In other words, the information is available,
+but I did not incorporate it into my subsequence printing routines.
+<H2>IMPLEMENTATION</H2>
+
+<OL>
+<LI>The first thing you need is a way to track the entire list of
+   tokens in order.  TokenStream objects are natural way to do this.
+   I made a TokenStream (filter) that fits between the lexer and
+   parser to track every token.  I also made sure my "calculator"
+   example lexer didn't skip and throw out whitespace; the
+   TokenStreamTracker needs to see these too.  This object then can
+   filter out tokens not useful to the parser after recording them.
+   The block box diagram looks like this:
+
+<FONT SIZE=2><PRE>
+character stream 
+       |
+       v
+  [CalcLexer]
+       |
+ token stream of TokenWithIndex objects
+       |
+       v
+[TokenStreamTracker]
+       |
+token stream missing whitespace
+       |
+       v
+  [CalcParser]
+       |
+      AST (tracking min/max index values) ASTMinMax objects
+       |
+       v
+[CalcTreeWalker]
+</PRE></FONT>
+
+
+</LI>
+<LI>The next thing you need is an AST node that tracks min/max:
+   ASTMinMax.  To get the min/max numbers, you need a Token object
+   (TokenWithIndex) that tracks its index (sequence number) so that
+   the AST.initialize(Token) method can set min/max.
+</LI>
+<LI>Lastly, you must alter the standard ASTFactory (subclass to make
+   TrackerASTFactory object) so that subtree roots get their min/max
+   values updated as children are added.  While inefficient, the
+   following recursive min/max are obvious and work without having to
+   modify ANTLR in any way.<BR>
+<BR>
+	  min(node) = min(node.children) <BR>
+	  max(node) = max(node.children)
+</LI>
+
+</OL>
+<H2>EXAMPLE INPUT / OUTPUT</H2>
+
+
+<FONT SIZE=2><PRE>
+$ cat test2
+a = 3  + 4 * 5
+    + 2
+  ;
+
+print a+ 1 ;
+$ java Main &lt; test2
+Tree:  ( =[0..16] a[0..0] ( +[4..16] ( +[4..12] 3[4..4] ( *[8..12]
+4[8..8] 5[12..12] ) ) 2[16..16] ) ) ( print[20..25] ( +[22..25]
+a[22..22] 1[25..25] ) )
+
+Whole token stream:
+[0:"a",&lt;4&gt;,line=1,col=1]
+[1:" ",&lt;11&gt;,line=1,col=2]
+[2:"=",&lt;5&gt;,line=1,col=3]
+[3:" ",&lt;11&gt;,line=1,col=4]
+[4:"3",&lt;10&gt;,line=1,col=5]
+[5:"  ",&lt;11&gt;,line=1,col=6]
+[6:"+",&lt;8&gt;,line=1,col=8]
+[7:" ",&lt;11&gt;,line=1,col=9]
+[8:"4",&lt;10&gt;,line=1,col=10]
+[9:" ",&lt;11&gt;,line=1,col=11]
+[10:"*",&lt;9&gt;,line=1,col=12]
+[11:" ",&lt;11&gt;,line=1,col=13]
+[12:"5",&lt;10&gt;,line=1,col=14]
+[13:"
+    ",&lt;11&gt;,line=1,col=15]
+[14:"+",&lt;8&gt;,line=2,col=5]
+[15:" ",&lt;11&gt;,line=2,col=6]
+[16:"2",&lt;10&gt;,line=2,col=7]
+[17:"
+  ",&lt;11&gt;,line=2,col=8]
+[18:";",&lt;6&gt;,line=3,col=3]
+[19:"
+
+",&lt;11&gt;,line=3,col=4]
+[20:"print",&lt;7&gt;,line=5,col=1]
+[21:" ",&lt;11&gt;,line=5,col=6]
+[22:"a",&lt;4&gt;,line=5,col=7]
+[23:"+",&lt;8&gt;,line=5,col=8]
+[24:" ",&lt;11&gt;,line=5,col=9]
+[25:"1",&lt;10&gt;,line=5,col=10]
+[26:" ",&lt;11&gt;,line=5,col=11]
+[27:";",&lt;6&gt;,line=5,col=12]
+[28:"
+",&lt;11&gt;,line=5,col=13]
+
+Original text:
+-----
+a = 3  + 4 * 5
+    + 2
+  ;
+
+print a+ 1 ;
+-----
+Walking tree, showing tokens for various subtrees
+addition: 3  + 4 * 5
+addition: 3  + 4 * 5
+    + 2
+assign: a = 3  + 4 * 5
+    + 2
+addition: a+ 1
+print: print a+ 1
+</PRE></FONT>
+
+
+<H2>FILES</H2>
+
+
+<TABLE cellspacing=0 border=1>
+<TR><TD>
+<B>File</B> </TD><TD> <B>Description</B>
+</TD>
+</TR>
+<TR>
+<TD>
+<A HREF="ASTMinMax.java"><B>ASTMinMax.java</B></A>
+</TD><TD> A simple AST node that tracks the <TT>Token</TT> from which it was created
+and the min and max token index associated with this node and any
+children.  For leaf nodes, <TT>min==max==token.getIndex()</TT>.
+</TD>
+</TR>
+<TR>
+<TD>
+<A HREF="Main.java"><B>Main.java</B></A>
+</TD><TD> Main program that creates the various pieces and hooks them up like
+the black box diagram above.
+</TD>
+</TR>
+<TR>
+<TD>
+<A HREF="TokenStreamTracker.java"><B>TokenStreamTracker.java</B></A>
+</TD><TD> A <TT>TokenStream</TT> object that tracks all incoming tokens and can
+discard tokens like whitespace so the parser doesn't see them.
+</TD>
+</TR>
+<TR>
+<TD>
+<A HREF="TokenWithIndex.java"><B>TokenWithIndex.java</B></A>
+</TD><TD> The usual token but with an index into the <TT>TokenStreamTracker</TT>
+token list.
+</TD>
+</TR>
+<TR>
+<TD>
+<A HREF="TrackerASTFactory.java"><B>TrackerASTFactory.java</B></A>
+</TD><TD> Modification to the standard tree construction facility so that
+min/max is set for subtree roots when children are added.
+</TD>
+</TR>
+<TR>
+<TD>
+<A HREF="calc.g"><B>calc.g</B></A>
+</TD><TD> The lexer, parser, and tree parser grammars.
+</TD>
+</TR>
+<TR>
+<TD>
+<A HREF="test1"><B>test1</B></A>
+</TD><TD> A trivial test file
+</TD>
+</TR>
+<TR>
+<TD>
+<A HREF="test2"><B>test2</B></A>
+</TD><TD> Test file: two statements
+</TD></TR>
+</TABLE>
+
+
+<P>Generated from calc.g:
+
+<P><A HREF="CalcLexer.java"><B>CalcLexer.java</B></A> <BR>
+<A HREF="CalcParser.java"><B>CalcParser.java</B></A> <BR>
+<A HREF="CalcParserTokenTypes.java"><B>CalcParserTokenTypes.java</B></A> <BR>
+<A HREF="CalcTreeWalker.java"><B>CalcTreeWalker.java</B></A>
+
+<P>Here is a <A HREF="preserving.token.order.zip"><B> zip file of everything</B></A>.</BODY>
+</HTML>

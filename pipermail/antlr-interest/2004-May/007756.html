@@ -1,0 +1,171 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] proposal for 2.7.4, Unicode, and more...
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20proposal%20for%202.7.4%2C%20Unicode%2C%20and%20more...&In-Reply-To=536EF9DB-9B9F-11D8-9185-000A95891192%40cs.usfca.edu">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="007750.html">
+   <LINK REL="Next"  HREF="007760.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] proposal for 2.7.4, Unicode, and more...</H1>
+    <B>Mark Lentczner</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20proposal%20for%202.7.4%2C%20Unicode%2C%20and%20more...&In-Reply-To=536EF9DB-9B9F-11D8-9185-000A95891192%40cs.usfca.edu"
+       TITLE="[antlr-interest] proposal for 2.7.4, Unicode, and more...">markl at glyphic.com
+       </A><BR>
+    <I>Sun May  2 21:54:11 PDT 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="007750.html">[antlr-interest] proposal for 2.7.4: charVocabulary defaults to ascii 1..127
+</A></li>
+        <LI>Next message: <A HREF="007760.html">[antlr-interest] proposal for 2.7.4, Unicode, and more...
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#7756">[ date ]</a>
+              <a href="thread.html#7756">[ thread ]</a>
+              <a href="subject.html#7756">[ subject ]</a>
+              <a href="author.html#7756">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Here is my take on Unicode and Antlr.  I realize that parts of this 
+have already be stated by other people in this list.  I thought it 
+would be good to pull together all those ideas and present an approach 
+as a cohesive, if way too long, proposal.
+
+0) Philosophy
+-------------
+There are two clear separations that should guide this design: First, 
+character set and character encoding are distinct concepts that must be 
+cleanly handled throughout.  Second, the semantics of Antlr shouldn't 
+depend on the implementation of Antlr.  This is especially true since 
+Antlr is partially re-implemented for different target languages (Java, 
+C++, C# etc...)
+
+1) Structure
+------------
+I think a good case can be made for considering all parsing activity in 
+Antlr to be in Unicode.  The a lexer parses streams of characters into 
+tokens.  The grammar is described in terms of characters, not encoded 
+bytes.  (C++ is still C++ even if encoded in EBCDIC).  Since Unicode 
+encompasses virtually all known characters, defining the characters 
+that Antlr lexers read as Unicode covers all bases.  (See notes below 
+on binary.)
+
+Handling different character encodings can be left completely to the 
+input stream class.  If a grammar is to only be applied to US-ASCII or 
+ISO-8860-3 characters, than the input stream can be limited to that, 
+and map them into Unicode presented to the generated lexer - there is 
+no need to make that distinction in the lexer grammar file.  On the 
+other hand, by specifying the grammar over Unicode, then by simply 
+changing the input stream, one can lex the same grammar over US-ASCII, 
+ISO-8860-3, UTF-8, or Shift-JIS, etc.
+
+2) Antlr Features
+-----------------
+The only semantic aspect of Antlr that actually depends on 
+charVocabulary is the concept of compliment (element and set).  What 
+started this thread was Terrance's observation that it is a constant 
+source of pitfalls:  Currently inversion means &quot;of all the characters 
+used in the grammar, not these&quot;.  Which means that if my grammar only 
+mentions 'A'..'Z', and '0'..'9', then &quot;~('0'..'9')&quot; only means 
+'A'..'Z'.  What most people expect is that &quot;~('0'..'9')&quot; should mean 
+ANY character in the input stream except '0'..'9'.  Rather than fix 
+this by changing the default charVocabulary, a better approach is to 
+just to directly change the meaning of compliment to mean what people 
+expect it to mean.  (See notes below on set inversion).
+
+Once complement is defined this way, then the charVocabulary option can 
+be removed.
+
+A large range of Unicode based built in character classes has been 
+suggested to be added.  I see nothing wrong with the proposed syntaxes, 
+but I question the utility of all the proposed options.  I have yet to 
+see a grammar that has a need to exclude particular Unicode blocks, for 
+example.  On the other hand, some of the Unicode character properties 
+are good candidates for inclusion.  I think restraint should reign 
+here, and Antlr should only implement at first what people will 
+actually use.
+
+3) Implementation
+-----------------
+Since Unicode is no longer limited to 16 bits (and hasn't been for 
+quite some time), internally, Antlr should avoid the whole morass of 
+surrogate pairs, and simply do all character operations with integers.  
+Furthermore, this is exactly what Java 1.5 is going to do, and it is 
+really the only viable option in C++ (wchar being what it is).
+
+In either Java, C# or C++, as implemented on most modern processors, 
+there will be no performance difference manipulating 32 signed integers 
+vs. 8 unsigned chars in a lexer where they are dealt with one at a 
+time.  Even the string operations wouldn't be seriously affected since 
+most literals in a lexer tend to be short words and will be about as 
+efficient as small integer array compares.  This also allows all of 
+Antlr's internal state values (EOF, etc.) to be disjoint from all 
+characters (by using negative values)
+
+The only major stumbling block to Antlr's use of Unicode internally are 
+its bit sets and the need for compliment.  In the generated code, the 
+use of bit sets is very regular, and a slightly more powerful 
+representation could easily support Unicode with complemented sets 
+without them always being O(2^20) bits in size.  Antlr's use of bit 
+sets during the analysis and generation, however, might need some more 
+sophisticated bit set class to handle things without simply resorting 
+to huge bit maps.  I'd be happy to lend some coding effort to make this 
+work.
+
+When Antlr is used to parse binary formats, there is no real harm in 
+the internal Unicode interpretation.  The input source would only 
+happen to supply characters less than 256.  That set complements would 
+include characters beyond 8 btis wouldn't matter: They'd never be 
+presented by the input souce.  The only slight trick would be in proper 
+handling of 0, which isn't a valid Unicode character.  But I don't 
+think this would pose much of a problem.
+
+	- Mark
+
+
+Mark Lentczner
+<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">markl at wheatfarm.org</A>
+<A HREF="http://www.wheatfarm.org/">http://www.wheatfarm.org/</A>
+
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+     <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+     <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+     <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="007750.html">[antlr-interest] proposal for 2.7.4: charVocabulary defaults to ascii 1..127
+</A></li>
+	<LI>Next message: <A HREF="007760.html">[antlr-interest] proposal for 2.7.4, Unicode, and more...
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#7756">[ date ]</a>
+              <a href="thread.html#7756">[ thread ]</a>
+              <a href="subject.html#7756">[ subject ]</a>
+              <a href="author.html#7756">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

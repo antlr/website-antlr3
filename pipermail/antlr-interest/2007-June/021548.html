@@ -1,0 +1,169 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] How to swich the recognition scope in Lexer
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20How%20to%20swich%20the%20recognition%20scope%20in%20Lexer&In-Reply-To=%3C5D85F621120B9545BE359DCFA778812585C017%40SERVER.tt.tracetracker.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="021543.html">
+   <LINK REL="Next"  HREF="021556.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] How to swich the recognition scope in Lexer</H1>
+    <B>Silvester Pozarnik</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20How%20to%20swich%20the%20recognition%20scope%20in%20Lexer&In-Reply-To=%3C5D85F621120B9545BE359DCFA778812585C017%40SERVER.tt.tracetracker.com%3E"
+       TITLE="[antlr-interest] How to swich the recognition scope in Lexer">silvester.pozarnik at tracetracker.com
+       </A><BR>
+    <I>Wed Jun 20 06:12:14 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="021543.html">[antlr-interest] Delphi grammar
+</A></li>
+        <LI>Next message: <A HREF="021556.html">[antlr-interest] How to swich the recognition scope in Lexer
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#21548">[ date ]</a>
+              <a href="thread.html#21548">[ thread ]</a>
+              <a href="subject.html#21548">[ subject ]</a>
+              <a href="author.html#21548">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>&gt;&gt;<i> Silvester Pozarnik wrote this on [20 June 2007 13:00]:
+</I>&gt;&gt;<i> 
+</I>&gt;&gt;<i> In the antlr 2.7.7 you could change the behaviour of Lexer so 
+</I>&gt;&gt;<i> that tokens are recognized az literals in special cases by 
+</I>&gt;&gt;<i> overriding the
+</I>&gt;&gt;<i> testLiteralsTable() method in CharScanner class. How to the 
+</I>&gt;&gt;<i> same in antlr 3.0 if you have a grammar as:
+</I>&gt;&gt;<i> 
+</I>&gt;&gt;<i> 	grammar test;
+</I>&gt;&gt;<i> 	tokens {
+</I>&gt;&gt;<i> 		MYTOKEN = 'mytoken';
+</I>&gt;&gt;<i> 	}
+</I>&gt;&gt;<i> 	mygrammar:
+</I>&gt;&gt;<i> 		{ 
+</I>&gt;&gt;<i> 		MYTOKEN LPAREN IDENTIFIER RPAREN 
+</I>&gt;&gt;<i> 		}
+</I>&gt;&gt;<i> 
+</I>&gt;&gt;<i> 	LPAREN   : '(' ;
+</I>&gt;&gt;<i> 	RPAREN   : ')' ;
+</I>&gt;&gt;<i> 	IDENTIFIER 
+</I>&gt;&gt;<i> 		: ('a'..'z' | 'A'..'Z' | '\u0080'..'\ufffe') ( 
+</I>&gt;&gt;<i> Letter | Digit)*;
+</I>&gt;&gt;<i>     
+</I>&gt;&gt;<i> 	fragment Letter
+</I>&gt;&gt;<i> 		: 'a'..'z' | 'A'..'Z' | '_' |'-' |  '\u0080'..'\ufffe';
+</I>&gt;&gt;<i> 
+</I>&gt;&gt;<i> 	fragment Digit
+</I>&gt;&gt;<i> 		: '0'..'9';    
+</I>&gt;&gt;<i> 
+</I>&gt;&gt;<i> So that the input &quot;mytoken(mytoken)&quot; is a valid. The first 
+</I>&gt;&gt;<i> 'mytoken' should be recognized as MYTOKEN, but the second 
+</I>&gt;&gt;<i> 'mytoken' has to be recognized as an IDENTIFIER. Is there a 
+</I>&gt;&gt;<i> way to achieve this?
+</I>
+
+&gt;<i>
+</I>&gt;<i>Not to my knowledge (and this applies to V2.x too). Is suspect you need
+</I>to
+&gt;<i>change your 'mygrammar' rule:
+</I>&gt;<i>
+</I>&gt;<i>	mygrammar : MYTOKEN LPAREN (MYTOKEN|IDENTIFIER) RPAREN 
+</I>&gt;<i>
+</I>&gt;<i>Micheal
+</I>
+Hei Micheal,
+
+The way you proposed to change the rule would not work as it is still
+undeterministic when processed by Lexer (&quot;should I recognize an
+IDENTIFIER or MYTOKEN!?). I'm not sure what takes precedence here. The
+proposed parser rule also alter the nature of language. This was anyway
+just an example - the more general problem is that in some languages you
+may need that the key words are under some condition (scope) recognized
+as literals (e.g &quot;...City=Kansas City, ... Idol=Joe Idol etc.).
+
+In the 2.7.7 you could fix this by adding to your lexer definition:
+
+class Testlexer extends Lexer;
+
+{
+  private static List&lt;String&gt; ident_stack = new LinkedList&lt;String&gt;();
+  
+  // Test the token text against the literals table
+  // Override this method to perform a different literals test
+  public int testLiteralsTable(int ttype) {
+    if (ident_stack.size() &gt;= 1 &amp;&amp;
+       &quot;mygrammar&quot;.compareToIgnoreCase(
+          ident_stack.get(ident_stack.size()-1) ) == 0) {
+       ident_stack.add(text.toString());
+       return ttype;
+    }
+    ident_stack.add(text.toString());
+    // this is the original stuff
+    hashString.setBuffer(text.getBuffer(), text.length());
+    Integer literalsIndex = (Integer)literals.get(hashString);
+    if (literalsIndex != null) {
+      ttype = literalsIndex.intValue();
+    }
+    return ttype;
+  }
+}
+
+
+I could of course redefine a rule as:
+
+mygrammar : MYTOKEN LPAREN STRINGVALUE RPAREN;
+...
+STRINGVALUE
+	:	'\'' ( ~('\''|'\\') )* '\'' 
+	;
+
+But then I have to change the already established syntax of my language.
+Any help?
+
+BR.
+Silvester Pozarnik
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="021543.html">[antlr-interest] Delphi grammar
+</A></li>
+	<LI>Next message: <A HREF="021556.html">[antlr-interest] How to swich the recognition scope in Lexer
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#21548">[ date ]</a>
+              <a href="thread.html#21548">[ thread ]</a>
+              <a href="subject.html#21548">[ subject ]</a>
+              <a href="author.html#21548">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

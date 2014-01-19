@@ -1,0 +1,168 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Re: ATTN: Ric Klaren. Bug in the AST copy ctor
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20ATTN%3A%20Ric%20Klaren.%20Bug%20in%20the%20AST%20copy%20ctor&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003137.html">
+   <LINK REL="Next"  HREF="003157.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Re: ATTN: Ric Klaren. Bug in the AST copy ctor</H1>
+    <B>Alexander Lenski</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20ATTN%3A%20Ric%20Klaren.%20Bug%20in%20the%20AST%20copy%20ctor&In-Reply-To="
+       TITLE="[antlr-interest] Re: ATTN: Ric Klaren. Bug in the AST copy ctor">alenski at dca.net
+       </A><BR>
+    <I>Wed Feb 19 19:34:36 PST 2003</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003137.html">[antlr-interest] Re: ATTN: Ric Klaren. Bug in tne AST copy ctor
+</A></li>
+        <LI>Next message: <A HREF="003157.html">[antlr-interest] strange error :   was : ATTN: Ric Klaren. Bug in the AST copy ctor
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3141">[ date ]</a>
+              <a href="thread.html#3141">[ thread ]</a>
+              <a href="subject.html#3141">[ subject ]</a>
+              <a href="author.html#3141">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Ram,
+Sorry, you did not hit the point.
+
+Explanation:
+  1. Initial point: We need to make a deep copy of the CommonAST nodes created in some rule.
+  2. We call some of the ASTFactory::dup...( RefAST t ) function.
+  3. The dup... calls the ASTFactory::dup( RefAST t ) and the dup calls the CommonAST::clone().
+  4. Definition of the clone function:
+              RefAST CommonAST::clone( void ) const
+              { CommonAST *ast = new CommonAST( *this );
+                return RefAST(ast);
+              }
+      Inside the clone(), this-&gt;ref references this object (original).
+  5. The CommonAST( const CommonAST&amp; other ) calls the AST( const AST&amp; other ) : ref(other.ref-&gt;increment()) {}.
+  6. The ref(other.ref-&gt;increment()) sets ref of the copy with the ref's pointer from the other (original, this is wrong!!!).
+  7. Definition of the RefAST (it is synonym of the ASTRefCount) ctor:
+              ASTRefCount::ASTRefCount( const AST* p = 0 )
+                : ref( p ? ASTRef::getRef( p ) : 0 )
+              {
+              }
+      The ASTRef::getRef( p ) returns pointer to the ASTRef object bound to the other (original, see steps 5 and 6).
+      The clone() creates the RefAST object bound to the other (original, see steps 4, 5 and 6).
+  8. Finally, the clone() returns the RefAST object bound to the original and the copy is suspended in nowhere.
+
+Alex
+
+----- Original Message ----- 
+From: &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">cintyram at yahoo.com</A>&gt;
+To: &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>&gt;
+Sent: Wednesday, February 19, 2003 4:53 PM
+Subject: [antlr-interest] Re: ATTN: Ric Klaren. Bug in tne AST copy ctor
+
+
+&gt;<i> hi alexander and ric,
+</I>&gt;<i>   i had made the following change ..
+</I>&gt;<i> 
+</I>&gt;<i>  AST(const AST&amp; other) : ref(other.ref ? other.ref-&gt;increment() : 0) {}
+</I>&gt;<i> //ram /  AST(const AST&amp; other) : ref(other.ref-&gt;increment()) {}
+</I>&gt;<i> 
+</I>&gt;<i> as the constructors of all the other classes look like the uncommented
+</I>&gt;<i> code;
+</I>&gt;<i> 
+</I>&gt;<i> actually i did not notice any effects of the change ;
+</I>&gt;<i> 
+</I>&gt;<i> but since yesterday i have a funny problem
+</I>&gt;<i> 
+</I>&gt;<i> if i call ast-&gt;toStrinList() where ast is the tree returned by the
+</I>&gt;<i> parser, the call is going ot BaseAST::toSTringTree() ;
+</I>&gt;<i> 
+</I>&gt;<i> if i call ast-&gt;toStringTree() i get an error message which says 
+</I>&gt;<i> &quot;the calue of ESP was not properly saved across a function call ... &quot;
+</I>&gt;<i> 
+</I>&gt;<i> dont now how to fix it, everything was working fine till day before
+</I>&gt;<i> yesterday and without making any changes to the code, suddenly this
+</I>&gt;<i> condition appears :)
+</I>&gt;<i> 
+</I>&gt;<i> cheers
+</I>&gt;<i> ram
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> --- In <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>, &quot;Alexander Lenski&quot;
+</I>&gt;<i> &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">alenski at d...</A>&gt; wrote:
+</I>&gt;<i> &gt; Hi,
+</I>&gt;<i> &gt; Sorry for persistence, I did not get any feedback. What should the
+</I>&gt;<i> clone functions of the AST... classes create? Is it about deep copies
+</I>&gt;<i> or what? In other words, am I correct with the original msg or not?
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Thanks a lot,
+</I>&gt;<i> &gt; Alex
+</I>&gt;<i> &gt;   ----- Original Message ----- 
+</I>&gt;<i> &gt;   From: Alexander Lenski 
+</I>&gt;<i> &gt;   To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A> 
+</I>&gt;<i> &gt;   Sent: Friday, February 14, 2003 12:34 AM
+</I>&gt;<i> &gt;   Subject: [antlr-interest] ATTN: Ric Klaren. Bug in tne AST copy ctor
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt;   Hi,
+</I>&gt;<i> &gt;   The AST's copy ctor is defined in the 2.7.2 as
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt;       AST(const AST&amp; other) : ref(other.ref-&gt;increment()) {}
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt;   The ref(other.ref-&gt;increment()) sets ref of the copy with the
+</I>&gt;<i> ref's pointer from the other. As a consequence, all clone funcs of the
+</I>&gt;<i> AST... classes and subsequently the dup... funcs of the ASTFactory
+</I>&gt;<i> produce memory leaks, perform corrupted operations instead of expected
+</I>&gt;<i> functionality.
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt;   In the 2.7.1 we had
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt;       AST(const AST&amp; other) : ref( 0 ) {}
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt;   This fixes the problem and works just fine. If I did not miss
+</I>&gt;<i> something, couldn't you fix that please.
+</I>&gt;<i> &gt;   BTW, the antlr.dll (VC7.0) works just fine. I have built my
+</I>&gt;<i> lexers-parsers in the dll form too, no problems at all with running
+</I>&gt;<i> the clients.
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt;   Thanks,
+</I>&gt;<i> &gt;   Alex
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt;   Your use of Yahoo! Groups is subject to the Yahoo! Terms of Service.
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i>  
+</I>&gt;<i> 
+</I>&gt;<i> Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20030219/9a63bcfe/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20030219/9a63bcfe/attachment.html</A>
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003137.html">[antlr-interest] Re: ATTN: Ric Klaren. Bug in tne AST copy ctor
+</A></li>
+	<LI>Next message: <A HREF="003157.html">[antlr-interest] strange error :   was : ATTN: Ric Klaren. Bug in the AST copy ctor
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3141">[ date ]</a>
+              <a href="thread.html#3141">[ thread ]</a>
+              <a href="subject.html#3141">[ subject ]</a>
+              <a href="author.html#3141">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

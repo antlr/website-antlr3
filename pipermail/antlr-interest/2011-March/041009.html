@@ -1,0 +1,148 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Tree construction rewrite rule error
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Tree%20construction%20rewrite%20rule%20error&In-Reply-To=%3C4D737B6A.5050001%40googlemail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="041008.html">
+   <LINK REL="Next"  HREF="041007.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Tree construction rewrite rule error</H1>
+    <B>Stephen Tuttlebee</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Tree%20construction%20rewrite%20rule%20error&In-Reply-To=%3C4D737B6A.5050001%40googlemail.com%3E"
+       TITLE="[antlr-interest] Tree construction rewrite rule error">themightystephen at googlemail.com
+       </A><BR>
+    <I>Sun Mar  6 04:17:46 PST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="041008.html">[antlr-interest] Tree construction rewrite rule error
+</A></li>
+        <LI>Next message: <A HREF="041007.html">[antlr-interest] Yang's Java.g - tree construction rules
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#41009">[ date ]</a>
+              <a href="thread.html#41009">[ thread ]</a>
+              <a href="subject.html#41009">[ subject ]</a>
+              <a href="author.html#41009">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Thanks Jim, putting the brackets around it worked. I also had another 
+error in that code with the 'selector' parameter being passed to it in 
+the rewrite rule rather than in the parser invocation of the rule. 
+Here's the working version:
+
+unaryExpressionNotPlusMinus
+     :   TILDE unaryExpression -&gt; ^(BITWISE_COMPLEMENT unaryExpression)
+     |   BANG unaryExpression -&gt; ^(LOGICAL_COMPLEMENT unaryExpression)
+     |   castExpression
+     |   {inHandlerDeclaration||inRunMethodDeclaration}?=&gt; 
+inSynchronizationExpression // only allowed within handler declarations 
+(which in turn are inside component definitions)
+     |   (primary -&gt; primary) // FIX HERE
+         (selector[$unaryExpressionNotPlusMinus.tree] -&gt; selector)* // 
+AND HERE
+         (   PLUSPLUS -&gt; ^(POSTINC $unaryExpressionNotPlusMinus)
+         |   SUBSUB -&gt; ^(POSTDEC $unaryExpressionNotPlusMinus)
+         )?
+     ;
+
+Thanks again.
+Stephen
+
+On 06/03/2011 00:08, Stephen Tuttlebee wrote:
+&gt;<i> Hi there,
+</I>&gt;<i>
+</I>&gt;<i> I'm currently using the Java.g parser grammar (by Yang Jiang) from 
+</I>&gt;<i> <A HREF="http://openjdk.java.net/projects/compiler-grammar/">http://openjdk.java.net/projects/compiler-grammar/</A> and am trying to 
+</I>&gt;<i> add tree construction rewrite rules and operators to build an AST. 
+</I>&gt;<i> That's quite a job in itself (I'm trying roughly to base it on one I 
+</I>&gt;<i> found in the mercurial repository on that site that contained actions 
+</I>&gt;<i> that created a javac-style AST).
+</I>&gt;<i>
+</I>&gt;<i> Anyway, my specific question relates to the LAST ALTERNATIVE in the 
+</I>&gt;<i> following rule (from the &quot;expression hierarchy&quot;):
+</I>&gt;<i>
+</I>&gt;<i> unaryExpressionNotPlusMinus
+</I>&gt;<i>     :   TILDE unaryExpression -&gt; ^(BITWISE_COMPLEMENT unaryExpression)
+</I>&gt;<i>     |   BANG unaryExpression -&gt; ^(LOGICAL_COMPLEMENT unaryExpression)
+</I>&gt;<i>     |   castExpression
+</I>&gt;<i>     |   {inHandlerDeclaration||inRunMethodDeclaration}?=&gt; 
+</I>&gt;<i> inSynchronizationExpression // only allowed within handler 
+</I>&gt;<i> declarations (which in turn are inside component definitions)
+</I>&gt;<i>     |   primary -&gt; primary
+</I>&gt;<i>         (selector -&gt; selector[$unaryExpressionNotPlusMinus.tree])*
+</I>&gt;<i>         (   PLUSPLUS -&gt; ^(POSTINC $unaryExpressionNotPlusMinus)
+</I>&gt;<i>         |   SUBSUB -&gt; ^(POSTDEC $unaryExpressionNotPlusMinus)
+</I>&gt;<i>         )?
+</I>&gt;<i>     ;
+</I>&gt;<i>
+</I>&gt;<i> The last alternative does look a little complicated but it is 
+</I>&gt;<i> basically creating a single tree from the 'primary' in case nothing 
+</I>&gt;<i> else is matched (due to the * and ? that mean we could not match 
+</I>&gt;<i> anything), while the subsequent rewrite rules (-&gt;) within the 
+</I>&gt;<i> alternative are successively building up the tree by making the tree 
+</I>&gt;<i> constructed thus far a child of a newly created tree (this is done by 
+</I>&gt;<i> referencing the rule itself -- referencing 
+</I>&gt;<i> $unaryExpressionNotPlusMinus in the context of a rewrite rule means 
+</I>&gt;<i> &quot;take the current value of the tree of unaryExpressionNotPlusMinus&quot;).
+</I>&gt;<i>
+</I>&gt;<i> However, when I run the grammar through ANTLR (3.3) I get the 
+</I>&gt;<i> following errors:
+</I>&gt;<i>
+</I>&gt;<i> error(100): /JavaBTranslator/src/JavaBPhase1SynSem1.g:1026:19: syntax 
+</I>&gt;<i> error: antlr: expecting RPAREN, found '-&gt;'
+</I>&gt;<i>  |---&gt; (selector -&gt; selector[$unaryExpressionNotPlusMinus.tree])*
+</I>&gt;<i>
+</I>&gt;<i> error(100): /JavaBTranslator/src/JavaBPhase1SynSem1.g:1027:22: syntax 
+</I>&gt;<i> error: antlr: expecting RPAREN, found '-&gt;'
+</I>&gt;<i>  |---&gt; (   PLUSPLUS -&gt; ^(POSTINC $unaryExpressionNotPlusMinus)
+</I>&gt;<i>
+</I>&gt;<i> error(10):  internal error: /JavaBTranslator/src/JavaBPhase1SynSem1.g 
+</I>&gt;<i> : java.lang.NullPointerException
+</I>&gt;<i> 3 errors
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> It seems that ANTLR does not like the -&gt; that appear in the middle of 
+</I>&gt;<i> the alternative for some reason. The problem could be a simple ANTLR 
+</I>&gt;<i> syntax thing which I'm not clear about.
+</I>&gt;<i>
+</I>&gt;<i> Anyone have any ideas about why I'm getting these errors.
+</I>&gt;<i>
+</I>&gt;<i> Thanks,
+</I>&gt;<i> Stephen
+</I>&gt;<i>
+</I>&gt;<i> PS. also, it seems that coming up with the tree grammar rules to 
+</I>&gt;<i> recognise the tree might be a little harder than constructing the tree 
+</I>&gt;<i> in the parser, at least for the more complicated tree rewrite rules 
+</I>&gt;<i> like this. But I'll have to cross that bridge when I come to it.
+</I>
+</PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="041008.html">[antlr-interest] Tree construction rewrite rule error
+</A></li>
+	<LI>Next message: <A HREF="041007.html">[antlr-interest] Yang's Java.g - tree construction rules
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#41009">[ date ]</a>
+              <a href="thread.html#41009">[ thread ]</a>
+              <a href="subject.html#41009">[ subject ]</a>
+              <a href="author.html#41009">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

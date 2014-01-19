@@ -1,0 +1,273 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Error recovery contortion
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Error%20recovery%20contortion&In-Reply-To=Pine.LNX.4.44.0412021057260.13608-100000%40g4.pauljlucas.org">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="010530.html">
+   <LINK REL="Next"  HREF="010596.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Error recovery contortion</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Error%20recovery%20contortion&In-Reply-To=Pine.LNX.4.44.0412021057260.13608-100000%40g4.pauljlucas.org"
+       TITLE="[antlr-interest] Error recovery contortion">parrt at cs.usfca.edu
+       </A><BR>
+    <I>Tue Dec  7 11:06:29 PST 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="010530.html">[antlr-interest] Error recovery contortion
+</A></li>
+        <LI>Next message: <A HREF="010596.html">[antlr-interest] Error recovery contortion
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#10594">[ date ]</a>
+              <a href="thread.html#10594">[ thread ]</a>
+              <a href="subject.html#10594">[ subject ]</a>
+              <a href="author.html#10594">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+
+On Dec 2, 2004, at 12:01 PM, Paul J. Lucas wrote:
+&gt;<i> 	Some background: the language I'm parsing is XQuery
+</I>&gt;<i> 	&lt;<A HREF="http://www.w3.org/TR/xquery/">http://www.w3.org/TR/xquery/</A>&gt; that, among other annoyances, is
+</I>&gt;<i> 	keyword-free.  This makes recovery much harder because the lexer
+</I>&gt;<i> 	is stateful.
+</I>&gt;<i>
+</I>&gt;<i> 	As a first pass, I want to recover from syntax errors inside
+</I>&gt;<i> 	function declarations only.  I can't simply use ANTLR's default
+</I>&gt;<i> 	error-recovery mechanism because I have to sync to a known
+</I>&gt;<i> 	token and reset the lexer's state.  (ANTLR's default mechanism
+</I>&gt;<i> 	sync to one of the tokens in the follow set.)  Function
+</I>&gt;<i> 	declarations in XQuery end with a ';' so, upon error, I throw
+</I>&gt;<i> 	away all tokens until I get to that.  (I will hopefully be able
+</I>&gt;<i> 	to imporove this in the furture, but for now, it's good
+</I>&gt;<i> 	enough.)
+</I>
+Hi Paul,
+
+Well, that &quot;sync to semicolon&quot; is a normal thing to do 
+(consumeUntil(SEMI)); alas, resetting lexical state might be a hassle, 
+though a method call to the lexer can easily be initiated.
+
+&gt;<i> 	Setting defaultErrorHandler=false makes this work fine for
+</I>&gt;<i> 	syntax errors inside function declarations.  I have something
+</I>&gt;<i> 	like this:
+</I>&gt;<i>
+</I>&gt;<i> 		functionDeclBody
+</I>&gt;<i> 		    : enclosedExpr
+</I>&gt;<i> 		    ;
+</I>&gt;<i> 		    exception
+</I>&gt;<i> 		    catch [ RecognitionException re ] {
+</I>&gt;<i> 		        ## = #([ERROR,&quot;ERROR&quot;]);
+</I>&gt;<i> 			recover( re );
+</I>&gt;<i> 		    }
+</I>&gt;<i>
+</I>&gt;<i> 	where recover() is my own, working recovery function.  Hence,
+</I>&gt;<i> 	if an exception is thrown during enclosedExpr, it will be
+</I>&gt;<i> 	caught and recovered from and the generated AST is just fine.
+</I>&gt;<i> 	So far, so good.
+</I>
+Yep. :)
+
+&gt;<i> 	But, if there's a syntax error *outside* a function
+</I>&gt;<i> 	declaration, the generated AST is trashed.
+</I>
+Oh, right because the error makes the invoking rule exit without 
+collecting the tree associated with the functions.
+
+&gt;<i>  Another requirement
+</I>&gt;<i> 	is that I keep the generated AST up to the point of the error
+</I>&gt;<i> 	outside a function declaration.  As I've mentioned previously,
+</I>&gt;<i> 	the reason the AST gets trashed is because when an exception is
+</I>&gt;<i> 	thrown and there's no recovery in place, the AST isn't stitched
+</I>&gt;<i> 	together because it's done only upon successful function
+</I>&gt;<i> 	*return*: stack unwinding upon an exception bypassed normal
+</I>&gt;<i> 	function returns.
+</I>
+Yeah, I never worried about this problem before.  Nasty.
+
+&gt;<i> 	OK, so I tried setting defaultErrorHandler=true.  This makes
+</I>&gt;<i> 	the generated AST be fine for errors outside of function
+</I>&gt;<i> 	declarations, but now the problem is that ANTLR recovers all by
+</I>&gt;<i> 	itself while doing enclosedExpr and functionDeclBody above is
+</I>&gt;<i> 	never given the opportunity to catch the exception and do the
+</I>&gt;<i> 	correct recovery.  Hence, this breaks my recovery mechanism.
+</I>
+Are you sure?  The following code generates precisely the same output 
+for func() with and without the &quot;defaultErrorHandler=false;&quot;.
+
+class T extends Parser;
+
+options {
+         buildAST=true;
+         defaultErrorHandler=true;
+}
+
+prog : START func (COMMA func)* STOP ;
+
+func : ID STUFF SEMI ;
+exception
+catch [ RecognitionException re ] {
+                     ## = #([ERROR,&quot;ERROR&quot;]);
+                     recover( re );
+     }
+
+Could you add an exception handle to each rule?  Labor-intensive, but 
+precise, right?
+
+&gt;<i> 	Sigh...
+</I>
+You sound like John Mitchell ;)
+
+&gt;<i> 	So I looked at the ANTLR-generated Java code: it calls
+</I>&gt;<i> 	reportError() during its own error recovery.  So what I need to
+</I>&gt;<i> 	do is continue to allow it to recover as normal (so my AST is
+</I>&gt;<i> 	preserved) *except* when the current call stack contains
+</I>&gt;<i> 	functionDeclBody, i.e., if reportError() is called &quot;through&quot;
+</I>&gt;<i> 	functionDeclBody, do my own recovery instead.  OK, so set a flag
+</I>&gt;<i> 	in my parser:
+</I>&gt;<i>
+</I>&gt;<i> 		functionDeclBody
+</I>&gt;<i> 		{
+</I>&gt;<i> 		    m_recoverable = true;
+</I>&gt;<i> 		}
+</I>&gt;<i> 		    : enclosedExpr
+</I>&gt;<i> 		        {
+</I>&gt;<i> 		            m_recoverable = false;
+</I>&gt;<i> 		        }
+</I>&gt;<i> 		    ;
+</I>&gt;<i> 		    exception
+</I>&gt;<i> 		    catch [ RecognitionException re ] {
+</I>&gt;<i> 		        ## = #([ERROR,&quot;ERROR&quot;]);
+</I>&gt;<i> 			recover( re );
+</I>&gt;<i> 		    }
+</I>&gt;<i>
+</I>&gt;<i> 	and override reportError() like:
+</I>&gt;<i>
+</I>&gt;<i> 		public void reportError( RecognitionException re ) {
+</I>&gt;<i> 		    final boolean recoverable = m_recoverable;
+</I>&gt;<i> 		    m_recoverable = false;
+</I>&gt;<i> 		    if ( recoverable )
+</I>&gt;<i> 		       throw new ANTLR_WorkaroundException( re );
+</I>&gt;<i>
+</I>&gt;<i> 		    // ... other recovery not relevant to this post ...
+</I>&gt;<i> 		}
+</I>
+An interesting approach, though I'm not sure you need it yet.
+
+&gt;<i> 	i.e., if I'm doing my own recovery, I want any exception caught
+</I>&gt;<i> 	by ANTLR's recovery mechanism to be rethrown so the stack
+</I>&gt;<i> 	unwinds back up to functionDeclBody.  One slight problem:
+</I>&gt;<i> 	reportError() isn't declared to throw any exception.  Hence, I
+</I>&gt;<i> 	created the ANTLR_WorkaroundException class that extends
+</I>&gt;<i> 	RuntimeException to work around this annoyance.
+</I>
+Only an annoyance, mein herr, because you want reportError to do more 
+than it was meant to ;)
+
+&gt;<i> 	OK, I'm pretty sure this all works, but it requires a lot of
+</I>&gt;<i> 	programming contortion, more than should be necessary.
+</I>
+Agreed.
+
+&gt;<i> 	A suggestion is to change the default exception-handling code
+</I>&gt;<i> 	emitted to something like:
+</I>&gt;<i>
+</I>&gt;<i> 		catch ( RecognitionException ex ) {
+</I>&gt;<i> 		    reportError( ex );
+</I>&gt;<i> 		    recover( ex, _someTokenSet );
+</I>&gt;<i> 		}
+</I>&gt;<i>
+</I>&gt;<i> 	where recover() is a new method in Parser.java that, by
+</I>&gt;<i> 	default, is:
+</I>&gt;<i>
+</I>&gt;<i> 		void recover( RecognotionException ex, BitSet set )
+</I>&gt;<i> 		    throws TokenStreamException
+</I>&gt;<i> 		{
+</I>&gt;<i> 		    consume();
+</I>&gt;<i> 		    consume( set );
+</I>&gt;<i> 		}
+</I>&gt;<i>
+</I>&gt;<i> 	This will allow a user to override what recovery does without
+</I>&gt;<i> 	having to use the hack of stuffing such code into reportError()
+</I>&gt;<i> 	(where it doesn't conceptually belong).
+</I>
+Yes, this is reasonable.  We should change:
+
+		catch (RecognitionException ex) {
+			reportError(ex);
+			consume();
+			consumeUntil(_tokenSet_0);
+		}
+
+to
+		catch (RecognitionException ex) {
+			reportError(ex);
+			recover(ex, _tokenSet_0);
+		}
+
+For 2.7.5.  Anybody got a problem with this?  I would be just factoring 
+out the code into a method.
+
+Note that for 3.0, somebody suggested that we have a template with all 
+the appropriate goodies that people can use like a macro, though a 
+method is similar.  The template approach is nicer in some sense 
+because it could access local variables/parameters from the rule 
+method.
+
+Anyway, my $0.02.
+
+Ter
+--
+CS Professor &amp; Grad Director, University of San Francisco
+Creator, ANTLR Parser Generator, <A HREF="http://www.antlr.org">http://www.antlr.org</A>
+Cofounder, <A HREF="http://www.jguru.com">http://www.jguru.com</A>
+Cofounder, <A HREF="http://www.knowspam.net">http://www.knowspam.net</A> enjoy email again!
+
+
+
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+    <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+    <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+    <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="010530.html">[antlr-interest] Error recovery contortion
+</A></li>
+	<LI>Next message: <A HREF="010596.html">[antlr-interest] Error recovery contortion
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#10594">[ date ]</a>
+              <a href="thread.html#10594">[ thread ]</a>
+              <a href="subject.html#10594">[ subject ]</a>
+              <a href="author.html#10594">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

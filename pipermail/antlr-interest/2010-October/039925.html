@@ -1,0 +1,150 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Semantic Predicates Depending On Rule Results
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Semantic%20Predicates%20Depending%20On%20Rule%20Results&In-Reply-To=%3C4CC4965E.2010601%40bahj.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="039914.html">
+   <LINK REL="Next"  HREF="039915.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Semantic Predicates Depending On Rule Results</H1>
+    <B>Zachary Palmer</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Semantic%20Predicates%20Depending%20On%20Rule%20Results&In-Reply-To=%3C4CC4965E.2010601%40bahj.com%3E"
+       TITLE="[antlr-interest] Semantic Predicates Depending On Rule Results">zep_antlr at bahj.com
+       </A><BR>
+    <I>Sun Oct 24 13:26:06 PDT 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="039914.html">[antlr-interest] Semantic Predicates Depending On Rule Results
+</A></li>
+        <LI>Next message: <A HREF="039915.html">[antlr-interest] rewrite rule like AST construction operator '^'
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#39925">[ date ]</a>
+              <a href="thread.html#39925">[ thread ]</a>
+              <a href="subject.html#39925">[ subject ]</a>
+              <a href="author.html#39925">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I'm just posting this follow-up message to indicate that this problem 
+can be solved by using the forced semantic predicate syntax: 
+{{action}}.  Thanks to Terence for pointing it out to me.  The 
+discussion was in a different thread, so I wanted to tie up this loose 
+end.  Here's hoping that this is helpful to anyone who finds my message 
+in the archives someday.
+
+- Zach
+&gt;<i> All,
+</I>&gt;<i>
+</I>&gt;<i> I have a bit of a challenging problem at hand.  I've been using ANTLR
+</I>&gt;<i> quite successfully for a language development project on which I have
+</I>&gt;<i> been working for about a year now.  We are using an ANTLR grammar to
+</I>&gt;<i> build the AST for the language from source.  Due to the requirement that
+</I>&gt;<i> our AST nodes be heterogeneously typed and constructed via a particular
+</I>&gt;<i> factory, we are not using output=AST; we are instead having each rule
+</I>&gt;<i> return the type of AST node it generates a la the Java.g grammar found
+</I>&gt;<i> on the ANTLRv3 site.
+</I>&gt;<i>
+</I>&gt;<i> We've recently introduced a new language construct with rather peculiar
+</I>&gt;<i> needs.  When the parser is created, it is provided with a typechecker.
+</I>&gt;<i> The new grammar rule for the language looks like the following (sans
+</I>&gt;<i> actions and predicates):
+</I>&gt;<i>
+</I>&gt;<i>       '~:' expression ':~'
+</I>&gt;<i>
+</I>&gt;<i> Whenever this rule (termed &quot;splice&quot;) is invoked, it receives an expected
+</I>&gt;<i> type for the expression.  The ANTLR grammar rule should only match this
+</I>&gt;<i> production if it matches syntactically *and* the typechecker indicates
+</I>&gt;<i> that the expression has the type provided as input to the splice rule.
+</I>&gt;<i> The idea is that this rule can then be used as follows:
+</I>&gt;<i>
+</I>&gt;<i>       ident returns [IdentNode ret]:
+</I>&gt;<i>           splice[Type.IDENT] { $ret = factory.makeIdentNode($splice.ret); }
+</I>&gt;<i>           | IDENTIFIER { $ret = factory.makeIdentNode($IDENTIFIER.text); }
+</I>&gt;<i>           ;
+</I>&gt;<i>
+</I>&gt;<i>       name returns [NameNode ret]:
+</I>&gt;<i>           splice[Type.NAME] { $ret = factory.makeNameNode($splice.ret); }
+</I>&gt;<i>           | a=ident { $ret = factory.makeNameNode($a.ret); }
+</I>&gt;<i>           ('.' b=ident { $ret = factory.makeNameNode($b.ret, $ret); })*
+</I>&gt;<i>           ;
+</I>&gt;<i>
+</I>&gt;<i> This means that we can decide which AST to use based on the type of the
+</I>&gt;<i> provided expression.  For the code
+</I>&gt;<i>
+</I>&gt;<i>       ~: stuff :~
+</I>&gt;<i>
+</I>&gt;<i> we produce a different tree based on whether &quot;stuff&quot; typechecks as a
+</I>&gt;<i> NAME or an IDENT.
+</I>&gt;<i>
+</I>&gt;<i> The following definition of the splice rule comes very close to what I want:
+</I>&gt;<i>
+</I>&gt;<i>       splice[Type expectedType] returns [SpliceNode ret] :
+</I>&gt;<i>           '~:' { this.spliceTypechecker != null }?
+</I>&gt;<i>           expression
+</I>&gt;<i>           ':~' {
+</I>&gt;<i> this.spliceTypechecker.typecheck($expression.ret).equals(expectedType) }
+</I>&gt;<i>           { $ret = factory.makeSpliceNode($expression.ret); }
+</I>&gt;<i>           ;
+</I>&gt;<i>
+</I>&gt;<i> Sadly, I have to turn off the &quot;memoize&quot; option or the first try to parse
+</I>&gt;<i> splice will fail and the failure will be memoized.  I'd be okay with
+</I>&gt;<i> that for the time being (as I have an approaching deadline) except that
+</I>&gt;<i> it still doesn't work.  The problem appears to be that the backtracking
+</I>&gt;<i> step that determines whether or not splicing is viable here does not
+</I>&gt;<i> actually execute the actions I have attached to this grammar.  As a
+</I>&gt;<i> result, the &quot;expression&quot; nonterminal parses an expression but does not
+</I>&gt;<i> fill any values into $ret.  The typechecker is therefore asked to
+</I>&gt;<i> typecheck null, which always results in the semantic predicate failing.
+</I>&gt;<i>
+</I>&gt;<i> The problem seems to lie with the fact that I have a semantic predicate
+</I>&gt;<i> that relies on the return value of a rule to function correctly.  I
+</I>&gt;<i> can't just hack this together by checking the predicate in an action of
+</I>&gt;<i> my own (thereby deferring the predicate until after backtracking
+</I>&gt;<i> analysis) because then backtracking will pick the wrong path.  I
+</I>&gt;<i> absolutely must predicate based on the AST node which is produced from
+</I>&gt;<i> the expression nonterminal.  Does anyone have any suggestions?
+</I>&gt;<i>
+</I>&gt;<i> I've been quite impressed with ANTLR thus far and we've invested a fair
+</I>&gt;<i> amount of work in creating this grammar.  Between that and the
+</I>&gt;<i> aforementioned deadline, I'd really like to convince ANTLR to do this
+</I>&gt;<i> job for me.  And thanks for reading this far.  :)
+</I>&gt;<i>
+</I>&gt;<i> My appreciations,
+</I>&gt;<i>
+</I>&gt;<i> Zachary Palmer
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i>
+</I>&gt;<i>    
+</I>
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="039914.html">[antlr-interest] Semantic Predicates Depending On Rule Results
+</A></li>
+	<LI>Next message: <A HREF="039915.html">[antlr-interest] rewrite rule like AST construction operator '^'
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#39925">[ date ]</a>
+              <a href="thread.html#39925">[ thread ]</a>
+              <a href="subject.html#39925">[ subject ]</a>
+              <a href="author.html#39925">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

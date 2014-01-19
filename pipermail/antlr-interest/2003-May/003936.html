@@ -1,0 +1,214 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] High level semantic analysis
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20High%20level%20semantic%20analysis&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003937.html">
+   <LINK REL="Next"  HREF="003938.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] High level semantic analysis</H1>
+    <B>Tiller, Michael (M.M.)</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20High%20level%20semantic%20analysis&In-Reply-To="
+       TITLE="[antlr-interest] High level semantic analysis">mtiller at ford.com
+       </A><BR>
+    <I>Mon May 19 10:51:05 PDT 2003</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003937.html">[antlr-interest] Re: High level semantic analysis
+</A></li>
+        <LI>Next message: <A HREF="003938.html">[antlr-interest] Re: High level semantic analysis
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3936">[ date ]</a>
+              <a href="thread.html#3936">[ thread ]</a>
+              <a href="subject.html#3936">[ subject ]</a>
+              <a href="author.html#3936">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hmmm...The JBurg stuff doesn't really appear to address what I was getting
+at.  I wasn't talking about code generation (in fact, I have no interest at
+all in code generation).
+
+Let me explain my interest in this.  I'm working with this language,
+Modelica, and I want to develop tools for analyzing the code.  There isn't
+so much a code generation phase as an &quot;instantiation&quot; phase where the
+complex AST is &quot;flattened&quot; into a much simpler (and less general) version by
+resolving lots of &quot;modifications&quot;.  Let me give you a simple example:
+
+model RLC_Circuit
+  Resistor R1(R=15);
+  Resistor R2(R=5000);
+  Capacitor C(C=100e-6);
+  Inductor L(L=100e-3);
+  VoltageSource Vs;
+  Ground g;
+equation
+  connect(vs.n,g.ground);
+  connect(vs.p,L.p);
+  connect(L.n,R1.p);
+  connect(L.n,R2.p);
+  connect(R1.n,C.p);
+  connect(C.n,g.ground);
+  connect(R2.n,g.ground);
+end RLC_Circuit;
+
+Such a model, combined with component models written in a similar way, e.g.
+
+model Resistor
+  import Modelica.SIunits;
+  parameter SIunits.Resistance R=300;
+  ElectricalPin p, n;
+equation
+  R*p.i = p.v-n.v;
+  pi+n.i = 0;
+end Resistor;
+
+Should ultimately get me to a flattened model (as output) that simplifies
+all this structure down to:
+
+model RLC2
+  import Modelica.SIunits;
+
+  parameter SIunits.Resistance R1=15;
+  parameter SIunits.Resistance R2=5000;
+  parameter SIunits.Capacitance C=100e-6;
+  parameter SIunits.Inductance L=100e-3;
+
+  SIunits.Voltage V_a, V_b, V_c;
+  SIunits.Current i_V, i_R1, i_R2, i_C, i_L;
+equation
+  V_a = if time&gt;=1 then 1.0 else 0; // From the VoltageSource model
+  L*der(i_L) = V_a - V_b; // From the inductor model
+  R1*i_R1 = V_b - V_c; // From the resistor model
+  i_C = C*der(V_c); // From the capacitor model
+  R2*i_R2 = V_b; // From the other resistor model
+  i_V - i_L = 0; // Kirchoff's current law
+  i_L - i_R1 - i_R2 = 0; // Kirchoff's current law
+  i_R1 - i_C = 0; // Kirchoff's current law
+end RLC2;
+
+So this last model would be the output after what is formally called the
+&quot;instantiation&quot; process (i.e. to create an instance of the RLC_Circuit
+model).  On the surface, this might seem like a pretty simple elaboration or
+expansion process, but there are lots of features I haven't shown here
+(think C++ templates) and lots of different types of classes and objects
+with detailed semantics.  The result is that you have to program lots of
+rules that govern this instantiation process.
+
+I'm currently trying to leverage some work that another group is doing
+(called Open Source Modelica) since I am neither an expert in building
+compilers nor paid to do this kind of thing anyway.  They are the ones using
+RML.  RML looks pretty cool and powerful because it seems more declarative.
+I think of it, perhaps incorrectly, as being more PROLOG like.  It appears
+that you simply state semantic rules (in a way that is very similar to what
+is in the Modelica specification) and it can not only use those rules for
+the transformation process, but it could even identify dubious sets of rules
+(I suppose, I don't know for sure).  It seems like it would fit naturally
+into the whole ANTLR philosophy of developing high-level capabilities for
+the compiler development process.  It seems to me that it is something of a
+META-tree walker.
+
+Like I said, this seems really cool and useful (and the declarative aspect
+is very much in the spirit of the language I'm applying it to, i.e.
+Modelica).  It struck me that perhaps people know of other similar tools
+that integrate better with ANTLR or that perhaps this would stimulate some
+thinking about how to incorporate similar features.
+
+As it stands now, I don't really have a problem with the way I'm dealing
+with this now.  I was just hoping that this kind of discussion might lead to
+better integration of the ANTLR system with similar ideas in the future.
+
+--
+Mike
+
+&gt;<i> -----Original Message-----
+</I>&gt;<i> From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">mzukowski at yci.com</A> [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">mzukowski at yci.com</A>]
+</I>&gt;<i> Sent: Monday, May 19, 2003 1:16 PM
+</I>&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>
+</I>&gt;<i> Subject: RE: [antlr-interest] High level semantic analysis
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> You can use JBurg to do the matching &amp; optimization type 
+</I>&gt;<i> stuff.  See Ter's
+</I>&gt;<i> lecture <A HREF="http://www.cs.usfca.edu/~parrt/course/652/labs/jburg.html.">http://www.cs.usfca.edu/~parrt/course/652/labs/jburg.html.</A>
+</I>&gt;<i> 
+</I>&gt;<i> Not sure about how to link in the theorem proving aspect of that stuff
+</I>&gt;<i> though.  RML as described seems like a somewhat incomplete 
+</I>&gt;<i> beast judging
+</I>&gt;<i> from the thesis on the open source modelica implementation.  
+</I>&gt;<i> I couldn't find
+</I>&gt;<i> too much written about it, maybe I was looking in the wrong 
+</I>&gt;<i> places.  I guess
+</I>&gt;<i> I need an example a bit more compelling than addition to see what the
+</I>&gt;<i> advantages of RML are.
+</I>&gt;<i> 
+</I>&gt;<i> Monty
+</I>&gt;<i> 
+</I>&gt;<i> -----Original Message-----
+</I>&gt;<i> From: Tiller, Michael (M.M.) [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">mtiller at ford.com</A>] 
+</I>&gt;<i> Sent: Monday, May 19, 2003 5:28 AM
+</I>&gt;<i> To: '<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>'
+</I>&gt;<i> Subject: [antlr-interest] High level semantic analysis
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> I'm not much of an expert on building compilers, but I came 
+</I>&gt;<i> across something
+</I>&gt;<i> that I thought was quite interesting and I was wondering if 
+</I>&gt;<i> anyone here
+</I>&gt;<i> would care to comment on the applicability of these ideas to ANTLR.
+</I>&gt;<i> Specifically, I recognize the the treewalker functionality in 
+</I>&gt;<i> the ANTLR is
+</I>&gt;<i> very nice way to explore and translate ASTs.  I was wondering 
+</I>&gt;<i> if anybody is
+</I>&gt;<i> interested in adding some higher-level functionality like 
+</I>&gt;<i> what is described
+</I>&gt;<i> in this report:
+</I>&gt;<i> 
+</I>&gt;<i> <A HREF="http://www.modelica.org/papers/scs98sem.pdf">http://www.modelica.org/papers/scs98sem.pdf</A>
+</I>&gt;<i> 
+</I>&gt;<i> --
+</I>&gt;<i> Mike
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> Your use of Yahoo! Groups is subject to the Yahoo! Terms of Service. 
+</I>&gt;<i> 
+</I>&gt;<i>  
+</I>&gt;<i> 
+</I>&gt;<i> Your use of Yahoo! Groups is subject to 
+</I>&gt;<i> <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003937.html">[antlr-interest] Re: High level semantic analysis
+</A></li>
+	<LI>Next message: <A HREF="003938.html">[antlr-interest] Re: High level semantic analysis
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3936">[ date ]</a>
+              <a href="thread.html#3936">[ thread ]</a>
+              <a href="subject.html#3936">[ subject ]</a>
+              <a href="author.html#3936">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

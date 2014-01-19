@@ -1,0 +1,152 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Re: Help with Java grammar
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20Help%20with%20Java%20grammar&In-Reply-To=c2pu85%2Bg987%40eGroups.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="006864.html">
+   <LINK REL="Next"  HREF="006869.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Re: Help with Java grammar</H1>
+    <B>Ric Klaren</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20Help%20with%20Java%20grammar&In-Reply-To=c2pu85%2Bg987%40eGroups.com"
+       TITLE="[antlr-interest] Re: Help with Java grammar">klaren at cs.utwente.nl
+       </A><BR>
+    <I>Thu Mar 11 07:51:54 PST 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="006864.html">[antlr-interest] Re: Help with Java grammar
+</A></li>
+        <LI>Next message: <A HREF="006869.html">[antlr-interest] Re: Help with Java grammar
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6868">[ date ]</a>
+              <a href="thread.html#6868">[ thread ]</a>
+              <a href="subject.html#6868">[ subject ]</a>
+              <a href="author.html#6868">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+Hmmmm nice one you find a bug, the vanilla java grammar has indeed the same
+problem. SL_COMMENT hangs when it's fed only '//'.
+
+I can offer another solution now: switch to C++ mode it is doing the right
+thing (complain it found an unexpected EOF). Also the sane fix for
+SL_COMMENT which I expected to work works in C++ mode.
+
+So...
+a) Java codegen is generating the wrong bitset.
+b) The java implementation of BitSet is incorrectly saying that EOF value
+   65535 is in the bitset of what is supposed to be valid for the
+   (~(\n|\r))* part.
+
+Hmmm writing that down a little coin dropped...
+
+c) Antlr should warn if you set the charVocabulary to '\u0003'..'\uFFFF';
+   then it includes EOF. Which of course gets automagically added if you
+   use ~ constructs.
+
+So there's another easy fix e.g. limiting the charVocabulary of the lexer
+to:
+
+charVocabulary='\u0003'..'\u7FFF';
+
+And change SL_COMMENT to:
+
+SL_COMMENT
+	:	&quot;//&quot;
+		(~('\n'|'\r'))* ('\n'|'\r'('\n')?)?
+		{$setType(Token.SKIP); newline();}
+	;
+
+And you should be set.
+
+Cheers,
+
+Ric
+
+On Thu, Mar 11, 2004 at 02:48:37PM -0000, cliftonccraig wrote:
+&gt;<i> I have tried running in my debugger but I couldn't follow all of the
+</I>&gt;<i> jumps that were made. It appeared to be jumping back and forth between
+</I>&gt;<i> two statements in a switch nested in a infinite while loop. I couldn't
+</I>&gt;<i> tell at that point if it was stuck of trying to match some complex
+</I>&gt;<i> lexer rule or what. That experience did, however, point me to the fact
+</I>&gt;<i> that it was the last single line comment that was hanging everything
+</I>&gt;<i> up. I think I noticed it (the single line comment) when I eval'ed a
+</I>&gt;<i> buffer or something. I couldn't understand exactly what was happening
+</I>&gt;<i> but I knew it had to be at that point in the processing and then when
+</I>&gt;<i> I looked back at the input file I then noticed the comment was on the
+</I>&gt;<i> EOF line. I recalled reading somewhere that you shouldn't end a source
+</I>&gt;<i> file with EOF (probably an article on the ANTLR or JavaCC site) and
+</I>&gt;<i> made an educated guess that this is what was causing my problem. I
+</I>&gt;<i> confirmed my suspicion when I inserted a newline in the input file and
+</I>&gt;<i> all was good. I later (at home) tried the parser out of the box on one
+</I>&gt;<i> of the tests that ship out of the box and got the same results after
+</I>&gt;<i> putting a single line comment on the last line. That confirmed, for
+</I>&gt;<i> me, that it was not the additional logic from the rewrite engine that
+</I>&gt;<i>  was causing this. (I didn't think it would be but I had to confirm
+</I>&gt;<i> it.) I know little of why it happens and I will try to look into it
+</I>&gt;<i> again a little later. I'm sure anyone could replicate the problem just
+</I>&gt;<i> by downloading the Antlr package, generating the JavaReckognizer with
+</I>&gt;<i> the included grammar and running over any Java file that ends with a
+</I>&gt;<i> single line comment. For now I have my work around in place. I'd love
+</I>&gt;<i> to improve on it because it always inserts a new line which is carried
+</I>&gt;<i> over into the rewritten file. (Ooh, I just thought of a workaround for
+</I>&gt;<i> my workaround!) I'd love to take your advice on overridding the
+</I>&gt;<i> CharBuffer or whatever but I know little of these classes and have
+</I>&gt;<i> only been working with this technology for a matter of days. I'm not
+</I>&gt;<i> stupid, I'm just afraid it will take me some time to figure out what
+</I>&gt;<i> to put where in the overriding logic. Thank you for all of your help.
+</I>&gt;<i> I really appreciate it. You will probably here back from me on this
+</I>&gt;<i> mailing list when I get back to working with this.
+</I>
+--
+-----+++++*****************************************************+++++++++-------
+    ---- Ric Klaren ----- <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">j.klaren at utwente.nl</A> ----- +31 53 4893722  ----
+-----+++++*****************************************************+++++++++-------
+   Words fly like arrows
+      as if we knew what was right and wrong. --- Chuang Tsu
+
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+     <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+     <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+     <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="006864.html">[antlr-interest] Re: Help with Java grammar
+</A></li>
+	<LI>Next message: <A HREF="006869.html">[antlr-interest] Re: Help with Java grammar
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6868">[ date ]</a>
+              <a href="thread.html#6868">[ thread ]</a>
+              <a href="subject.html#6868">[ subject ]</a>
+              <a href="author.html#6868">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

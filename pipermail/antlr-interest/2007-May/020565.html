@@ -1,0 +1,287 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Problems with treeParser in V2 with c++ target
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Problems%20with%20treeParser%20in%20V2%20with%20c%2B%2B%20target&In-Reply-To=%3C55080.193.11.234.162.1178567744.squirrel%40webmail.chalmers.se%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="020572.html">
+   <LINK REL="Next"  HREF="020566.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Problems with treeParser in V2 with c++ target</H1>
+    <B>Joachim M&#229;rtensson</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Problems%20with%20treeParser%20in%20V2%20with%20c%2B%2B%20target&In-Reply-To=%3C55080.193.11.234.162.1178567744.squirrel%40webmail.chalmers.se%3E"
+       TITLE="[antlr-interest] Problems with treeParser in V2 with c++ target">joachimm at etek.chalmers.se
+       </A><BR>
+    <I>Mon May  7 12:55:44 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="020572.html">[antlr-interest] Released first product with ANTLR3 C#
+</A></li>
+        <LI>Next message: <A HREF="020566.html">[antlr-interest] C++ target in v3
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#20565">[ date ]</a>
+              <a href="thread.html#20565">[ thread ]</a>
+              <a href="subject.html#20565">[ subject ]</a>
+              <a href="author.html#20565">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello,
+I am trying to learn how to use Antlr with C++ as a target, and I thought
+I should try out something relatively easy. Basically I thought I should
+extend the calc example in the cpp folder to work like the expression
+parser in the Antlr (beta) book, however I am running into problems.
+
+$./out &quot;(4+5*8);&quot;
+ ( + 4 ( * 5 8 ) )
+&lt;AST&gt;: unexpected AST node: 4
+expr:0value is 0 &lt;- my debug output
+
+I find this hard to figure out, I am guessing that I am setting up the
+ParseTree in the wrong way or something but I cannot figure out how.
+
+Thanks in advance
+Joachim
+
+my treeGrammar file looks like this.
+header
+{
+    #include &lt;map&gt;;
+    #include &lt;string&gt;;
+    #include &lt;iostream&gt;;
+
+}
+
+options {
+    language=&quot;Cpp&quot;;
+}
+class CalcTreeWalker extends TreeParser;
+
+{
+    public:
+     std::map&lt;std::string, double&gt; idMem;
+}
+
+prog returns [double ret]
+{
+    ret = 0.0;
+    double total = 0;
+}
+:<i> (total = stat {ret += total;})+ ;
+</I>
+stat returns [double st]
+{
+     st = 0;
+}
+    :   #(ASSIGN c:ID st = expr) { idMem[c-&gt;getText()]= st;}
+    |   st = expr { std::cout &lt;&lt; &quot;expr:&quot;&lt;&lt; st;} ;
+expr returns [double r]
+{
+    double a,b;
+    r=0;
+}
+    :   #(PLUS a=expr b=expr)    {r = a+b;}
+    |   #(MINUS a=expr b=expr)    {r = a-b;}
+    |   #(STAR a=expr b=expr)    {r = a*b;}
+    |   i:INT            {r = atof(i-&gt;getText().c_str());}
+    |   k:ID {if (idMem.count(k-&gt;getText()) &gt; 0) r = idMem[k-&gt;getText()];
+else r = 0;}
+    ;
+
+-------------
+and the Parser and Lexer looks like this.
+-------------
+
+options {
+    language=&quot;Cpp&quot;;
+}
+
+class CalcParser extends Parser;
+options {
+    //genHashLines = true;        // include line number information
+    buildAST = true;            // uses CommonAST by default
+    k = 2;
+}
+
+prog: (stat)+ ;
+
+stat: expr SEMI!
+    | ID ASSIGN^ expr SEMI! ;
+
+expr
+    : mexpr ((PLUS^|MINUS^) mexpr)*
+    ;
+
+mexpr
+    :    atom (STAR^ atom)*
+    ;
+
+
+atom: INT
+    | ID
+    | LPAREN! expr RPAREN!
+    ;
+
+class CalcLexer extends Lexer;
+
+WS_    :    (' '
+    |    '\t'
+    |    '\n'
+    |    '\r')
+        { _ttype = ANTLR_USE_NAMESPACE(antlr)Token::SKIP; }
+    ;
+
+LPAREN:    '('
+    ;
+
+RPAREN:    ')'
+    ;
+LBRACKET: '[' ;
+RBRACKET: ']' ;
+ASSIGN: '=' ;
+STAR:    '*'
+    ;
+ID
+    	:	('a'..'z'|'A'..'Z'|'_') ('a'..'z'|'A'..'Z'|'_'|'0'..'9')*
+    	;
+
+
+STRING_LITERAL	: 	'&quot;'	(~'&quot;')* '&quot;' ;
+
+MINUS: '-' ;
+
+PLUS:    '+'
+    ;
+
+SEMI:    ';'
+    ;
+
+protected
+DIGIT
+    :    '0'..'9'
+    ;
+
+INT    :    (DIGIT)+
+    ;
+
+-------------------
+I use the following code to set up the parser and tree. (almost identical
+to the Main file in the cpp/calc example folder)
+
+-------------------
+/* Calculate an expression read from stdin or from the arguments passed to
+ * the program (using stringstream's)
+ */
+#include &lt;iostream&gt;
+#include &lt;sstream&gt;
+#include &lt;map&gt;;
+#include &quot;antlr/AST.hpp&quot;
+#include &quot;CalcLexer.hpp&quot;
+#include &quot;CalcParser.hpp&quot;
+#include &quot;CalcTreeWalker.hpp&quot;
+
+int main( int argc, char* argv[] )
+{
+	ANTLR_USING_NAMESPACE(std)
+	ANTLR_USING_NAMESPACE(antlr)
+	try
+	{
+		ostringstream expr;
+		istringstream input_string;
+		istream *input = &amp;cin;
+		const char *filename = &quot;&lt;cin&gt;&quot;;
+
+		if( argc &gt; 1 )
+		{
+			// write the argv strings to a ostringstream...
+			for( int i = 1; i &lt; argc; i++ )
+			{
+				if( i &gt; 1 &amp;&amp; i != (argc-1))
+					expr &lt;&lt; ' ';
+				expr &lt;&lt; argv[i];
+			}
+			input_string.str(expr.str());
+			input = &amp;input_string;
+			filename = &quot;&lt;arguments&gt;&quot;;
+		}
+
+		CalcLexer lexer(*input);
+		lexer.setFilename(filename);
+
+		CalcParser parser(lexer);
+		parser.setFilename(filename);
+
+		ASTFactory ast_factory;
+		parser.initializeASTFactory(ast_factory);
+		parser.setASTFactory(&amp;ast_factory);
+
+		// Parse the input expression
+		parser.prog();
+		RefAST t = parser.getAST();
+		if( t )
+		{
+	  	// Print the resulting tree out in LISP notation
+			cout &lt;&lt; t-&gt;toStringTree() &lt;&lt; endl;
+			CalcTreeWalker walker;
+
+	  	// Traverse the tree created by the parser
+			walker.initializeASTFactory(ast_factory);
+            walker.setASTFactory(&amp;ast_factory);
+			double r = walker.prog(t);
+
+            for(map&lt;string, double&gt;::const_iterator it =
+walker.idMem.begin(); it != walker.idMem.end(); ++it)
+            {
+                cout &lt;&lt; &quot;first: &quot; &lt;&lt; it-&gt;first &lt;&lt; &quot;second:\t&quot; &lt;&lt;
+it-&gt;second &lt;&lt; endl;
+            }
+			cout &lt;&lt; &quot;value is &quot; &lt;&lt; r &lt;&lt; endl;
+		}
+		else
+			cout &lt;&lt; &quot;No tree produced&quot; &lt;&lt; endl;
+
+	}
+	catch(ANTLRException&amp; e)
+	{
+		cerr &lt;&lt; &quot;Parse exception: &quot; &lt;&lt; e.toString() &lt;&lt; endl;
+		return -1;
+	}
+	catch(exception&amp; e)
+	{
+		cerr &lt;&lt; &quot;exception: &quot; &lt;&lt; e.what() &lt;&lt; endl;
+		return -1;
+	}
+	return 0;
+}
+
+
+
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="020572.html">[antlr-interest] Released first product with ANTLR3 C#
+</A></li>
+	<LI>Next message: <A HREF="020566.html">[antlr-interest] C++ target in v3
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#20565">[ date ]</a>
+              <a href="thread.html#20565">[ thread ]</a>
+              <a href="subject.html#20565">[ subject ]</a>
+              <a href="author.html#20565">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

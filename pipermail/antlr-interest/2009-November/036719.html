@@ -1,0 +1,132 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] custom TokenLabelType and EOF/Error tokens
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20custom%20TokenLabelType%20and%20EOF/Error%20tokens&In-Reply-To=%3C4AF9C2F7.7040700%40jacaranda.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="036720.html">
+   <LINK REL="Next"  HREF="036721.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] custom TokenLabelType and EOF/Error tokens</H1>
+    <B>David-Sarah Hopwood</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20custom%20TokenLabelType%20and%20EOF/Error%20tokens&In-Reply-To=%3C4AF9C2F7.7040700%40jacaranda.org%3E"
+       TITLE="[antlr-interest] custom TokenLabelType and EOF/Error tokens">david-sarah at jacaranda.org
+       </A><BR>
+    <I>Tue Nov 10 11:45:59 PST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="036720.html">[antlr-interest] custom TokenLabelType and EOF/Error tokens
+</A></li>
+        <LI>Next message: <A HREF="036721.html">[antlr-interest] The idea of semantic analyzer generator
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36719">[ date ]</a>
+              <a href="thread.html#36719">[ thread ]</a>
+              <a href="subject.html#36719">[ subject ]</a>
+              <a href="author.html#36719">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Bob Frankel wrote:
+&gt;<i> following idioms i've seen posted elsewhere, i've created a MyToken
+</I>&gt;<i> class that inherits from CommonToken; my Lexer then overrides Token
+</I>&gt;<i> Lexer.emit(), at which time i create instances of MyToken....
+</I>&gt;<i> 
+</I>&gt;<i> things work fine, until the parser encounters a syntactic error.... 
+</I>&gt;<i> from what i can tell, the parser inserts an &quot;error&quot; token of type
+</I>&gt;<i> CommonToken; this then leads to a class cast exception in the
+</I>&gt;<i> surrounding parser rule when attempting to assign a CommonToken value
+</I>&gt;<i> through a generated (MyToken) cast....
+</I>
+There are two possible causes of this:
+
+a) There was a bug in ANTLR up to version 3.1.3 where the generated code
+   would sometimes create tokens using 'new CommonToken', even when the
+   TokenLabelType option is set to MyToken. See the thread at
+&lt;<A HREF="http://www.antlr.org/pipermail/antlr-interest/2009-July/thread.html#35129">http://www.antlr.org/pipermail/antlr-interest/2009-July/thread.html#35129</A>&gt;.
+
+   I think this has been fixed in ANTLR 3.2 (although not in the way I
+   suggested that would also have fixed point b) below).
+   Note your token class will need to have the same constructors as
+   CommonToken in order for the fix to work.
+
+b) When the getMissingSymbol method of a parser inserts a token in order to
+   recover from an error, the inserted token is of type CommonToken.
+   Override it as follows (this implementation also fixes a different bug
+   that can cause a NullPointerException):
+
+@parser::members {
+  /**
+   * Work around an ANTLR bug that causes a NullPointerException when trying
+   * to recover at the end of the input stream. Also ensure that inserted
+   * tokens are of type MyToken.
+   */
+  @Override protected Object getMissingSymbol(IntStream input,
+      RecognitionException re, int expectedTokenType, BitSet follow) {
+    String tokenText = null;
+
+    if (expectedTokenType == Token.EOF) {
+      tokenText = &quot;&lt;missing EOF&gt;&quot;;
+    } else if (expectedTokenType &gt;= 0 &amp;&amp;
+               expectedTokenType &lt; getTokenNames().length) {
+      tokenText = &quot;&lt;missing &quot; + getTokenNames()[expectedTokenType] + &quot;&gt;&quot;;
+    } else {
+      throw new Error(&quot;invalid expectedTokenType &quot; + expectedTokenType);
+    }
+
+    MyToken t = new MyToken(expectedTokenType, tokenText);
+    Token current = ((TokenStream) input).LT(1);
+    if (current == null || current.getType() == Token.EOF) {
+      current = ((TokenStream) input).LT(-1);
+    }
+    if (current != null) {
+      // If there are any other position-related fields in your MyToken
+      // class, set them here.
+      t.setLine(current.getLine());
+      t.setCharPositionInLine(current.getCharPositionInLine());
+    }
+    t.setChannel(DEFAULT_TOKEN_CHANNEL);
+
+    return t;
+  }
+}
+
+-- 
+David-Sarah Hopwood  &#9893;  <A HREF="http://davidsarah.livejournal.com">http://davidsarah.livejournal.com</A>
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 292 bytes
+Desc: OpenPGP digital signature
+Url : <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20091110/e37fd4fa/attachment.bin">http://www.antlr.org/pipermail/antlr-interest/attachments/20091110/e37fd4fa/attachment.bin</A> 
+</PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="036720.html">[antlr-interest] custom TokenLabelType and EOF/Error tokens
+</A></li>
+	<LI>Next message: <A HREF="036721.html">[antlr-interest] The idea of semantic analyzer generator
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36719">[ date ]</a>
+              <a href="thread.html#36719">[ thread ]</a>
+              <a href="subject.html#36719">[ subject ]</a>
+              <a href="author.html#36719">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

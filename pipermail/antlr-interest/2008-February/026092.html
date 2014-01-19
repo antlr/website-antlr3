@@ -1,0 +1,147 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] internal error
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20internal%20error&In-Reply-To=%3C20080201212306.9B22111ED42%40www.antlr.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="026089.html">
+   <LINK REL="Next"  HREF="026094.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] internal error</H1>
+    <B>Gavin Lambert</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20internal%20error&In-Reply-To=%3C20080201212306.9B22111ED42%40www.antlr.org%3E"
+       TITLE="[antlr-interest] internal error">antlr at mirality.co.nz
+       </A><BR>
+    <I>Fri Feb  1 13:22:50 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="026089.html">[antlr-interest] internal error
+</A></li>
+        <LI>Next message: <A HREF="026094.html">[antlr-interest] internal error
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#26092">[ date ]</a>
+              <a href="thread.html#26092">[ thread ]</a>
+              <a href="subject.html#26092">[ subject ]</a>
+              <a href="author.html#26092">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>At 09:54 2/02/2008, Olivier Lefevre wrote:
+ &gt;
+ &gt;Thanks for the advice. I was pilfering the JSON grammar but
+ &gt;my mental map of ANTLR is still very imperfect. Doesn't
+ &gt;ANTLR still have a bug, though? It should *never* blow up.
+
+True, but ANTLR's own error handling is a little 
+flaky at present since it's still using ANTLR 2.7 
+internally.  This should improve in time.
+
+ &gt;&gt; I think you want this:
+ &gt;&gt; list: '[' elements? ']' -&gt; ^(ARRAY elements?);
+ &gt;
+ &gt;I am unclear as to what the '?' will do in a tree rewrite rule.
+
+The cardinality of a rewrite rule element must 
+match the cardinality of the actual element.  In 
+the case above, you're telling the rewrite engine 
+that &quot;elements&quot; might not have any value, so it 
+needs to insert a test to check for that before 
+inserting it into the tree.  Had you left the ? 
+out, it treats it as an assertion that &quot;elements&quot; 
+always has exactly one value and thus won't 
+include the test (for performance reasons), which 
+will lead to a runtime exception if it turns out 
+that it wasn't actually supplied.
+
+Similarly, when matching something with + or * on 
+the left you should use the same in the rewrite 
+rule.  Although it's the cardinality that's 
+important, not having an exact match -- for 
+example this rule is correct:
+
+foo: a+=bar SEP a+=bar SEP a+=bar -&gt; ^(BARLIST $a+);
+
+Since even though there's no +s on the left 
+you're still generating 1..n values in &quot;a&quot;.
+
+ &gt;Expr.g in &#167; 3.3 of the book does just that, though. Isn't that
+ &gt;what the NEWLINE as a stat option is for?
+
+I haven't seen that example, but it's generally a 
+bad idea to match the same set of characters from 
+multiple lexer rules, since it causes 
+ambiguity.  In particular, if you have both a 
+NEWLINE and a WS rule (and assuming the NEWLINE 
+rule is listed first and only matches one newline 
+sequence) then NEWLINE will be matched whenever 
+there is a single newline in the input, but WS 
+will be matched instead whenever there are 
+multiple newlines, or newlines followed by other 
+whitespace (since that's the longest match 
+possible).  In addition, you can't refer to any 
+hidden (or off-channel) token from the parser 
+directly.  So what Mark was saying is true.
+
+ &gt;Exception in thread &quot;main&quot;
+ &gt;org.antlr.runtime.tree.RewriteEmptyStreamException: 
+rule elements
+ &gt;         at
+ &gt;org.antlr.runtime.tree.RewriteRuleElementStream._next(RewriteRuleEl
+ &gt;ementStream.java:158)
+ &gt;         at
+ &gt;org.antlr.runtime.tree.RewriteRuleElementStream.next(RewriteRuleEle
+ &gt;mentStream.java:145)
+ &gt;         at ListExprParser.list(ListExprParser.java:307)
+ &gt;         at ListExprParser.stat(ListExprParser.java:158)
+ &gt;         at ListExprParser.prog(ListExprParser.java:78)
+ &gt;         at Test_ListExpr.main(Test_ListExpr.java:12)
+
+It's not that unhelpful -- it's telling you that 
+there's a problem with the rewrite rule in the 
+&quot;list&quot; rule.  Sure, it's not a pretty message, 
+but it gives you all the info you need.
+
+ &gt;list : '[' (elements)? ']'
+ &gt;        -&gt; ^(ARRAY elements)
+ &gt;     ;
+
+There's that cardinality mismatch again.  This 
+will throw the exception above given an input of 
+&quot;[]&quot;, since as I explained above &quot;elements&quot; may 
+not have a value but the rewrite rule is asserting that it does.
+
+ &gt;NEWLINE:'\r'?'\n' ;
+ &gt;WS: (' '|'\t'|'\n'|'\r')+ {skip();} ;
+
+And again you've still got the newline ambiguity.  Don't do that.
+
+</PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="026089.html">[antlr-interest] internal error
+</A></li>
+	<LI>Next message: <A HREF="026094.html">[antlr-interest] internal error
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#26092">[ date ]</a>
+              <a href="thread.html#26092">[ thread ]</a>
+              <a href="subject.html#26092">[ subject ]</a>
+              <a href="author.html#26092">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

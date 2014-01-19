@@ -1,0 +1,127 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] LL(1), LL(k), LL(*), predicated decisions
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20LL%281%29%2C%20LL%28k%29%2C%20LL%28%2A%29%2C%20predicated%20decisions&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="016533.html">
+   <LINK REL="Next"  HREF="016526.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] LL(1), LL(k), LL(*), predicated decisions</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20LL%281%29%2C%20LL%28k%29%2C%20LL%28%2A%29%2C%20predicated%20decisions&In-Reply-To="
+       TITLE="[antlr-interest] LL(1), LL(k), LL(*), predicated decisions">parrt at cs.usfca.edu
+       </A><BR>
+    <I>Mon Jun  5 14:10:24 PDT 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="016533.html">[antlr-interest] Island grammars
+</A></li>
+        <LI>Next message: <A HREF="016526.html">[antlr-interest] LL(1), LL(k), LL(*), predicated decisions
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#16525">[ date ]</a>
+              <a href="thread.html#16525">[ thread ]</a>
+              <a href="subject.html#16525">[ subject ]</a>
+              <a href="author.html#16525">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Howdy,
+
+As I rebuild the decisions for cyclic DFA, some simplifications  
+present themselves.  These new DFA I'm generating are capable of  
+handling all decisions, even the ones with predicates.  I wacked a  
+few hundred lines of CyclicDFACodeGenerator.java and think that we  
+should consider doing the same for ACyclicDFACodeGenerator that  
+handles LL(k) decisions.  Right now there are 2 parallel mechanisms  
+in the codegen logic and generated code for LL(k) and LL(*) decisions.
+
+My argument would be that having a single codegen strategy is more  
+robust, easier to understand, easier to port, and smaller.  The only  
+concern would be that it might be a bit slower to do LL(1) decisions  
+this way as I'd need a method call to get to the DFA simulation  
+code.  OTOH, switches almost always amount to a binary search rather  
+than the quick jump via a transition table.
+
+Actually, their is another issue related to (..)? and (..)* blocks.   
+For (..)? example, you don't want the DFA testing the lookahead for  
+the bypass state.  It delays error detection but is more what people  
+expect.  For (X)? people expect &quot;if ( LA(1)==X ) match(X);&quot; rather  
+than having an else clause that tests to see if the lookahead is  
+consistent with what follows (X)?  Hmmm...seems like I could just  
+avoid generating an error msg for optional constructs.  I'll bet that  
+would work.  cool.
+
+ok.  Assume we can use the same mechanism for all decisions.  It  
+still seems &quot;wrong&quot; to gen a separate DFA for (COMMA ID)*.  We would  
+want:
+
+while ( LA(1)== COMMA ) {
+   match(COMMA);
+   match(ID);
+}
+
+Perhaps I should special case only the blocks that are LL(1) and have  
+a single alternative.
+
+As for speed, it looks like a method call is not that bad.  Running  
+the java parser on jdk 1.4.2 source, yields 4,762,276 decisions which  
+would mean that many method calls.  Running a spin loop around a  
+method call that is probably not inlined:
+
+         public int count(int f) {
+                 return f+1;
+         }
+
+yields the following speed in compiled mode:
+
+/tmp $ java SpinCall 4762276
+25ms
+
+Naturally, this may perform differently in the actual java parser so  
+I added an extra method call to this bogus method:
+
+     int c = 0;
+     int n = 0;
+     public int foo(IntStream input) {
+         return c++;
+     }
+
+to *every* decision in the parser.  Parsing/lexing went from 3082ms/ 
+1341 to 3145/1400.  That is 3%/5% increase.  So, not that much cost  
+for a big improvement in regularity.
+
+Anybody want to comment?
+
+Ter
+</PRE>
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="016533.html">[antlr-interest] Island grammars
+</A></li>
+	<LI>Next message: <A HREF="016526.html">[antlr-interest] LL(1), LL(k), LL(*), predicated decisions
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#16525">[ date ]</a>
+              <a href="thread.html#16525">[ thread ]</a>
+              <a href="subject.html#16525">[ subject ]</a>
+              <a href="author.html#16525">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,134 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] rewrite rules cont.
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20rewrite%20rules%20cont.&In-Reply-To=%3C113708E7-E9E9-4D83-A6E2-75DE0E76EA34%40mac.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="039938.html">
+   <LINK REL="Next"  HREF="039940.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] rewrite rules cont.</H1>
+    <B>Trevor John Thompson</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20rewrite%20rules%20cont.&In-Reply-To=%3C113708E7-E9E9-4D83-A6E2-75DE0E76EA34%40mac.com%3E"
+       TITLE="[antlr-interest] rewrite rules cont.">tijet at mac.com
+       </A><BR>
+    <I>Wed Oct 27 14:25:31 PDT 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="039938.html">[antlr-interest] rewrite rules cont.
+</A></li>
+        <LI>Next message: <A HREF="039940.html">[antlr-interest] ANTLR Semantic Predicate Check Exceeding 65535	Bytes Limit
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#39939">[ date ]</a>
+              <a href="thread.html#39939">[ thread ]</a>
+              <a href="subject.html#39939">[ subject ]</a>
+              <a href="author.html#39939">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 2010 Oct 27, at 13:26, John B. Brodie wrote:
+
+&gt;<i> On Tue, 2010-10-26 at 20:07 -0700, Trevor John Thompson wrote:
+</I>&gt;&gt;<i> Greetings.
+</I>&gt;&gt;<i> I continue to wrestle with rewrite rules for AST construction. I am trying to treat semicolon and newline as equivalent separators, and gather a sequence of expressions as children of a single AST node. The grammar looks like
+</I>&gt;&gt;<i> =======
+</I>&gt;&gt;<i> grammar Test;
+</I>&gt;&gt;<i> options {output=AST;}
+</I>&gt;&gt;<i> prog:	expr EOF!;
+</I>&gt;&gt;<i> expr:	(term-&gt;term) (((NL|SC) term)+ -&gt; ^(NL $expr term+))?;
+</I>&gt;&gt;<i> term:	ID
+</I>&gt;&gt;<i> 	|	-&gt;ID	// empty treated as no-name ID
+</I>&gt;&gt;<i> 	;
+</I>&gt;&gt;<i> fragment
+</I>&gt;&gt;<i> SP	:	' '|'\t';
+</I>&gt;&gt;<i> SC	:	';';
+</I>&gt;&gt;<i> ID	:	SP*
+</I>&gt;&gt;<i> 		('a'..'z'|'A'..'Z'|'_')
+</I>&gt;&gt;<i> 		('0'..'9'|'a'..'z'|'A'..'Z'|'_')*
+</I>&gt;&gt;<i> 	;
+</I>&gt;&gt;<i> NL	:	('\r'|'\n')+;
+</I>&gt;&gt;<i> =======
+</I>&gt;&gt;<i> The problem is that if the sequence does *not* include newline, then i get RewriteEmptyStreamException on the NL in the rewrite rule; i.e. &quot;a;\n&quot; works, but &quot;a;&quot; does not.
+</I>&gt;&gt;<i> 
+</I>&gt;&gt;<i> What particularly baffles me is that if i build the node with any token other than NL or SC (e.g. SP), then the rule *always* works.
+</I>&gt;&gt;<i> 
+</I>&gt;&gt;<i> Could someone please explain what is going on?
+</I>&gt;<i> 
+</I>&gt;<i> ANTLR will create a root token when that token does not appear on the
+</I>&gt;<i> left hand side of the rewrite operator (the -&gt;). this is known as an
+</I>&gt;<i> `imaginary token`. imaginary tokens do not appear in the input token
+</I>&gt;<i> stream.
+</I>&gt;<i> 
+</I>&gt;<i> But any token that appears on both sides of the -&gt; must be present in
+</I>&gt;<i> the input token stream as you have encountered.
+</I>&gt;<i> 
+</I>&gt;<i> So you want to create a NL token as the root, even tho it does not
+</I>&gt;<i> appear in the input token stream - but might. therefore:
+</I>&gt;<i> 
+</I>&gt;<i> expr:   term (((x=NL|x=SC) term)+ -&gt; ^(NL[$x] term+))?;
+</I>&gt;<i> 
+</I>&gt;<i> the [...] stuff on the right hand side of the rewrite tells ANTLR to
+</I>&gt;<i> always construct a new imaginary token that is derived from a real
+</I>&gt;<i> token. the stuff inside the [] tells ANTLR how to initialize the
+</I>&gt;<i> imaginary token. so in the above case &quot;a;&quot; will end up with a tree whose
+</I>&gt;<i> root is actually a NL token.type but with a token.text of &quot;;&quot; and
+</I>&gt;<i> position information of the SC.
+</I>&gt;<i> 
+</I>&gt;<i> SP as root node worked because it did not appear on the left hand side
+</I>&gt;<i> of the rewrite so ANTLR just knew you wanted to construct an imaginary
+</I>&gt;<i> token (but with no text or position information initialized).
+</I>&gt;<i> 
+</I>&gt;<i> you really want to use the [] form of token construction so that the
+</I>&gt;<i> position information will get set so that later error messages will be
+</I>&gt;<i> (hopefully) more meaningful.
+</I>&gt;<i> 
+</I>&gt;<i> overriding the text of the NL to be &quot;;&quot; is, to me, rather unexpected. so
+</I>&gt;<i> i would suggest 
+</I>&gt;<i> 
+</I>&gt;<i> expr : term ((x=NL|x=SC) term)+ -&gt; ^(EXPR_LIST[$x,&quot;EXPR_LIST&quot;] term+) ;
+</I>&gt;<i> 
+</I>&gt;<i> where EXPR_LIST is an imaginary token type that you have specified in
+</I>&gt;<i> the tokens{} section of your grammar.
+</I>&gt;<i> 
+</I>&gt;<i> hope this helps...
+</I>&gt;<i>   -jbb
+</I>
+
+Thank you very much for your clear, detailed, and thoughtful explanation.
+I appreciate now that tree rewriting is not a matter of arbitrarily tossing around nodes; ANTLR carefully maintains internal information to assist the parser in generating good diagnostics. I may be catching on. . .
+
+TJ
+--
+Trevor John Thompson    net: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">tijet at mac.com</A>
+
+Quidquid Latine dictum sit, altum videtur.
+
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="039938.html">[antlr-interest] rewrite rules cont.
+</A></li>
+	<LI>Next message: <A HREF="039940.html">[antlr-interest] ANTLR Semantic Predicate Check Exceeding 65535	Bytes Limit
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#39939">[ date ]</a>
+              <a href="thread.html#39939">[ thread ]</a>
+              <a href="subject.html#39939">[ subject ]</a>
+              <a href="author.html#39939">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

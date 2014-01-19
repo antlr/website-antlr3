@@ -1,0 +1,189 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] distinguish &quot;3 + 4&quot; from &quot;3 +4&quot;
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20distinguish%20%223%20%2B%204%22%20from%20%223%20%2B4%22&In-Reply-To=%3Ca70a682a48c7237c25ec4a80ccbb56ce%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="042830.html">
+   <LINK REL="Next"  HREF="042815.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] distinguish &quot;3 + 4&quot; from &quot;3 +4&quot;</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20distinguish%20%223%20%2B%204%22%20from%20%223%20%2B4%22&In-Reply-To=%3Ca70a682a48c7237c25ec4a80ccbb56ce%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] distinguish &quot;3 + 4&quot; from &quot;3 +4&quot;">jimi at temporal-wave.com
+       </A><BR>
+    <I>Wed Oct  5 11:28:09 PDT 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="042830.html">[antlr-interest] distinguish &quot;3 + 4&quot; from &quot;3 +4&quot;
+</A></li>
+        <LI>Next message: <A HREF="042815.html">[antlr-interest] How to make case insensitive token checker for the lexical analysis part of antlr in C program?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#42827">[ date ]</a>
+              <a href="thread.html#42827">[ thread ]</a>
+              <a href="subject.html#42827">[ subject ]</a>
+              <a href="author.html#42827">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Ambiguities based on whitespace are a bit silly because you cannot catch
+errors. How do you know that when the input is:
+
+2 -2
+
+That the user actually has a type and forgot the space after the '-'? You
+don't and it will parse as two numbers. If you have any control over this,
+then you should rethink it. Use a ',' to separate, and then the whitespace
+can be ignored.
+
+However, there are two solutions, the first of which is lexer based and
+not really recommended - however sometimes this might be better and it
+might help others do similar things. The second is recommended if you
+cannot change the input format and is parser based.
+
+
+Lexer solution:
+
+grammar test;
+
+a : exp* EOF;
+
+exp : atom (PLUS atom)*
+    ;
+
+atom
+  	: NUMBER
+  	;
+  	
+NUMBER :	'0'..'9'+
+    ;
+
+PLUS : '+'
+     (
+		  ('0'..'9')=&gt; '0'..'9'+ { $type = NUMBER; }
+          |
+     )
+;
+
+MINUS : '-'
+     (
+		  ('0'..'9')=&gt; '0'..'9'+ { $type = NUMBER; }
+          |
+     )
+;
+
+
+WS  :   ( ' '
+        | '\t'
+        | '\r'
+        | '\n'
+        ) {$channel=HIDDEN;}
+    ;
+
+
+But then you don't have unary precedence 'correct'.
+
+- - - - - - - - - --
+
+Parser solution (with precedence correct):
+
+grammar test;
+
+options { output=AST; }
+
+tokens { UMINUS; UPLUS; }
+
+a : exp* EOF;
+
+exp : uatom
+		(
+			{ ((TokenStream)input ).get( input.index()+1
+).getType() == WS }?=&gt; (PLUS|MINUS)^ uatom
+		)*
+    ;
+
+uatom
+    : MINUS uatom 	-&gt; ^(UMINUS[$MINUS] uatom)
+    | PLUS uatom 	-&gt; ^(UPLUS[$PLUS] uatom)
+    | atom
+    ;
+
+atom
+  	: NUMBER
+  	;
+  	
+NUMBER
+	:	'0'..'9'+
+    ;
+
+PLUS 	: '+'	;
+MINUS 	: '-'	;
+
+WS  :   ( ' '
+        | '\t'
+        ) {$channel=HIDDEN;}
+    ;
+
+NL  :   ( '\r'
+        | '\n'
+        ) {$channel=HIDDEN;}
+    ;
+
+
+
+&gt;<i> -----Original Message-----
+</I>&gt;<i> From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:antlr-interest-
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">bounces at antlr.org</A>] On Behalf Of Andreas Liebig
+</I>&gt;<i> Sent: Wednesday, October 05, 2011 4:14 AM
+</I>&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> Subject: [antlr-interest] distinguish &quot;3 + 4&quot; from &quot;3 +4&quot;
+</I>&gt;<i>
+</I>&gt;<i> Hello,
+</I>&gt;<i> I am not very experienced with ANTLR, and I would like to ask for some
+</I>&gt;<i> ideas how to solve this task:
+</I>&gt;<i>
+</I>&gt;<i> I have to distinguish input streams like
+</I>&gt;<i> &quot;3 + 4&quot; (parsed as three tokens NUMBER PLUS NUMBER) from
+</I>&gt;<i> &quot;3 +4&quot; (parsed as NUMBER NUMBER, because the + is part of the number
+</I>&gt;<i> +4).
+</I>&gt;<i>
+</I>&gt;<i> I would like to ignore whitespace in general using the
+</I>&gt;<i> &quot;$channel=HIDDEN;&quot; syntax. But only in this situation whitespace does
+</I>&gt;<i> matter.
+</I>&gt;<i> Can you guide me to a good explanation of a possible solution?
+</I>&gt;<i>
+</I>&gt;<i> Thanks
+</I>&gt;<i> Andreas
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-">http://www.antlr.org/mailman/options/antlr-interest/your-</A>
+</I>&gt;<i> email-address
+</I></PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="042830.html">[antlr-interest] distinguish &quot;3 + 4&quot; from &quot;3 +4&quot;
+</A></li>
+	<LI>Next message: <A HREF="042815.html">[antlr-interest] How to make case insensitive token checker for the lexical analysis part of antlr in C program?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#42827">[ date ]</a>
+              <a href="thread.html#42827">[ thread ]</a>
+              <a href="subject.html#42827">[ subject ]</a>
+              <a href="author.html#42827">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,695 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Can anyone help with a basic grammar problem in Antlr 3?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Can%20anyone%20help%20with%20a%20basic%20grammar%20problem%0A%20in%20Antlr%203%3F&In-Reply-To=%3CCAMtjaCC4sY7jKcJ75A3shPWHQOKoEdK%3D8Ci-PQ1kNmO_ZHW-kw%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="042902.html">
+   <LINK REL="Next"  HREF="042904.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Can anyone help with a basic grammar problem in Antlr 3?</H1>
+    <B>Ross Bamford</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Can%20anyone%20help%20with%20a%20basic%20grammar%20problem%0A%20in%20Antlr%203%3F&In-Reply-To=%3CCAMtjaCC4sY7jKcJ75A3shPWHQOKoEdK%3D8Ci-PQ1kNmO_ZHW-kw%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Can anyone help with a basic grammar problem in Antlr 3?">roscoml at gmail.com
+       </A><BR>
+    <I>Fri Oct 14 05:11:11 PDT 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="042902.html">[antlr-interest] Can anyone help with a basic grammar problem in Antlr 3?
+</A></li>
+        <LI>Next message: <A HREF="042904.html">[antlr-interest] Can anyone help with a basic grammar problem in Antlr 3?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#42903">[ date ]</a>
+              <a href="thread.html#42903">[ thread ]</a>
+              <a href="subject.html#42903">[ subject ]</a>
+              <a href="author.html#42903">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Michael,
+
+I've tried adding IDENTIFIER into the atom rule, and that solved the
+assignment expression issues I was having, but unfortunately it broke the
+method call parsing completely - the issue seemed to stem from the parser
+not being able to differentiate between a function call, and a plain
+identifier - cue many and varied MismatchedSetExceptions :(. After much
+debugging with ANTLRWorks (what a great tool by the way!!) the only thing
+I've found that fixes this is to make parens mandatory on a method call.
+Having done that after making the other changes you suggested I've now got
+my tests passing (except obviously the ones that call methods without
+parens). I've also made some other changes based on another of your messages
+I found in the archives, to make input such as &quot;foo(1 2)&quot; throw an exception
+rather than just printing a warning and ignoring the &quot;2&quot; - so thanks again!
+:<i>)
+</I>
+I would still really like to have optional parens on method calls, which I
+know is difficult... I have a little experience with parsing Ruby, for
+example, and I know there's an ambiguous case such as:
+
+a = foo
+
+whereby do I treat foo as a var or a method? In other projects I've managed
+to handle that at runtime by treating foo as a var only if an assignment
+statement such as &quot;foo = 1&quot; has been seen before, and I seem to recall I
+simply parsed all such cases as a bare IDENTIFIER to be resolved later, but
+I have no idea how to make this work in my current Antlr parser.
+
+Here is my grammar as it stands now:
+
+/* ************* GRAMMAR **************** */
+grammar BasicLang;
+
+options {
+    output=AST;
+    ASTLabelType=CommonTree;
+    backtrack=true;
+    memoize=true;
+}
+
+tokens {
+  ASSIGN;
+  METHOD_CALL;
+  SELF;
+}
+
+@parser::members {
+  /* throw exceptions rather than silently failing... */
+protected void mismatch(IntStream input, int ttype, BitSet follow)
+  throws RecognitionException
+{
+  throw new MismatchedTokenException(ttype, input);
+}
+
+@Override
+public Object recoverFromMismatchedSet(IntStream input, RecognitionException
+e, BitSet follow)
+  throws RecognitionException
+{
+  throw e;
+}
+ @Override
+protected Object recoverFromMismatchedToken(IntStream input, int
+ttype, BitSet follow) throws RecognitionException {
+    if (ttype == RPAREN) {
+        throw new UnwantedTokenException(); // (&quot;Invalid input in argument
+list&quot;);
+    }
+    return super.recoverFromMismatchedToken(input, ttype, follow);
+}
+
+}
+
+@rulecatch {
+// throw exceptions rather than silently failing...
+catch (RecognitionException e) {
+  throw e;
+}
+}
+
+start_rule
+  :   script
+  ;
+
+script
+  :   statement+
+  |   EOF!
+  ;
+
+statement
+  :   expr terminator!
+  ;
+
+expr
+  :   assign_expr
+  |   math_expr
+  |   meth_call_expr
+  ;
+
+meth_call_expr
+  :   (IDENTIFIER DOT)? func_call_expr -&gt; ^(METHOD_CALL IDENTIFIER?
+func_call_expr)
+  |   (STRING_LITERAL DOT)? func_call_expr -&gt; ^(METHOD_CALL STRING_LITERAL?
+func_call_expr)
+  ;
+
+fragment
+func_call_expr
+  :   IDENTIFIER^ argument_list
+  ;
+
+fragment
+argument_list
+  :   LPAREN! (expr (COMMA! expr)*)? RPAREN!
+  ;
+
+assign_expr
+  :   IDENTIFIER ASSIGN expr -&gt; ^(ASSIGN IDENTIFIER expr)
+  ;
+
+math_expr
+  :   mult_expr ((ADD^|SUB^) mult_expr)*
+  ;
+
+mult_expr
+  :   pow_expr ((MUL^|DIV^|MOD^) pow_expr)*
+  ;
+
+pow_expr
+  :   unary_expr ((POW^) unary_expr)*
+  ;
+
+unary_expr
+  :   NOT? atom
+  ;
+
+atom
+  :     literal
+  |     IDENTIFIER
+  |     LPAREN! expr RPAREN!
+  ;
+
+literal
+  :     HEX_LITERAL
+  |     DECIMAL_LITERAL
+  |     OCTAL_LITERAL
+  |     FLOATING_POINT_LITERAL
+//  |     REGEXP_LITERAL
+  |     STRING_LITERAL
+  ;
+
+terminator
+  :     TERMINATOR
+  |     EOF
+  ;
+
+POW :   '^' ;
+MOD :   '%' ;
+ADD :   '+' ;
+SUB :   '-' ;
+DIV :   '/' ;
+MUL :   '*' ;
+NOT :   '!' ;
+
+ASSIGN
+    :   '='
+    ;
+
+LPAREN
+    :   '('
+    ;
+
+RPAREN
+    :   ')'
+    ;
+
+COMMA
+    :   ','
+    ;
+
+DOT :   '.' ;
+
+CHARACTER_LITERAL
+    :   '\'' ( EscapeSequence | ~('\''|'\\') ) '\''
+    ;
+
+STRING_LITERAL
+    :  '&quot;' ( EscapeSequence | ~('\\'|'&quot;') )* '&quot;'
+    ;
+
+/*
+REGEXP_LITERAL
+    :  '/' ( EscapeSequence | ~('\\'|'&quot;') )* '/'
+    ;
+*/
+
+HEX_LITERAL : '0' ('x'|'X') HexDigit+ IntegerTypeSuffix? ;
+
+DECIMAL_LITERAL : ('0' | '1'..'9' '0'..'9'*) IntegerTypeSuffix? ;
+
+OCTAL_LITERAL : '0' ('0'..'7')+ IntegerTypeSuffix? ;
+
+fragment
+HexDigit : ('0'..'9'|'a'..'f'|'A'..'F') ;
+
+fragment
+IntegerTypeSuffix
+  : ('l'|'L')
+  | ('u'|'U')  ('l'|'L')?
+  ;
+
+FLOATING_POINT_LITERAL
+    :   ('0'..'9')+ '.' ('0'..'9')* Exponent? FloatTypeSuffix?
+    |   '.' ('0'..'9')+ Exponent? FloatTypeSuffix?
+    |   ('0'..'9')+ Exponent? FloatTypeSuffix?
+  ;
+
+fragment
+Exponent : ('e'|'E') ('+'|'-')? ('0'..'9')+ ;
+
+fragment
+FloatTypeSuffix : ('f'|'F'|'d'|'D') ;
+
+fragment
+EscapeSequence
+    :   '\\' ('b'|'t'|'n'|'f'|'r'|'\&quot;'|'\''|'\\'|'/')
+    |   OctalEscape
+    ;
+
+fragment
+OctalEscape
+    :   '\\' ('0'..'3') ('0'..'7') ('0'..'7')
+    |   '\\' ('0'..'7') ('0'..'7')
+    |   '\\' ('0'..'7')
+    ;
+
+fragment
+UnicodeEscape
+    :   '\\' 'u' HexDigit HexDigit HexDigit HexDigit
+    ;
+COMMENT
+    :   '/*' ( options {greedy=false;} : . )* '*/' {$channel=HIDDEN;}
+    ;
+
+LINE_COMMENT
+    : '//' ~('\n'|'\r')* '\r'? '\n' {$channel=HIDDEN;}
+    ;
+
+IDENTIFIER
+  : ID_LETTER (ID_LETTER|'0'..'9')*
+  ;
+
+fragment
+ID_LETTER
+  : '$'
+  | 'A'..'Z'
+  | 'a'..'z'
+  | '_'
+  ;
+
+TERMINATOR
+  : '\r'? '\n'
+  | ';'
+  ;
+
+WS  :  (' '|'\r'|'\t'|'\u000C') {$channel=HIDDEN;}
+    |  '...' '\r'? '\n'  {$channel=HIDDEN;}
+    ;
+
+/* ************* END ************************ */
+
+
+On Fri, Oct 14, 2011 at 2:12 AM, Michael Bedward &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">michael.bedward at gmail.com</A>&gt;
+ wrote:
+
+&gt;<i> Ah yes, it's getting stuck on the &quot;b&quot; because you haven't told it that
+</I>&gt;<i> identifiers are atoms...
+</I>&gt;<i>
+</I>&gt;<i> atom
+</I>&gt;<i>  :     literal
+</I>&gt;<i>  |     IDENTIFIER
+</I>&gt;<i>  |     LPAREN! expr RPAREN!
+</I>&gt;<i>  ;
+</I>&gt;<i>
+</I>&gt;<i> Michael
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> On 14 October 2011 11:42, Ross Bamford &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">roscoml at gmail.com</A>&gt; wrote:
+</I>&gt;<i> &gt; Hi Michael,
+</I>&gt;<i> &gt; Thanks for the response! And thanks for being kind about my basic grammar
+</I>&gt;<i> &gt; :)
+</I>&gt;<i> &gt; I tried reordering the alternatives in expr as you suggested, and am a
+</I>&gt;<i> bit
+</I>&gt;<i> &gt; closer now than I was before! It's definitely parsing a = 1 + (b = 2)
+</I>&gt;<i> fine,
+</I>&gt;<i> &gt; but I'm still seeing NoViableAltExceptions with, for example &quot;a=b+(c=2)&quot;.
+</I>&gt;<i> &gt; Looking at the debugger step by step it seems to still be trying to grab
+</I>&gt;<i> &gt; &quot;b+&quot; as a token, rather than seeing the &quot;b&quot; then the &quot;+&quot;, which is why I
+</I>&gt;<i> &gt; tried adding IDENTIFIER to the &quot;atom&quot; rule previously. I tried adding it
+</I>&gt;<i> &gt; again after making the change you suggested but it still caused a lot of
+</I>&gt;<i> &gt; problems in other places.
+</I>&gt;<i> &gt; Thanks,
+</I>&gt;<i> &gt; Ross
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; On Fri, Oct 14, 2011 at 1:04 AM, Michael Bedward &lt;
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">michael.bedward at gmail.com</A>&gt;
+</I>&gt;<i> &gt; wrote:
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; Hi Ross,
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; For a bit of a newbie that's a nice grammar - much neater than any of
+</I>&gt;<i> mine
+</I>&gt;<i> &gt;&gt; :)
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; If you rearrange your expr rule so that the assign_expr is the first
+</I>&gt;<i> &gt;&gt; alternative...
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; expr
+</I>&gt;<i> &gt;&gt;  :   assign_expr
+</I>&gt;<i> &gt;&gt;  |   math_expr
+</I>&gt;<i> &gt;&gt;  |   meth_call_expr
+</I>&gt;<i> &gt;&gt;  ;
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; ...I think that the grammar should be able to parse things like a = 1 +
+</I>&gt;<i> (b
+</I>&gt;<i> &gt;&gt; = 2)
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; Michael
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; On 14 October 2011 10:38, Ross Bamford &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">roscoml at gmail.com</A>&gt; wrote:
+</I>&gt;<i> &gt;&gt; &gt; Hi Guys,
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; I'm a bit of an Antlr newbie - I've successfully created and used
+</I>&gt;<i> Antlr
+</I>&gt;<i> &gt;&gt; &gt; 2
+</I>&gt;<i> &gt;&gt; &gt; grammars in the past but mostly by trial and error, and occasionally
+</I>&gt;<i> &gt;&gt; &gt; random
+</I>&gt;<i> &gt;&gt; &gt; hacking until it &quot;worked&quot;... I've recently become involved in a
+</I>&gt;<i> project
+</I>&gt;<i> &gt;&gt; &gt; that
+</I>&gt;<i> &gt;&gt; &gt; requires a very simple scripting language, and have decided to use
+</I>&gt;<i> Antlr
+</I>&gt;<i> &gt;&gt; &gt; 3
+</I>&gt;<i> &gt;&gt; &gt; for this, but I'm getting stuck quite early on - I think I have a
+</I>&gt;<i> &gt;&gt; &gt; fundamental problem in my grammar but after much hacking at it and
+</I>&gt;<i> &gt;&gt; &gt; trying
+</I>&gt;<i> &gt;&gt; &gt; various ideas I got from Google, I'm still hitting a bit of a brick
+</I>&gt;<i> &gt;&gt; &gt; wall.
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; Basically I'm at the point where I have mathematical expressions and
+</I>&gt;<i> &gt;&gt; &gt; various
+</I>&gt;<i> &gt;&gt; &gt; literal types implemented, and am adding in function and method call
+</I>&gt;<i> &gt;&gt; &gt; handling - I want to be able to call methods with or without and
+</I>&gt;<i> &gt;&gt; &gt; explicit
+</I>&gt;<i> &gt;&gt; &gt; receiver, and in my language parenthesis are optional (I know that
+</I>&gt;<i> &gt;&gt; &gt; complicates matters a bit but it's what I need for this project). I've
+</I>&gt;<i> &gt;&gt; &gt; written the grammar so far against a set of functional tests, and all
+</I>&gt;<i> is
+</I>&gt;<i> &gt;&gt; &gt; well with most of my syntax. Here is my grammar:
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; /* ********* GRAMMAR *********** */
+</I>&gt;<i> &gt;&gt; &gt; grammar BasicLang;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; options {
+</I>&gt;<i> &gt;&gt; &gt;    output=AST;
+</I>&gt;<i> &gt;&gt; &gt;    ASTLabelType=CommonTree;
+</I>&gt;<i> &gt;&gt; &gt;    backtrack=true;
+</I>&gt;<i> &gt;&gt; &gt;    memoize=true;
+</I>&gt;<i> &gt;&gt; &gt; }
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; tokens {
+</I>&gt;<i> &gt;&gt; &gt;  ASSIGN;
+</I>&gt;<i> &gt;&gt; &gt;  METHOD_CALL;
+</I>&gt;<i> &gt;&gt; &gt;  SELF;
+</I>&gt;<i> &gt;&gt; &gt; }
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; @parser::members {
+</I>&gt;<i> &gt;&gt; &gt;  /* throw exceptions rather than silently failing... */
+</I>&gt;<i> &gt;&gt; &gt; protected void mismatch(IntStream input, int ttype, BitSet follow)
+</I>&gt;<i> &gt;&gt; &gt;  throws RecognitionException
+</I>&gt;<i> &gt;&gt; &gt; {
+</I>&gt;<i> &gt;&gt; &gt;  throw new MismatchedTokenException(ttype, input);
+</I>&gt;<i> &gt;&gt; &gt; }
+</I>&gt;<i> &gt;&gt; &gt;  public Object recoverFromMismatchedSet(IntStream input,
+</I>&gt;<i> &gt;&gt; &gt; RecognitionException e, BitSet follow)
+</I>&gt;<i> &gt;&gt; &gt;  throws RecognitionException
+</I>&gt;<i> &gt;&gt; &gt; {
+</I>&gt;<i> &gt;&gt; &gt;  throw e;
+</I>&gt;<i> &gt;&gt; &gt; }
+</I>&gt;<i> &gt;&gt; &gt; }
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; @rulecatch {
+</I>&gt;<i> &gt;&gt; &gt; // throw exceptions rather than silently failing...
+</I>&gt;<i> &gt;&gt; &gt; catch (RecognitionException e) {
+</I>&gt;<i> &gt;&gt; &gt;  throw e;
+</I>&gt;<i> &gt;&gt; &gt; }
+</I>&gt;<i> &gt;&gt; &gt; }
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; start_rule
+</I>&gt;<i> &gt;&gt; &gt;  :   script
+</I>&gt;<i> &gt;&gt; &gt;  ;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; script
+</I>&gt;<i> &gt;&gt; &gt;  :   statement*
+</I>&gt;<i> &gt;&gt; &gt;  ;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; statement
+</I>&gt;<i> &gt;&gt; &gt;  :   expr terminator!
+</I>&gt;<i> &gt;&gt; &gt;  ;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; expr
+</I>&gt;<i> &gt;&gt; &gt;  :   math_expr
+</I>&gt;<i> &gt;&gt; &gt;  |   assign_expr
+</I>&gt;<i> &gt;&gt; &gt;  |   meth_call_expr
+</I>&gt;<i> &gt;&gt; &gt;  ;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; meth_call_expr
+</I>&gt;<i> &gt;&gt; &gt;  :   (IDENTIFIER DOT)? func_call_expr -&gt; ^(METHOD_CALL IDENTIFIER?
+</I>&gt;<i> &gt;&gt; &gt; func_call_expr)
+</I>&gt;<i> &gt;&gt; &gt;  |   (STRING_LITERAL DOT)? func_call_expr -&gt; ^(METHOD_CALL
+</I>&gt;<i> &gt;&gt; &gt; STRING_LITERAL?
+</I>&gt;<i> &gt;&gt; &gt; func_call_expr)
+</I>&gt;<i> &gt;&gt; &gt;  ;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; fragment
+</I>&gt;<i> &gt;&gt; &gt; func_call_expr
+</I>&gt;<i> &gt;&gt; &gt;  :   IDENTIFIER^ argument_list
+</I>&gt;<i> &gt;&gt; &gt;  ;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; fragment
+</I>&gt;<i> &gt;&gt; &gt; argument_list
+</I>&gt;<i> &gt;&gt; &gt;  :   LPAREN!? (expr (COMMA! expr)*)? RPAREN!?
+</I>&gt;<i> &gt;&gt; &gt;  ;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; assign_expr
+</I>&gt;<i> &gt;&gt; &gt;  :   IDENTIFIER ASSIGN expr -&gt; ^(ASSIGN IDENTIFIER expr)
+</I>&gt;<i> &gt;&gt; &gt;  ;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; math_expr
+</I>&gt;<i> &gt;&gt; &gt;  :   mult_expr ((ADD^|SUB^) mult_expr)*
+</I>&gt;<i> &gt;&gt; &gt;  ;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; mult_expr
+</I>&gt;<i> &gt;&gt; &gt;  :   pow_expr ((MUL^|DIV^|MOD^) pow_expr)*
+</I>&gt;<i> &gt;&gt; &gt;  ;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; pow_expr
+</I>&gt;<i> &gt;&gt; &gt;  :   unary_expr ((POW^) unary_expr)*
+</I>&gt;<i> &gt;&gt; &gt;  ;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; unary_expr
+</I>&gt;<i> &gt;&gt; &gt;  :   NOT? atom
+</I>&gt;<i> &gt;&gt; &gt;  ;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; atom
+</I>&gt;<i> &gt;&gt; &gt;  :     literal
+</I>&gt;<i> &gt;&gt; &gt;  |     LPAREN! expr RPAREN!
+</I>&gt;<i> &gt;&gt; &gt;  ;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; literal
+</I>&gt;<i> &gt;&gt; &gt;  :     HEX_LITERAL
+</I>&gt;<i> &gt;&gt; &gt;  |     DECIMAL_LITERAL
+</I>&gt;<i> &gt;&gt; &gt;  |     OCTAL_LITERAL
+</I>&gt;<i> &gt;&gt; &gt;  |     FLOATING_POINT_LITERAL
+</I>&gt;<i> &gt;&gt; &gt; //  |     REGEXP_LITERAL
+</I>&gt;<i> &gt;&gt; &gt;  |     STRING_LITERAL
+</I>&gt;<i> &gt;&gt; &gt;  ;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; terminator
+</I>&gt;<i> &gt;&gt; &gt;  :     TERMINATOR
+</I>&gt;<i> &gt;&gt; &gt;  |     EOF
+</I>&gt;<i> &gt;&gt; &gt;  ;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; POW :   '^' ;
+</I>&gt;<i> &gt;&gt; &gt; MOD :   '%' ;
+</I>&gt;<i> &gt;&gt; &gt; ADD :   '+' ;
+</I>&gt;<i> &gt;&gt; &gt; SUB :   '-' ;
+</I>&gt;<i> &gt;&gt; &gt; DIV :   '/' ;
+</I>&gt;<i> &gt;&gt; &gt; MUL :   '*' ;
+</I>&gt;<i> &gt;&gt; &gt; NOT :   '!' ;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; ASSIGN
+</I>&gt;<i> &gt;&gt; &gt;    :   '='
+</I>&gt;<i> &gt;&gt; &gt;    ;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; LPAREN
+</I>&gt;<i> &gt;&gt; &gt;    :   '('
+</I>&gt;<i> &gt;&gt; &gt;    ;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; RPAREN
+</I>&gt;<i> &gt;&gt; &gt;    :   ')'
+</I>&gt;<i> &gt;&gt; &gt;    ;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; COMMA
+</I>&gt;<i> &gt;&gt; &gt;    :   ','
+</I>&gt;<i> &gt;&gt; &gt;    ;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; DOT :   '.' ;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; CHARACTER_LITERAL
+</I>&gt;<i> &gt;&gt; &gt;    :   '\'' ( EscapeSequence | ~('\''|'\\') ) '\''
+</I>&gt;<i> &gt;&gt; &gt;    ;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; STRING_LITERAL
+</I>&gt;<i> &gt;&gt; &gt;    :  '&quot;' ( EscapeSequence | ~('\\'|'&quot;') )* '&quot;'
+</I>&gt;<i> &gt;&gt; &gt;    ;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; /*
+</I>&gt;<i> &gt;&gt; &gt; REGEXP_LITERAL
+</I>&gt;<i> &gt;&gt; &gt;    :  '/' ( EscapeSequence | ~('\\'|'&quot;') )* '/'
+</I>&gt;<i> &gt;&gt; &gt;    ;
+</I>&gt;<i> &gt;&gt; &gt; */
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; HEX_LITERAL : '0' ('x'|'X') HexDigit+ IntegerTypeSuffix? ;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; DECIMAL_LITERAL : ('0' | '1'..'9' '0'..'9'*) IntegerTypeSuffix? ;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; OCTAL_LITERAL : '0' ('0'..'7')+ IntegerTypeSuffix? ;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; fragment
+</I>&gt;<i> &gt;&gt; &gt; HexDigit : ('0'..'9'|'a'..'f'|'A'..'F') ;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; fragment
+</I>&gt;<i> &gt;&gt; &gt; IntegerTypeSuffix
+</I>&gt;<i> &gt;&gt; &gt;  : ('l'|'L')
+</I>&gt;<i> &gt;&gt; &gt;  | ('u'|'U')  ('l'|'L')?
+</I>&gt;<i> &gt;&gt; &gt;  ;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; FLOATING_POINT_LITERAL
+</I>&gt;<i> &gt;&gt; &gt;    :   ('0'..'9')+ '.' ('0'..'9')* Exponent? FloatTypeSuffix?
+</I>&gt;<i> &gt;&gt; &gt;    |   '.' ('0'..'9')+ Exponent? FloatTypeSuffix?
+</I>&gt;<i> &gt;&gt; &gt;    |   ('0'..'9')+ Exponent? FloatTypeSuffix?
+</I>&gt;<i> &gt;&gt; &gt;  ;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; fragment
+</I>&gt;<i> &gt;&gt; &gt; Exponent : ('e'|'E') ('+'|'-')? ('0'..'9')+ ;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; fragment
+</I>&gt;<i> &gt;&gt; &gt; FloatTypeSuffix : ('f'|'F'|'d'|'D') ;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; fragment
+</I>&gt;<i> &gt;&gt; &gt; EscapeSequence
+</I>&gt;<i> &gt;&gt; &gt;    :   '\\' ('b'|'t'|'n'|'f'|'r'|'\&quot;'|'\''|'\\'|'/')
+</I>&gt;<i> &gt;&gt; &gt;    |   OctalEscape
+</I>&gt;<i> &gt;&gt; &gt;    ;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; fragment
+</I>&gt;<i> &gt;&gt; &gt; OctalEscape
+</I>&gt;<i> &gt;&gt; &gt;    :   '\\' ('0'..'3') ('0'..'7') ('0'..'7')
+</I>&gt;<i> &gt;&gt; &gt;    |   '\\' ('0'..'7') ('0'..'7')
+</I>&gt;<i> &gt;&gt; &gt;    |   '\\' ('0'..'7')
+</I>&gt;<i> &gt;&gt; &gt;    ;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; fragment
+</I>&gt;<i> &gt;&gt; &gt; UnicodeEscape
+</I>&gt;<i> &gt;&gt; &gt;    :   '\\' 'u' HexDigit HexDigit HexDigit HexDigit
+</I>&gt;<i> &gt;&gt; &gt;    ;
+</I>&gt;<i> &gt;&gt; &gt; COMMENT
+</I>&gt;<i> &gt;&gt; &gt;    :   '/*' ( options {greedy=false;} : . )* '*/' {$channel=HIDDEN;}
+</I>&gt;<i> &gt;&gt; &gt;    ;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; LINE_COMMENT
+</I>&gt;<i> &gt;&gt; &gt;    : '//' ~('\n'|'\r')* '\r'? '\n' {$channel=HIDDEN;}
+</I>&gt;<i> &gt;&gt; &gt;    ;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; IDENTIFIER
+</I>&gt;<i> &gt;&gt; &gt;  : ID_LETTER (ID_LETTER|'0'..'9')*
+</I>&gt;<i> &gt;&gt; &gt;  ;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; fragment
+</I>&gt;<i> &gt;&gt; &gt; ID_LETTER
+</I>&gt;<i> &gt;&gt; &gt;  : '$'
+</I>&gt;<i> &gt;&gt; &gt;  | 'A'..'Z'
+</I>&gt;<i> &gt;&gt; &gt;  | 'a'..'z'
+</I>&gt;<i> &gt;&gt; &gt;  | '_'
+</I>&gt;<i> &gt;&gt; &gt;  ;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; TERMINATOR
+</I>&gt;<i> &gt;&gt; &gt;  : '\r'? '\n'
+</I>&gt;<i> &gt;&gt; &gt;  | ';'
+</I>&gt;<i> &gt;&gt; &gt;  ;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; WS  :  (' '|'\r'|'\t'|'\u000C') {$channel=HIDDEN;}
+</I>&gt;<i> &gt;&gt; &gt;    |  '...' '\r'? '\n'  {$channel=HIDDEN;}
+</I>&gt;<i> &gt;&gt; &gt;    ;
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; /* *************** END *************** */
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; With this grammar, my tests so far pass, and I'm building trees for
+</I>&gt;<i> &gt;&gt; &gt; simple
+</I>&gt;<i> &gt;&gt; &gt; arithmetic operations and the like, including involving variables
+</I>&gt;<i> (e.g.
+</I>&gt;<i> &gt;&gt; &gt; a+1
+</I>&gt;<i> &gt;&gt; &gt; and the like), and method calls are working as I expect, including
+</I>&gt;<i> when
+</I>&gt;<i> &gt;&gt; &gt; passing method call results as args to another method call. But I
+</I>&gt;<i> cannot
+</I>&gt;<i> &gt;&gt; &gt; get
+</I>&gt;<i> &gt;&gt; &gt; input such as &quot;a=b+(c=1)&quot; to parse at all - Debugging in AntlrWorks
+</I>&gt;<i> &gt;&gt; &gt; shows me
+</I>&gt;<i> &gt;&gt; &gt; that the problem occurs when the parse sees the &quot;b+&quot;, when it throws a
+</I>&gt;<i> &gt;&gt; &gt; NoViableAlt exception.
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; I guessed this was because the parser doesn't see the identifier as an
+</I>&gt;<i> &gt;&gt; &gt; atom,
+</I>&gt;<i> &gt;&gt; &gt; so tries to parse it with the + symbol. So, I tried adding IDENTIFIER
+</I>&gt;<i> as
+</I>&gt;<i> &gt;&gt; &gt; an
+</I>&gt;<i> &gt;&gt; &gt; alternative to the atom rule - but that just broke the parser
+</I>&gt;<i> completely
+</I>&gt;<i> &gt;&gt; &gt; and
+</I>&gt;<i> &gt;&gt; &gt; many of my tests failed with an exception - MismatchedSetException.
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; I've been playing with this for a few days now but no matter what I
+</I>&gt;<i> do,
+</I>&gt;<i> &gt;&gt; &gt; even
+</I>&gt;<i> &gt;&gt; &gt; when I get the type of syntax I mentioned above (the assign statement)
+</I>&gt;<i> &gt;&gt; &gt; working, I invariably break something (or more often, everything! :( )
+</I>&gt;<i> &gt;&gt; &gt; else.
+</I>&gt;<i> &gt;&gt; &gt; I'm really hoping someone out there will take pity on me and give me
+</I>&gt;<i> &gt;&gt; &gt; some
+</I>&gt;<i> &gt;&gt; &gt; insight into what I'm doing wrong.
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; Thanks in advance!
+</I>&gt;<i> &gt;&gt; &gt; --
+</I>&gt;<i> &gt;&gt; &gt; Ross Bamford - <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">roscoml at gmail.com</A>
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt; &gt; List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> &gt;&gt; &gt; Unsubscribe:
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i> &gt;&gt; &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i>
+</I>&gt;<i>
+</I></PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="042902.html">[antlr-interest] Can anyone help with a basic grammar problem in Antlr 3?
+</A></li>
+	<LI>Next message: <A HREF="042904.html">[antlr-interest] Can anyone help with a basic grammar problem in Antlr 3?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#42903">[ date ]</a>
+              <a href="thread.html#42903">[ thread ]</a>
+              <a href="subject.html#42903">[ subject ]</a>
+              <a href="author.html#42903">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

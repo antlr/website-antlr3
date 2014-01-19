@@ -1,0 +1,239 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] first steps with a lexer/parser
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20first%20steps%20with%20a%20lexer/parser&In-Reply-To=%3C20080104144231.63100%40gmx.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="025530.html">
+   <LINK REL="Next"  HREF="025532.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] first steps with a lexer/parser</H1>
+    <B>Harald Mueller</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20first%20steps%20with%20a%20lexer/parser&In-Reply-To=%3C20080104144231.63100%40gmx.net%3E"
+       TITLE="[antlr-interest] first steps with a lexer/parser">harald_m_mueller at gmx.de
+       </A><BR>
+    <I>Fri Jan  4 06:42:31 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="025530.html">[antlr-interest] first steps with a lexer/parser
+</A></li>
+        <LI>Next message: <A HREF="025532.html">[antlr-interest] first steps with a lexer/parser
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25529">[ date ]</a>
+              <a href="thread.html#25529">[ thread ]</a>
+              <a href="subject.html#25529">[ subject ]</a>
+              <a href="author.html#25529">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi -
+
+a) WS and NL should get a marker
+   { $channel = HIDDEN; }
+so that the parser does not even see them - because I'm quite sure that also
+   {a=1}
+etc. (see first mail) should be allowed.
+And then you can remove all references to WS and NL from the parser! - the language should then look much more like your language definition (wherever you got this from - if you invent(ed) the language yourself, still write a natural-language specification for the language, where you steal as much as possible from well-done other language specifications; Java and C# are the best ones for programming languages around - for other languages, I'd at least try to steal ideas from the whitespace and comment parts of those. And while I'm on the subject: If you design a language, always allow the possibility of some sort of comments; you will even need them in your tests).
+
+b) In the rule 
+    start  :    msg NL? EOF ;
+put an ! behind EOF: You dont want this in the AST (unfortunately, it becomes a null Token - see the end of your output, which creates troubles off and on; and you get an artificial null root also - both are ugly).
+(and remove the NL? - see a)).
+
+c) You do a &quot;double job&quot; in the STR rules:
+
+&gt;<i> STR
+</I>[...]
+&gt;<i>        :    '&quot;' ANYCHAR* '&quot;'
+</I>&gt;<i>        ;
+</I>&gt;<i> 
+</I>&gt;<i> fragment ANYCHAR
+</I>&gt;<i>        :    (~'&quot;')+
+</I>&gt;<i>        ;
+</I>
+There is a + in ANYCHAR, and a * in STR. What you want is simply either
+
+ STR
+[...]
+        :    '&quot;' (~'&quot;')* '&quot;'
+        ;
+
+or, if you want to keep this ANYCHAR rule,
+
+STR
+[...]
+       :    '&quot;' ANYCHAR* '&quot;'
+       ;
+
+fragment ANYCHAR
+       :    ~'&quot;'         // without +
+       ;
+
+d) You might also want to capture tabs ('\t') in your WS rule.
+
+Regards
+Harald
+
+
+-------- Original-Nachricht --------
+&gt;<i> Datum: Fri, 4 Jan 2008 09:25:28 -0500
+</I>&gt;<i> Von: body &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-list at splitbody.com</A>&gt;
+</I>&gt;<i> An: &quot;Harald Mueller&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">harald_m_mueller at gmx.de</A>&gt;
+</I>&gt;<i> CC: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> Betreff: Re: [antlr-interest] first steps with a lexer/parser
+</I>
+&gt;<i> i see!
+</I>&gt;<i> 
+</I>&gt;<i> thank you for your patience, below is the modified lexer/parser.
+</I>&gt;<i> 
+</I>&gt;<i> so for the input string
+</I>&gt;<i> 
+</I>&gt;<i> { a=1 b=&quot;2&quot; c=&quot;t&quot; d=&quot;text&quot; e=&quot;one two&quot; f={ g=&quot;three four&quot; h={ i=5 j=&quot;a ha&quot;
+</I>&gt;<i> } } }
+</I>&gt;<i> 
+</I>&gt;<i> it produces
+</I>&gt;<i> 
+</I>&gt;<i> (MSG (PAIR a 1) (PAIR b 2) (PAIR c t) (PAIR d text) (PAIR e one two)
+</I>&gt;<i> (PAIR f (MSG (PAIR g three four) (PAIR h (MSG (PAIR i 5) (PAIR j a
+</I>&gt;<i> ha)))))) null
+</I>&gt;<i> 
+</I>&gt;<i> so now i just have to write the tree grammar to walk it and take
+</I>&gt;<i> appropriate action, correct?
+</I>&gt;<i> 
+</I>&gt;<i> thanks again for your help.
+</I>&gt;<i> 
+</I>&gt;<i> ----------------------------
+</I>&gt;<i> 
+</I>&gt;<i> grammar MsgString;
+</I>&gt;<i> 
+</I>&gt;<i> options { output = AST; }
+</I>&gt;<i> 
+</I>&gt;<i> tokens {
+</I>&gt;<i> 	PAIR;
+</I>&gt;<i> 	MSG;
+</I>&gt;<i> }
+</I>&gt;<i> 
+</I>&gt;<i> start  :    msg NL? EOF ;
+</I>&gt;<i> 
+</I>&gt;<i> msg    :    '{' WS nameValuePairExpr* WS '}' -&gt; ^(MSG nameValuePairExpr*)
+</I>&gt;<i> ;
+</I>&gt;<i> 
+</I>&gt;<i> nameValuePairExpr
+</I>&gt;<i>        :    NAME '=' valueExpr WS? -&gt; ^(PAIR NAME valueExpr) ;
+</I>&gt;<i> 
+</I>&gt;<i> valueExpr
+</I>&gt;<i>        :    STR
+</I>&gt;<i>        |    INT
+</I>&gt;<i>        |    msg
+</I>&gt;<i>        ;
+</I>&gt;<i> 
+</I>&gt;<i> STR
+</I>&gt;<i>        @after{
+</I>&gt;<i>             setText(getText().substring(1, getText().length()-1));
+</I>&gt;<i>        }
+</I>&gt;<i>        :    '&quot;' ANYCHAR* '&quot;'
+</I>&gt;<i>        ;
+</I>&gt;<i> 
+</I>&gt;<i> fragment ANYCHAR
+</I>&gt;<i>        :    (~'&quot;')+
+</I>&gt;<i>        ;
+</I>&gt;<i> 
+</I>&gt;<i> INT    :    '0'..'9'+ ;
+</I>&gt;<i> 
+</I>&gt;<i> NAME   :    ('a'..'z'|'A'..'Z'|'0'..'9')+ ;
+</I>&gt;<i> 
+</I>&gt;<i> WS     :    ' '+ ;
+</I>&gt;<i> 
+</I>&gt;<i> NL     :    ('\n'|'\r')+ ;
+</I>&gt;<i> 
+</I>&gt;<i> ----------------------------
+</I>&gt;<i> 
+</I>&gt;<i> On 1/4/08, Harald Mueller &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">harald_m_mueller at gmx.de</A>&gt; wrote:
+</I>&gt;<i> &gt; &gt; a). it is indeed simpler if i use tokens instead of rules, but then i
+</I>&gt;<i> &gt; &gt; cannot strip the double quotes (! don't work unlike in the case of
+</I>&gt;<i> &gt; &gt; rules), and getting rid of them explicitly in code seems to be
+</I>&gt;<i> &gt; &gt; terribly hacky.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; No. The correct way is to normalize the token text in the lexer.
+</I>&gt;<i> Everything else is considered hacky in lexer+parser design.
+</I>&gt;<i> &gt; (Yes, there is a bug in ANTLR 3.x, as far as I know, so that ! does not
+</I>&gt;<i> work in the lexer right now. Terence promised to work on this somewhen
+</I>&gt;<i> &quot;now&quot; - please complain about this!).
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; b). i could not simply skip() WS, because then they get removed from
+</I>&gt;<i> &gt; &gt; my strings within the quotes (and i want spaces preserved inside
+</I>&gt;<i> &gt; &gt; quotes).
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; If this is the only reason for keeping the WS, it shows even more that
+</I>&gt;<i> the decision to do string assembly on the parser level is wrong. Please
+</I>&gt;<i> don't do this. One simple line in the lext
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;     $text = $text.substring(1,....);
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; or a repaired ANTLR with two tiny !
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;     STRING : '&quot;'! ~('&quot;')* '&quot;'!
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; as opposed to thinking about WS in the grammar at multiple places, where
+</I>&gt;<i> it is (by language definition - at least I assume this) irrelevant: Please
+</I>&gt;<i> go for the time-proven, text-book decision.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; &gt; or perhaps some sort of a flag that says that if i am inside a
+</I>&gt;<i> &gt; &gt; quoted string i do not throw away spaces.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; If at all, you can re-create the original text from the HIDDEN channel -
+</I>&gt;<i> there, all the characters are preserved.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; &gt; d). i guess similar to a). i prefer semantic rather than symbolic...
+</I>&gt;<i> &gt; &gt; err.. symbols
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Yeah - here it is perfectly ok to use a sensible name instead of '='.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Regards
+</I>&gt;<i> &gt; Harald
+</I>&gt;<i> &gt;
+</I>
+-- 
+Der GMX SmartSurfer hilft bis zu 70% Ihrer Onlinekosten zu sparen! 
+Ideal f&#252;r Modem und ISDN: <A HREF="http://www.gmx.net/de/go/smartsurfer">http://www.gmx.net/de/go/smartsurfer</A>
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="025530.html">[antlr-interest] first steps with a lexer/parser
+</A></li>
+	<LI>Next message: <A HREF="025532.html">[antlr-interest] first steps with a lexer/parser
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25529">[ date ]</a>
+              <a href="thread.html#25529">[ thread ]</a>
+              <a href="subject.html#25529">[ subject ]</a>
+              <a href="author.html#25529">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

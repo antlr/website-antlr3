@@ -1,0 +1,407 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Re: Positioning input stream (was EOL sequen
+	 ce)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20Positioning%20input%20stream%20%28was%20EOL%20sequen%0A%09%20ce%29&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005890.html">
+   <LINK REL="Next"  HREF="005896.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Re: Positioning input stream (was EOL sequen
+	 ce)</H1>
+    <B>mzukowski at yci.com</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20Positioning%20input%20stream%20%28was%20EOL%20sequen%0A%09%20ce%29&In-Reply-To="
+       TITLE="[antlr-interest] Re: Positioning input stream (was EOL sequen
+	 ce)">mzukowski at yci.com
+       </A><BR>
+    <I>Fri Dec 19 08:06:44 PST 2003</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005890.html">[antlr-interest] Re: Positioning input stream (was EOL sequen
+	 ce)
+</A></li>
+        <LI>Next message: <A HREF="005896.html">[antlr-interest] Re: Nondeterminism problem
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5889">[ date ]</a>
+              <a href="thread.html#5889">[ thread ]</a>
+              <a href="subject.html#5889">[ subject ]</a>
+              <a href="author.html#5889">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Also, I would inspect the generated code around any of your read()s to
+convince yourself that it will behave.  Reading the generated code is a
+great way to learn what antlr is doing, and that code is designed to be read
+by humans (except the tree building parts :))
+
+Monty
+
+-----Original Message-----
+From: skappskapp [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">skapp at rochester.rr.com</A>] 
+Sent: Friday, December 19, 2003 3:04 AM
+To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>
+Subject: [antlr-interest] Re: Positioning input stream (was EOL sequen ce)
+
+Thanks for the advice from all. Unfortunately, the records are not 
+fixed length - in general they can be any length. The image 
+operators usually read a fixed amount of data. I've run into other 
+PostScript code that uses the read operators to discard lines of 
+input that should not be interpreted. So I cannot make any 
+assumptions about the amount of data to be read.
+
+However I did find a solution, albeit a somewhat strange one. 
+Instead of attempting to ensure that I could synchronize the input 
+stream that the read operators were using with the lookahead stream 
+that the scanner was using, I simply built on top of the scanner. 
+Since I have no syntactic predicates in my grammar, I added a read() 
+method to my lexer:
+
+public int read() throws CharStreamException {
+    int output = LA(1);
+    if (output == EOF_CHAR) {
+        output = PSFile.EOF;
+    }
+    else {
+        consume();
+    }
+    return output;
+}
+
+Now the file operators are reading from the same &quot;stream&quot; that the 
+lexer is. Once I match a name object in the lexer, the 
+consumeWhiteSpace() method is called:
+
+public void consumeWhiteSpace() throws CharStreamException {
+    char value = LA(1);
+    if (value == '\r') {
+        consume();
+        if (LA(1) == '\n') {
+            consume();
+        }
+        newline();
+    }
+    else {
+        if (value == '\n') {
+            consume();
+            newline();
+        }
+        else if ((value == ' ') || (value == '\t') ||
+                 (value == '\f') ||(value == '\0')) {
+            consume();
+        }
+    }
+}
+
+Any objections out there as to why this should not or could work?
+
+   Steve
+
+
+--- In <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>, <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">mzukowski at y...</A> wrote:
+&gt;<i> Yes, you do need to reset the lookahead buffer.  Doing your read 
+</I>from the
+&gt;<i> parser is a bad idea in general.  If you are strictly k=1 in your 
+</I>parser and
+&gt;<i> don't use any syntactic predicates then you may be able to do it 
+</I>reliably,
+&gt;<i> but I would strongly recommend doing it in the lexer.  ANTLR 
+</I>lexers are
+&gt;<i> powerful enough to actually be parsers in their own right.
+</I>&gt;<i> 
+</I>&gt;<i> Not being familiar with PostScript I'm not sure how practical that 
+</I>is.  For
+&gt;<i> this one rule you could use lexer states.  But wait, does the 
+</I>interpreter
+&gt;<i> use information on the stack for how many bytes to read?  
+</I>&gt;<i> 
+</I>&gt;<i> If so, you may be better off maintaining your stack in the lexer.  
+</I>&gt;<i> 
+</I>&gt;<i> The core of the problem is that the parser needs k tokens ahead of 
+</I>the
+&gt;<i> current match to be able to predict what to match next.  That &quot;k&quot; 
+</I>is at
+&gt;<i> least what you say k is, but with a syntactic predicate k is 
+</I>unbounded.  So
+&gt;<i> in the extreme case you may have already lexed the entire input 
+</I>stream
+&gt;<i> before you even start parsing.  The lookahead buffer is filled as 
+</I>needed, so
+&gt;<i> it doesn't always have k elements in it.
+</I>&gt;<i> 
+</I>&gt;<i> What is really happening below is that the lexer, which also has a 
+</I>lookahead
+&gt;<i> buffer, has already read the 'CR' and has it in its lookahead 
+</I>buffer.  It
+&gt;<i> has not lexed the whitespace yet.  The input stream has not read 
+</I>the LF yet.
+&gt;<i> Luckily for you, in this particular production the parser didn't 
+</I>need to
+&gt;<i> know LA(1) yet.  If it needed that then the whitespace would have 
+</I>been lexed
+&gt;<i> and skipped and then X would have been lexed, turned into a Token 
+</I>and put
+&gt;<i> into the parser's lookahead buffer.  The lexer would have read the 
+</I>following
+&gt;<i> LF to know to end lexing X and the input stream would be set at the
+</I>&gt;<i> following CR.
+</I>&gt;<i> 
+</I>&gt;<i> Solution?  Do it in the lexer and switch lexer states when you 
+</I>know you're
+&gt;<i> going to read a fixed amount of data.  And before switching call 
+</I>the WS rule
+&gt;<i> to read all of the whitespace before the data.  I believe there is 
+</I>a note on
+&gt;<i> the antlr website or FAQ or manual about reading fixed length 
+</I>records for
+&gt;<i> more details.
+</I>&gt;<i> 
+</I>&gt;<i> Monty
+</I>&gt;<i> 
+</I>&gt;<i> -----Original Message-----
+</I>&gt;<i> From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">skapp at r...</A> [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">skapp at r...</A>] 
+</I>&gt;<i> Sent: Wednesday, December 17, 2003 7:01 PM
+</I>&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>
+</I>&gt;<i> Subject: [antlr-interest] Re: Positioning input stream (was EOL 
+</I>sequence)
+&gt;<i> 
+</I>&gt;<i> Thanks for all the replies to date. Terence, I did look at your 
+</I>&gt;<i> parser, which was a partial PostScript parser, but I am currently 
+</I>&gt;<i> far past your example. I am using &quot;k=2&quot; for the lexer. I have 
+</I>&gt;<i> cleaned up some of the ambiguity warnings - thanks to many people.
+</I>&gt;<i> 
+</I>&gt;<i> I have no problem consuming whitespace when I am *parsing* or 
+</I>&gt;<i> *lexing*. The problem arises with PostScript's read operators, 
+</I>which 
+&gt;<i> permit interruption of the parsing process to read arbitrary data 
+</I>&gt;<i> from the current input stream. 
+</I>&gt;<i> 
+</I>&gt;<i> PostScript has almost no productions. Once a token is recognized, 
+</I>it 
+&gt;<i> is immediately executed by the parser. The parser does not have to 
+</I>&gt;<i> match against any sequence of tokens - all tokens are standalone. 
+</I>In 
+&gt;<i> this example, 
+</I>&gt;<i> 
+</I>&gt;<i> currentfile read&lt;LF&gt;X&lt;LF&gt;
+</I>&gt;<i> 
+</I>&gt;<i> &quot;currentfile&quot; is recognized as a name token, passed to the parser, 
+</I>&gt;<i> and is immediately executed by the parser. Then &quot;read&quot; is 
+</I>recognized 
+&gt;<i> as a name token, passed to the parser and immediately executed. 
+</I>Now 
+&gt;<i> the read operator pulls one byte from the input stream, in this 
+</I>case 
+&gt;<i> the &quot;X&quot; byte from the input stream. For a EOL sequence of LF or 
+</I>CR, 
+&gt;<i> this sequence executes as expected - the next read from the input 
+</I>&gt;<i> stream does indeed return the &quot;X&quot; byte. However, when I return 
+</I>from 
+&gt;<i> executing the read operator, two whitespace sequences are 
+</I>recognized 
+&gt;<i> by the lexer, a LF and another LF. I expected one since the input 
+</I>&gt;<i> stream should now be positioned past the X - but why is there 
+</I>&gt;<i> another? Do I need to clear out the lookahead buffer, and if so, 
+</I>how 
+&gt;<i> do I do this? 
+</I>&gt;<i> 
+</I>&gt;<i> For PostScript, standalone white space is tossed out, so this 
+</I>&gt;<i> particular sequence is not a big problem unless I want an accurate 
+</I>&gt;<i> line number. But the following sequence is a problem.
+</I>&gt;<i> 
+</I>&gt;<i> currentfile read&lt;CR&gt;&lt;LF&gt;X&lt;CR&gt;&lt;LF&gt;
+</I>&gt;<i> 
+</I>&gt;<i> Here the read operator picks up the &lt;LF&gt; instead of the X. When I 
+</I>&gt;<i> return from executing the read operator, the lexer recognizes a CR 
+</I>&gt;<i> and the &quot;X&quot; character. Since &quot;X&quot; is not a valid PostScript name 
+</I>&gt;<i> operator (semantics not syntax), the interpretation fails. 
+</I>&gt;<i> PostScript expects the read operator to obtain the &quot;X&quot; character 
+</I>and 
+&gt;<i> the next whitespace sequence to be the final CR-LF. 
+</I>&gt;<i> 
+</I>&gt;<i> It seems like I need advance warning that a CR-LF sequence is 
+</I>coming 
+&gt;<i> before a name operator like &quot;read&quot; is executed. But the next token 
+</I>&gt;<i> has not yet been requested by the parser.
+</I>&gt;<i> 
+</I>&gt;<i> Any thoughts on how to get out of this?
+</I>&gt;<i> 
+</I>&gt;<i>    Regards,
+</I>&gt;<i> 
+</I>&gt;<i>       Steve
+</I>&gt;<i>  
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> --- In <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>, Terence Parr &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">parrt at c...</A>&gt; 
+</I>&gt;<i> wrote:
+</I>&gt;<i> &gt; Don't forget my mini postscript interpreter lab I had my 
+</I>students 
+&gt;<i> do 
+</I>&gt;<i> &gt; last semester....link on my course page at USF (CS652).
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Ter
+</I>&gt;<i> &gt; On Wednesday, December 17, 2003, at 09:08  AM, Albert Huh wrote:
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; &gt; i don't know too much about ps syntax, but you could simply 
+</I>make 
+&gt;<i> your 
+</I>&gt;<i> &gt; &gt; whitespace rule consume spaces as well as newlines in your 
+</I>&gt;<i> lexer.  the 
+</I>&gt;<i> &gt; &gt; java example that comes with antlr does this.
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; -----Original Message-----
+</I>&gt;<i> &gt; &gt; From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">skapp at r...</A> [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">skapp at r...</A>]
+</I>&gt;<i> &gt; &gt; Sent: Wednesday, December 17, 2003 12:04 AM
+</I>&gt;<i> &gt; &gt; To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>
+</I>&gt;<i> &gt; &gt; Subject: [antlr-interest] Positioning input stream (was EOL 
+</I>&gt;<i> sequence)
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; I have worked out enough details with the EOL sequences to
+</I>&gt;<i> &gt; &gt; understand where my PostScript parser is failing. PostScript 
+</I>&gt;<i> parsers
+</I>&gt;<i> &gt; &gt; have to be able to handle the following four example sequences
+</I>&gt;<i> &gt; &gt; identically:
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; currentfile read 3
+</I>&gt;<i> &gt; &gt; currentfile read&lt;CR&gt;3
+</I>&gt;<i> &gt; &gt; currentfile read&lt;LF&gt;3
+</I>&gt;<i> &gt; &gt; currentfile read&lt;CR&gt;&lt;LF&gt;3
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; where the &quot;currentfile read&quot; operator sequence instructs the
+</I>&gt;<i> &gt; &gt; PostScript interpreter to read one byte from the input stream.
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; There is no issue with the first three examples. The input 
+</I>stream
+&gt;<i> &gt; &gt; point just past the EOL byte once the &quot;read&quot; operator has been
+</I>&gt;<i> &gt; &gt; recognized. Then the read operator simply has to pull one byte 
+</I>&gt;<i> from
+</I>&gt;<i> &gt; &gt; the input stream (a FileInputStream in this case).
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; However, in the fourth case, the input stream points to the 
+</I>&lt;LF&gt;
+&gt;<i> &gt; &gt; character when the &quot;read&quot; operator has been recognized. The
+</I>&gt;<i> &gt; &gt; PostScript spec states that &quot;Any of the three forms of EOL ... 
+</I>is
+&gt;<i> &gt; &gt; treated as a single white-space character.&quot;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; How do I handle this? What can or should I do in the lexer 
+</I>&gt;<i> versus in
+</I>&gt;<i> &gt; &gt; the parser?
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; Regards,
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;    Steve
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; Yahoo! Groups Links
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; To visit your group on the web, go to:
+</I>&gt;<i> &gt; &gt;  <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; To unsubscribe from this group, send an email to:
+</I>&gt;<i> &gt; &gt;  <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; Your use of Yahoo! Groups is subject to:
+</I>&gt;<i> &gt; &gt;  <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; Yahoo! Groups Links
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; To visit your group on the web, go to:
+</I>&gt;<i> &gt; &gt;  <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; To unsubscribe from this group, send an email to:
+</I>&gt;<i> &gt; &gt;  <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; Your use of Yahoo! Groups is subject to:
+</I>&gt;<i> &gt; &gt;  <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; --
+</I>&gt;<i> &gt; Professor Comp. Sci., University of San Francisco
+</I>&gt;<i> &gt; Creator, ANTLR Parser Generator, <A HREF="http://www.antlr.org">http://www.antlr.org</A>
+</I>&gt;<i> &gt; Co-founder, <A HREF="http://www.jguru.com">http://www.jguru.com</A>
+</I>&gt;<i> &gt; Co-founder, <A HREF="http://www.knowspam.net">http://www.knowspam.net</A> enjoy email again!
+</I>&gt;<i> &gt; Co-founder, <A HREF="http://www.peerscope.com">http://www.peerscope.com</A> link sharing, pure-n-simple
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i>  
+</I>&gt;<i> 
+</I>&gt;<i> Yahoo! Groups Links
+</I>&gt;<i> 
+</I>&gt;<i> To visit your group on the web, go to:
+</I>&gt;<i>  <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+</I>&gt;<i> 
+</I>&gt;<i> To unsubscribe from this group, send an email to:
+</I>&gt;<i>  <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+</I>&gt;<i> 
+</I>&gt;<i> Your use of Yahoo! Groups is subject to:
+</I>&gt;<i>  <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+</I>
+
+ 
+
+Yahoo! Groups Links
+
+To visit your group on the web, go to:
+ <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+To unsubscribe from this group, send an email to:
+ <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+Your use of Yahoo! Groups is subject to:
+ <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+
+ 
+
+Yahoo! Groups Links
+
+To visit your group on the web, go to:
+ <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+To unsubscribe from this group, send an email to:
+ <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+Your use of Yahoo! Groups is subject to:
+ <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005890.html">[antlr-interest] Re: Positioning input stream (was EOL sequen
+	 ce)
+</A></li>
+	<LI>Next message: <A HREF="005896.html">[antlr-interest] Re: Nondeterminism problem
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5889">[ date ]</a>
+              <a href="thread.html#5889">[ thread ]</a>
+              <a href="subject.html#5889">[ subject ]</a>
+              <a href="author.html#5889">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

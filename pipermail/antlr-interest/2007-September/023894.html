@@ -1,0 +1,135 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] A rule can be mutually left-recursive with itself?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20A%20rule%20can%20be%20mutually%20left-recursive%20with%0A%20itself%3F&In-Reply-To=%3C20070928230005.4802511EAEB%40www.antlr.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="023893.html">
+   <LINK REL="Next"  HREF="023898.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] A rule can be mutually left-recursive with itself?</H1>
+    <B>Gavin Lambert</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20A%20rule%20can%20be%20mutually%20left-recursive%20with%0A%20itself%3F&In-Reply-To=%3C20070928230005.4802511EAEB%40www.antlr.org%3E"
+       TITLE="[antlr-interest] A rule can be mutually left-recursive with itself?">antlr at mirality.co.nz
+       </A><BR>
+    <I>Fri Sep 28 16:00:06 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="023893.html">[antlr-interest] A rule can be mutually left-recursive with	itself?
+</A></li>
+        <LI>Next message: <A HREF="023898.html">[antlr-interest] A rule can be mutually left-recursive with itself?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#23894">[ date ]</a>
+              <a href="thread.html#23894">[ thread ]</a>
+              <a href="subject.html#23894">[ subject ]</a>
+              <a href="author.html#23894">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>At 09:06 29/09/2007, Jeremy Sheldon wrote:
+ &gt;[14:00:29] Aborting because the following rules are mutually
+ &gt;left-recursive:
+ &gt;    [table_reference]
+ &gt;    [non_join_query_term]
+[...]
+ &gt;This leads me to believe that table_reference and
+ &gt;non_join_query_term are not mutually left-recursive
+ &gt;with each other.  Would this assumption be correct?
+
+Kind of.  They're not recursive with each other, but they are 
+recursive with themselves.
+
+ &gt;Here are the rules themselves:
+ &gt;
+ &gt;table_reference
+ &gt;	: table_name  correlation_specification?
+ &gt;	| derived_table correlation_specification
+ &gt;	| (table_reference CROSS JOIN table_reference
+ &gt;	| table_reference NATURAL? join_type? JOIN table_reference
+ &gt;join_specification?
+ &gt;	| LEFT_PAREN joined_table RIGHT_PAREN);
+
+See, in table_reference you've got two alternatives that start 
+with table_reference itself.  You can't do that in LL(*), since it 
+leads to an infinite loop.  (It's ok to refer to the same rule 
+away from the left edge, because it will consume some tokens each 
+time and will eventually exit.  But on the left edge it can keep 
+recursing in infinitely since it doesn't consume anything 
+beforehand.)
+
+(I'm also not sure why you've grouped the last three alts together 
+as a single bigger alt of the main rule body.  That won't have any 
+effect as far as I can tell.  And I don't know what 
+join_specification contains, but by putting it after the 
+table_reference like that it can end up pretty far away from the 
+JOIN keyword that it's actually applying to.  Are you sure that's 
+where it's supposed to go?)
+
+You'll need to resolve this by creating another rule that contains 
+only a subset of the alternatives, avoiding the recursion, or 
+rearrange the rule structure so that you can put a * loop in a 
+strategic place.  Or both :)  For example, this ought to work in 
+this case (although it will alter the meaning subtly, so test it):
+
+table_reference
+   : table_ref_atom (NATURAL? join_type? JOIN table_ref_atom 
+join_specification?)*
+   ;
+
+table_ref_atom
+   : table_name correlation_specification?
+   | derived_table correlation_specification
+   | LEFT_PAREN joined_table RIGHT_PAREN
+   ;
+
+(Assuming you add CROSS to join_type.  And shouldn't NATURAL be 
+part of join_type too?)
+
+Alternatively, if you don't want to change the behaviour of the 
+CROSS JOIN matching, then this ought to work too:
+
+table_reference
+   : table_ref_atom
+     ( CROSS JOIN table_reference
+     | NATURAL? join_type? JOIN table_reference 
+join_specification?
+     )?
+   ;
+
+table_ref_atom
+   : table_name correlation_specification?
+   | derived_table correlation_specification
+   | LEFT_PAREN joined_table RIGHT_PAREN
+   ;
+
+Note that this uses right-recursion, which is ok.
+
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="023893.html">[antlr-interest] A rule can be mutually left-recursive with	itself?
+</A></li>
+	<LI>Next message: <A HREF="023898.html">[antlr-interest] A rule can be mutually left-recursive with itself?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#23894">[ date ]</a>
+              <a href="thread.html#23894">[ thread ]</a>
+              <a href="subject.html#23894">[ subject ]</a>
+              <a href="author.html#23894">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

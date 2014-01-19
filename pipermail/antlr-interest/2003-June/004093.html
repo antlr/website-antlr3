@@ -1,0 +1,206 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Re: yet another syntactic predicate problem
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20yet%20another%20syntactic%20predicate%20problem&In-Reply-To=bbkt9v%2B4v62%40eGroups.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004058.html">
+   <LINK REL="Next"  HREF="004060.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Re: yet another syntactic predicate problem</H1>
+    <B>antlrlist</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20yet%20another%20syntactic%20predicate%20problem&In-Reply-To=bbkt9v%2B4v62%40eGroups.com"
+       TITLE="[antlr-interest] Re: yet another syntactic predicate problem">antlrlist at yahoo.com
+       </A><BR>
+    <I>Fri Jun  6 11:23:40 PDT 2003</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004058.html">[antlr-interest] yet another syntactic predicate problem
+</A></li>
+        <LI>Next message: <A HREF="004060.html">[antlr-interest] Re: ANTLR 2.7.2 portability
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4093">[ date ]</a>
+              <a href="thread.html#4093">[ thread ]</a>
+              <a href="subject.html#4093">[ subject ]</a>
+              <a href="author.html#4093">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>If I have well understood, your problem is not in the parser, but in 
+the lexer.
+
+At first I could't understand your PCDATA rule, due to your 
+identation system, which seems certainly different to the one I use. 
+After a bit of &quot;beautifying&quot;, the rule became like this:
+
+PCDATA
+  : ( { LA(2)!='.' }? ('a'|'b'|'c'|'d'|'e') )
+  | ~('a'|'b'|'c'|'d'|'e'|'&lt;'|'&gt;')
+     ( options { generateAmbigWarnings=false; }
+       : '\r' '\n' { newline(); }
+       | '\r'      { newline(); }
+       | '\n'      { newline(); }
+       | ~('&lt;'|'\n'|'\r'|'&quot;'|'&gt;')
+     )*
+  ;
+
+
+This rule has two alternatives: the first is activated when LA(2)!
+='.' and LA(1) is in {a,b,c,d,e}.
+The second alternative is activated when LA(1) is NOT in 
+{a,b,c,d,e,&lt;,&gt;}. So this is the alternative fired when encountering &quot; 
+B. title&quot;; the initial space is in that group.
+
+This means that PCDATA is recognized - by its second alternative - 
+when the entrance &quot; B. title&quot; is supplied to the lexer.
+
+I found the problem, but not the solution. Sorry. Anyway I adventure 
+to give you some advices:
+
+1. You can try using two different lexers, one for parsing tags and 
+other for text, sharing the inputstate.
+2. Don't use optional operator '?' in combination with '+'. Use '*' 
+instead - the implementation is a bit different, and sometimes this 
+bit makes things work.
+3. Ident your grammars a bit more, please! :)
+
+Cheers,
+
+Enrique
+
+
+--- In <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>, &quot;pcristip&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">pcristip at y...</A>&gt; 
+wrote:
+&gt;<i> Hi,
+</I>&gt;<i> 
+</I>&gt;<i> I'd really appreciate some help on the following problem:
+</I>&gt;<i> 
+</I>&gt;<i> I have a grammar that is supposed to parse the body of a html file, 
+</I>&gt;<i> and everything is ok except the fact that the data between the tags 
+</I>&gt;<i> should be of two kinds:
+</I>&gt;<i> 1. a topic which is normal text except that it should start with a 
+</I>&gt;<i> letter (in fact only a through e letters) followed by a '.' char 
+</I>&gt;<i> (e.g.&quot; A.&quot;)
+</I>&gt;<i> 2. normal cdata which is the case if the text is not a topic
+</I>&gt;<i> 
+</I>&gt;<i> I managed to make this work except for the case when the text 
+</I>starts 
+&gt;<i> with spaces.
+</I>&gt;<i> 
+</I>&gt;<i> Now I have something like:
+</I>&gt;<i> (in the parser)
+</I>&gt;<i> topic		:	TOPICID^ topicbody
+</I>&gt;<i> 			;
+</I>&gt;<i> 
+</I>&gt;<i> topicbody	:
+</I>&gt;<i> 				(	options { greedy=true; }
+</I>&gt;<i> 					:
+</I>&gt;<i> 					text | font
+</I>&gt;<i> 				)*
+</I>&gt;<i> 			;
+</I>&gt;<i> text		:	PCDATA ;
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> (in the lexer)
+</I>&gt;<i> 
+</I>&gt;<i> TOPICID
+</I>&gt;<i> 			:
+</I>&gt;<i> 				('a' | 'b' | 'c' | 'd' | 'e') '.'
+</I>&gt;<i> 			;
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> PCDATA
+</I>&gt;<i> 			:
+</I>&gt;<i> 				({ LA(2)!='.' }? 
+</I>&gt;<i> ('a'|'b'|'c'|'d'|'e'))	| ~('a'|'b'|'c'|'d'|'e'|'&lt;'|'&gt;')
+</I>&gt;<i> 				(
+</I>&gt;<i> 					options {
+</I>&gt;<i> 					
+</I>&gt;<i> 	generateAmbigWarnings=false;
+</I>&gt;<i> 					}
+</I>&gt;<i> 				:	'\r' '\n'	
+</I>&gt;<i> 	{newline();}
+</I>&gt;<i> 				|	'\r'		
+</I>&gt;<i> 	{newline();}
+</I>&gt;<i> 				|	'\n'		
+</I>&gt;<i> 	{newline();}
+</I>&gt;<i> 				|	~('&lt;'|'\n'|'\r'|'&quot;'|'&gt;')
+</I>&gt;<i> 				)*
+</I>&gt;<i> 			;
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> which works ok for texts like &quot;A. some text here&quot; and &quot;A normal 
+</I>text&quot;
+&gt;<i> but if there are spaces in front like &quot;   B. title&quot; then the text 
+</I>is 
+&gt;<i> matched as data not as a topic.
+</I>&gt;<i> 
+</I>&gt;<i> I tried to solve this by modifing the topic rule but no luck. And 
+</I>&gt;<i> thought that the best solution would be to use syntactic predicates 
+</I>&gt;<i> because the lookahead is not fixed in this case (the number of 
+</I>spaces 
+&gt;<i> can be arbitrary before you can tell which rule to match).
+</I>&gt;<i> So I got to this construct:
+</I>&gt;<i> 
+</I>&gt;<i> topic_or_answer : ((spaces)? TOPICID) =&gt; topic
+</I>&gt;<i>                 |  text
+</I>&gt;<i>                 ;
+</I>&gt;<i> 
+</I>&gt;<i> spaces          : WS ;
+</I>&gt;<i> 
+</I>&gt;<i> (and in lexer)
+</I>&gt;<i> protected
+</I>&gt;<i> WS			:	(
+</I>&gt;<i> 					options {
+</I>&gt;<i> 					
+</I>&gt;<i> 	generateAmbigWarnings=false;
+</I>&gt;<i> 					}
+</I>&gt;<i> 				:	' '
+</I>&gt;<i> 				|	'\t'
+</I>&gt;<i> 				|	'\n'	{ newline(); }
+</I>&gt;<i> 				|	&quot;\r\n&quot;	{ newline(); }
+</I>&gt;<i> 				|	'\r'	{ newline(); }
+</I>&gt;<i> 				)+
+</I>&gt;<i> 			;
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> which doesn't work (otherwise you wouldn't read these lines :) ).
+</I>&gt;<i> 
+</I>&gt;<i> Can someone give me a hint ? What did I do wrong ?
+</I>&gt;<i> 
+</I>&gt;<i> Thanks,
+</I>&gt;<i> Chris
+</I>
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004058.html">[antlr-interest] yet another syntactic predicate problem
+</A></li>
+	<LI>Next message: <A HREF="004060.html">[antlr-interest] Re: ANTLR 2.7.2 portability
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4093">[ date ]</a>
+              <a href="thread.html#4093">[ thread ]</a>
+              <a href="subject.html#4093">[ subject ]</a>
+              <a href="author.html#4093">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

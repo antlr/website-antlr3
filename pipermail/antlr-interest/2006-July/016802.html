@@ -1,0 +1,163 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Trouble with ANTLR 3 grammar
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Trouble%20with%20ANTLR%203%20grammar&In-Reply-To=66A580A3-4B5A-4DCD-AE0F-17CF90FF000E%40cs.usfca.edu">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="016801.html">
+   <LINK REL="Next"  HREF="016815.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Trouble with ANTLR 3 grammar</H1>
+    <B>Emond Papegaaij</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Trouble%20with%20ANTLR%203%20grammar&In-Reply-To=66A580A3-4B5A-4DCD-AE0F-17CF90FF000E%40cs.usfca.edu"
+       TITLE="[antlr-interest] Trouble with ANTLR 3 grammar">e.papegaaij at student.utwente.nl
+       </A><BR>
+    <I>Tue Jul  4 00:41:42 PDT 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="016801.html">[antlr-interest] Trouble with ANTLR 3 grammar
+</A></li>
+        <LI>Next message: <A HREF="016815.html">[antlr-interest] Trouble with ANTLR 3 grammar
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#16802">[ date ]</a>
+              <a href="thread.html#16802">[ thread ]</a>
+              <a href="subject.html#16802">[ subject ]</a>
+              <a href="author.html#16802">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Tuesday 04 July 2006 01:39, Terence Parr wrote:
+&gt;<i> On Jul 1, 2006, at 5:26 AM, Emond Papegaaij wrote:
+</I>&gt;<i> &gt; The lexer does hit 'channel=99', but only after the token is
+</I>&gt;<i> &gt; already emitted.
+</I>&gt;<i> &gt; Printing the channel inside the loop in Main shows '0'. For every
+</I>&gt;<i> &gt; WS token
+</I>&gt;<i> &gt; mWS is called twice. It seems that on the first call the token is
+</I>&gt;<i> &gt; emitted,
+</I>&gt;<i> &gt; and on the second call the channel is set. I can't explain why.
+</I>&gt;<i> &gt; Here is some
+</I>&gt;<i> &gt; output with println statements added at the start of the method, at
+</I>&gt;<i> &gt; the 'channel=99' statement and at the 'emit' statement:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; inWS
+</I>&gt;<i> &gt; emit(11,1,9,0,9,9)
+</I>&gt;<i>
+</I>&gt;<i> Ok, ANTLR will match WS in guess mode (backtracking) and then do it
+</I>&gt;<i> again with feeling.  It only emits at the outermost token rule
+</I>&gt;<i> invoked (in case INT invokes DIGIT) and only if you have not emitted
+</I>&gt;<i> a token yourself:
+</I>&gt;<i>
+</I>&gt;<i>              if ( token==null &amp;&amp; ruleNestingLevel==1 ) {
+</I>&gt;<i>                  emit
+</I>&gt;<i> (type,line,charPosition,channel,start,getCharIndex()-1);
+</I>&gt;<i>              }
+</I>&gt;<i>
+</I>&gt;<i> So, somehow durin backtracking you are setting token (via emit()
+</I>&gt;<i> maybe).  Do you have an emit or token assignment inside an init action?
+</I>&gt;<i>
+</I>&gt;<i> This all works perfectly in my fuzzy java example.
+</I>
+It seems to be related to the ACTION tokens. Removing the tokens fixes the 
+problem. WS was declared after the ACTION tokens, but moving it up didn't 
+solve the problem. I've attached a minimised version of the first grammar 
+that still shows WS tokens. The input is:
+
+Printable {
+  iface getString;
+}
+
+Using the Main I sent earlier, I get this result (WS = &lt;7&gt;):
+
+[@0,0:8='Printable',&lt;4&gt;,1:0] channel = 0
+[@1,9:9=' ',&lt;7&gt;,1:9] channel = 0
+[@2,10:10='{',&lt;8&gt;,1:10] channel = 0
+[@3,11:12='\n\t',&lt;7&gt;,1:11] channel = 0
+[@4,13:17='iface',&lt;5&gt;,2:1] channel = 0
+....
+[specification]: line 1:9 mismatched token: [@1,9:9=' ',&lt;7&gt;,1:9]; expecting 
+type '{'
+
+Commenting out METHOD_SIG_ACTION and replacing it with IDENTIFIER correctly 
+gives (WS = &lt;6&gt;):
+
+[@0,0:8='Printable',&lt;4&gt;,1:0] channel = 0
+[@2,10:10='{',&lt;7&gt;,1:10] channel = 0
+[@4,13:17='iface',&lt;5&gt;,2:1] channel = 0
+....
+
+Changing METHOD_SIG_ACTION to no longer match certain whitespace characters 
+causes the corresponding WS tokens to be moved to channel 99. For example 
+changing METHOD_SIG_ACTION to (~(';'|' '))+ gives the following tokens (WS = 
+&lt;7&gt;):
+
+[@0,0:8='Printable',&lt;4&gt;,1:0] channel = 0
+[@2,10:10='{',&lt;8&gt;,1:10] channel = 0
+[@3,11:12='\n\t',&lt;7&gt;,1:11] channel = 0
+[@4,13:17='iface',&lt;5&gt;,2:1] channel = 0
+....
+
+Note that token @1 is now at channel 99, but token @3 is still at channel 0.
+
+As you can see in the grammar, I've only got actions that set the 'sigFollow' 
+flag and one that sets channel=99. I don't emit tokens in the actions, or set 
+token in any other way.
+
+Best regard,
+Emond
+-------------- next part --------------
+grammar TPL;
+
+options {
+	filter = true;
+}
+
+@lexer::members {
+	private boolean sigFollow = false;
+}
+
+specification
+	: IDENTIFIER '{' ifaceMethod* '}'
+	;
+
+ifaceMethod
+	: IFACE METHOD_SIG_ACTION ';'
+	;
+
+IFACE: 'iface' {sigFollow = true;};
+
+WS: ( ' ' | '\t' | '\f' | '\r' | '\n')+ { channel=99; } ;
+
+METHOD_SIG_ACTION: {sigFollow}?=&gt;
+                   {sigFollow = false;}
+                   (~(';'))+
+                   ;
+
+IDENTIFIER: ('a'..'z'|'A'..'Z'|'_'|'$') ('a'..'z'|'A'..'Z'|'_'|'0'..'9'|'$')* ;
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="016801.html">[antlr-interest] Trouble with ANTLR 3 grammar
+</A></li>
+	<LI>Next message: <A HREF="016815.html">[antlr-interest] Trouble with ANTLR 3 grammar
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#16802">[ date ]</a>
+              <a href="thread.html#16802">[ thread ]</a>
+              <a href="subject.html#16802">[ subject ]</a>
+              <a href="author.html#16802">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

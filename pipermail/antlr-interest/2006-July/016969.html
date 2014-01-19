@@ -1,0 +1,172 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Problem with (C++) memory management
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Problem%20with%20%28C%2B%2B%29%20memory%20management&In-Reply-To=20060721183111.5911.qmail%40web52112.mail.yahoo.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="016967.html">
+   <LINK REL="Next"  HREF="016990.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Problem with (C++) memory management</H1>
+    <B>Loring Craymer</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Problem%20with%20%28C%2B%2B%29%20memory%20management&In-Reply-To=20060721183111.5911.qmail%40web52112.mail.yahoo.com"
+       TITLE="[antlr-interest] Problem with (C++) memory management">lgcraymer at yahoo.com
+       </A><BR>
+    <I>Fri Jul 21 16:30:15 PDT 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="016967.html">[antlr-interest] Problem with memory management
+</A></li>
+        <LI>Next message: <A HREF="016990.html">[antlr-interest] Problem with memory management
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#16969">[ date ]</a>
+              <a href="thread.html#16969">[ thread ]</a>
+              <a href="subject.html#16969">[ subject ]</a>
+              <a href="author.html#16969">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Eugen--
+
+You will probably need Ric Klaren's help on this--I think that you need to modify the ~RefAST destructor.
+
+--Loring
+
+
+Eugen Cazacu &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">the_e57 at yahoo.com</A>&gt; wrote: Hi, I am new to this list, someone recommended me to
+join it so that I can get my questions and problems
+about antlr answered.
+I am writing a verilog parser in antl, actually it is
+finished, now we are running tests on it, one type of
+test revealed a pretty big problem with antlr design.
+I must mention that the generated code is C++.
+The problem is in the way the AST is built. This
+nextSibling/firstChild tree design has a problem when
+one node has many children, because they are all
+stored in a unidirectional list if I use CommonAST
+class. The problem occures on the destruction of the
+tree. It happenes like this: you want to destroy the
+root node, the root has many children, it calls the
+destructor of the first child node, that one in order
+to destroy calls the destructor on all of its members
+and calls the destructor of the next sibling, the
+destructor of the next sibling calls the destructor of
+its next sibling and so on until the last sibling.
+Since one node might have many children, this causes a
+recursive call if all of the destructors in depth. IF
+a node has as many as 20000-30000 children there are
+at least 20000-30000 recursive calls, if we would
+consider that the refCounter adds one more function
+call for each node we would have from 40000 to 60000
+recursive functions calls, which causes a stack
+overflow and make the program to end with a
+segmentation fault. To avoid this probelem I wrote a
+special destroy function to delete the AST after I
+don't need it any more, that looks like this:
+
+void destroy(RefAST &amp;ast) {
+  if(!ast.get())
+    return;
+  std::cerr &lt;&lt; &quot;before destroy&quot; &lt;&lt; endl;
+  std::queue destroyQueue;
+  destroyQueue.push(ast);
+  ast = 0;
+  RefAST temp1, temp2;
+  while(!destroyQueue.empty()) {
+    temp1 = destroyQueue.front();
+    destroyQueue.pop();
+    temp2 = temp1-&gt;getFirstChild();
+    temp1-&gt;setFirstChild(RefAST(0));
+    if(temp2.get())
+      destroyQueue.push(temp2);
+    temp2 = temp1-&gt;getNextSibling();
+    temp1-&gt;setNextSibling(RefAST(0));
+    if(temp2.get())
+      destroyQueue.push(temp2);
+    temp1 = 0;
+    temp2 = 0;
+  }
+
+(this function moves the nodes in a vector type
+structures and then deletes them, this way I avoid the
+recursive call of the destructors)
+This make the program terminate correctly. But only in
+the case when the parser doesn't throw any exceptions
+(MismatchedTokenException for example). When the
+parser does this, it destroyes whatever tree was built
+by itself and if the tree is similar to what I
+described before, a stack overflow occures and the
+program end without printing the exception message in
+a segmentation fault, because I can only catch the
+exceptions after antlr tryes to delete the tree.
+
+To avoid this problem I am attempting now to write my
+own AST Node class derived from AST that would
+simulate the behaviour of it, but would use a more
+linear structure, small example:
+
+class MyAST : public AST {
+  vector m_children;
+  RefMyAST parent;
+};
+
+But here I got another problem. The reference counting
+antlr nechanism doesn't have a weak reference class (I
+can't use strong references, RefCount, because it
+would cause a the object to have a counted reference
+to itself and it will never be destroyed, since antlr
+RefCount doesn't check for loop references) , that I
+could use in place of &quot;this&quot; pointer, I need it
+because all the antlr interface uses Refs. This would
+make me to rewrite antlr code, which I don't want to
+do because when a new version of antlr will appear I
+will have to rewrite some code again. I hope that
+someone could help with this here.
+
+__________________________________________________
+Do You Yahoo!?
+Tired of spam?  Yahoo! Mail has the best spam protection around 
+<A HREF="http://mail.yahoo.com">http://mail.yahoo.com</A> 
+
+
+ __________________________________________________
+Do You Yahoo!?
+Tired of spam?  Yahoo! Mail has the best spam protection around 
+<A HREF="http://mail.yahoo.com">http://mail.yahoo.com</A> 
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20060721/93b7182d/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20060721/93b7182d/attachment.html</A>
+</PRE>
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="016967.html">[antlr-interest] Problem with memory management
+</A></li>
+	<LI>Next message: <A HREF="016990.html">[antlr-interest] Problem with memory management
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#16969">[ date ]</a>
+              <a href="thread.html#16969">[ thread ]</a>
+              <a href="subject.html#16969">[ subject ]</a>
+              <a href="author.html#16969">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,250 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Greedy Lexer FYI: How to specify a string (or block comment) with multi-character delimiters (&lt;&lt;string&gt;&gt; or /*comment*/)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Greedy%20Lexer%20FYI%3A%20How%20to%20specify%20a%20string%20%28or%0A%20block%20comment%29%20with%20multi-character%20delimiters%20%28%3C%3Cstring%3E%3E%20or%20/%2Acomment%2A/%29&In-Reply-To=%3C47396AF3.50702%40Yahoo.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="024668.html">
+   <LINK REL="Next"  HREF="024674.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Greedy Lexer FYI: How to specify a string (or block comment) with multi-character delimiters (&lt;&lt;string&gt;&gt; or /*comment*/)</H1>
+    <B>Austin Hastings</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Greedy%20Lexer%20FYI%3A%20How%20to%20specify%20a%20string%20%28or%0A%20block%20comment%29%20with%20multi-character%20delimiters%20%28%3C%3Cstring%3E%3E%20or%20/%2Acomment%2A/%29&In-Reply-To=%3C47396AF3.50702%40Yahoo.com%3E"
+       TITLE="[antlr-interest] Greedy Lexer FYI: How to specify a string (or block comment) with multi-character delimiters (&lt;&lt;string&gt;&gt; or /*comment*/)">Austin_Hastings at Yahoo.com
+       </A><BR>
+    <I>Tue Nov 13 01:14:27 PST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="024668.html">[antlr-interest] How to change AST node order in Java ?
+</A></li>
+        <LI>Next message: <A HREF="024674.html">[antlr-interest] Q: How do I left-factor this?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24673">[ date ]</a>
+              <a href="thread.html#24673">[ thread ]</a>
+              <a href="subject.html#24673">[ subject ]</a>
+              <a href="author.html#24673">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Howdy,
+
+I'm writing this only because I just sank two hours chasing my tail, and 
+I feel like there ought to be SOMETHING to show for it. Maybe this will 
+sit on the mailing list and help Google save the next guy some time. :(
+
+Boy, I thought this was trivial. I've piled a bunch of stuff into this 
+grammar to eliminate any chance that the lexer &quot;knows&quot; where it's going 
+to be in the file. That said, the QUOTED_LITERAL should recognize &lt;&lt;blah 
+blah blah\&gt;&gt; with escaped closing marks blah blah blah&gt;&gt;
+
+&lt;code&gt;
+grammar g;
+
+QUOTED_LITERAL: Open (Slash Close| ~Close)* Close
+;
+
+fragment Slash: '\\';
+fragment Open: '&lt;&lt;';
+fragment Close: '&gt;&gt;';
+
+// Below here is crap to spoof ANTLR about what it &quot;knows&quot; -- which 
+didn't work
+rule1: (QUOTED_LITERAL | ID)+;
+ID: 'a'..'z'+;
+WS: (' ' | '\t' | '\n' | '\r')+ {$channel=HIDDEN;};
+
+&lt;/code&gt;
+
+I get this generated java code:
+
+&lt;code&gt;
+
+public final void mQUOTED_LITERAL() throws RecognitionException {
+try {
+int _type = QUOTED_LITERAL;
+// sources/org/antlr/gunit/g.g:5:17: Open ( Slash Close | ~ Close )* Close
+mOpen();
+// sources/org/antlr/gunit/g.g:5:22: ( Slash Close | ~ Close )*
+loop1: do {
+int alt1=3;
+int LA1_0 = input.LA(1);
+
+if ( (LA1_0=='&gt;') ) {
+int LA1_1 = input.LA(2);
+if ( (LA1_1=='&gt;') ) {
+(**) int LA1_4 = input.LA(3);
+
+if ( ((LA1_4&gt;='\u0000' &amp;&amp; LA1_4&lt;='\uFFFE')) ) {
+alt1=2;
+}
+}
+else if ( ((LA1_1&gt;='\u0000' &amp;&amp; LA1_1&lt;='=')||(LA1_1&gt;='?' &amp;&amp; 
+LA1_1&lt;='\uFFFE')) ) {
+alt1=2;
+}
+}
+else if ( (LA1_0=='\\') ) {
+&lt;/code&gt;
+
+Notice the LA1_4 check? The code is working fine (since the default for 
+alt1=3 means &quot;end of string reached&quot;) until the check if LA1_4 is ANY 
+character, whereupon the thing keeps eating characters.
+
+The problem here is that the lexer is being greedy. After seeing several 
+places where .* and .+ occur, you might (and I definitely did - and lost 
+two hours because of it) think that the lexer is non-greedy by default. 
+Not so. As Terence says in his book,
+
+&quot;Unfortunately, following the usual convention that all subrules are 
+greedy makes this notation useless. Such greedy subrules would match all 
+characters until the end of file. ANTLR automatically makes these two 
+subrules nongreedy. So, you can use &#8217;.*&#8217; instead of manually specifying 
+the option.&quot;
+
+Those TWO SUBRULES are automatically non-greedy. The lexer by default 
+still wants to gobble up everything in sight. Which means that for my 
+thing to work, I need to make my ()* loop non-greedy:
+
+&lt;code&gt;
+
+QUOTED_LITERAL: Open (options {greedy=false;}: Slash Close| ~Close)* Close
+;
+
+&lt;/code&gt;
+
+This gives me much better code:
+
+&lt;code&gt;
+
+mOpen();
+// sources/org/antlr/gunit/g.g:5:22: ( options {greedy=false; } : Slash 
+Close | ~ Close )*
+loop1: do {
+int alt1=3;
+int LA1_0 = input.LA(1);
+
+if ( (LA1_0=='&gt;') ) {
+int LA1_1 = input.LA(2);
+if ( (LA1_1=='&gt;') ) {
+alt1=3;
+}
+else if ( ((LA1_1&gt;='\u0000' &amp;&amp; LA1_1&lt;='=')||(LA1_1&gt;='?' &amp;&amp; 
+LA1_1&lt;='\uFFFE')) ) {
+alt1=2;
+}
+}
+else if ( (LA1_0=='\\') ) {
+alt1=1;
+}
+&lt;/code&gt;
+
+This is important for C-style /* comments */, since they use multi-byte 
+delimiters. Presumably also for Pascal (* comments *) as well.
+
+Here's the same rule, with the Open and Close delimiters set to 
+double-quote(&quot;). Still with greedy=false, and the structure of the code 
+is similar, although recognizing the delimiter is much simpler:
+
+&lt;code&gt;
+mOpen();
+// sources/org/antlr/gunit/g.g:5:22: ( options {greedy=false; } : Slash 
+Close | ~ Close )*
+loop1:
+do {
+int alt1=3;
+int LA1_0 = input.LA(1);
+
+if ( (LA1_0=='\&quot;') ) {
+alt1=3;
+}
+else if ( (LA1_0=='\\') ) {
+alt1=1;
+}
+else if ( ((LA1_0&gt;='\u0000' &amp;&amp; LA1_0&lt;='!')||(LA1_0&gt;='#' &amp;&amp; 
+LA1_0&lt;='[')||(LA1_0&gt;=']' &amp;&amp; LA1_0&lt;='\uFFFE')) ) {
+alt1=2;
+}
+&lt;/code&gt;
+
+And with greedy=false turned off:
+
+&lt;code&gt;
+mOpen();
+// sources/org/antlr/gunit/g.g:5:22: ( Slash Close | ~ Close )*
+loop1:
+do {
+int alt1=3;
+int LA1_0 = input.LA(1);
+
+if ( (LA1_0=='\\') ) {
+int LA1_2 = input.LA(2);
+if ( (LA1_2=='\&quot;') ) {
+int LA1_4 = input.LA(3);
+
+if ( ((LA1_4&gt;='\u0000' &amp;&amp; LA1_4&lt;='\uFFFE')) ) {
+alt1=1;
+}
+else {
+alt1=2;
+}
+}
+else if ( ((LA1_0&gt;='\u0000' &amp;&amp; LA1_0&lt;='!')||(LA1_0&gt;='#' &amp;&amp; 
+LA1_0&lt;='[')||(LA1_0&gt;=']' &amp;&amp; LA1_0&lt;='\uFFFE')) ) {
+alt1=2;
+}
+&lt;/code&gt;
+
+In this case (no &quot;greedy=false&quot; specified, single-character delimiters) 
+the code generated is very different. Notice that the checks are in a 
+different order, and the default is to be non-greedy (a closing 
+double-quote doesn't execute ANY of the code shown, carrying alt1=3 down 
+through). I don't know if this is a special-case to eliminate 
+complaining newbies (like me) or if some transformation converts this to 
+.* under the hood or what. But it seems like there is some clever DWIM 
+code built in to ANTLR for the general case of recognizing strings with 
+single-character delimiters.
+
+Now you know -- and knowing is half the battle!
+
+=Austin
+
+
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="024668.html">[antlr-interest] How to change AST node order in Java ?
+</A></li>
+	<LI>Next message: <A HREF="024674.html">[antlr-interest] Q: How do I left-factor this?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24673">[ date ]</a>
+              <a href="thread.html#24673">[ thread ]</a>
+              <a href="subject.html#24673">[ subject ]</a>
+              <a href="author.html#24673">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

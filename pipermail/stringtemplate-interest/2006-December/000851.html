@@ -1,0 +1,183 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [stringtemplate-interest] format option implementation details
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:stringtemplate-interest%40antlr.org?Subject=%5Bstringtemplate-interest%5D%20format%20option%20implementation%20details&In-Reply-To=PMEOJKDLMMHOHNEAMPBGOEFECAAA.jjsnyders%40rcn.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000847.html">
+   <LINK REL="Next"  HREF="000852.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[stringtemplate-interest] format option implementation details</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:stringtemplate-interest%40antlr.org?Subject=%5Bstringtemplate-interest%5D%20format%20option%20implementation%20details&In-Reply-To=PMEOJKDLMMHOHNEAMPBGOEFECAAA.jjsnyders%40rcn.com"
+       TITLE="[stringtemplate-interest] format option implementation details">parrt at cs.usfca.edu
+       </A><BR>
+    <I>Sun Dec 10 12:07:45 PST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000847.html">[stringtemplate-interest] format option implementation details
+</A></li>
+        <LI>Next message: <A HREF="000852.html">[stringtemplate-interest] format option implementation details
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#851">[ date ]</a>
+              <a href="thread.html#851">[ thread ]</a>
+              <a href="subject.html#851">[ subject ]</a>
+              <a href="author.html#851">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+On Dec 9, 2006, at 11:12 PM, John Snyders wrote:
+
+&gt;<i> Here are the details of what I have implemented for the format option.
+</I>&gt;<i>
+</I>&gt;<i> format is treated syntactically like any other option and can be  
+</I>&gt;<i> combined with any of the other options. The syntax is
+</I>&gt;<i> $template;format=expr$. Where expr is an expression resulting in a  
+</I>&gt;<i> string value that names the format to be applied to the template by  
+</I>&gt;<i> the renderer available to the template if available.  There is no  
+</I>&gt;<i> default for the format expression so it must be given. For example  
+</I>&gt;<i> $myDate;format=&quot;longDate&quot;$
+</I>&gt;<i>
+</I>&gt;<i> Format applies to either the attribute type or the result of the  
+</I>&gt;<i> template, which is a string. Format will apply to the value of the  
+</I>&gt;<i> null option but not to the separator.
+</I>&gt;<i>
+</I>&gt;<i> For example
+</I>&gt;<i>   $list : {a $it$ b};format=&quot;toUpper&quot;,separator=&quot; and &quot;,null=&quot;woops&quot;$
+</I>&gt;<i> results in
+</I>&gt;<i>   A X B and A Y B and A WOOPS B and A Z B
+</I>&gt;<i> when list contains x, y, &lt;null&gt;, y and toUpper is a supported  
+</I>&gt;<i> format option of the available renderer for type String that  
+</I>&gt;<i> returns the upper case input string.
+</I>
+Sounds great!
+
+&gt;<i> Note that the value of null was upper cased but the separator &quot; and  
+</I>&gt;<i> &quot; was not.
+</I>&gt;<i> If you really want the separator to be formatted then you must do this
+</I>&gt;<i>
+</I>&gt;<i>   ${$list : {a $it$ b};separator={ and },null={null}$};format= 
+</I>&gt;<i> {toUpper}$
+</I>&gt;<i> which results in
+</I>&gt;<i>   A X B AND A Y B AND A NULL B AND A Z B
+</I>&gt;<i> To make use of format you must create a renderer that implements  
+</I>&gt;<i> AttributeRenderer. AttributeRenderer is enhanced to add the  
+</I>&gt;<i> toString method that takes a formatName. (Now that I think of it,  
+</I>&gt;<i> for backwards compatibility perhaps we should create a new  
+</I>&gt;<i> interface such as AttributeRendererEx? so that existing renderers  
+</I>&gt;<i> don't break)
+</I>
+Well, at least the compiler will tell them and it's a quick  
+change...I'd prefer to force this &quot;upgrade&quot; probably.
+
+&gt;<i> public interface AttributeRenderer {
+</I>&gt;<i>     public String toString(Object o);
+</I>&gt;<i>     public String toString(Object o, String formatName);
+</I>&gt;<i> }
+</I>&gt;<i> Implement the second toString method to check the formatName and  
+</I>&gt;<i> apply the appropriate formatting.
+</I>&gt;<i> Register the renderer with a template group or template as you  
+</I>&gt;<i> normally would.
+</I>&gt;<i> If the format string passed to the renderer is not recognized then  
+</I>&gt;<i> simply call toString on the object or throw an exception.
+</I>
+Yup.
+
+&gt;<i> If the format option is used but there is no renderer for the type  
+</I>&gt;<i> then format is ignored and the value is rendered as if format was  
+</I>&gt;<i> not specified.
+</I>
+Yup.  Good.
+
+&gt;<i> Here is an example renderer toString method:
+</I>&gt;<i>     public String toString(Object o, String formatName)
+</I>&gt;<i>     {
+</I>&gt;<i>         String s = (String)o;
+</I>&gt;<i>         if (formatName.equals(&quot;toUpper&quot;))
+</I>&gt;<i>         {
+</I>&gt;<i>             s = s.toUpperCase();
+</I>&gt;<i>         }
+</I>&gt;<i>         else {
+</I>&gt;<i>             throw new IllegalArgumentException();
+</I>&gt;<i>         }
+</I>&gt;<i>         return s;
+</I>&gt;<i>     }
+</I>&gt;<i> The details of the renderer could easily change without affecting  
+</I>&gt;<i> the behavior of the format option.
+</I>&gt;<i>
+</I>&gt;<i> There are two interesting things to be aware of with the format option
+</I>&gt;<i> 1) If format is applied to a template rather than an attribute an  
+</I>&gt;<i> intermediate string must be created so that the format can be  
+</I>&gt;<i> applied to the result of the template. This is not unlike when a  
+</I>&gt;<i> template is used in an indirect property (i.e. $attribute.({&lt;some  
+</I>&gt;<i> template})$
+</I>
+Good point.  format forces early evaluation. :)
+
+&gt;<i> 2) if the renderer is associated with type String then it is  
+</I>&gt;<i> possible for the value of an attribute to be rendered twice. This  
+</I>&gt;<i> will only happen if the format is applied to a template rather than  
+</I>&gt;<i> an attribute.It happens because the String attribute is rendered  
+</I>&gt;<i> and written as part of the value of the template expansion then the  
+</I>&gt;<i> format is applied to the String value of the template. Now that I  
+</I>&gt;<i> think of this more it may be a bug. I'll look into it.
+</I>
+Just an efficiency thing.
+
+&gt;<i> I need to do more testing but here is what I have done so far. If  
+</I>&gt;<i> someone wants the whole file let me know and I can send it but it  
+</I>&gt;<i> has other changes as well.
+</I>
+I'll do my own implementation, using your excellent work as a guide!   
+May I paraphrase your text here for the manual?
+
+&gt;<i>  The changes were in ASTExpr.java and AttributeRenderer.java (which  
+</I>&gt;<i> is shown above). While working on ASTExpr I also implemented  
+</I>&gt;<i> checking of the option to make sure it is one of the supported  
+</I>&gt;<i> options. I saw this issue come up on the list and it was also  
+</I>&gt;<i> bothering me because I can't spell seperator right. Now if you use  
+</I>&gt;<i> an unsupported option you get a warning.
+</I>
+Good on you!
+
+Thanks,
+Ter
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000847.html">[stringtemplate-interest] format option implementation details
+</A></li>
+	<LI>Next message: <A HREF="000852.html">[stringtemplate-interest] format option implementation details
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#851">[ date ]</a>
+              <a href="thread.html#851">[ thread ]</a>
+              <a href="subject.html#851">[ subject ]</a>
+              <a href="author.html#851">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">More information about the stringtemplate-interest
+mailing list</a><br>
+</body></html>

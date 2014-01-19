@@ -1,0 +1,194 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Early exit exception in positive closures
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Early%20exit%20exception%20in%20positive%20closures&In-Reply-To=%3C49B6530F.2020805%40smartshift.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="033329.html">
+   <LINK REL="Next"  HREF="033333.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Early exit exception in positive closures</H1>
+    <B>Andreas Meyer</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Early%20exit%20exception%20in%20positive%20closures&In-Reply-To=%3C49B6530F.2020805%40smartshift.de%3E"
+       TITLE="[antlr-interest] Early exit exception in positive closures">andreas.meyer at smartshift.de
+       </A><BR>
+    <I>Tue Mar 10 04:46:23 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="033329.html">[antlr-interest] SqlSQL2 grammar in v3
+</A></li>
+        <LI>Next message: <A HREF="033333.html">[antlr-interest] Early exit exception in positive closures
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#33330">[ date ]</a>
+              <a href="thread.html#33330">[ thread ]</a>
+              <a href="subject.html#33330">[ subject ]</a>
+              <a href="author.html#33330">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi!
+
+I have a question regarding predicates and positive closures like 
+({pred}? rule)+. I want to use the predicate in order to disambiguate 
+things like :
+
+  (identifier|keyword)+ rule_with_keywords?
+
+Previously, I solved this by manually assembling a FIRST-set of 
+rule_with_keywords and putting this into a negated syntactic predicate:
+
+  ((~(KW123|KW456))=&gt;(identifier|keyword))+ rule_with_keywords?
+
+Now, I asked myself: why not use {false}? as predicate, instead? It's 
+only used when the actual input contains an ambiguity, so it would (at 
+runtime) prefer to exit the subrule, which is exactly what I want. 
+However, it seems that the predicate also serves as something like a 
+check _before_ even doing the first iteration. So, for an input like 
+&quot;KW123 KW123&quot; the generated parser complains about an &quot;early exit 
+exception&quot; when I use {false}?.
+
+Would it make sense to add an option to ANTLR like 
+&quot;do_not_check_for_early_exit&quot;? This would greatly simplify my grammar, 
+as rules like these occur very often. Sure, this also would work:
+
+  (identifier|keyword) ({false}? (identifier|keyword))* rule_with_keywords?
+
+but of course it's more redundant.
+
+Greetings,
+Andreas Meyer
+
+
+--------------
+
+grammar Lang;
+
+options
+{
+output=AST;
+}
+
+@members {
+    public boolean match( String rulename ) {
+        boolean didMatch = false;
+        int mark = input.mark();
+        try {
+            java.lang.reflect.Method m = this.getClass().getMethod( 
+rulename );
+            state.backtracking ++;
+            m.invoke( this );
+            didMatch = true;
+        }
+        catch( NoSuchMethodException e )
+        {
+            e.printStackTrace();
+            didMatch = false;
+        }
+        catch( IllegalAccessException e )
+        {
+            e.printStackTrace();
+            didMatch = false;
+        }
+        catch (java.lang.reflect.InvocationTargetException e) {
+            if( e.getCause() instanceof RecognitionException )
+                didMatch = false;
+        }
+        state.backtracking --;
+        input.rewind (mark);
+        return didMatch;   
+    }
+}
+
+start
+    : (stmt '.')+ EOF
+    ;
+
+
+// this works, because at the first occurrence of atom, the &quot;predicate&quot; 
+is not evaluated ...
+//stmt    : KW_3 atom ( {false}? atom)* option?
+//    ;
+
+// however, here, the  generated code tries to disambiguate, although 
+there is no need to,
+// because '+' tells that at least one atom is wanted
+stmt
+    : KW_3 ( {false}? atom)+ option?
+    ;
+
+//stmt    : KW_3 ( {!match(&quot;option&quot;)}? atom)+ option?
+//    ;
+
+
+option
+    : KW_1^ KW_2
+    | KW_1^
+    | KW_2^
+    ;    
+
+
+atom
+    : ID
+    | keyword
+    ;
+   
+
+keyword
+    : KW_1
+    | KW_2
+    | KW_3
+    | KW_4
+    ;
+
+KW_1 : 'kw1';
+KW_2 : 'kw2';
+KW_3 : 'kw3';
+KW_4 : 'kw4';   
+
+ID: ('a'..'z' | 'A'..'Z' )+ ;
+WS : (' '|'\n'|'\r'|'\t') {$channel=HIDDEN;} ;
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="033329.html">[antlr-interest] SqlSQL2 grammar in v3
+</A></li>
+	<LI>Next message: <A HREF="033333.html">[antlr-interest] Early exit exception in positive closures
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#33330">[ date ]</a>
+              <a href="thread.html#33330">[ thread ]</a>
+              <a href="subject.html#33330">[ subject ]</a>
+              <a href="author.html#33330">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

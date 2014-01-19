@@ -1,0 +1,186 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Parse trace?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Parse%20trace%3F&In-Reply-To=%3CE697C11B3FD35E45B802D88ED1FED6B27F5C771CE5%40TMRC000001.am.munichre.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="034529.html">
+   <LINK REL="Next"  HREF="034483.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Parse trace?</H1>
+    <B>West Jay - Toronto-MROC - external</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Parse%20trace%3F&In-Reply-To=%3CE697C11B3FD35E45B802D88ED1FED6B27F5C771CE5%40TMRC000001.am.munichre.com%3E"
+       TITLE="[antlr-interest] Parse trace?">JWest at MROC.COM
+       </A><BR>
+    <I>Tue May 19 09:06:08 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="034529.html">[antlr-interest] Parse trace?
+</A></li>
+        <LI>Next message: <A HREF="034483.html">[antlr-interest] Control Flow Graph
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#34548">[ date ]</a>
+              <a href="thread.html#34548">[ thread ]</a>
+              <a href="subject.html#34548">[ subject ]</a>
+              <a href="author.html#34548">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>That was exactly what I was looking for!
+I added &quot;-trace&quot; to the &quot;ANTLR options&quot; section of ANTLRWorks/Preferences and started getting all the output I was looking for.
+
+I found some documentation on the -trace option in the v2 section, but none in the v3 area.  Of note is that -trace works in v3, but -traceParser and -traceLexer don't do anything at all.  Looks like they've been deprecated.  No matter, it was pretty easy to get what I was looking for without them.
+
+The method of getting similar behavior to those two options is as follows:
+
+To turn off Lexer trace, override TraceIn and TraceOut (the 2 arg versions) in your lexer class, like so:
+
+    public partial class PLSQL31Lexer
+    {
+        public override void TraceIn( string ruleName, int ruleIndex )
+        {
+            // Create no trace output for lexing
+        }
+
+        public override void TraceOut( string ruleName, int ruleIndex )
+        {
+            // Create no trace output for lexing
+        }
+    }
+
+That leaves me with just parser trace, exactly what I was looking for.
+I then override the same methods to redirect the trace from the stdout to the debugout:
+
+using trace = System.Diagnostics.Trace;   // use this instead of private TextWriter trace!
+
+    public partial class PLSQL31Parser
+    {
+        //private TextWriter trace = Console.Out; // This mirrors the behaviour we're overloading
+
+        // Override the parser trace method so we can control where the information goes
+        public override void TraceIn( string ruleName, int ruleIndex )
+        {
+            TraceIn( ruleName, ruleIndex, input.LT( 1 ) );
+        }
+
+        // Override the parser trace method so we can control where the information goes
+        public override void TraceIn( string ruleName, int ruleIndex, object inputSymbol )
+        {
+            trace.Write( is_sql ? &quot;(SQL)&quot; : &quot;(PL/)&quot; );
+            trace.Write( &quot;enter &quot; + ruleName + &quot; &quot; + inputSymbol );
+            if (state.backtracking &gt; 0)
+            {
+                trace.Write( &quot; backtracking=&quot; + state.backtracking );
+            }
+            trace.WriteLine( string.Empty );
+        }
+
+        // Override the parser trace method so we can control where the information goes
+        public override void TraceOut( string ruleName, int ruleIndex, object inputSymbol )
+        {
+            trace.Write( is_sql ? &quot;(SQL)&quot; : &quot;(PL/)&quot; );
+            trace.Write( &quot;exit &quot; + ruleName + &quot; &quot; + inputSymbol );
+            if (state.backtracking &gt; 0)
+            {
+                trace.Write( &quot; backtracking=&quot; + state.backtracking );
+                trace.WriteLine( state.failed ? &quot; FAILED!&quot; : &quot; succeeded&quot; );
+            }
+            else
+            {
+                trace.WriteLine( string.Empty );
+            }
+        }
+
+        // Override the parser trace method so we can control where the information goes
+        public override void TraceOut( string ruleName, int ruleIndex )
+        {
+            TraceOut( ruleName, ruleIndex, input.LT( 1 ) );
+        }
+    }
+
+Note that I can comment out my using statement and uncomment the private to easily switch from debugout to any other TextWriter stream I want.  Very handy!
+With this setup it's a one-line change to generate a file that traces my parsing if I want it.
+
+And of course, to get a -traceLexer behavior I'd just reverse my implementation.
+
+Thanks Ter, very handy!
+J
+
+-----Original Message-----
+From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Terence Parr
+Sent: Thursday, May 14, 2009 5:48 PM
+To: Tilman Bender
+Cc: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: Re: [antlr-interest] Parse trace?
+
+-trace option will work great for you. recompile and when you run your  
+parser traceIn/traceOut methods will be called. you can override them  
+or use the default which spits out information.
+
+Ter
+On May 14, 2009, at 11:34 AM, Tilman Bender wrote:
+
+&gt;<i> Hi Jay,
+</I>&gt;<i>
+</I>&gt;<i> I am sure what you mean by &quot;annotatin my grammar with trace  
+</I>&gt;<i> statements&quot;.
+</I>&gt;<i> If you mean doing this manually for every rule/alternative: you need  
+</I>&gt;<i> not do that.
+</I>&gt;<i>
+</I>&gt;<i> As far as I see you can have ANTLR add such trace information for  
+</I>&gt;<i> you, so you do not have to do
+</I>&gt;<i> it manually. I've seen this as a config option in the antlr3-maven- 
+</I>&gt;<i> plugin and I am sure there is a corresponding
+</I>&gt;<i> ANTLR-Tool option for this.
+</I>&gt;<i>
+</I>&gt;<i> Another (maybe weird) idea: Isn't this a typical use case for AOP?  
+</I>&gt;<i> Would it be feasible to weave the logging
+</I>&gt;<i> into the whole thing? Just an idea ;-)
+</I>&gt;<i>
+</I>&gt;<i> Tilman Bender
+</I>&gt;<i> Student des Software Engineering
+</I>&gt;<i> Hochschule Heilbronn
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">tbender at stud.hs-heilbronn.de</A>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Am 14.05.2009 um 20:07 schrieb West Jay - Toronto-MROC - external:
+</I>&gt;<i>
+</I>&gt;&gt;<i> So far, the only option I've seen is annotating my grammar with  
+</I>&gt;&gt;<i> trace statements that'll execute during parsing.  Ick.  Is there  
+</I>&gt;&gt;<i> not a better way?
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>
+
+List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="034529.html">[antlr-interest] Parse trace?
+</A></li>
+	<LI>Next message: <A HREF="034483.html">[antlr-interest] Control Flow Graph
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#34548">[ date ]</a>
+              <a href="thread.html#34548">[ thread ]</a>
+              <a href="subject.html#34548">[ subject ]</a>
+              <a href="author.html#34548">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

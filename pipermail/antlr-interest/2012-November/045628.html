@@ -1,0 +1,241 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Lexer rule for INTEGER and COMMA_INTEGER
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Lexer%20rule%20for%20INTEGER%20and%20COMMA_INTEGER&In-Reply-To=%3CCAF9KzRPrXn3Uo2VAFd%2BBp%2BOqoJe4p%3D2-9X2UarDDVpD0apVP%3Dg%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="045610.html">
+   <LINK REL="Next"  HREF="045629.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Lexer rule for INTEGER and COMMA_INTEGER</H1>
+    <B>Bernard Kaiflin</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Lexer%20rule%20for%20INTEGER%20and%20COMMA_INTEGER&In-Reply-To=%3CCAF9KzRPrXn3Uo2VAFd%2BBp%2BOqoJe4p%3D2-9X2UarDDVpD0apVP%3Dg%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Lexer rule for INTEGER and COMMA_INTEGER">bkaiflin.ruby at gmail.com
+       </A><BR>
+    <I>Tue Nov  6 15:17:55 PST 2012</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="045610.html">[antlr-interest] Lexer rule for INTEGER and COMMA_INTEGER
+</A></li>
+        <LI>Next message: <A HREF="045629.html">[antlr-interest] Lexer rule for INTEGER and COMMA_INTEGER
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#45628">[ date ]</a>
+              <a href="thread.html#45628">[ thread ]</a>
+              <a href="subject.html#45628">[ subject ]</a>
+              <a href="author.html#45628">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>A solution for v3.4.
+
+I had a hard time with decisions using multiple alternatives, multiplying
+the subrules and syntactic predicates. Once you have tasted ANTLR4, you no
+longer want to bother with all these ambiguity and backtracking problems.
+Give it a try !
+
+========== grammar
+
+grammar Q3;
+
+/* Recognize edited numbers like 1,234,567 as a whole but
+   F(1, 2 ,3, 44,55,66) as 4 parameters, white space skipped,
+   but `, ` and ` ,` are separators.
+   for ANTLR v3.4 */
+
+@parser::members {
+    ArrayList&lt;String&gt; parms;
+    void storeAtom(String text) {parms.add(text);}
+}
+
+sample
+@init {System.out.println(&quot;---- last update 1908&quot;);}
+    : piece* EOF ;
+
+piece
+@after {System.out.println(&quot;===== processed one piece of input : &lt;&quot; +
+$piece.text + &quot;&gt;&quot;);}
+    :   comma_integer | function
+    ;
+
+comma_integer
+    :   INT COMMA INT ( COMMA INT )* {System.out.println(&quot;CI found a
+comma_integer : &quot; + $comma_integer.text);}
+    ;
+
+function
+@init {parms = new ArrayList&lt;String&gt;();}
+@after {int n = parms.size();
+        System.out.println(&quot;&gt;&gt;&gt;&gt;&gt; Function &quot; + $function.text + &quot; has &quot; + n
++ &quot; parameters&quot;);
+        for(int i = 0; i &lt; n; i++) System.out.println(&quot;p&quot; + (i + 1) + &quot;=`&quot;
++ parms.get(i) + &quot;`&quot;);
+       }
+
+    :   ID '(' list ')'
+    ;
+
+list
+    :   a=atom_comma            {System.out.println(&quot;1a rule list chose
+atom_comma &lt;&quot; + $a.text + &quot;&gt;&quot;); storeAtom($a.text);}
+        ( e1=element            {System.out.println(&quot;1b rule list chose
+element &lt;&quot; + $e1.text + &quot;&gt;&quot;);
+                                 /* p+=element doesn't works well} */
+storeAtom($e1.text);}
+        )
+        ( seperator e2=element  {System.out.println(&quot;1c rule list chose
+element &lt;&quot; + $e2.text + &quot;&gt;&quot;); storeAtom($e2.text);}
+        )*
+    |   (INT COMMA INT)=&gt;c=comma_integer
+                                {System.out.println(&quot;2a rule list chose ci
+&lt;&quot; + $c.text + &quot;&gt;&quot;); storeAtom($c.text);}
+        ( seperator d=element   {System.out.println(&quot;2b rule list chose
+COMMA element &lt;,&quot; + $d.text + &quot;&gt;&quot;);
+
+/* storeAtom(&quot;,&quot;); */ storeAtom($d.text);}
+        )*
+    |   atom                    {System.out.println(&quot;3a rule list chose
+atom &lt;&quot; + $atom.text + &quot;&gt;&quot;); storeAtom($atom.text);}
+        ( COMMA f=element       {System.out.println(&quot;3b rule list chose
+COMMA element &lt;,&quot; + $f.text + &quot;&gt;&quot;);
+
+            storeAtom(&quot;,&quot;); storeAtom($f.text);}
+        )*
+    ;
+
+element
+    :   (INT COMMA INT)=&gt; comma_integer {System.out.println(&quot;rule element
+found a CI : &lt;&quot;    + $element.text + &quot;&gt;&quot;);}
+    |   (atom_comma   )=&gt; atom_comma    {System.out.println(&quot;rule element
+found an AC : &lt;&quot;   + $element.text + &quot;&gt;&quot;);}
+    |   atom                            {System.out.println(&quot;rule element
+found an atom : &lt;&quot; + $element.text + &quot;&gt;&quot;);}
+    ;
+
+atom_comma
+    :   atom COMMA_SPACE
+    |   atom SPACE_COMMA
+    ;
+
+seperator
+    :   COMMA
+    |   COMMA_SPACE
+    |   SPACE_COMMA
+    ;
+
+atom
+    :   ID
+    |   INT
+    ;
+
+COMMA_SPACE : ', '
+{System.out.println(&quot;rule COMMA_SPACE `&quot; + $text + &quot;`&quot;);} ;
+SPACE_COMMA : ' ,'
+{System.out.println(&quot;rule SPACE_COMMA `&quot; + $text + &quot;`&quot;);} ;
+COMMA : ',' ;
+ID  : ( 'a'..'z' | 'A'..'Z' | '_')+
+ {System.out.println(&quot;rule ID   `&quot; + $text + &quot;`&quot;);} ;
+INT : DIGIT+
+{System.out.println(&quot;rule INT  `&quot; + $text + &quot;`&quot;);} ;
+WS  : ( ' ' | '\t' | '\r' | '\n')+ {$channel=HIDDEN;}
+ {System.out.println(&quot;rule WS&quot;);} ;
+
+fragment DIGIT : '0'..'9' ;
+
+
+========== standard Test file
+
+import org.antlr.runtime.*;
+
+public class Test {
+    public static void main(String[] args) throws Exception {
+        ANTLRInputStream input = new ANTLRInputStream(System.in);
+        Q3Lexer lexer = new Q3Lexer(input);
+        CommonTokenStream tokens = new CommonTokenStream(lexer);
+        Q3Parser parser = new Q3Parser(tokens);
+        parser.sample();
+    }
+}
+
+========== input
+
+$ cat t2.comma
+1,234,567 F(1, x)  G(11,   12  , 13,444)  H(99,88,77,  66,6)  P(9,
+8,77,666)  X(1 , 2, 3 ,4 , 5,6     ,   7,888,999)
+
+========== execution
+
+$ java Test &lt; t2.comma
+...
+===== processed one piece of input : &lt;1,234,567&gt;
+...
+&gt;&gt;&gt;&gt;&gt;<i> Function F(1, x) has 2 parameters
+</I>p1=`1, `
+p2=`x`
+...
+&gt;&gt;&gt;&gt;&gt;<i> Function H(99,88,77,  66,6) has 2 parameters
+</I>p1=`99,88,77`
+p2=`66,6`
+...
+&gt;&gt;&gt;&gt;&gt;<i> Function X(1 , 2, 3 ,4 , 5,6     ,   7,888,999) has 6 parameters
+</I>p1=`1 ,`
+p2=`2`
+p3=`3`
+p4=`4`
+p5=`5,6`
+p6=`7,888,999`
+
+
+2012/11/3 Zhaohui Yang &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">yezonghui at gmail.com</A>&gt;
+
+&gt;<i> Hi,
+</I>&gt;<i>
+</I>&gt;<i> I have a lexer grammar that that has to recognize INTEGER like 1234 and
+</I>&gt;<i> COMMA_INTEGER like 1,234,567
+</I>&gt;<i> The later integer token has comma in it, and of cause the language has
+</I>&gt;<i> other places that use comma, e.g. F(1, x) is valid, which contains &quot;1,&quot;
+</I>&gt;<i> that should be recognized as a INTEGER 1 followd by a comma.
+</I>&gt;<i> .........
+</I>&gt;<i> Yes. If there are white space before or after the comma, they are seperate
+</I>&gt;<i> parameters; if no white spaces around, it is one COMMA_integer.
+</I>&gt;<i> --
+</I>&gt;<i> Regards,
+</I>&gt;<i>
+</I>&gt;<i> Yang, Zhaohui
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe:
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i>
+</I></PRE>
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="045610.html">[antlr-interest] Lexer rule for INTEGER and COMMA_INTEGER
+</A></li>
+	<LI>Next message: <A HREF="045629.html">[antlr-interest] Lexer rule for INTEGER and COMMA_INTEGER
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#45628">[ date ]</a>
+              <a href="thread.html#45628">[ thread ]</a>
+              <a href="subject.html#45628">[ subject ]</a>
+              <a href="author.html#45628">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,419 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Grammar nondeterminism on recursion
+	beginner'squestion
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Grammar%20nondeterminism%20on%20recursion%0A%09beginner%27squestion&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="016117.html">
+   <LINK REL="Next"  HREF="016120.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Grammar nondeterminism on recursion
+	beginner'squestion</H1>
+    <B>Stritzel.Nils at infineon.com</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Grammar%20nondeterminism%20on%20recursion%0A%09beginner%27squestion&In-Reply-To="
+       TITLE="[antlr-interest] Grammar nondeterminism on recursion
+	beginner'squestion">Stritzel.Nils at infineon.com
+       </A><BR>
+    <I>Fri Apr 28 02:16:01 PDT 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="016117.html">[antlr-interest] Grammar nondeterminism on recursion
+	beginner'squestion
+</A></li>
+        <LI>Next message: <A HREF="016120.html">[antlr-interest] Antlr v3.0ea8 :
+ java.lang.IllegalArgumentException: Can't find
+ template tokenRefBang.st
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#16118">[ date ]</a>
+              <a href="thread.html#16118">[ thread ]</a>
+              <a href="subject.html#16118">[ subject ]</a>
+              <a href="author.html#16118">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE> Thanks, I got your idea. Since you asked (or rather explicitly did not
+ask) why DOUBLEs can occur in batchExprs and not runExprs, the answer is
+rather simple, because runExpr is a variable standing for a value or
+array (to be read from a Database or wherever), but don't ask me why
+it's legacy.
+
+Nils
+
+-----Original Message-----
+From: Loring Craymer [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">craymer at warpiv.com</A>] 
+Sent: Friday, April 28, 2006 5:04 PM
+To: Nils Stritzel (IFIS DC); <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: RE: [antlr-interest] Grammar nondeterminism on recursion
+beginner'squestion
+
+The most reasonable way is to combine the rules called by runExpr and
+batchExpr, and return a three-valued integer as to whether a RUNVARIABLE
+or BATCHVARIABLE (or DOUBLE) has been encountered or not:
+
+primaryExpr
+returns [int flag = 0]
+:<i>
+</I>   	DOUBLE { flag = -1; }
+   	|
+   	BATCHVARIABLE { flag = -1; }
+	|
+	RUNVARIABLE { flag = 1; }
+   	|
+   	(LPAREN^ flag = batchExpr RPAREN! )
+   	|
+   	flag = functionCall
+   	;
+
+signedExpr
+returns [int flag]
+	:
+	(m: MINUS^ {#m.setType(SIGN_MINUS);} | p: PLUS^
+{#p.setType(SIGN_PLUS);})         
+	flag = baseExpr
+	;	
+
+and so forth.  (sumExpr will require two flags; an error condition
+exists if
+flag1 * flag2 == -1.)  I won't ask why DOUBLEs can occur in batchExprs
+and not runExprs--or even why there is a difference, since the RUNCSID
+and BATCHCSID distinguish the result--although that seems very odd.
+
+Basically, the idea is to distinguish runExprs from batchExprs
+semantically, not syntactically.  Build trees according to recognized
+semantics (e. g., have a BATCH_SEP and a RUN_SEP for lists) so that they
+are differentiated syntactically during tree walks.
+
+--Loring
+
+&gt;<i> -----Original Message-----
+</I>&gt;<i> From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:antlr-interest- 
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">bounces at antlr.org</A>] On Behalf Of <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">Stritzel.Nils at infineon.com</A>
+</I>&gt;<i> Sent: Friday, April 28, 2006 12:38 AM
+</I>&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> Subject: [antlr-interest] Grammar nondeterminism on recursion 
+</I>&gt;<i> beginner'squestion
+</I>&gt;<i> 
+</I>&gt;<i> Hi all,
+</I>&gt;<i> 
+</I>&gt;<i> I am still working my fomrula parser and after solving an earlier 
+</I>&gt;<i> issue (thanks to Martin Probst).
+</I>&gt;<i> But now I have got a new problem.
+</I>&gt;<i> 
+</I>&gt;<i> My grammar includes a list that contains to different types of 
+</I>&gt;<i> elements runExpr and batchExpr. This is supposed to contains and list 
+</I>&gt;<i> one runExpr and one batchExpr.
+</I>&gt;<i> 
+</I>&gt;<i> runBatchExprList
+</I>&gt;<i> 	:
+</I>&gt;<i> 	(runExpr SEP!) =&gt;
+</I>&gt;<i> 			runExpr SEP! runBatchExprList
+</I>&gt;<i> 			|
+</I>&gt;<i> 			runExpr SEP! batchExpr
+</I>&gt;<i> 	|
+</I>&gt;<i> 	(batchExpr SEP!) =&gt;
+</I>&gt;<i> 		batchExpr SEP! runBatchExprList
+</I>&gt;<i> 		|
+</I>&gt;<i> 		batchExpr SEP! runExpr
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> But the matter is that runExpr and batchExpr can start with the same 
+</I>&gt;<i> Tokens so this seemingly causes some problem.
+</I>&gt;<i> Is there a way to make the parser know which is the right alternative?
+</I>&gt;<i> Can I get this to work without rewriting everything?
+</I>&gt;<i> Below is my (for this posting somewhat simplified) grammar.
+</I>&gt;<i> Maybe the question boils down to the question, how to choose correctly
+</I>
+&gt;<i> from a a rule like this:
+</I>&gt;<i> Rule1 : batchExpr | runExpr ;
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> Thanks,
+</I>&gt;<i> 
+</I>&gt;<i> Nils
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> class ExpressionParser extends Parser; options {
+</I>&gt;<i> 	buildAST = true;	// uses CommonAST by default
+</I>&gt;<i> 	k = 1;
+</I>&gt;<i> }
+</I>&gt;<i> 
+</I>&gt;<i> imaginaryTokenDefinitions
+</I>&gt;<i> 	:
+</I>&gt;<i> 	SIGN_MINUS
+</I>&gt;<i> 	SIGN_PLUS
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> expr	:
+</I>&gt;<i> 	(formula)* EOF!
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> formula
+</I>&gt;<i> 	:
+</I>&gt;<i> 	BATCHCSID ASSIGN^ batchExpr
+</I>&gt;<i> 	|
+</I>&gt;<i> 	RUNCSID ASSIGN^ runExpr
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> batchExpr
+</I>&gt;<i> 	:
+</I>&gt;<i> 	sumExpr
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> sumExpr :
+</I>&gt;<i> 	baseExpr ((PLUS^|MINUS^) baseExpr)*
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> baseExpr
+</I>&gt;<i> 	:
+</I>&gt;<i> 	primaryExpr
+</I>&gt;<i> 	|
+</I>&gt;<i> 	signedExpr
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> signedExpr
+</I>&gt;<i> 	:
+</I>&gt;<i> 	(m: MINUS^ {#m.setType(SIGN_MINUS);} | p: PLUS^
+</I>&gt;<i> {#p.setType(SIGN_PLUS);})
+</I>&gt;<i> 	baseExpr
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> primaryExpr
+</I>&gt;<i>   	:
+</I>&gt;<i>   	DOUBLE
+</I>&gt;<i>   	|
+</I>&gt;<i>   	BATCHVARIABLE
+</I>&gt;<i>   	|
+</I>&gt;<i>   	(LPAREN^ batchExpr RPAREN! )
+</I>&gt;<i>   	|
+</I>&gt;<i>   	functionCall
+</I>&gt;<i>   	;
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> functionCall
+</I>&gt;<i> 	:
+</I>&gt;<i> 	(CABS^ | CSIGN^) LPAREN! batchExpr RPAREN!
+</I>&gt;<i>   	|
+</I>&gt;<i>   	((CAVG LPAREN^) =&gt; CAVG LPAREN! batchExprList RPAREN!
+</I>&gt;<i>   			| CAVG LPAREN! batchExpr RPAREN!)
+</I>&gt;<i> 	|
+</I>&gt;<i> 	(CMAX^ | CMIN^) LPAREN! batchExprList RPAREN!
+</I>&gt;<i>   	;
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> batchExprList
+</I>&gt;<i>   	:
+</I>&gt;<i> 	batchExpr (SEP! batchExpr)+ {## = #(#[SEP], ##); }
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> runExpr :
+</I>&gt;<i> 	runSumExpr
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> runSumExpr
+</I>&gt;<i> 	:
+</I>&gt;<i> 	runBaseExpr ((PLUS^|MINUS^) runBaseExpr)*
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> runBaseExpr
+</I>&gt;<i> 	:
+</I>&gt;<i> 	runPrimaryExpr
+</I>&gt;<i> 	|
+</I>&gt;<i> 	runSignedExpr
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> runSignedExpr
+</I>&gt;<i> 	:
+</I>&gt;<i>         (m: MINUS^ {#m.setType(SIGN_MINUS);} | p: PLUS^
+</I>&gt;<i> {#p.setType(SIGN_PLUS);})
+</I>&gt;<i> 	runBaseExpr
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> runPrimaryExpr
+</I>&gt;<i> 	:
+</I>&gt;<i>   	RUNVARIABLE
+</I>&gt;<i>   	|
+</I>&gt;<i>   	(LPAREN^ runExpr RPAREN! )
+</I>&gt;<i>   	|
+</I>&gt;<i>   	runFunctionCall
+</I>&gt;<i>   	;
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> runFunctionCall
+</I>&gt;<i> 	:
+</I>&gt;<i>        	(CABS^ | CSIGN^) LPAREN! runExprList RPAREN!
+</I>&gt;<i>        	|
+</I>&gt;<i>        	(CMAX^) =&gt; (CMAX^  LPAREN! runBatchExprList RPAREN!)
+</I>&gt;<i>        		|
+</I>&gt;<i>        		(CMAX^  LPAREN! runExprList RPAREN!)
+</I>&gt;<i>        		|
+</I>&gt;<i>        	(CMIN^) =&gt; (CMIN^  LPAREN! runBatchExprList RPAREN!)
+</I>&gt;<i>        		| (CMIN^  LPAREN! runExprList RPAREN!)
+</I>&gt;<i>        	|
+</I>&gt;<i>        	(CAVG^) =&gt; (CAVG^  LPAREN! runExprList RPAREN!)
+</I>&gt;<i>        		|
+</I>&gt;<i>        		(CAVG^  LPAREN! runExpr RPAREN!)
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> runExprList
+</I>&gt;<i>   	:
+</I>&gt;<i> 	runExpr (SEP! runExpr)+ {## = #(#[SEP], ##); }
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> runBatchExprList
+</I>&gt;<i> 	:
+</I>&gt;<i> 	(runExpr SEP!) =&gt;
+</I>&gt;<i> 			runExpr SEP! runBatchExprList
+</I>&gt;<i> 			|
+</I>&gt;<i> 			runExpr SEP! batchExpr
+</I>&gt;<i> 	|
+</I>&gt;<i> 	(batchExpr SEP!) =&gt;
+</I>&gt;<i> 		batchExpr SEP! runBatchExprList
+</I>&gt;<i> 		|
+</I>&gt;<i> 		batchExpr SEP! runExpr
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> class ExpressionLexer extends Lexer;
+</I>&gt;<i> 
+</I>&gt;<i> options {
+</I>&gt;<i> 	caseSensitive = false;
+</I>&gt;<i> 	k = 8;
+</I>&gt;<i> }
+</I>&gt;<i> 
+</I>&gt;<i> PLUS	:
+</I>&gt;<i> 	'+'
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> MINUS	:
+</I>&gt;<i> 	'-'
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> MULT	:
+</I>&gt;<i> 	'*'
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> DIV	:
+</I>&gt;<i> 	'/'
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> LPAREN	:
+</I>&gt;<i> 	'('
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> RPAREN	:
+</I>&gt;<i> 	')'
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> protected DIGIT
+</I>&gt;<i> 	:
+</I>&gt;<i> 	'0'..'9'
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> WS 	:
+</I>&gt;<i> 	(' '
+</I>&gt;<i> 	|
+</I>&gt;<i> 	'\t'
+</I>&gt;<i> 	|
+</I>&gt;<i> 	'\r' '\n' {newline(); }
+</I>&gt;<i> 	|
+</I>&gt;<i> 	'\n'	{newline(); }
+</I>&gt;<i> 	)
+</I>&gt;<i> 	{ $setType(Token.SKIP); }
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> DOUBLE 	:
+</I>&gt;<i> 	(DIGIT)+ ('.' (DIGIT)+)? ('e' (MINUS|PLUS)? (DIGIT)+ )?
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> ASSIGN	:
+</I>&gt;<i> 	'='
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> SEP	:
+</I>&gt;<i> 	'\\'
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> RUNCSID
+</I>&gt;<i> 	:
+</I>&gt;<i> 	&quot;rsc.&quot;
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> RUNVARIABLE
+</I>&gt;<i> 	:
+</I>&gt;<i> 	&quot;r.&quot;
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> BATCHCSID
+</I>&gt;<i> 	:
+</I>&gt;<i> 	&quot;bsc.&quot;
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> BATCHVARIABLE
+</I>&gt;<i> 	:
+</I>&gt;<i> 	&quot;b.&quot;
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> CMAX	:
+</I>&gt;<i> 	&quot;c_max&quot;
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> CMIN	:
+</I>&gt;<i> 	&quot;c_min&quot;
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> CABS	:
+</I>&gt;<i> 	&quot;c_abs&quot;
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> CAVG	:
+</I>&gt;<i> 	&quot;c_avg&quot;
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> CSIGN	:
+</I>&gt;<i> 	&quot;c_sign&quot;
+</I>&gt;<i> 	;
+</I></PRE>
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="016117.html">[antlr-interest] Grammar nondeterminism on recursion
+	beginner'squestion
+</A></li>
+	<LI>Next message: <A HREF="016120.html">[antlr-interest] Antlr v3.0ea8 :
+ java.lang.IllegalArgumentException: Can't find
+ template tokenRefBang.st
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#16118">[ date ]</a>
+              <a href="thread.html#16118">[ thread ]</a>
+              <a href="subject.html#16118">[ subject ]</a>
+              <a href="author.html#16118">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

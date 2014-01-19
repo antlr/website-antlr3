@@ -1,0 +1,200 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Re: unicode support
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20unicode%20support&In-Reply-To=FB771316-1222-11D7-B92F-0030653DE0D6%40jguru.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002497.html">
+   <LINK REL="Next"  HREF="002504.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Re: unicode support</H1>
+    <B>Brian Smith</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20unicode%20support&In-Reply-To=FB771316-1222-11D7-B92F-0030653DE0D6%40jguru.com"
+       TITLE="[antlr-interest] Re: unicode support">brian-l-smith at uiowa.edu
+       </A><BR>
+    <I>Tue Dec 17 18:17:38 PST 2002</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002497.html">[antlr-interest] Re: unicode support
+</A></li>
+        <LI>Next message: <A HREF="002504.html">[antlr-interest] Re: unicode support
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2500">[ date ]</a>
+              <a href="thread.html#2500">[ thread ]</a>
+              <a href="subject.html#2500">[ subject ]</a>
+              <a href="author.html#2500">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>&gt;<i> &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">open.zone at virgin.net</A>&gt; wrote:
+</I>&gt;&gt;&gt;<i>stick at version 3.0 which is the last 16 bit version.  Current
+</I>&gt;&gt;&gt;<i>Unicode uses 21 bits but Java does not grok it.
+</I>
+They can be converted to surrogate pairs, I guess.
+
+Terence Parr wrote:
+&gt;<i> Yep, that table would be easy to convert into char defs.  It would take 
+</I>&gt;<i> time and space to load that hashtable each time I start up antlr though 
+</I>&gt;<i> just in case somebody referenced
+</I>&gt;<i> 
+</I>&gt;<i> 'ORIYA LETTER DDHA'
+</I>&gt;<i> 
+</I>&gt;<i> but it would be pretty cool.  Could do it on demand if they reference 
+</I>&gt;<i> any 'blah' that is not a single char.  I'd load the table and look it 
+</I>&gt;<i> up.  Any ideas making this faster?  It's 12000 hashtable entries ;)  
+</I>&gt;<i> Technically the charVocabulary could limit what I had to load, but...
+</I>
+Is charVocabulary useful? My understanding is that it is purely an 
+optimization technique. But, I thought that ANTLR has a new way of doing 
+token set optimizations now?
+
+Anyway, I think that providing support for 'ORIYA LETTER DDHA' is a bit 
+over the top for now. My understanding is that many people would be 
+satisfied if Unicode general catagories, Unicode blocks, and maybe 
+Unicode directionality catagories were supported. Then, I believe that 
+you wouldn't have to worry so much about these optimizations.
+
+With the technique described below, you could have one grammar file for 
+each unicode block (or really, whatever catagorization you want). For 
+example, the 'OriyaLexer' grammar would contain all 'Oriya ***' rules 
+and 'ThaiLexer' would contain map all 'Thai ****' letters to rules.
+
+&gt;<i> I think they ran 1..0xFFFF into isLetter(...) and got the ranges.  If I 
+</I>&gt;<i> defined this one alone or isLetterOrDigit it would be a big improvement 
+</I>&gt;<i> ;)
+</I>
+I very much agree.
+
+&gt;<i> 2. If I have the stomach before release of 2.7.2, I try to add *simple* 
+</I>&gt;<i> UNICODE support.  Here is how sets could be done.  If you reference a 
+</I>&gt;<i> word like SPACE_SEPARATOR and there is no rule with that name in the 
+</I>&gt;<i> lexer, it will assume it is a Unicode set and try to load it 
+</I>&gt;<i> (intersected with charVocabulary???).  I'd prefer a syntactic indicator 
+</I>&gt;<i> that you meant a unicode set rather than a rule, but I can't think of 
+</I>&gt;<i> anything obvious at the moment.  Anyway, &quot;load&quot; means lookahead Java 
+</I>
+I like the thought of unicode catagories, etc. as rules. IMO, ANTLR 
+should treat the Unicode stuff just like another lexical grammar. Then 
+you can just import the &quot;UnicodeGeneralCatagories&quot; grammar into your own 
+grammar when you need it.
+
+I guess the problem is that ANTLR does not provide a way for grammar A 
+to reuse multiple grammars at once. For example, I would like to say:
+
+class MyLexer imports UnicodeGeneralGatagories, XMLCatagories;
+
+And then have MyLexer be able to use rules from UnicodeGeneralCatagories 
+and XMLCatagories, just as though it extended both of them at once.
+
+Then, you could just generate a single UnicodeGeneralCatgories.g that 
+defined a bunch of protected rules, one for each catagory.
+
+I think this more general mechanism (replacing or augmenting grammar 
+inheritance with grammar importation) would also have other benefits and 
+would be useful both in parsers and lexers. It would basically mean that 
+we would be creating reusable grammar libraries. Currently you can 
+somewhat do that with grammar inheritance but you are limited to reusing 
+one grammar at a time.
+
+&gt;<i> class antlr.unicode.SPACE_SEPARATOR which is a BitSet subclass.  If 
+</I>&gt;<i> found, make an instance and just use it.  Nothing else in ANTLR will 
+</I>&gt;<i> care or notice.  All code generators will still work (at least for 
+</I>&gt;<i> generating char sets in the output lexers).  Pretty cool, eh?  This 
+</I>&gt;<i> way, I can provide a few simple sets like LETTER_DIGIT and you all are 
+</I>&gt;<i> free to define antlr.unicode.MY_FAVORITE_UNICODE_SET w/o having to 
+</I>&gt;<i> touch the antlr source code.  Just place that in your CLASSPATH.  I'll 
+</I>&gt;<i> provide the tool to pull stuff out of the unicode table for 
+</I>&gt;<i> convenience.  THis mechanism makes the classloader the &quot;hashtable&quot; to 
+</I>&gt;<i> map set name to bit set.  Clever, no?
+</I>
+Yes, but it would be best if I could define MY_FAVORITE_UNICODE_SET 
+using an ANTLR grammar specification. Otherwise, you will have to define 
+MY_FAVORITE_UNICODE_SET using Java, even if you are using the C# or C++ 
+generators? It seems odd.
+
+&gt;<i> The last question I have is &quot;how do I know the complete set for a 
+</I>&gt;<i> UnicodeSet like Mongolian&quot;?  I can use Character.getType(...) to find 
+</I>&gt;<i> 
+</I>&gt;<i> Since LATIN is way lower than 1E00...i've no idea what a &quot;RING BELOW&quot; 
+</I>&gt;<i> is either ;)  How can I find the complete set of chars for a language?  
+</I>&gt;<i> Ah ha!
+</I>&gt;<i> 
+</I>&gt;<i> <A HREF="http://www.unicode.org/Public/UNIDATA/Blocks.txt">http://www.unicode.org/Public/UNIDATA/Blocks.txt</A>
+</I> &gt;
+&gt;<i> So, this list is so small that ranges for a single language can be put 
+</I>&gt;<i> into a quicky hashtable.  you could say
+</I>&gt;<i> 
+</I>&gt;<i> options {
+</I>&gt;<i> 	charVocabulary = THAI;
+</I>&gt;<i> }
+</I>
+Again, in most cases I have seen, I have to set the charVocabularity to 
+always be all of Unicode. Lexers simply don't do what you expect them to 
+if they are given a character outside the charVocabulary. Therefore, the 
+only real way to make your lexer robust is to ensure that the input does 
+not ever contain characters outside the charVocabulary. And the easiest 
+and most robust way to do that is to set charVocabulary as large as 
+possible (i.e. all characters).
+
+&gt;<i> 
+</I>&gt;<i> However, how do you limit digits to, say, THAI letters?
+</I>&gt;<i> 
+</I>&gt;<i> ID : (THAI)+ ; // includes too much!
+</I>&gt;<i> 
+</I>&gt;<i> Hmm...might need to introduce an intersection operator that let you say:
+</I>&gt;<i> 
+</I>&gt;<i> ID : (THAI &amp; LETTER)* (THAI &amp; (LETTER|DIGIT))+ ;
+</I>
+This seems like a very useful thing to have, not just for unicode 
+support but for lexer (and parser?) rules in general. I think SableCC 
+also has subtraction.
+
+&gt;<i> Uh...getting complicated.  How about I provide the tool to let you 
+</I>&gt;<i> predefine THAI_LETTER and THAI_DIGIT given the THAI range from this 
+</I>&gt;<i> table and the Character.isDigit method etc... from Java??  That will 
+</I>&gt;<i> work to start ;)
+</I>
+I like the intersection operator better. Anyway, I think that in the 
+short term there is not much demand for this &quot;Tha Letter&quot; scenerio, and 
+there are workarounds (especially if the unicode block/catagory support 
+is added) that could be used until the intersection operator is implemented.
+
+- Brian
+
+
+
+
+
+
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002497.html">[antlr-interest] Re: unicode support
+</A></li>
+	<LI>Next message: <A HREF="002504.html">[antlr-interest] Re: unicode support
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2500">[ date ]</a>
+              <a href="thread.html#2500">[ thread ]</a>
+              <a href="subject.html#2500">[ subject ]</a>
+              <a href="author.html#2500">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

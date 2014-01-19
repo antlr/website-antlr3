@@ -1,0 +1,574 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Antlr 3.2 vs. Bison 2.4.2+Flex 2.5.35 Speed/Memory
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Antlr%203.2%20vs.%20Bison%202.4.2%2BFlex%202.5.35%20Speed/Memory&In-Reply-To=%3C001e01caf959%2405d214e0%2411763ea0%24%40net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="038755.html">
+   <LINK REL="Next"  HREF="038757.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Antlr 3.2 vs. Bison 2.4.2+Flex 2.5.35 Speed/Memory</H1>
+    <B>Bob</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Antlr%203.2%20vs.%20Bison%202.4.2%2BFlex%202.5.35%20Speed/Memory&In-Reply-To=%3C001e01caf959%2405d214e0%2411763ea0%24%40net%3E"
+       TITLE="[antlr-interest] Antlr 3.2 vs. Bison 2.4.2+Flex 2.5.35 Speed/Memory">temporaryemail at comcast.net
+       </A><BR>
+    <I>Fri May 21 19:46:47 PDT 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="038755.html">[antlr-interest] parser runtime error listeners
+</A></li>
+        <LI>Next message: <A HREF="038757.html">[antlr-interest] Antlr 3.2 vs. Bison 2.4.2+Flex 2.5.35	Speed/Memory
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#38756">[ date ]</a>
+              <a href="thread.html#38756">[ thread ]</a>
+              <a href="subject.html#38756">[ subject ]</a>
+              <a href="author.html#38756">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>A tiny grammar was implemented in both Antlr and Bison+Flex (shown below).
+
+Test files repeating two lines (shown below) were made in 6 different
+
+sizes.
+
+One executable compiled with command line switch choosing either 
+
+Antlr or Bison+Flex.
+
+One run with empty actions, one run with actions populated, to compare
+
+pure parsing with some actual work.
+
+ 
+
+Results:
+
+ 
+CPU time    Peak Memory
+
+File Name     File Size # modules #tokens  Bison Antlr  Bison Antlr
+
+Action bodies empty:
+
+source.v10m     460mb      10m      150m         28s          572k  *
+
+source.v5m       230mb       5m        75m           15s          572k  *
+
+source.v2.5m    115mb       2.5m     37m           7s           572k  *
+
+source.v1m       46mb         1m        15m            2s           572k  *
+
+source.v500k    23mb        500k      7.5m          1s            572k  *
+
+source.v250k    11mb        250k      3.7m        &lt;1s   4s     572k  1.7g
+&lt;-----------
+
+Action bodies populated:
+
+source.v250k    11mb        250k      3.7m         9s   13s    477m  1.7g
+&lt;-----------
+
+ 
+
+* Antlr ran out of memory at 2gb
+
+ 
+
+Comments:
+
+ 
+
+1. I expected the requirement that the entire file be resident in memory
+
+   to be the memory glut. Surprise! Quick inspection suggests an initial
+
+   tokenizing of the entire in-memory file consumes gobbs of memory, pushing
+
+   a small footprint up to 1.7gb before releasing it. Only the smallest
+
+   test file was under the runable 32 bit 2gb limit.     Please fix!!
+
+ 
+
+2. Speed is clearly slower than bison+flex, however empty actions don't make
+
+   interesting programs. The test with actions enabled shows a 9s vs. 13s
+
+   difference, considerable less than the empty action case.
+
+ 
+
+3. If you've never setup bison+flex I have only one comment: !#@%$#. Two
+
+   thumbs up for Antlr.
+
+ 
+
+Details:
+
+ 
+
+  Vista 64, AMD opteron 2.4Ghz, 16gb ram
+
+  Visual Studio 2008 Sp1
+
+  One exe file with both Antlr and Bison+Flex, targeting 32 bit
+
+  Full Optimization (/Ox), Inline Any suitable (/Ob2), Favor Small Code
+(/Os)
+
+  Versions:
+
+    Antlr 3.2
+
+    Bison 2.4.2 LR(1)
+
+    Flex  2.5.35
+
+ 
+
+ 
+
+------------------- Input file -----------------------------
+
+module tiptop #(int p1=3, p2=4 );
+
+endmodule
+
+... repeat to the indicated number of modules ...
+
+------------------- Antlr Grammar --------------------------
+
+source_text : description ( description )*
+
+    ;
+
+description : module_declaration 
+
+    ;
+
+module_declaration : module_ansi_header ENDMODULE ( ':' module_identifier )?
+
+        { act_module(); }
+
+    ;
+
+module_ansi_header : MODULE_KEYWORD module_identifier ( parameter_port_list
+)? ';'
+
+    ;
+
+module_identifier : identifier
+
+    ;
+
+parameter_port_list 
+
+    : '#' '(' parameter_port_declaration ( ',' parameter_port_declaration )*
+')'
+
+    | '#' '(' ')'
+
+    ;
+
+parameter_port_declaration returns [void* node]
+
+scope {
+
+    void* type;
+
+    void* head;
+
+    void* tail;
+
+}
+
+    : data_type
+
+        { $parameter_port_declaration::type = $data_type.node;
+
+            $parameter_port_declaration::head=NULL; }
+list_of_param_assignments
+
+        { $node = $parameter_port_declaration::head; }
+
+    ;
+
+list_of_param_assignments
+
+    : param_assignment ( ',' param_assignment )*
+
+    ;
+
+param_assignment
+
+    : parameter_identifier '=' constant_param_expression
+
+        { act_param_assignment
+
+            (
+
+                &amp; $parameter_port_declaration::head,
+
+                &amp; $parameter_port_declaration::tail,
+
+                $parameter_identifier.node,
+
+                $parameter_port_declaration::type,
+
+                $constant_param_expression.node
+
+            );
+
+        }
+
+    ;
+
+constant_param_expression returns [void* node]
+
+    : constant_mintypmax_expression
+
+        { $node = $constant_mintypmax_expression.node; }
+
+//    | '$'
+
+    ;
+
+constant_mintypmax_expression returns [void* node]
+
+    : constant_expression
+
+        { $node = $constant_expression.node; }
+
+    ;
+
+// Deviate from LRM
+
+constant_expression returns [void* node]
+
+    : expr { $node = $expr.node; }
+
+    ;
+
+parameter_identifier returns [void* node]
+
+    : identifier { $node = $identifier.node; }
+
+    ;
+
+data_type returns [void* node]
+
+    : integer_atom_type signing
+
+       {$node=act_type($integer_atom_type.value,$signing.value);}
+
+    | integer_atom_type
+
+       {$node=act_type($integer_atom_type.value,-1);}
+
+    ;
+
+ 
+
+ 
+
+expr returns [void* node] : NUMBER
+
+        { $node = act_number( $NUMBER.text-&gt;chars ); }
+
+        ;
+
+ 
+
+identifier returns [void* node] : SIMPLE_IDENTIFIER
+
+        { $node = act_identifier( $SIMPLE_IDENTIFIER.text-&gt;chars ); }
+
+    ;
+
+ 
+
+/*------------------------------------------------------------------
+
+ * LEXER RULES
+
+ *------------------------------------------------------------------*/
+
+ 
+
+integer_atom_type returns [int value]
+
+    : TokByte       {$value = TokByte;}
+
+    | TokShortint   {$value = TokShortint;}
+
+    | TokInt        {$value = TokInt;}
+
+    | TokLongint    {$value = TokLongint;}
+
+    | TokInteger    {$value = TokInteger;}
+
+    | TokTime       {$value = TokTime;}
+
+    ;
+
+signing returns [int value]
+
+    : TokSigned     {$value= TokSigned;}
+
+    | TokUnsigned   {$value= TokUnsigned;}
+
+    ;
+
+MODULE_KEYWORD  : (( 'module' )|('macromodule') )
+
+    ;
+
+ENDMODULE       : 'endmodule'
+
+    ;
+
+SIMPLE_IDENTIFIER : ( 'a'..'z'|'A'..'Z'|'_' ) (
+'a'..'z'|'A'..'Z'|'_'|'0'..'9'|'$')*
+
+    ;
+
+ 
+
+NUMBER : (DIGIT)+ 
+
+            ;
+
+ 
+
+WHITESPACE  : ( '\t' | ' ' | '\r' | '\n'| '\u000C' )+
+
+              {
+
+                 $channel = HIDDEN;
+
+              }
+
+            ;
+
+fragment
+
+DIGIT         : '0'..'9'
+
+            ;
+
+------------------- Bison Grammar --------------------------
+
+%%
+
+source_text : description
+
+    ;
+
+description
+
+                : module_declaration
+
+                | description module_declaration
+
+    ;
+
+module_declaration
+
+                : module_ansi_header TokEndmodule
+
+                { act_module(); }
+
+                | module_ansi_header TokEndmodule ':' module_identifier
+
+                { act_module(); }
+
+    ;
+
+module_ansi_header
+
+                : TokModule module_identifier ';'
+
+                | TokModule module_identifier parameter_port_list ';'
+
+    ;
+
+module_identifier : identifier
+
+                { $$ = $1; }
+
+    ;
+
+parameter_port_list 
+
+    : '#' '(' parameter_port_list_recur ')'
+
+    | '#' '(' ')'
+
+    ;
+
+parameter_port_list_recur
+
+                : parameter_port_declaration
+
+                | parameter_port_list_recur ',' parameter_port_declaration
+
+                ;
+
+parameter_port_declaration
+
+                : parameter_port_declaration_scope
+
+                    data_type { $1.type = $2; $1.head = NULL; }
+
+                      list_of_param_assignments { $$ = $1.head; }
+
+    ;
+
+parameter_port_declaration_scope :
+
+                ;
+
+list_of_param_assignments
+
+    : nil                       nil param_assignment
+
+/* FIX:: need LR(2) here */
+
+    | list_of_param_assignments ',' param_assignment
+
+    ;
+
+param_assignment
+
+    : parameter_identifier '=' constant_param_expression
+
+    { act_param_assignment
+
+      (
+
+       &amp; $&lt;scope1&gt;-3.head,
+
+       &amp; $&lt;scope1&gt;-3.tail,
+
+       $1,
+
+       $&lt;scope1&gt;-3.type,
+
+       $3
+
+       );
+
+    }
+
+    ;
+
+constant_param_expression
+
+                : constant_mintypmax_expression { $$ = $1; }
+
+//    | '$'
+
+    ;
+
+constant_mintypmax_expression
+
+    : constant_expression { $$ = $1; }
+
+    ;
+
+// Deviate from LRM
+
+constant_expression : expr { $$ = $1; }
+
+    ;
+
+parameter_identifier : identifier
+
+    { $$ = $1; }
+
+    ;
+
+data_type
+
+                : integer_atom_type signing { $$ = act_typeB($1,$2); }
+
+                | integer_atom_type         { $$ = act_typeB($1,-1); }
+
+                ;
+
+expr       : TokNumber
+
+                { $$ = act_number( $1 ); }
+
+                ;
+
+ 
+
+nil           : /* empty */
+
+    ;
+
+identifier : TokIdentifier
+
+                { $$ = act_identifier( $1 ); }
+
+    ;
+
+integer_atom_type
+
+                : TokByte     { $$ = $1; }
+
+                | TokShortint { $$ = $1; }
+
+                | TokInt      { $$ = $1; }
+
+                | TokLongint  { $$ = $1; }
+
+                | TokInteger  { $$ = $1; }
+
+                | TokTime     { $$ = $1; }
+
+                ;
+
+signing  : TokSigned   { $$ = $1; }
+
+                | TokUnsigned { $$ = $1; }
+
+                ;
+
+%%
+
+---------------------------------------------------------------
+
+</PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="038755.html">[antlr-interest] parser runtime error listeners
+</A></li>
+	<LI>Next message: <A HREF="038757.html">[antlr-interest] Antlr 3.2 vs. Bison 2.4.2+Flex 2.5.35	Speed/Memory
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#38756">[ date ]</a>
+              <a href="thread.html#38756">[ thread ]</a>
+              <a href="subject.html#38756">[ subject ]</a>
+              <a href="author.html#38756">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

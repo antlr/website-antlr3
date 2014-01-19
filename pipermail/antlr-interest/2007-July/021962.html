@@ -1,0 +1,171 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Bug in C runtime column handling
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Bug%20in%20C%20runtime%20column%20handling&In-Reply-To=%3C051466DAA0D608439E196797955018D76E73%40wavemachine.temporal-wave.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="021949.html">
+   <LINK REL="Next"  HREF="021964.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Bug in C runtime column handling</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Bug%20in%20C%20runtime%20column%20handling&In-Reply-To=%3C051466DAA0D608439E196797955018D76E73%40wavemachine.temporal-wave.com%3E"
+       TITLE="[antlr-interest] Bug in C runtime column handling">jimi at temporal-wave.com
+       </A><BR>
+    <I>Mon Jul  2 09:09:12 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="021949.html">[antlr-interest] Bug in C runtime column handling
+</A></li>
+        <LI>Next message: <A HREF="021964.html">[antlr-interest] Bug in C runtime column handling
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#21962">[ date ]</a>
+              <a href="thread.html#21962">[ thread ]</a>
+              <a href="subject.html#21962">[ subject ]</a>
+              <a href="author.html#21962">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>It was -1 in the Java at some point and I think Ter changed it. I have
+not had time to work out the implications of this because the input
+stuff tests for -1 in places I think. I will get to it.
+
+Jim
+
+
+
+&gt;<i> -----Original Message-----
+</I>&gt;<i> From: Wincent Colaiuta [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">win at wincent.com</A>]
+</I>&gt;<i> Sent: Monday, July 02, 2007 6:21 AM
+</I>&gt;<i> To: ANTLR Interest
+</I>&gt;<i> Cc: Jim Idle
+</I>&gt;<i> Subject: Bug in C runtime column handling
+</I>&gt;<i> 
+</I>&gt;<i> I posted about this issue previously (&lt;<A HREF="http://www.antlr.org/">http://www.antlr.org/</A>
+</I>&gt;<i> pipermail/antlr-interest/2007-June/021331.html&gt;) but while unit
+</I>&gt;<i> testing a parser built with the ANTLR 3 C target I discovered that
+</I>&gt;<i> the behaviour is a little more inconsistent than I had initially
+</I>&gt;<i> thought. CC'ing you directly on this one Jim seeing as I don't know
+</I>&gt;<i> if you saw my post on the topic last time.
+</I>&gt;<i> 
+</I>&gt;<i> BACKGROUND:
+</I>&gt;<i> 
+</I>&gt;<i> In lexer rules it can be handy to use a predicate to match certain
+</I>&gt;<i> tokens only when they appear in a certain column (often the first
+</I>&gt;<i> column). The C runtime provides a getCharPositionInLine() function
+</I>&gt;<i> that can be used to access the current column information.
+</I>&gt;<i> Unfortunately, as described in my previous post, the value returned
+</I>&gt;<i> by this function will be -1 at the start of the input, unlike the
+</I>&gt;<i> Java runtime where it is 0. This is because in the antlr3InputReset()
+</I>&gt;<i> function in antlr3inputstream.c the charPositionInLine is explicitly
+</I>&gt;<i> set to -1.
+</I>&gt;<i> 
+</I>&gt;<i> As noted earlier, I worked around this by using a helper method in my
+</I>&gt;<i> lexer:
+</I>&gt;<i> 
+</I>&gt;<i>    ANTLR3_UINT32 ANTLR3_INLINE char_position_in_line(pWikiTextLexer
+</I>&gt;<i> ctx)
+</I>&gt;<i>    {
+</I>&gt;<i>        ANTLR3_UINT32 pos = ctx-&gt;pLexer-&gt;getCharPositionInLine(ctx-
+</I>&gt;<i>  &gt;pLexer);
+</I>&gt;<i>        return pos == -1 ? 0 : pos;
+</I>&gt;<i>    }
+</I>&gt;<i> 
+</I>&gt;<i> But I just discovered that this still won't work consistently on the
+</I>&gt;<i> first line of the input. This is because after scanning the first
+</I>&gt;<i> character on the first line the column number will be bumped up by 1
+</I>&gt;<i> only. This means that the column numbering is off by one for every
+</I>&gt;<i> character in the first line; all the other lines are correct.
+</I>&gt;<i> 
+</I>&gt;<i> To illustrate, given input like the following:
+</I>&gt;<i> 
+</I>&gt;<i> foobar
+</I>&gt;<i> foobar
+</I>&gt;<i> 
+</I>&gt;<i> On the first line &quot;f&quot; will be at column -1, &quot;o&quot; will be at column 0,
+</I>&gt;<i> and so on for columns 1, 2, 3, 4.
+</I>&gt;<i> 
+</I>&gt;<i> On the second line &quot;f&quot; will be at column 0, &quot;o&quot; at column 1, and so
+</I>&gt;<i> on for columns 2, 3, 4, 5.
+</I>&gt;<i> 
+</I>&gt;<i> As this is inconsistent it could catch people out and so looks like a
+</I>&gt;<i> bug to me.
+</I>&gt;<i> 
+</I>&gt;<i> SOLUTION:
+</I>&gt;<i> 
+</I>&gt;<i> So to work around this bug the helper method now needs to be updated
+</I>&gt;<i> to look at the line number first in order to figure out whether
+</I>&gt;<i> adjusting the column number is necessary or not. Alternatively, the
+</I>&gt;<i> following patch can be applied to the runtime (antlr3inputstream.c):
+</I>&gt;<i> 
+</I>&gt;<i> 166c166
+</I>&gt;<i> &lt;     input-&gt;charPositionInLine = -1;
+</I>&gt;<i> ---
+</I>&gt;<i>  &gt;     input-&gt;charPositionInLine = 0;
+</I>&gt;<i> 
+</I>&gt;<i> Cheers,
+</I>&gt;<i> Wincent
+</I>
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="021949.html">[antlr-interest] Bug in C runtime column handling
+</A></li>
+	<LI>Next message: <A HREF="021964.html">[antlr-interest] Bug in C runtime column handling
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#21962">[ date ]</a>
+              <a href="thread.html#21962">[ thread ]</a>
+              <a href="subject.html#21962">[ subject ]</a>
+              <a href="author.html#21962">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

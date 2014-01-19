@@ -1,0 +1,200 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] C-Target $label.text / toString malfunction
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20C-Target%20%24label.text%20/%20toString%20malfunction&In-Reply-To=%3CF81BC594-6EE5-48A0-B33F-41DD1EC7FC53%40gmx.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="020031.html">
+   <LINK REL="Next"  HREF="020023.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] C-Target $label.text / toString malfunction</H1>
+    <B>Tobias Pape</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20C-Target%20%24label.text%20/%20toString%20malfunction&In-Reply-To=%3CF81BC594-6EE5-48A0-B33F-41DD1EC7FC53%40gmx.de%3E"
+       TITLE="[antlr-interest] C-Target $label.text / toString malfunction">Das.Linux at gmx.de
+       </A><BR>
+    <I>Sat Mar 31 14:05:10 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="020031.html">[antlr-interest] Get rule text only if rule was applied
+</A></li>
+        <LI>Next message: <A HREF="020023.html">[antlr-interest] need example for executing an if statement
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#20022">[ date ]</a>
+              <a href="thread.html#20022">[ thread ]</a>
+              <a href="subject.html#20022">[ subject ]</a>
+              <a href="author.html#20022">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi gavin
+Am 2007-03-31 um 22:35 schrieb Gavin Lambert:
+
+&gt;<i> At 04:25 1/04/2007, Tobias Pape wrote:
+</I>&gt;<i> &gt;unaryPattern returns [ pASTPattern p ]
+</I>&gt;<i> &gt;   : s=unarySelector
+</I>&gt;<i> &gt;     { $p = (pASTPattern) ASTUnaryPattern_new((char *) $s.text-
+</I>&gt;<i> &gt; &gt;chars); }
+</I>&gt;<i> &gt;   ;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;binaryPattern returns [ pASTPattern p  ]
+</I>&gt;<i> &gt;   : s=binarySelector v=argument
+</I>&gt;<i> &gt;     { $p = (pASTPattern) ASTBinaryPattern_new((char *) $s.text-
+</I>&gt;<i> &gt; &gt;chars, v.v); }
+</I>&gt;<i> &gt;   ;
+</I>&gt;<i>
+</I>&gt;<i> I don't think you're allowed to upcast like that in the C-language  
+</I>&gt;<i> parsers.  At least not if 'ASTBinaryPattern' inherits from  
+</I>&gt;<i> ASTPattern, anyway, rather than simply being an ASTPattern with a  
+</I>&gt;<i> different constructor (in which case you probably don't need the  
+</I>&gt;<i> cast).  Inheritance is usually faked via containment and you're not  
+</I>&gt;<i> going to get the compiler's help to convert pointers, so unless the  
+</I>&gt;<i> structure is laid out in a very specific way then you're going to  
+</I>&gt;<i> end up with an invalid pointer.
+</I>
+
+leave my ASTs away ;)
+
+yes, exactly, my AST* layout is special, its kinf of fake-OOP.
+This will explain more to you:
+for my Patterns, I got the rules as:
+==============================================
+pattern returns [ pASTPattern p ]
+   : up=unaryPattern { $p = up.p; }
+   | bp=binaryPattern { $p = bp.p;}
+   | kp=keywordPattern { $p = (pASTPattern) kp.p; }
+   ;
+
+unaryPattern returns [ pASTPattern p ]
+   : s=unarySelector
+     { $p = (pASTPattern) ASTUnaryPattern_new((char *) $s.text- 
+ &gt;chars); }
+   ;
+
+binaryPattern returns [ pASTPattern p  ]
+   : s=binarySelector v=argument
+     { $p = (pASTPattern) ASTBinaryPattern_new((char *) $s.text- 
+ &gt;chars, v.v); }
+   ;
+
+keywordPattern returns [ pASTKeywordPattern p ]
+   : (s=keyword v=argument {
+   	$p = ASTKeywordPattern_new();
+   	$p-&gt;add_argument($p,(char *)  $s.text-&gt;chars, v.v);
+   } )+
+   ;
+  ==============================================
+
+As you can see, &quot;pattern&quot; returns an pASTPattern p, but if
+assigned is in the subrules as pASTBinaryPattern or pASTUnaryPattern,  
+cc would complain,
+when i assign &quot;$p = up.b;&quot; or &quot;$p = bp.p;&quot;.
+and, yes, the cast is intended, here the layouts:
+
+==============================================
+[from ASTPattern.h]
+
+
+// ASTPattern
+#define NODE_ASTPattern 6
+#define ASTPATTERN_FORMAT \
+		ASTNODE_FORMAT;\
+		/*abstract */ p_string	(*get_selector)(pASTPattern self);\
+		/*abstract */ pList		(*get_arguments)(pASTPattern self)
+
+
+struct _ASTPattern {
+  // ASTPattern
+	ASTNODE_FORMAT;
+	/*abstract */ p_string	(*get_selector)(pASTPattern self);
+	/*abstract */ pList		(*get_arguments)(pASTPattern self);
+};
+
+==============================================
+==============================================
+[from ASTUnaryPattern.h]
+//		ASTUnaryPattern
+#define NODE_ASTUnaryPattern 7
+#define ASTUNARYPATTERN_FORMAT \
+			ASTPATTERN_FORMAT; \
+			/* private */ char *		_selector
+
+
+struct _ASTUnaryPattern {
+	//		ASTUnaryPattern
+			ASTPATTERN_FORMAT;
+			/* private */ char *		_selector;
+};
+==============================================
+==============================================
+[from ASTBinaryPattern.h]
+//		ASTBinaryPattern
+#define NODE_ASTBinaryPattern 8
+#define ASTBINARYPATTERN_FORMAT \
+			ASTPATTERN_FORMAT;\
+			/* private */ char *		_selector;\
+	/* private */ struct _ASTVariable*	_parameter
+
+struct _ASTBinaryPattern {
+	//		ASTBinaryPattern
+			ASTPATTERN_FORMAT;
+			/* private */ char *		_selector;
+			/* private */ struct _ASTVariable*	_parameter;
+};
+==============================================
+
+
+as you can see, only the &quot;visible&quot; fields differ, and the constructors
+are there for specific asignmenst.
+
+A constructed ASTPattern would differ significantly (?) from any  
+other AST*Pattern.
+you know what I mean?
+
+ &gt;&gt;These casts, fact, arent my problems at all. I'm merely messing  
+with libantlr3c ;)&lt;&lt;
+But thanks for your notice. If you want, I'll get you a copy of my
+speciffic &quot;C Class Layout&quot; (without late binding, thoug)
+
+thanks,
+	-Tobias
+
+
+
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: PGP.sig
+Type: application/pgp-signature
+Size: 186 bytes
+Desc: Signierter Teil der Nachricht
+Url : <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20070331/4fabdfcb/attachment.bin">http://www.antlr.org/pipermail/antlr-interest/attachments/20070331/4fabdfcb/attachment.bin</A> 
+</PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="020031.html">[antlr-interest] Get rule text only if rule was applied
+</A></li>
+	<LI>Next message: <A HREF="020023.html">[antlr-interest] need example for executing an if statement
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#20022">[ date ]</a>
+              <a href="thread.html#20022">[ thread ]</a>
+              <a href="subject.html#20022">[ subject ]</a>
+              <a href="author.html#20022">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

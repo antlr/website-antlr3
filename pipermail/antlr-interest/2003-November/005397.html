@@ -1,0 +1,171 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] HELP!!!: with left recursion
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20HELP%21%21%21%3A%20with%20left%20recursion&In-Reply-To=bo4svl%2B5ghp%40eGroups.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005393.html">
+   <LINK REL="Next"  HREF="005394.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] HELP!!!: with left recursion</H1>
+    <B>jbb at acm.org</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20HELP%21%21%21%3A%20with%20left%20recursion&In-Reply-To=bo4svl%2B5ghp%40eGroups.com"
+       TITLE="[antlr-interest] HELP!!!: with left recursion">jbb at acm.org
+       </A><BR>
+    <I>Mon Nov  3 20:52:37 PST 2003</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005393.html">[antlr-interest] Re: HELP!!!: with left recursion
+</A></li>
+        <LI>Next message: <A HREF="005394.html">[antlr-interest] exception handling for tree parser rules...
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5397">[ date ]</a>
+              <a href="thread.html#5397">[ thread ]</a>
+              <a href="subject.html#5397">[ subject ]</a>
+              <a href="author.html#5397">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Aaanwar :-
+
+You may have already worked this out for yourself. Anyway FYI here is my 2
+cents...
+
+You asked about ambiguity in 
+&gt;<i>exp	--&gt; 	let  decs in exp end
+</I>&gt;<i>	| 	if exp then exp end
+</I>&gt;<i>	| 	if exp then exp else exp end
+</I>&gt;<i>	| 	for ID :=  exp to exp do exp end
+</I>&gt;<i>	| 	while exp do exp end
+</I>&gt;<i>	| 	lvalue
+</I>&gt;<i>	| 	lvalue :=exp
+</I>&gt;<i>	| 	builtin
+</I>&gt;<i>	| 	ID ( arg_seq  )
+</I>&gt;<i>	| 	ID ( )
+</I>&gt;<i>	| 	exp &amp;  exp 
+</I>&gt;<i>	| 	exp |  exp 
+</I>&gt;<i>	| 	exp *  exp 
+</I>&gt;<i>	| 	exp /  exp  
+</I>&gt;<i>	| 	exp +  exp  
+</I>&gt;<i>	| 	exp -  exp  
+</I>&gt;<i>	| 	exp =  exp 
+</I>&gt;<i>	| 	exp &gt; exp 
+</I>&gt;<i>	| 	exp &gt;= exp 
+</I>&gt;<i>	| 	exp &lt; exp 
+</I>&gt;<i>	| 	exp &lt;= exp 
+</I>&gt;<i>	| 	exp &lt;&gt; exp 
+</I>&gt;<i>	| 	INTEGER_LITERAL
+</I>&gt;<i>	| 	STRING_LIT	
+</I>&gt;<i>	| 	( exp_seq )
+</I>&gt;<i>	| 	( )
+</I>
+...your trial grammar snipped, but is essentially the same as my attached...
+
+You may have already discovered that the above has a problem with the
+assignment expression. Consider this expression:
+
+	while i:=j+1&lt;100 do foo() end
+
+in the (sub)expression immediately after the WHILE keyword which operator
+should be performed first? which is last? should it be
+
+  ((i:=j)+1)&lt;100   or   (i:=(j+1))&lt;100   or   i:=((j+1)&lt;100)   or ???
+
+all of these interpretations are possible under your original grammar.
+
+Splitting up the expression rules to achieve operator precedence as Loring
+suggested - and you posted a message with your attempt to do so - which I
+promply deleted and can not comment on - is probably a Good Thing. Altho I do
+not agree that you should split the if, for, and while into a set of separate
+statement rules - as long as you have well defined sematics for the value each
+of these produces. In my experience, functional languages (Scheme, ML, Haskell,
+etc.) all have expression syntax similiar to yours and are therefore, I
+believe, very much more powerful than current imperative languages.
+
+Anyway here is a grammar, based on your first try, which removes the ambiguity
+on the assignment (note I have not actually executed this, but antlr.Tool does
+not complain about it in anyway):
+
+-----Begin-----Begin-----Begin-----Cut Here-----Cut Here-----Cut Here-----
+class aaanwar_parser extends Parser;
+
+outermost_expression : exp EOF ; 
+
+exp : lvalue ( ASSIGN ( lvalue ASSIGN )* rvalue )? ;
+
+rvalue : expr ( binaryOp expr )* ;
+
+expr :
+      LET decs IN exp END 
+    | IF exp THEN exp ( ELSE exp )? END 
+    | FOR ID ASSIGN exp TO exp DO exp END 
+    | WHILE exp DO exp END 
+    | builtin 
+    | ID LBRACKET ( arg_seq )? RBRACKET 
+    | INTEGER_LITERAL 
+    | STRING_LIT 
+    | LBRACKET ( exp_seq )? RBRACKET 
+    ;
+
+binaryOp :
+      AMPERSAND
+    | OR
+    | STAR
+    | DIV
+    | PLUS
+    | MINUS
+    | EQUAL
+    | GT
+    | GTEQ
+    | LT
+    | LTEQ
+    | NOTEQ
+    ;
+
+decs    : DUMMY_DECS_TOKEN ;
+lvalue  : DUMMY_LVALUE_TOKEN ;
+builtin : DUMMY_BUILTIN_TOKEN ;
+arg_seq : DUMMY_ARGS_TOKEN ;
+exp_seq : DUMMY_EXPRESSIONS_TOKEN ;
+-----End-----End-----End-----Cut Here-----Cut Here-----Cut Here-----
+
+observe that I have added dummy tokens as place holders for those rules which
+you did not supply. Usually an lvalue begins with an ID so you may have some
+more left factoring to do if you choose to use the above in a real language.
+
+Hope this helps...
+-- 
+	-jbb
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005393.html">[antlr-interest] Re: HELP!!!: with left recursion
+</A></li>
+	<LI>Next message: <A HREF="005394.html">[antlr-interest] exception handling for tree parser rules...
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5397">[ date ]</a>
+              <a href="thread.html#5397">[ thread ]</a>
+              <a href="subject.html#5397">[ subject ]</a>
+              <a href="author.html#5397">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

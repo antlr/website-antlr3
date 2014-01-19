@@ -1,0 +1,158 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] getText() of C runtime.
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20getText%28%29%20of%20C%20runtime.&In-Reply-To=%3CD947DE9B614C4B129D0A14B4E2A76765%40KenPC2010%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="039662.html">
+   <LINK REL="Next"  HREF="039660.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] getText() of C runtime.</H1>
+    <B>Kenneth Domino</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20getText%28%29%20of%20C%20runtime.&In-Reply-To=%3CD947DE9B614C4B129D0A14B4E2A76765%40KenPC2010%3E"
+       TITLE="[antlr-interest] getText() of C runtime.">kenneth.domino at domemtech.com
+       </A><BR>
+    <I>Tue Sep  7 12:22:58 PDT 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="039662.html">[antlr-interest] Trying antlr for python/javascript targets,	bad timing?
+</A></li>
+        <LI>Next message: <A HREF="039660.html">[antlr-interest] getText() of C runtime.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#39659">[ date ]</a>
+              <a href="thread.html#39659">[ thread ]</a>
+              <a href="subject.html#39659">[ subject ]</a>
+              <a href="author.html#39659">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi All,
+
+I'm using the C runtime of an Antlr-generated parser.  I noticed a huge 
+memory leak in my code,
+but it turns out it's because I call function getText() (def'ed in 
+antlr3commontoken.c of the Antlr C runtime)
+quite a bit, on tree nodes during my hand-coded tree walking interpreter. 
+Apparently, getText() creates
+a new copy of the string every time. Eg:
+
+pANTLR3_BASE_TREE node = ...;
+char * text = node-&gt;getText(node);
+char * text2 = node-&gt;getText(node); // text2 is another malloc'ed buffer 
+containing the same string for node.
+
+However, if you read the source code, it obviously intends to do some 
+memoizing, because it takes into
+consideration &quot;token-&gt;textState&quot;, where the previous value computed is 
+returned for
+ANTLR3_TEXT_STRING.  I can, of course, and probably will, create a string 
+table wrapper for getText().
+But I'm wondering if anyone knows if there is some way of hooking into this 
+part of the API so that
+that I don't have to.
+
+Ken
+
+The source for the runtime function is:
+
+static  pANTLR3_STRING  getText         (pANTLR3_COMMON_TOKEN token)
+{
+    switch (token-&gt;textState)
+    {
+        case ANTLR3_TEXT_STRING:
+
+            // Someone already created a string for this token, so we just
+            // use it.
+            //
+            return  token-&gt;tokText.text;
+            break;
+
+        case ANTLR3_TEXT_CHARP:
+
+            // We had a straight text pointer installed, now we
+            // must convert it to a string. Note we have to do this here
+            // or otherwise setText8() will just install the same char*
+            //
+            if  (token-&gt;strFactory != NULL)
+            {
+                token-&gt;tokText.text = 
+token-&gt;strFactory-&gt;newStr8(token-&gt;strFactory, 
+(pANTLR3_UINT8)token-&gt;tokText.chars);
+                token-&gt;textState    = ANTLR3_TEXT_STRING;
+                return token-&gt;tokText.text;
+            }
+            else
+            {
+                // We cannot do anything here
+                //
+                return NULL;
+            }
+            break;
+
+        default:
+
+            // EOF is a special case
+            //
+            if (token-&gt;type == ANTLR3_TOKEN_EOF)
+            {
+                token-&gt;tokText.text = 
+token-&gt;strFactory-&gt;newStr8(token-&gt;strFactory, (pANTLR3_UINT8)&quot;&lt;EOF&gt;&quot;);
+                token-&gt;textState    = ANTLR3_TEXT_STRING;
+                return token-&gt;tokText.text;
+            }
+
+
+            // We had nothing installed in the token, create a new string
+            // from the input stream
+            //
+
+            if  (token-&gt;input != NULL)
+            {
+
+////////////////////// The following code does a malloc/string copy every 
+time I call getText. //////////
+                return  token-&gt;input-&gt;substr(   token-&gt;input,
+                                                token-&gt;getStartIndex(token),
+                                                token-&gt;getStopIndex(token)
+                                            );
+            }
+
+            // Nothing to return, there is no input stream
+            //
+            return NULL;
+            break;
+    }
+}
+
+
+
+</PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="039662.html">[antlr-interest] Trying antlr for python/javascript targets,	bad timing?
+</A></li>
+	<LI>Next message: <A HREF="039660.html">[antlr-interest] getText() of C runtime.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#39659">[ date ]</a>
+              <a href="thread.html#39659">[ thread ]</a>
+              <a href="subject.html#39659">[ subject ]</a>
+              <a href="author.html#39659">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

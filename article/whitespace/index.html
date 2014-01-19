@@ -1,0 +1,406 @@
+<html>
+
+<head>
+<title>Preserving Whitespace During Translation</title>
+</head>
+
+<body>
+
+<i>Terence Parr</i>
+
+<p>
+
+<p>Whitespace is ignored and discarded for most parsing and translation operations,
+however, what about translations that are only slight perturbations of the input?&nbsp; In
+other words, all you want to do is change or add a few lines to some input and spit it
+back formatted just like it was (in contrast to a pretty-printer which totally reformats
+the input).&nbsp; You're tempted to just use PERL or awk, but you know that regular
+expressions quickly become insufficient when you need to match context-free structures (vs
+simple regular structures).</p>
+
+<p>This field guide entry demonstrates how you can preserve whitespace during a nontrivial
+(i.e., cannot easily be done with awk/sed) translation using ANTLR's token streams.</p>
+
+<p>The complete source code is found in <small><font face="Courier New">examples/preserveWhiteSpace</font></small>
+directory of the ANTLR (2.6.0 and above) distribution.</p>
+
+<h3>Problem Definition: Program Instrumentation</h3>
+
+<p>For debugging reasons or for computing metrics on a running program, you sometimes want
+to insert instrumentation code that, for example, shouts right before each method call.
+&nbsp; I have defined a trivial language with assignments, method calls, and if-statements
+to demonstrate such a translator.</p>
+
+<p>The goal is to have method calls such as &quot;<font face="Courier New">f(<em>arg</em>);</font>&quot;
+translated to</p>
+
+<pre>{dbg.invoke(&quot;f&quot;, &quot;<em>arg</em>&quot;); f(<em>arg</em>);}</pre>
+
+<p>without screwing up the rest of the input.&nbsp; Because method calls can run across
+multiple lines, line-oriented tools such as awk quickly break down; besides, their regular
+expressions are not necessarily able to correctly identify method calls in all situations.
+&nbsp; Here is some sample input:</p>
+
+<pre><small>// start comment
+// another comment
+
+a = 2;
+g();
+{
+	a=3*4;
+}
+if 3 then f(4 + b);
+else {
+    b =a; // assign
+}
+// final</small></pre>
+
+<p>that my translator converts to:</p>
+
+<pre><small>// start comment
+// another comment
+
+a = 2;
+{dbg.invoke(&quot;g&quot;, &quot;&quot;); g();}
+{
+        a=3*4;
+}
+if 3 then {dbg.invoke(&quot;f&quot;, &quot;4 + b&quot;); f(4 + b);}
+else {
+    b =a; // assign
+}
+// final</small></pre>
+
+<p>The translator preserves whitespace and comments.</p>
+
+<h3>Approach</h3>
+
+<p>As with most translation problems, you must build a structured intermediate
+representation of your input that you walk later.&nbsp; In this case, your translator
+cannot dump instrumentation code and the method calls themselves without going over that
+section of the input twice, hence, the need for an intermediate representation (note: I'll
+bet I could get a syntax-directed translator to do this without a tree, but it is easier
+to do even this translation with a tree).&nbsp; Trees (ASTs) are the easiest structure for
+most intermediate forms.</p>
+
+<p>The goal is to get a tree filled with not only the regular input tokens, but also the
+whitespace and comments.&nbsp; To do this, you must
+
+<ol>
+  <li>get the lexer to pass comments and whitespace tokens to the parser on a different stream
+    than the normal tokens.</li>
+  <li>get these comments and whitespace into the tree without disrupting the structure derived
+    from normal tokens.</li>
+</ol>
+
+<p>Given such a tree, the tree parser can walk the tree dumping the regular tokens, the
+whitepace/comments, and the instrumentation.</p>
+
+<h3>Implementation</h3>
+
+<h4>The Lexer</h4>
+
+<p>The lexer for this simple language is little more than an expression evaluator lexer
+with a few keywords.&nbsp; You will notice that no token definitions are set up to skip by
+setting the token type to <small><font face="Courier New">Token.SKIP</font></small>.
+&nbsp; All tokens are pushed out of the lexer and the main program will use a <small><font
+face="Courier New">TokenStreamHiddenTokenFilter</font></small> to hide the comments and
+whitespace from the parser without discarding them.</p>
+
+<p>In order for this particular stream filter to work, you must tell the lexer to generate
+special tokens rather than the default <small><font face="Courier New">antlr.CommonToken</font></small>
+token:</p>
+
+<pre><small>lexer.setTokenObjectClass(&quot;antlr.CommonHiddenStreamToken&quot;);</small></pre>
+
+<p>Here is the complete lexer:</p>
+
+<pre><small>class InstrLexer extends Lexer;
+options {
+    charVocabulary = '\3'..'\377';
+}
+
+WS  :   (' '
+        |   '\t'
+        |   ('\n'|'\r'('\n')) {newline();}
+        )+
+    ;
+
+// Single-line comments
+SL_COMMENT
+    :   &quot;//&quot;
+        (~('\n'|'\r'))* ('\n'|'\r'('\n')?)
+        {newline();}
+    ;
+
+LBRACE: '{'
+    ;
+
+RBRACE: '}'
+    ;
+
+LPAREN: '('
+    ;
+
+RPAREN: ')'
+    ;
+
+STAR:   '*'
+    ;
+
+PLUS:   '+'
+    ;
+
+SEMI:   ';'
+    ;
+
+ASSIGN
+    :   '='
+    ;
+
+protected
+DIGIT
+    :   '0'..'9'
+    ;
+
+INT :   (DIGIT)+
+    ;
+
+ID  :   ('a'..'z')+
+    ;</small></pre>
+
+<h4>The Parser</h4>
+
+<p>The parser for this language presents few surprises and builds trees using the '^'
+operator as in the simple examples provided with ANTLR.&nbsp; The parser is totally
+ignorant of the fact that hidden tokens have been weaved amongst the real tokens that it
+parses.&nbsp; All monitored tokens from the input are represented by an AST node in the
+tree and the method call has an imaginary node, <font face="Courier New"><small>CALL</small></font>,
+as it's root.&nbsp; For the input given above, the constructed tree looks like (using <font
+face="Courier New"><small>antlr.debug.misc.ASTFrame</small></font>) the following:</p>
+
+<p align="center"><img src="instr.ast.gif" width="204" height="708"
+alt="instr.ast.gif (7673 bytes)"></p>
+
+<p>The parser needs to copy hidden tokens into the tree nodes for use by the translator.
+&nbsp; Rather than modify the parser, simply use a new predefined tree node type, <small><font
+face="Courier New">CommonASTWithHiddenTokens</font></small>, whose <small><font
+face="Courier New">initialize(Token)</font></small> method does the work for you. &nbsp;
+The main program tells the parser to use the new tree node type:</p>
+
+<pre><small>parser.setASTNodeClass(&quot;antlr.CommonASTWithHiddenTokens&quot;);</small></pre>
+
+<p>The tree node initialization makes a copy of whatever the associated token returns for
+getHiddenBefore() and getHiddenAfter().</p>
+
+<p>Here is the complete parser:</p>
+
+<pre><small>class InstrParser extends Parser;
+options {
+    buildAST = true;
+    k=2;
+}
+
+tokens {
+    CALL // define imaginary token CALL
+}
+
+slist
+    :   ( stat )+
+    ;
+
+stat:   LBRACE^ (stat)+ RBRACE
+    |   &quot;if&quot;^ expr &quot;then&quot; stat (&quot;else&quot; stat)?
+    |   ID ASSIGN^ expr SEMI
+    |   call
+    ;
+
+expr
+    :   mexpr (PLUS^ mexpr)*
+    ;
+
+mexpr
+    :   atom (STAR^ atom)*
+    ;
+
+atom:   INT
+    |   ID
+    ;
+
+call:   ID LPAREN (expr)? RPAREN SEMI
+        {#call = #(#[CALL,&quot;CALL&quot;], #call);}
+    ;</small></pre>
+
+<h4>The Tree Parser</h4>
+
+<p>Ok, so now you have a tree made from tokens that contains references to the whitespace
+and comment hidden tokens.&nbsp; How do you spit the tree back out?&nbsp; The first
+problem is that the structure of the tree is convenient for translation (operators at
+subtree roots), but is two-dimensional--the order of the input symbols must be
+reconstructed.&nbsp; For example, &quot;3+4&quot; is a subtree with PLUS at the root and
+two INT nodes as children.&nbsp; The &quot;3+4&quot; must be reconstructed from the
+subtree.&nbsp; The second problem relates to getting the whitespace back out in the right
+order.&nbsp; By convention, always print the node and then the whitespace that was found
+after it in the input stream.&nbsp; As a special case, you need to handle any hidden
+tokens that appeared before a monitored token appeared in the input stream.&nbsp; The
+filter tracks these and slist prints them out before beginning the tree walk.&nbsp; The
+following support routine will help walk lists of hidden tokens:</p>
+
+<pre><small>/** walk list of hidden tokens in order, printing them out */
+public static void dumpHidden(antlr.CommonHiddenStreamToken t) {
+  for ( ; t!=null ; t=InstrMain.filter.getHiddenAfter(t) ) {
+    System.out.print(t.getText());
+  }
+}</small></pre>
+
+<p>The tree parser is fairly straightforward except for the extra rule <font
+face="Courier New"><small>callDumpInstrumentation</small></font>.&nbsp; Think again about
+the translation.&nbsp; Certainly, the parser must invoke rule <small><font
+face="Courier New">call</font></small> so that the method call can be dumped back
+out.&nbsp; To get the information out of a method call AST to generate the
+instrumentation, why not walk the same subtree?&nbsp; Because the parser will invoke rule <small><font
+face="Courier New">call</font></small> and not the second version (rule <small><font
+face="Courier New">callDumpInstrumentation</font></small>), you must invoke it explicitly
+(invoke it first so the instrumentation comes out before the normal method call).&nbsp;
+Invoking a rule from an action is easy, just call it like any other method with the
+subtree to walk as the first argument:</p>
+
+<pre><small>callDumpInstrumentation(#call);</small></pre>
+
+<p>Here is the complete tree parser:</p>
+
+<pre><small>class InstrTreeWalker extends TreeParser;
+{
+    /** walk list of hidden tokens in order, printing them out */
+    public static void dumpHidden(antlr.CommonHiddenStreamToken t) {
+      for ( ; t!=null ; t=InstrMain.filter.getHiddenAfter(t) ) {
+        System.out.print(t.getText());
+      }
+    }
+
+    private void pr(AST p) {
+        System.out.print(p.getText());
+        dumpHidden(
+            ((antlr.CommonASTWithHiddenTokens)p).getHiddenAfter()
+        );
+    }
+}
+
+slist
+    :   {dumpHidden(InstrMain.filter.getInitialHiddenToken());}
+        (stat)+
+    ;
+
+stat:   #(LBRACE {pr(#LBRACE);} (stat)+ RBRACE {pr(#RBRACE);})
+    |   #(i:&quot;if&quot; {pr(i);} expr t:&quot;then&quot; {pr(t);} stat</small>
+<small>        (e:&quot;else&quot; {pr(e);} stat)?)
+    |   #(ASSIGN ID {pr(#ID); pr(#ASSIGN);} expr SEMI {pr(#SEMI);} )
+    |   call
+    ;
+
+expr
+    :   #(PLUS expr {pr(#PLUS);} expr)
+    |   #(STAR expr {pr(#STAR);} expr)
+    |   INT {pr(#INT);}
+    |   ID  {pr(#ID);}
+    ;
+
+call:   {
+        // add instrumentation about call; manually call rule
+        callDumpInstrumentation(#call);
+        }
+        #(CALL ID {pr(#ID);}
+          LPAREN {pr(#LPAREN);} (expr)? RPAREN {pr(#RPAREN);}
+          SEMI
+          {
+          // print SEMI manually; need '}' between it and whitespace
+          System.out.print(#SEMI.getText());
+          System.out.print(&quot;}&quot;); // close {...} of instrumentation
+          dumpHidden(
+            ((antlr.CommonASTWithHiddenTokens)#SEMI).getHiddenAfter()
+          );
+          }
+        )
+    ;
+
+/** Dump instrumentation for a call statement.
+ *  The reference to rule expr prints out the arg
+ *  and then at the end of this rule, we close the
+ *  generated called to dbg.invoke().
+ */
+callDumpInstrumentation
+    :   #(CALL id:ID
+          {System.out.print(&quot;{dbg.invoke(\&quot;&quot;+id.getText()+&quot;\&quot;, \&quot;&quot;);}
+          LPAREN (e:expr)? RPAREN SEMI
+          {System.out.print(&quot;\&quot;); &quot;);}
+        )
+    ;</small></pre>
+
+<h4>The Main Program</h4>
+
+<p>The main program's job is to create a lexer, a token channel filter, a parser, and a
+tree parser and hook them together.&nbsp; The program also has to get the lexer to create
+special tokens and special trees as described above.&nbsp; Notice that the parser has no
+idea that it is parsing a filtered channel and the tree parser has no idea that it is
+parsing a tree annotated with whitespace and comments.</p>
+
+<p>Here is the main program:</p>
+
+<pre><small>import java.io.*;
+import antlr.*;
+import antlr.collections.*;
+import antlr.debug.misc.*;
+
+class InstrMain {
+  /** Parser will query filter for information */
+  public static TokenStreamHiddenTokenFilter filter;
+
+public static void main(String[] args) {
+  // <strong>create the lexer</strong></small>
+<small>  InstrLexer lexer = new InstrLexer(new DataInputStream(System.in));
+  // <strong>use the special token objects</strong></small>
+<small>  lexer.setTokenObjectClass(&quot;antlr.CommonHiddenStreamToken&quot;);
+  // <strong>create the stream filter</strong></small>;<strong><small> hide WS and SL_COMMENT</small></strong>
+<small>  filter = new TokenStreamHiddenTokenFilter(lexer);
+  filter.hide(InstrParser.WS);
+  filter.hide(InstrParser.SL_COMMENT);
+  // <strong>create the parser</strong></small>
+<small>  InstrParser parser = new InstrParser(filter);
+  // <strong>create trees that copy hidden tokens into tree also</strong></small>
+<small>  parser.setASTNodeClass(&quot;antlr.CommonASTWithHiddenTokens&quot;);
+  try {
+    // <strong>Parse the input statements</strong>
+    parser.slist();
+  }
+  catch (IOException io) {
+    System.err.println(&quot;IOException while parsing&quot;);
+  }
+  catch(ParserException e) {
+    System.err.println(&quot;exception: &quot;+e);
+  }
+  CommonASTWithHiddenTokens t =
+    (CommonASTWithHiddenTokens)parser.getAST();
+
+/* UNCOMMENT THIS TO SEE THE TREE STRUCTURE
+  ASTFactory factory = new ASTFactory();
+  AST r = factory.create(0,&quot;AST ROOT&quot;);
+  r.setFirstChild(t);
+  ASTFrame frame =</small>
+<small>    new ASTFrame(&quot;Preserve Whitespace Example AST&quot;, r);
+  frame.setVisible(true);
+*/
+
+  // <strong>create the tree parser</strong></small>
+<small>  InstrTreeWalker walker = new InstrTreeWalker();
+  try {
+    walker.slist(t);
+  }
+  catch(ParserException e) {
+    System.err.println(&quot;exception: &quot;+e);
+  }
+}
+}
+</small></pre>
+</font>
+</body>
+</html>

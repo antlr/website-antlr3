@@ -1,0 +1,254 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Building syntax highlighters with ANTLR
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Building%20syntax%20highlighters%20with%20ANTLR&In-Reply-To=%3C86403CA0939415448BCCB83855EFE09AA67DF9%40Bloodymary.ironwillgames.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="033974.html">
+   <LINK REL="Next"  HREF="034058.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Building syntax highlighters with ANTLR</H1>
+    <B>Sam Harwell</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Building%20syntax%20highlighters%20with%20ANTLR&In-Reply-To=%3C86403CA0939415448BCCB83855EFE09AA67DF9%40Bloodymary.ironwillgames.com%3E"
+       TITLE="[antlr-interest] Building syntax highlighters with ANTLR">sharwell at pixelminegames.com
+       </A><BR>
+    <I>Wed Apr 15 10:56:43 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="033974.html">[antlr-interest] Building syntax highlighters with ANTLR
+</A></li>
+        <LI>Next message: <A HREF="034058.html">[antlr-interest] Building syntax highlighters with ANTLR
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#34053">[ date ]</a>
+              <a href="thread.html#34053">[ thread ]</a>
+              <a href="subject.html#34053">[ subject ]</a>
+              <a href="author.html#34053">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Here's a short summary of the process implementing improved syntax
+highlighter support. This doesn't address stacked lexers, which are an
+extended version of the new method presented here. The key section that
+changed is labeled &quot;Multi-line tokens: block comments&quot; on my blog
+article: <A HREF="http://blog.280z28.org/archives/2008/10/21/">http://blog.280z28.org/archives/2008/10/21/</A>
+
+ 
+
+Old Method
+
+ 
+
+My blog article is a good reference for this method. The old method
+relies on a token to mark the end of a multi-line token, such as the
+END_BLOCK_COMMENT='*/'; token used on my blog. The problem with this
+method is the difficulty of keeping track of state for intermediate
+tokens, and source code like this will break it unless you start using
+&quot;really sneaky methods&quot;:
+
+ 
+
+/*
+
+ * &quot; my code */ char x = '&quot;';
+
+ 
+
+New Method
+
+ 
+
+Instead of creating an END_BLOCK_COMMENT token, create the COMMENT rule
+as follows. Compared to my blog notes, you'll get rid of the
+END_BLOCK_COMMENT token but you'll keep the ANYCHAR token (it's used for
+something other than just a helper to the continued comment).
+
+ 
+
+COMMENT
+
+        :       '/*' {InBlockComment=true;}
+
+                CONTINUE_COMMENT
+
+        ;
+
+ 
+
+fragment
+
+CONTINUE_COMMENT
+
+        :       (       ('*' ~'/') =&gt; '*'
+
+                |       ~'*'
+
+                )*
+
+                (       '*/' {InBlockComment=false;}
+
+                |       /* allowed to skip in colorizer */
+
+                )
+
+        ;
+
+ 
+
+The new method uses a very different override of NextToken(). The outer
+loop is largely a duplication of the functionality of Lexer.NextToken().
+I've highlighted the key section that reliably manages the lexer state
+information (yay HTML email).
+
+ 
+
+public override IToken NextToken()
+
+{
+
+    for ( ; ; )
+
+    {
+
+        if ( input.LA( 1 ) == (int)CharStreamConstants.EOF )
+
+        {
+
+            return Token.EOF_TOKEN;
+
+        }
+
+ 
+
+        state.token = null;
+
+        state.channel = Antlr.Runtime.Token.DEFAULT_CHANNEL;
+
+        state.tokenStartCharIndex = input.Index();
+
+        state.tokenStartCharPositionInLine = input.CharPositionInLine;
+
+        state.tokenStartLine = input.Line;
+
+        state.text = null;
+
+ 
+
+        try
+
+        {
+
+            if ( InBlockComment )
+
+            {
+
+                mCONTINUE_COMMENT();
+
+                if ( state.token == null )
+
+                    Emit();
+
+ 
+
+                IToken next = state.token;
+
+                next.Type = COMMENT;
+
+                return next;
+
+            }
+
+            else
+
+            {
+
+                IToken next = base.NextToken();
+
+                return next;
+
+            }
+
+        }
+
+        catch ( NoViableAltException nva )
+
+        {
+
+            ReportError( nva );
+
+            Recover( nva ); // throw out current char and try again
+
+        }
+
+        catch ( RecognitionException re )
+
+        {
+
+            ReportError( re );
+
+            // match() routine has already called recover()
+
+        }
+
+    }
+
+}
+
+ 
+
+From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>
+[mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Sam Harwell
+Sent: Thursday, April 09, 2009 3:38 AM
+To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: [antlr-interest] Building syntax highlighters with ANTLR
+
+ 
+
+I've made a few posts about this in the past, and it looks like another
+one is on the way. I designed a new, much easier, robust, and general
+way to make a syntax highlighter from a grammar, and it even allows
+clean &quot;stacking&quot; of lexers. As a quick example, my primary grammar
+recognizes a block comment, but it doesn't recognize Doxygen syntax
+within that comment. By stacking a Doxygen-style fragment lexer in the
+colorizer, and telling it to post-process any token of primary type
+&quot;DOC_COMMENT&quot;, I ended up with this.
+
+ 
+
+I'd give the gory details now, but it's 3:30am - just had to share
+because figuring this out is what kept me up! I can't wait to see
+multi-level lexer stacking for my StringTemplate highlighter. J
+
+ 
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20090415/0a33d8ba/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20090415/0a33d8ba/attachment.html</A> 
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="033974.html">[antlr-interest] Building syntax highlighters with ANTLR
+</A></li>
+	<LI>Next message: <A HREF="034058.html">[antlr-interest] Building syntax highlighters with ANTLR
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#34053">[ date ]</a>
+              <a href="thread.html#34053">[ thread ]</a>
+              <a href="subject.html#34053">[ subject ]</a>
+              <a href="author.html#34053">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

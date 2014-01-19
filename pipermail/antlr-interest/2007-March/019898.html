@@ -1,0 +1,255 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] fragments..
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20fragments..&In-Reply-To=%3CB1A81012-1F81-415A-BB6D-8B114814F3BB%40gmx.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="019896.html">
+   <LINK REL="Next"  HREF="019899.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] fragments..</H1>
+    <B>Tobias Pape</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20fragments..&In-Reply-To=%3CB1A81012-1F81-415A-BB6D-8B114814F3BB%40gmx.de%3E"
+       TITLE="[antlr-interest] fragments..">Das.Linux at gmx.de
+       </A><BR>
+    <I>Mon Mar 26 03:20:18 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="019896.html">[antlr-interest] Exeeding 64K limit for method code
+</A></li>
+        <LI>Next message: <A HREF="019899.html">[antlr-interest] fragments..
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#19898">[ date ]</a>
+              <a href="thread.html#19898">[ thread ]</a>
+              <a href="subject.html#19898">[ subject ]</a>
+              <a href="author.html#19898">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Dear All,
+
+today I've got a Problem w/ fragmens in b6 and up
+(occuring in C Target.)
+
+Consider the following Grammar:
+
+----in the Parser ----
+// Grammar productions
+classdef returns [ pASTClass c ]
+   @init {
+	 // seems to be buggy in \$label.text implementation
+	 // THIS IS A DIRTY HACK!
+	 #define toString(A,B) toStringTT(theInput(),(A),(B))
+	}
+     : name=identifier Equal (  s_name=identifier
+				{ $c-&gt;set_names($c, (char *) $name.text-&gt;chars, (char *)  
+$s_name.text-&gt;chars); }
+			    |	{ $c-&gt;set_names($c, (char *) $name.text-&gt;chars, &quot;Object&quot;); }
+			    )
+     NewTerm
+     instanceFields[$c]
+     ( m=method { $c-&gt;add_instance_method($c, m.m); } )*
+
+     ( Separator
+       classFields[$c]
+       ( m=method { $c-&gt;add_class_method($c, m.m); } )*
+     )?
+     EndTerm
+   ;
+-----------------------
+
+-----in the Lexer-----
+BinarySelector :
+( Minus Minus Minus Minus ) =&gt;
+   Separator {$type=Separator;}
+|<i>
+</I>( SingleOperator SingleOperator ) =&gt;
+   OperatorSequence {$type=OperatorSequence;}
+|<i>
+</I>( Minus SingleOperator ) =&gt;
+   Minus OperatorSequence {$type=OperatorSequence;}
+|<i>
+</I>( Minus ) =&gt;
+   Minus {$type=Minus;}
+|<i>
+</I>( Comma ) =&gt;
+   Comma {$type=Comma;}
+|<i>
+</I>( Or ) =&gt;
+   Or {$type=Or;}
+|<i>
+</I>( Equal ) =&gt;
+   Equal {$type=Equal;}
+|<i>
+</I>   (SingleOperator ) =&gt; SingleOperator {$type=SingleOperator;}
+;
+
+/* ... */
+fragment SingleOperator :
+   Not | And | Or | Star | Div | Mod | Plus |
+   Equal | More | Less | Comma | At | Per
+;
+
+fragment Not   : '~' ;
+fragment And   : '&amp;' ;
+fragment Or    : '|' ;
+fragment Star  : '*' ;
+fragment Div   : '/' ;
+fragment Mod   : '\\' ;
+fragment Plus  : '+' ;
+fragment Minus : '-' ;
+fragment Equal : '=' ;
+fragment More  : '&gt;' ;
+fragment Less  : '&lt;' ;
+fragment Comma : ',' ;
+fragment At    : '@' ;
+fragment Per   : '%' ;
+------------------------
+
+
+The Problem occurring is: I don't know how to macht classdef the way  
+I want:
+
+I've written (merely copy&amp;pastes Jim's b4 example ) a litle tester.
+======
+/*...*/
+while   ((token = tstream-&gt;tstream-&gt;LT(tstream-&gt;tstream, 1))-&gt;getType 
+(token) != ANTLR3_TOKEN_EOF)
+     {
+		printf(&quot;Token is %s\n&quot;, token-&gt;toString(token)-&gt;chars);
+		tstream-&gt;tstream-&gt;istream-&gt;consume(tstream-&gt;tstream-&gt;istream);
+     }
+	
+	tstream-&gt;free(tstream);
+	psr-&gt;free(psr);
+	lxr-&gt;free(lxr);
+	input-&gt;close(input);
+/*...*/
+======
+
+for every Input I test, it only prints out the first non-hidden  Token,
+then, when matching &quot;Equal&quot; comes to
+========
+    /* End: ruleRef(rule,label,elementIndex,args) */
+             /* tokenRef(token,label,elementIndex) */
+             Equal1 = (pANTLR3_COMMON_TOKEN)LT(1);
+             tmatch(Equal, FOLLOW_Equal_in_classdef96);
+             if (hasFailed())
+             {
+                 return retval;
+             }
+=======
+in the parser, which stepps through and goes to the lexer
+=======
+    /* SOM.g:461:9: ( '=' ) */
+     /* SOM.g:461:9: '=' */
+     {
+         matchc('=');
+         if (hasFailed())
+         {
+             return ;
+         }
+
+     }
+
+
+     if ( backtracking == 0 )
+     {
+
+             if ( ltoken() == NULL &amp;&amp; !hasException() &amp;&amp; ctx-&gt;pLexer- 
+ &gt;ruleNestingLevel==1)  //////////////-----------------
+             {
+         		emitNew(_type,_line,_charPosition,_channel,_start,  
+(_end==0 ? getCharIndex()-1 : _end));
+             }
+
+
+     }    ctx-&gt;pLexer-&gt;ruleNestingLevel--;
+========
+ctx-&gt;pLexer-&gt;ruleNestingLevel will never be 1 at the marked point,
+due to Equal was defined as a Fragment, as Jim pointed out to me.
+
+My problem is, when I change the Equal Rule, to be non-Fragment,  
+antlr warns me about Token Equal not beeing accessible.
+--------
+h248:~/dev/parsertest tobias$ antlr_ SOM.g
+no such locale file org/antlr/tool/templates/messages/languages/ 
+de.stg retrying with English locale
+ANTLR Parser Generator  Version 3.0b7 (??, 2007)  1989-2007
+warning(208): SOM.g:461:1: The following token definitions are  
+unreachable: Equal
+--------
+
+
+weird, huh?
+
+
+anybody there who wants to enlighten me in this very case?
+
+thanks,
+	-Tobias 
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: PGP.sig
+Type: application/pgp-signature
+Size: 186 bytes
+Desc: Signierter Teil der Nachricht
+Url : <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20070326/0e4f3641/attachment.bin">http://www.antlr.org/pipermail/antlr-interest/attachments/20070326/0e4f3641/attachment.bin</A> 
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="019896.html">[antlr-interest] Exeeding 64K limit for method code
+</A></li>
+	<LI>Next message: <A HREF="019899.html">[antlr-interest] fragments..
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#19898">[ date ]</a>
+              <a href="thread.html#19898">[ thread ]</a>
+              <a href="subject.html#19898">[ subject ]</a>
+              <a href="author.html#19898">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

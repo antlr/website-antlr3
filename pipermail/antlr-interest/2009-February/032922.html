@@ -1,0 +1,258 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] [solved] Error message in AST parser/lexer:	expecting EOA, found
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5Bsolved%5D%20Error%20message%20in%20AST%20parser/lexer%3A%0A%09expecting%20EOA%2C%20found&In-Reply-To=%3C4995CC41.30200%40nsn.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="032921.html">
+   <LINK REL="Next"  HREF="032923.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] [solved] Error message in AST parser/lexer:	expecting EOA, found</H1>
+    <B>&quot;Paul Bouch&#233; (NSN)&quot;</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5Bsolved%5D%20Error%20message%20in%20AST%20parser/lexer%3A%0A%09expecting%20EOA%2C%20found&In-Reply-To=%3C4995CC41.30200%40nsn.com%3E"
+       TITLE="[antlr-interest] [solved] Error message in AST parser/lexer:	expecting EOA, found">paul.bouche at nsn.com
+       </A><BR>
+    <I>Fri Feb 13 11:38:41 PST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="032921.html">[antlr-interest] Error message  in AST parser/lexer: expecting EOA,	found
+</A></li>
+        <LI>Next message: <A HREF="032923.html">[antlr-interest] CommonErrorNode and using ASTLabelType (3.0.1 -&gt;	3.1.1)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#32922">[ date ]</a>
+              <a href="thread.html#32922">[ thread ]</a>
+              <a href="subject.html#32922">[ subject ]</a>
+              <a href="author.html#32922">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+I keep solving my own problems :-)
+
+The problem was, that the lexer rule in question Delim was also called 
+in the gated fragment rule USTRING_ well since the Delim rule changes 
+the gate for the entry into the USTRING_ rule the result of the lexer 
+would not be clearly defined, therefore it must have been forbidden to 
+do so which I think is a good thing, but in my case would not have been 
+a problem plus I used it as part of a negated set where the rule will 
+not be actually called since ANTLR normalizes negated sets.
+
+@Ter would it not be easier to just test for the nonexistence of the 
+elements of the negated sets instead of normalizing it? This would also 
+be much more readable...
+
+The solution is to defer the token(s) of interest to a fragment rule and 
+call this rule from both token rules, i.e.
+Delim
+    :
+    Delim_ { unsetFoundFirstEqualsInProperty(); }
+    ;
+fragment Delim_
+    ','
+    ;
+fragment USTRING_
+    :
+    ~( ... | Delim_ | ...) ~( ... |  Delim_ | ...)
+    ;
+// I left out the other alternatives for readablility
+
+BR,
+Paul
+
+Paul Bouch&#233; (NSN) schrieb:
+&gt;<i> Hi,
+</I>&gt;<i>
+</I>&gt;<i> I tried everything I know so I am tending to you. I have a 
+</I>&gt;<i> context-sensitive construct in my lexer. I have two tokens where where 
+</I>&gt;<i> one is a superset of the other, but shall only be recognized after an 
+</I>&gt;<i> equals was found and is basically any character until a komma. 
+</I>&gt;<i> Therefore, I defined a predicate which is set to true once an equals 
+</I>&gt;<i> is reached which enables the gated superset token and when a comma is 
+</I>&gt;<i> found the predicate is set to false.
+</I>&gt;<i>
+</I>&gt;<i> In order to allow the following:
+</I>&gt;<i> key = value = 3
+</I>&gt;<i> where key is key and everything after the '=' is a value until EOF or 
+</I>&gt;<i> ',' ,i..e. in this case &quot;value = 3&quot;. Yes I know this is very strange 
+</I>&gt;<i> and usually you would quote string, but we need it for legacy reasons, 
+</I>&gt;<i> mainly incoperating legacy hand-written parser funcitonality into 
+</I>&gt;<i> ANTLR ;-)
+</I>&gt;<i>
+</I>&gt;<i> But unfortunately I get a strange syntax error? Please see below: I 
+</I>&gt;<i> also attached the full grammar, in case you need that.
+</I>&gt;<i>
+</I>&gt;<i> I include a snippet of the AST grammar, where the rule in question is 
+</I>&gt;<i> used:
+</I>&gt;<i> // parser...
+</I>&gt;<i> properties
+</I>&gt;<i>        :
+</I>&gt;<i>        ( property ( Delim property )* )? Delim?
+</I>&gt;<i>        -&gt; property*
+</I>&gt;<i>        ;
+</I>&gt;<i> attributes
+</I>&gt;<i>        :  // FIXME is this wanted h=(d=3 k=3) , i.e. with komma?
+</I>&gt;<i>        ( attribute ( Delim attribute )* )* Delim?
+</I>&gt;<i>        -&gt; ^( ATTRIBUTES attribute* )
+</I>&gt;<i>        ;
+</I>&gt;<i> list
+</I>&gt;<i>        :
+</I>&gt;<i>        ( value ( Delim value )* )*
+</I>&gt;<i>        -&gt; ^( TYPE LIST ) ^( VALUE value* )
+</I>&gt;<i>        ;
+</I>&gt;<i> // lexer...
+</I>&gt;<i> Delim
+</I>&gt;<i>    :
+</I>&gt;<i>    ','
+</I>&gt;<i>    {
+</I>&gt;<i>        unsetFoundFirstEqualsInPropert();
+</I>&gt;<i>    }      ;
+</I>&gt;<i> fragment USTRING_
+</I>&gt;<i>    :
+</I>&gt;<i>    {hasFoundFirstEqualsInProperty()}?=&gt;
+</I>&gt;<i>    (~(' ' /*| '\t'*/ | '%' | Delim | '\n' | '[' | '{' | '&quot;' | '\'' | 
+</I>&gt;<i> '`' | '&lt;' | '\\' | '/') | HEXESCAPE | '%' ~HEXDIGIT_) (~('%' | Delim | 
+</I>&gt;<i> '\n' | '}' | ']' ) | HEXESCAPE | '%' ~HEXDIGIT_)*
+</I>&gt;<i>    ;
+</I>&gt;<i>
+</I>&gt;<i> The error is &quot;syntax error: buildnfa: &lt;AST&gt;:227:2: expecting EOA, found '
+</I>&gt;<i>        unsetFoundFirstEqualsInPropert();
+</I>&gt;<i>    '&quot;.
+</I>&gt;<i>
+</I>&gt;<i> I get from the list that EOA means End-Of-Alternative, but the rules 
+</I>&gt;<i> does not have an alternative. This may also be related to the bug 
+</I>&gt;<i> <A HREF="http://www.antlr.org/jira/browse/ANTLR-305">http://www.antlr.org/jira/browse/ANTLR-305</A> ? It seems very similar to 
+</I>&gt;<i> my problem.
+</I>&gt;<i>
+</I>&gt;<i> Please help, we really need this. Also if you have another suggestion 
+</I>&gt;<i> for a solution to this problem.
+</I>&gt;<i>
+</I>&gt;<i> Thanks,
+</I>&gt;<i> Paul
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> ANTLR Parser Generator  Version 3.1.1
+</I>&gt;<i> error(100): 
+</I>&gt;<i> T:\Workspaces\paulb\AAA-nemip\ag\netzwert\nemip\StringProps.g:0:0: 
+</I>&gt;<i> syntax error: buildnfa: &lt;AST&gt;:227:2: expecting EOA, found '
+</I>&gt;<i>        unsetFoundFirstEqualsInPropert();
+</I>&gt;<i>    '
+</I>&gt;<i> error(100): 
+</I>&gt;<i> T:\Workspaces\paulb\AAA-nemip\ag\netzwert\nemip\StringProps.g:0:0: 
+</I>&gt;<i> syntax error: buildnfa: &lt;AST&gt;: expecting EOA, found '&lt;empty tree&gt;'
+</I>&gt;<i> error(100): 
+</I>&gt;<i> T:\Workspaces\paulb\AAA-nemip\ag\netzwert\nemip\StringProps.g:0:0: 
+</I>&gt;<i> syntax error: buildnfa: &lt;AST&gt;:227:2: expecting EOA, found '
+</I>&gt;<i>        unsetFoundFirstEqualsInPropert();
+</I>&gt;<i>    '
+</I>&gt;<i> error(100): 
+</I>&gt;<i> T:\Workspaces\paulb\AAA-nemip\ag\netzwert\nemip\StringProps.g:0:0: 
+</I>&gt;<i> syntax error: buildnfa: &lt;AST&gt;: expecting EOA, found '&lt;empty tree&gt;'
+</I>&gt;<i> error(10):  internal error: Can't get property 
+</I>&gt;<i> javaCompressedTransition using method get/isJavaCompressedTransition 
+</I>&gt;<i> from org.antlr.analysis.DFA instance : java.lang.OutOfMemoryError: 
+</I>&gt;<i> Java heap space
+</I>&gt;<i> java.util.ArrayList.&lt;init&gt;(ArrayList.java:112)
+</I>&gt;<i> org.antlr.analysis.DFA.getRunLengthEncoding(DFA.java:357)
+</I>&gt;<i> org.antlr.analysis.DFA.getJavaCompressedTransition(DFA.java:333)
+</I>&gt;<i> sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+</I>&gt;<i> sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:39) 
+</I>&gt;<i>
+</I>&gt;<i> sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:25) 
+</I>&gt;<i>
+</I>&gt;<i> java.lang.reflect.Method.invoke(Method.java:597)
+</I>&gt;<i> org.antlr.stringtemplate.language.ASTExpr.invokeMethod(ASTExpr.java:563)
+</I>&gt;<i> org.antlr.stringtemplate.language.ASTExpr.rawGetObjectProperty(ASTExpr.java:514) 
+</I>&gt;<i>
+</I>&gt;<i> org.antlr.stringtemplate.language.ASTExpr.getObjectProperty(ASTExpr.java:416) 
+</I>&gt;<i>
+</I>&gt;<i> org.antlr.stringtemplate.language.ActionEvaluator.attribute(ActionEvaluator.java:351) 
+</I>&gt;<i>
+</I>&gt;<i> org.antlr.stringtemplate.language.ActionEvaluator.expr(ActionEvaluator.java:136) 
+</I>&gt;<i>
+</I>&gt;<i> org.antlr.stringtemplate.language.ActionEvaluator.templateApplication(ActionEvaluator.java:216) 
+</I>&gt;<i>
+</I>&gt;<i> org.antlr.stringtemplate.language.ActionEvaluator.expr(ActionEvaluator.java:126) 
+</I>&gt;<i>
+</I>&gt;<i> org.antlr.stringtemplate.language.ActionEvaluator.action(ActionEvaluator.java:84) 
+</I>&gt;<i>
+</I>&gt;<i> org.antlr.stringtemplate.language.ASTExpr.write(ASTExpr.java:148)
+</I>&gt;<i> org.antlr.stringtemplate.StringTemplate.write(StringTemplate.java:700)
+</I>&gt;<i> org.antlr.stringtemplate.language.ASTExpr.write(ASTExpr.java:722)
+</I>&gt;<i> org.antlr.stringtemplate.language.ASTExpr.writeAttribute(ASTExpr.java:659) 
+</I>&gt;<i>
+</I>&gt;<i> org.antlr.stringtemplate.language.ActionEvaluator.action(ActionEvaluator.java:86) 
+</I>&gt;<i>
+</I>&gt;<i> org.antlr.stringtemplate.language.ASTExpr.write(ASTExpr.java:148)
+</I>&gt;<i> org.antlr.stringtemplate.StringTemplate.write(StringTemplate.java:700)
+</I>&gt;<i> org.antlr.stringtemplate.language.ASTExpr.write(ASTExpr.java:722)
+</I>&gt;<i> org.antlr.stringtemplate.language.ASTExpr.writeAttribute(ASTExpr.java:659) 
+</I>&gt;<i>
+</I>&gt;<i> org.antlr.stringtemplate.language.ActionEvaluator.action(ActionEvaluator.java:86) 
+</I>&gt;<i>
+</I>&gt;<i> org.antlr.stringtemplate.language.ASTExpr.write(ASTExpr.java:148)
+</I>&gt;<i> org.antlr.stringtemplate.StringTemplate.write(StringTemplate.java:700)
+</I>&gt;<i> org.antlr.codegen.CodeGenerator.write(CodeGenerator.java:1275)
+</I>&gt;<i> org.antlr.codegen.Target.genRecognizerFile(Target.java:94)
+</I>&gt;<i> org.antlr.codegen.CodeGenerator.genRecognizer(CodeGenerator.java:460)
+</I>&gt;<i> org.antlr.Tool.generateRecognizer(Tool.java:420)
+</I>&gt;<i> org.antlr.Tool.process(Tool.java:342)
+</I>&gt;<i>
+</I>&gt;<i> ------------------------------------------------------------------------
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>
+
+-- 
+Paul Bouch&#233;
+Voice: +49 30 590080-1284
+ 
+Nokia Siemens Networks GmbH &amp; Co. KG, An den Treptowers 1, 12435 Berlin, Germany
+Sitz der Gesellschaft: M&#252;nchen / Registered office: Munich
+Registergericht: M&#252;nchen / Commercial registry: Munich, HRA 88537
+WEEE-Reg.-Nr.: DE 52984304
+
+Pers&#246;nlich haftende Gesellschafterin / General Partner: Nokia Siemens Networks Management GmbH
+Gesch&#228;ftsleitung / Board of Directors: Lydia Sommer, Olaf Horsthemke
+Vorsitzender des Aufsichtsrats / Chairman of supervisory board: Lauri Kivinen
+Sitz der Gesellschaft: M&#252;nchen / Registered office: Munich
+Registergericht: M&#252;nchen / Commercial registry: Munich, HRB 163416
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20090213/555dc6d5/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20090213/555dc6d5/attachment.html</A> 
+</PRE>
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="032921.html">[antlr-interest] Error message  in AST parser/lexer: expecting EOA,	found
+</A></li>
+	<LI>Next message: <A HREF="032923.html">[antlr-interest] CommonErrorNode and using ASTLabelType (3.0.1 -&gt;	3.1.1)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#32922">[ date ]</a>
+              <a href="thread.html#32922">[ thread ]</a>
+              <a href="subject.html#32922">[ subject ]</a>
+              <a href="author.html#32922">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

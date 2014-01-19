@@ -1,0 +1,118 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] ANTLR 2.7.5 C# runtime in a multi-threaded
+	environment hangs
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20ANTLR%202.7.5%20C%23%20runtime%20in%20a%20multi-threaded%0A%09environment%20hangs&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="011832.html">
+   <LINK REL="Next"  HREF="011840.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] ANTLR 2.7.5 C# runtime in a multi-threaded
+	environment hangs</H1>
+    <B>Jim Crozman</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20ANTLR%202.7.5%20C%23%20runtime%20in%20a%20multi-threaded%0A%09environment%20hangs&In-Reply-To="
+       TITLE="[antlr-interest] ANTLR 2.7.5 C# runtime in a multi-threaded
+	environment hangs">JCrozman at webplan.com
+       </A><BR>
+    <I>Wed Apr 13 16:05:48 PDT 2005</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="011832.html">[antlr-interest] Parsing optional component in Tree Walker
+</A></li>
+        <LI>Next message: <A HREF="011840.html">[antlr-interest] ANTLR 2.7.5 C# runtime in a
+	multi-threadedenvironment hangs
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#11838">[ date ]</a>
+              <a href="thread.html#11838">[ thread ]</a>
+              <a href="subject.html#11838">[ subject ]</a>
+              <a href="author.html#11838">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>We use ANTLR to parse our query language in our data server. This is a
+multi user system so we service many simultaneous requests. It is a .NET
+product so we use C# as the language. We have been using 2.7.2.1 for
+quite a while and I finally got around to moving up to 2.7.5 a few weeks
+ago.
+
+Yesterday we were running a stress test and we got hung in an infinite
+loop in ASTPair.advanceChildToEnd().
+The problem was the NextSibling chain wrapped on itself. When exploring
+how this happened we discovered that some code had been added to ASTPair
+since the 2.7.2.1. There is a new static Queue in the class and two
+static methods GetInstance and PutInstance. The parser generated code
+now calls GetInstance to create and ASTPair and then calls PutInstance
+when it is done with it. I am assuming this was done to recycle the
+ASTPairs and avoid new and garbage collect.
+
+The ASTPairs are kept in a System.Collections.Queue and reused. The
+Queue class is only thread safe if it is &quot;public static&quot; and then only
+if you are careful what you do with it. Thus the parser is not thread
+safe. Our many threads all parsing at the same time must have gotten the
+same node and got all messed up in the references.
+
+Why not just new an ASTPair when required and let the garbage collector
+clean it up? This is what 2.7.2.1 did. It costs just about nothing to do
+a &quot;new&quot; in a garbage collected environment (just move the heap pointer)
+and there is no delete. The only impact is the garbage collect. Rapidly
+turning over objects get cleanned up very efficiently in the
+generational .NET garbage collector. Probably less cycles than all the
+code to enqueue and dequeue the nodes especially if you need critical
+sections to make it thread safe. A thread static for the queue would
+work but that is slow too.
+
+We changed GetInstance to just always do a &quot;new ASTPair&quot; and stubbed the
+PutInstance. Everything seems to work great then. We did a quick search
+for other static variables and there didn't seem to be any other ones of
+concern.
+
+Another option that I tried was to eliminate the Get &amp; Put Instance and
+change the ASTPair from a class to a struct. This way there is no new on
+the heap at all. It is a value class on the stack. There are a few other
+chages required to make this work such as passing the currentAST nodes
+(ASTPair objects) by ref to addASTChild and makeASTRoot in the
+ASTFactory. There was also a virtual copy method that didn't seem to be
+needed.
+
+Can the next patch release can get rid of this problem? If not please
+explain the rationale behind this change and what I can do to use ANTLR
+in a multithreaded environment (many simultaneous parsers running). I
+hate having a modified version.
+
+Thanks, ANTLR is great!
+
+Jim Crozman
+Senior Software Architect
+webPLAN inc.
+</PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="011832.html">[antlr-interest] Parsing optional component in Tree Walker
+</A></li>
+	<LI>Next message: <A HREF="011840.html">[antlr-interest] ANTLR 2.7.5 C# runtime in a
+	multi-threadedenvironment hangs
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#11838">[ date ]</a>
+              <a href="thread.html#11838">[ thread ]</a>
+              <a href="subject.html#11838">[ subject ]</a>
+              <a href="author.html#11838">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,195 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Problems with semantic predicates
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Problems%20with%20semantic%20predicates&In-Reply-To=%3Caa71f710804180307t40c23417pbd98ac5d5caf8874%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="027910.html">
+   <LINK REL="Next"  HREF="027914.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Problems with semantic predicates</H1>
+    <B>Haralambi Haralambiev</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Problems%20with%20semantic%20predicates&In-Reply-To=%3Caa71f710804180307t40c23417pbd98ac5d5caf8874%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Problems with semantic predicates">hharalambiev at gmail.com
+       </A><BR>
+    <I>Fri Apr 18 03:07:25 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="027910.html">[antlr-interest] Dear antlr-interest at antlr.org April 87% 0FF
+</A></li>
+        <LI>Next message: <A HREF="027914.html">[antlr-interest] Problems with semantic predicates
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#27912">[ date ]</a>
+              <a href="thread.html#27912">[ thread ]</a>
+              <a href="subject.html#27912">[ subject ]</a>
+              <a href="author.html#27912">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello Gavin,
+
+The problem is that the grammar that I am working on is far more complex and
+the backtracking option is actually needed. Thus, I need to find a solution
+that will not require disabling that option.
+
+Using scope variables would be a great solution, but as I have stated in
+another reply - how can I execute actions regardless whether the parser is
+in backtracking mode or not. I.e. I need to have a similar generation as
+with the @init actions, but during parsing.
+
+So, with my initial grammar I will have something like that:
+r
+scope {
+boolean flag;
+}
+:<i> Token1^ Token2!
+</I>{$r::flag = true;}
+r2
+|<i> Token1^
+</I>{$r::flag = false;}
+r2
+;
+
+r2
+:<i> {$r::flag}? Token1 -&gt; ^(NODE Token1)
+</I>|<i> Token1
+</I>;
+
+which generates compilable classes. But during the execution the flag is
+never set, as actions such as &quot;{$r::flag = true;}&quot; will only execute when
+&quot;backtracking = 0&quot;.
+
+So, a simple question - can I execute arbitrary action when
+backtracking, but not on @init?
+
+
+Hari
+
+On 4/18/08, Gavin Lambert &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr at mirality.co.nz</A>&gt; wrote:
+&gt;<i>
+</I>&gt;<i> At 19:18 18/04/2008, Haralambi Haralambiev wrote:
+</I>&gt;<i>
+</I>&gt;<i> &gt; However, with the syntax suggested by Gavin, the problem still persists
+</I>&gt;<i> &gt; - the synpred2_fragment method still contains the &quot;if (!flag)&quot; statement. By
+</I>&gt;<i> &gt; the way - is there somewhere I could read regarding why is this check added
+</I>&gt;<i> &gt; into this method?
+</I>&gt;<i> &gt;
+</I>&gt;<i>
+</I>&gt;<i> The synpreds themselves are only being generated because you have
+</I>&gt;<i> backtrack=true, so it's trying to hoist the predicate far enough to figure
+</I>&gt;<i> out whether it should be going down that path before it bothers trying (and
+</I>&gt;<i> possibly throwing an exception, which is bad for performance).
+</I>&gt;<i>
+</I>&gt;<i> By the way, why do you refer the flag in the predicate with &quot;$flag&quot;? This
+</I>&gt;<i> &gt; renders an error on my side (&quot;attribute is not a token, parameter, or return
+</I>&gt;<i> &gt; value: flag&quot;), but with &quot;{flag}?&quot; it doesn't fail.
+</I>&gt;<i> &gt;
+</I>&gt;<i>
+</I>&gt;<i> That's because you're supposed to refer to parameters (and return values,
+</I>&gt;<i> and labels, etc) that way, because the code generator is free to rename it
+</I>&gt;<i> if it wants to.
+</I>&gt;<i>
+</I>&gt;<i> This error is actually telling you that the predicate is being hoisted
+</I>&gt;<i> somewhere where it won't work -- if you turn off backtracking (so that it
+</I>&gt;<i> doesn't create a synpred to hoist your sempred into), then this error goes
+</I>&gt;<i> away as well.
+</I>&gt;<i>
+</I>&gt;<i> Anyway, going back to your original grammar, there's another problem with
+</I>&gt;<i> it (which is presumably why you added backtracking in the first place).  In
+</I>&gt;<i> rule &quot;r&quot;, you have a common left prefix, which hurts performance and
+</I>&gt;<i> sometimes causes incorrect behaviour (when ANTLR can't look ahead far enough
+</I>&gt;<i> to resolve the ambiguity).  Removing this (and disabling backtracking)
+</I>&gt;<i> yields a working grammar:
+</I>&gt;<i>
+</I>&gt;<i> grammar test;
+</I>&gt;<i>
+</I>&gt;<i> options {
+</I>&gt;<i>  output=AST;
+</I>&gt;<i>  ASTLabelType=CommonTree;
+</I>&gt;<i>  //backtrack=true;
+</I>&gt;<i>  //memoize=true;
+</I>&gt;<i> }
+</I>&gt;<i>
+</I>&gt;<i> tokens {
+</I>&gt;<i>  NODE;
+</I>&gt;<i> }
+</I>&gt;<i>
+</I>&gt;<i> r : Token1^
+</I>&gt;<i>    ( Token2! r2[true]
+</I>&gt;<i>    | r2[false]
+</I>&gt;<i>    )
+</I>&gt;<i>  ;
+</I>&gt;<i>
+</I>&gt;<i> r2[boolean flag]
+</I>&gt;<i>  : Token1
+</I>&gt;<i>    ( {$flag}? -&gt; ^(NODE Token1)
+</I>&gt;<i>    | -&gt; Token1
+</I>&gt;<i>    )
+</I>&gt;<i>  ;
+</I>&gt;<i>
+</I>&gt;<i> Token1 : 'TOKEN1';
+</I>&gt;<i> Token2 : 'TOKEN2';
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> However even with this version, if backtracking is turned on then the
+</I>&gt;<i> parameter will get hoisted inappropriately again.  It looks like using
+</I>&gt;<i> scopes is the only answer after all, if you want to keep the backtracking
+</I>&gt;<i> and this particular rule structure.
+</I>&gt;<i>
+</I>&gt;<i> I'm not really sure why it still wants to hoist it in this case, since it
+</I>&gt;<i> has no bearing on the actual decision tree.
+</I>&gt;<i>
+</I>&gt;<i> Of course, another option is to remove the parameter altogether:
+</I>&gt;<i>
+</I>&gt;<i> r : Token1^
+</I>&gt;<i>    ( Token2! r2
+</I>&gt;<i>    | Token1
+</I>&gt;<i>    )
+</I>&gt;<i>  ;
+</I>&gt;<i>
+</I>&gt;<i> r2 : Token1 -&gt; ^(NODE Token1) ;
+</I>&gt;<i>
+</I>&gt;<i>
+</I>-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20080418/17065a2d/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20080418/17065a2d/attachment.html</A> 
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="027910.html">[antlr-interest] Dear antlr-interest at antlr.org April 87% 0FF
+</A></li>
+	<LI>Next message: <A HREF="027914.html">[antlr-interest] Problems with semantic predicates
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#27912">[ date ]</a>
+              <a href="thread.html#27912">[ thread ]</a>
+              <a href="subject.html#27912">[ subject ]</a>
+              <a href="author.html#27912">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

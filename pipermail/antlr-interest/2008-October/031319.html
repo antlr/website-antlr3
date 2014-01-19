@@ -1,0 +1,194 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Precedence problem
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Precedence%20problem&In-Reply-To=%3Ca36ab4bc0810301044h7e9aee4bnb0ebecf43f6c98ad%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="031317.html">
+   <LINK REL="Next"  HREF="031321.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Precedence problem</H1>
+    <B>Tim Halloran</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Precedence%20problem&In-Reply-To=%3Ca36ab4bc0810301044h7e9aee4bnb0ebecf43f6c98ad%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Precedence problem">hallorant at gmail.com
+       </A><BR>
+    <I>Thu Oct 30 10:44:35 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="031317.html">[antlr-interest] Precedence problem
+</A></li>
+        <LI>Next message: <A HREF="031321.html">[antlr-interest] Precedence problem
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#31319">[ date ]</a>
+              <a href="thread.html#31319">[ thread ]</a>
+              <a href="subject.html#31319">[ subject ]</a>
+              <a href="author.html#31319">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Well, one fix is to separate, taking &quot;sin&quot; as an example, sin SPACE from sin(
+
+I just made the SPACE significant -- It seems to work on all your
+examples.  Good luck
+
+grammar Expression;
+options {
+ output = AST;
+ ASTLabelType=CommonTree;
+}
+
+expr
+	: addExpr EOF!
+	;
+
+addExpr
+	: multExpr (('+'^|'-'^) multExpr)*
+	;
+
+multExpr
+	: unaryExpr (('*'^|'/'^) unaryExpr)*
+	;
+
+unaryExpr
+	: '~'^ expExpr
+	| sinExpr
+	| cosExpr
+	| lnExpr
+	| expExpr
+ ;
+
+sinExpr
+	: 'sin ' expExpr
+	;
+
+cosExpr
+	: 'cos ' WHITESPACE expExpr
+	;
+	
+lnExpr
+	: 'ln ' WHITESPACE expExpr
+	;
+
+expExpr
+	: atom ('^'^ atom)*
+	;
+
+
+atom
+	: parenExpr
+	| NUMBER
+	| VAR
+	;
+
+ parenExpr
+ 	: 'sin(' addExpr ')'
+ 	| 'cos(' addExpr ')'
+ 	| 'ln(' addExpr ')'
+ 	| '('! addExpr ')'!
+	;
+
+NUMBER : '-'? '0'..'9'+ ('.' '0'..'9'*)? ;
+VAR : 'x' ;
+WHITESPACE : (' '|'\t'|'\n'|'\r')+ { skip(); } ;
+
+On Thu, Oct 30, 2008 at 1:05 PM, Todd O'Bryan &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">toddobryan at gmail.com</A>&gt; wrote:
+&gt;<i> I've assigned my high school programming students a symbolic algebra
+</I>&gt;<i> project and provided them an ANTLR parser so they could translate
+</I>&gt;<i> Strings to values easily. I used an AST, so the translation is pretty
+</I>&gt;<i> easy. The basic idea is a mapping like this:
+</I>&gt;<i>
+</I>&gt;<i> &quot;sin(x ^ 2)&quot; --&gt; new Sin(new Exp(new Var(), new Number(2.0))
+</I>&gt;<i>
+</I>&gt;<i> Everything was working great, until... I wanted exponentiation to have
+</I>&gt;<i> higher precedence than unary operators, so
+</I>&gt;<i>
+</I>&gt;<i> &quot;~x^3&quot; ---&gt; new Neg(new Exp(new Var(), new Number(2.0)))
+</I>&gt;<i> &quot;sin x ^ 2&quot; ---&gt; new Sin(new Exp(new Var(), new Number(2.0)))
+</I>&gt;<i>
+</I>&gt;<i> But a student tried this:
+</I>&gt;<i>
+</I>&gt;<i> &quot;sin(x) ^ 2&quot;
+</I>&gt;<i>
+</I>&gt;<i> Clearly this SHOULD be new Exp(new Sin(new Var()), new Number(2.0)),
+</I>&gt;<i> but since ^ has higher precedence than sin, it doesn't work.
+</I>&gt;<i>
+</I>&gt;<i> I can't figure out how to fix it, however, because sin(...) should
+</I>&gt;<i> have the same precedence as a parenthesized expression (higher than
+</I>&gt;<i> ^), but sin ... should have lower precedence. I tried a syntactic
+</I>&gt;<i> predicate, but since the sin rule is in two rules, I can't get rid of
+</I>&gt;<i> the ambiguity. Here's my grammar that doesn't work. Can anybody help?
+</I>&gt;<i>
+</I>&gt;<i> grammar Expression;
+</I>&gt;<i> options {
+</I>&gt;<i>  output = AST;
+</I>&gt;<i>  ASTLabelType=CommonTree;
+</I>&gt;<i> }
+</I>&gt;<i>
+</I>&gt;<i> expr : addExpr EOF!
+</I>&gt;<i>  ;
+</I>&gt;<i>
+</I>&gt;<i> addExpr : multExpr (('+'^|'-'^) multExpr)*
+</I>&gt;<i>  ;
+</I>&gt;<i>
+</I>&gt;<i> multExpr : unaryExpr (('*'^|'/'^) unaryExpr)*
+</I>&gt;<i>  ;
+</I>&gt;<i>
+</I>&gt;<i> unaryExpr : ('sin'^|'cos'^|'ln'^|'~'^) expExpr
+</I>&gt;<i>  | expExpr
+</I>&gt;<i>  ;
+</I>&gt;<i>
+</I>&gt;<i> expExpr : atom ('^'^ atom)*
+</I>&gt;<i>  ;
+</I>&gt;<i>
+</I>&gt;<i> parenExpr : ('sin'^|'cos'^|'ln'^|'~'^)? '('! addExpr ')'!
+</I>&gt;<i>  ;
+</I>&gt;<i>
+</I>&gt;<i> atom : parenExpr
+</I>&gt;<i>  | NUMBER
+</I>&gt;<i>  | VAR
+</I>&gt;<i>  ;
+</I>&gt;<i>
+</I>&gt;<i> NUMBER : '-'? '0'..'9'+ ('.' '0'..'9'*)? ;
+</I>&gt;<i> VAR : 'x' ;
+</I>&gt;<i> WHITESPACE : (' '|'\t'|'\n'|'\r')+ { skip(); } ;
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i>
+</I>&gt;<i>
+</I></PRE>
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="031317.html">[antlr-interest] Precedence problem
+</A></li>
+	<LI>Next message: <A HREF="031321.html">[antlr-interest] Precedence problem
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#31319">[ date ]</a>
+              <a href="thread.html#31319">[ thread ]</a>
+              <a href="subject.html#31319">[ subject ]</a>
+              <a href="author.html#31319">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

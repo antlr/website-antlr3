@@ -1,0 +1,186 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Parser ambiguity, predicate help?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Parser%20ambiguity%2C%20predicate%20help%3F&In-Reply-To=%3C69fb4b090709201605t560420edv682e1737573c512f%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="023803.html">
+   <LINK REL="Next"  HREF="023804.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Parser ambiguity, predicate help?</H1>
+    <B>Ted Villalba</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Parser%20ambiguity%2C%20predicate%20help%3F&In-Reply-To=%3C69fb4b090709201605t560420edv682e1737573c512f%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Parser ambiguity, predicate help?">ted.villalba at gmail.com
+       </A><BR>
+    <I>Thu Sep 20 16:05:31 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="023803.html">[antlr-interest] Parser ambiguity, predicate help?
+</A></li>
+        <LI>Next message: <A HREF="023804.html">[antlr-interest] Antlrworks 1.1.3 hangs when generating code
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#23808">[ date ]</a>
+              <a href="thread.html#23808">[ thread ]</a>
+              <a href="subject.html#23808">[ subject ]</a>
+              <a href="author.html#23808">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+For posterity, I think I fixed this by adding another rule specifically to
+separate terms that occurred between parenthesis from those that occurred
+outside parenthesis.
+This new addition seemed to fix the parsing.
+
+So:
+
+start   : (query)+
+        ;
+
+query   : field (BOOL_OP^ query|field)*
+        | LPAREN! query RPAREN! (BOOL_OP^ query|field)*
+        ;
+
+field     : tag '=' LPAREN value RPAREN -&gt; ^('=' tag value)
+        | tag '=' terms+ -&gt; ^('=' tag ^(TERMS terms+))
+        | qid
+        ;
+
+value   :  value_ -&gt; ^(VALUE value_) ;
+
+value_  : vterms+ (operator^ value)*
+        | LPAREN! value RPAREN! ( operator^ value)*
+        ;
+
+tag        : WCHAR -&gt; ^(WCHAR)
+        ;
+
+terms    : (WCHAR|boolTerm)+
+        | QUOTE! (WCHAR|boolTerm)+ QUOTE!  // strip QUOTEs
+        ;
+
+vterms    : WCHAR+ -&gt; ^(TERMS WCHAR+)
+        | QUOTE (WCHAR)+ QUOTE -&gt; ^(TERMS WCHAR+)// strip QUOTEs
+        | QUOTE (boolTerm)+ QUOTE -&gt; ^(TERMS boolTerm+)// strip QUOTEs
+        ;
+
+
+
+Thank you,
+Ted
+
+On 9/20/07, Ted Villalba &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">ted.villalba at gmail.com</A>&gt; wrote:
+&gt;<i>
+</I>&gt;<i> Hi,
+</I>&gt;<i>
+</I>&gt;<i> Thanks in advance for your time investment here.
+</I>&gt;<i> I have an ambiguity in my parser that I'm not sure how to resolve.
+</I>&gt;<i> I have a query language that in one instance treats some text as an
+</I>&gt;<i> operator, and in another treats it as text.
+</I>&gt;<i> 1. SO= eats shoots and leaves //this and is treated as text
+</I>&gt;<i> 2. SO= (eats shoots and leaves) // treated as an operator
+</I>&gt;<i>
+</I>&gt;<i> Seems whenever I can get it working for one, I break the other. Not sure
+</I>&gt;<i> if a predicate will fix this , but looking for some input here.
+</I>&gt;<i> Here is the complete grammar:
+</I>&gt;<i>
+</I>&gt;<i> grammar WQL;
+</I>&gt;<i>
+</I>&gt;<i> options{
+</I>&gt;<i>     output=AST;
+</I>&gt;<i>     ASTLabelType=CommonTree;
+</I>&gt;<i> }
+</I>&gt;<i>
+</I>&gt;<i> tokens{ TAG; VALUE; TERMS; QUERY;} //imaginary token types
+</I>&gt;<i>
+</I>&gt;<i> @header{
+</I>&gt;<i> import java.util.HashMap ;
+</I>&gt;<i> }
+</I>&gt;<i>
+</I>&gt;<i> @members {
+</I>&gt;<i>
+</I>&gt;<i> HashMap fieldMap = new HashMap();
+</I>&gt;<i>
+</I>&gt;<i> }
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> start   : ( query  {System.out.println(&quot;AST:\n&quot;+$query.tree.toStringTree());}
+</I>&gt;<i> )+
+</I>&gt;<i>         ;
+</I>&gt;<i>
+</I>&gt;<i> query   : field (BOOL_OP^ query|field)*
+</I>&gt;<i>     | LPAREN! query RPAREN! (BOOL_OP^ query|field)*
+</I>&gt;<i>     ;
+</I>&gt;<i>
+</I>&gt;<i> field     : tag '=' LPAREN value RPAREN -&gt; ^('=' tag value)
+</I>&gt;<i>     | tag '='  terms -&gt; ^('=' tag ^(TERMS terms) )
+</I>&gt;<i>         | qid
+</I>&gt;<i>         ;
+</I>&gt;<i>
+</I>&gt;<i> value   :  value_ -&gt; ^(VALUE value_) ;
+</I>&gt;<i>
+</I>&gt;<i> value_  : terms  (operator^ value)*
+</I>&gt;<i>     | LPAREN! value RPAREN! ( operator^ value)*
+</I>&gt;<i>     ;
+</I>&gt;<i>
+</I>&gt;<i> //keyBOOL : {input.LT(1).getText().equals(&quot;NEAR&quot;)}? terms;
+</I>&gt;<i>
+</I>&gt;<i> tag    : WCHAR -&gt; ^(WCHAR)
+</I>&gt;<i>     ;
+</I>&gt;<i>
+</I>&gt;<i> terms    : (WCHAR|boolTerm)+
+</I>&gt;<i>     | QUOTE! (WCHAR|boolTerm)+ QUOTE! // strip QUOTEs
+</I>&gt;<i>     ;
+</I>&gt;<i>
+</I>&gt;<i> boolTerm: b=BOOL_OP|WOK_OP { $b.setType(WCHAR); } ;
+</I>&gt;<i>
+</I>&gt;<i> qid     : '#'!DIGIT
+</I>&gt;<i>         ;
+</I>&gt;<i>
+</I>&gt;<i> operator: BOOL_OP|WOK_OP;
+</I>&gt;<i>
+</I>&gt;<i> QUOTE    : '&quot;';
+</I>&gt;<i> BOOL_OP    : 'AND'|'and'|'OR'|'or'|'NOT'|'not';
+</I>&gt;<i> WOK_OP    : 'SAME'|'same'|'NEAR'('/'DIGIT+)*|'near'('/'DIGIT+)*;
+</I>&gt;<i> DIGIT   : ('0'..'9');
+</I>&gt;<i> WS      : (' '|'\t'|'\r'|'\n'|'??'|'$'|'?'|'*')+ {$channel=HIDDEN;};
+</I>&gt;<i> LPAREN    : '(' ;
+</I>&gt;<i> RPAREN    : ')' ;
+</I>&gt;<i> WCHAR   : ~('='|'('| ')'|'&quot;'|' '|'\t'|'\n'|'\r'|'#'|'??')+;
+</I>&gt;<i> //QCHAR    : ~('&quot;')+;
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20070920/0707b415/attachment-0001.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20070920/0707b415/attachment-0001.html</A> 
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="023803.html">[antlr-interest] Parser ambiguity, predicate help?
+</A></li>
+	<LI>Next message: <A HREF="023804.html">[antlr-interest] Antlrworks 1.1.3 hangs when generating code
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#23808">[ date ]</a>
+              <a href="thread.html#23808">[ thread ]</a>
+              <a href="subject.html#23808">[ subject ]</a>
+              <a href="author.html#23808">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

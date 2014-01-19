@@ -1,0 +1,185 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] handling include files
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20handling%20include%20files&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="017585.html">
+   <LINK REL="Next"  HREF="017582.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] handling include files</H1>
+    <B>Mark Venbrux</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20handling%20include%20files&In-Reply-To="
+       TITLE="[antlr-interest] handling include files">mark.venbrux at gmail.com
+       </A><BR>
+    <I>Thu Sep  7 23:36:14 PDT 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="017585.html">[antlr-interest] little languages for antlr book
+</A></li>
+        <LI>Next message: <A HREF="017582.html">[antlr-interest] (no subject)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#17580">[ date ]</a>
+              <a href="thread.html#17580">[ thread ]</a>
+              <a href="subject.html#17580">[ subject ]</a>
+              <a href="author.html#17580">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+I figured out a way with little impact to handle include files... But
+it is different from the suggested approach in this mailing list. It
+is shown in the simple grammar below, so please comment.
+An issue that pops up when handling include file is that the source of
+an error in the parsed input becomes less clear. So I added an
+'ExtCommonToken' class that shows the input source name in its
+toString() method.
+Is this a decent approach? Or are there better ways?
+Cheers,
+Mark
+-
+
+
+grammar Simple;
+@parser::members {
+    	public void reportError(RecognitionException e) {
+    		if ( e.input instanceof ANTLRFileStream ) {
+    			System.err.print(&quot;File: '&quot; +
+    					   ((ANTLRFileStream)e.input).getSourceName() +&quot;'&quot;);
+    		}
+
+    		super.reportError(e);
+    	}
+
+}
+@lexer::header {
+import java.io.IOException;
+}
+@lexer::members {
+        protected java.util.Stack&lt;CharStream&gt; includeStack = new
+java.util.Stack&lt;CharStream&gt;();
+	public void EnterInclude(CharStream include) {
+		includeStack.push(this.input);
+		this.input = include;
+		skip();
+	}
+
+	/** Return a token from this source; i.e., match a token on the char
+	 *  stream. Pop the include stack upon EOF.
+	 */
+	public Token nextToken() {
+		// First pop the include stack as far as needed...
+		while (input.LA(1) == CharStream.EOF &amp;&amp; !includeStack.empty()) {
+			input = includeStack.pop();
+		}		
+		return super.nextToken();
+	}
+	/** The standard method called to automatically emit a token at the
+	 *  outermost lexical rule.  The token object should point into the
+	 *  char buffer start..stop.  If there is a text override in 'text',
+	 *  use that to set the token's text.
+	 */
+	public Token emit(int tokenType,
+			  int line, int charPosition,
+			  int channel,
+			  int start, int stop)
+	{
+		Token t = new ExtCommonToken(input, tokenType, channel, start, stop);
+		t.setLine(line);
+		t.setText(text);
+		t.setCharPositionInLine(charPosition);
+		emit(t);
+		return t;
+	}	
+	
+    	public void reportError(RecognitionException e) {
+    		if ( e.input instanceof ANTLRFileStream ) {
+    			System.err.print(&quot;File: '&quot; +
+ 				((ANTLRFileStream)e.input).getSourceName() +&quot;'&quot;);
+    		}
+
+    		super.reportError(e);
+    	}
+
+}
+program : (variable)*
+        ;
+variable: 'int' ID ('=' INT)? ';'
+        ;
+
+
+
+ID      : ('a'..'z'|'A'..'Z')+ ;
+INT     : ('0'..'9')+ ;
+WS      : (' '|'\t'|'\n')+ {channel=99;}
+        ;
+protected
+StringLiteral
+    :  '&quot;' (  ~('&quot;') )* '&quot;'
+    ;
+
+
+INCLUDE : '#include' WS* fileNameToken=StringLiteral WS* ';' {channel=99;}
+{
+    String fileName = $fileNameToken.getText().substring(1,
+$fileNameToken.getText().length()-1);
+    System.out.println(&quot;enter include: &quot; + fileName);
+    CharStream includedFile = null;
+    try {
+    	includedFile = new ANTLRFileStream(fileName);
+    } catch (IOException e) {
+    	e.printStackTrace();
+    }
+    EnterInclude(includedFile);
+}
+    ;
+
+
+
+-- 
+Mvg,
+    Mark
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="017585.html">[antlr-interest] little languages for antlr book
+</A></li>
+	<LI>Next message: <A HREF="017582.html">[antlr-interest] (no subject)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#17580">[ date ]</a>
+              <a href="thread.html#17580">[ thread ]</a>
+              <a href="subject.html#17580">[ subject ]</a>
+              <a href="author.html#17580">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

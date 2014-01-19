@@ -1,0 +1,174 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Problems customizing tree construction
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Problems%20customizing%20tree%20construction&In-Reply-To=%3C20080731022924.00001432%40goanna%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="029423.html">
+   <LINK REL="Next"  HREF="029418.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Problems customizing tree construction</H1>
+    <B>Mark Wright</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Problems%20customizing%20tree%20construction&In-Reply-To=%3C20080731022924.00001432%40goanna%3E"
+       TITLE="[antlr-interest] Problems customizing tree construction">markwright at internode.on.net
+       </A><BR>
+    <I>Wed Jul 30 09:29:24 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="029423.html">[antlr-interest] Problems customizing tree construction
+</A></li>
+        <LI>Next message: <A HREF="029418.html">[antlr-interest] Simple problem with tokens string
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#29429">[ date ]</a>
+              <a href="thread.html#29429">[ thread ]</a>
+              <a href="subject.html#29429">[ subject ]</a>
+              <a href="author.html#29429">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Wed, 30 Jul 2008 15:54:30 +0200
+&quot;Mathilde GUERIN&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">mathilde.guerin at gmail.com</A>&gt; wrote:
+
+&gt;<i> I've already looked into this approach but it wouldn't solve my
+</I>&gt;<i> problem (or at least, I don't think so...): in my project, the
+</I>&gt;<i> variables that compose a group have to be represented as child nodes
+</I>&gt;<i> of the group node:
+</I>&gt;<i> 
+</I>&gt;<i>  |-#GROUPB        (level=1)  &lt;ASTGroup&gt;
+</I>&gt;<i>      |-#FIELDB-A  (level=2)  &lt;ASTVariable&gt;
+</I>&gt;<i>      |-#FIELDB-B  (level=2)  &lt;ASTVariable&gt;
+</I>&gt;<i> 
+</I>&gt;<i> From what I gathered from the symbol table articles that I read, I
+</I>&gt;<i> wouldn't be able to do that with this approach... right?
+</I>&gt;<i> 
+</I>&gt;<i> ~MG~
+</I>
+Hi,
+
+Some ideas:
+
+(1) You could create a structure like what you have above
+in a symbol table instead of in the AST.  Of course you will
+need to figure out if you want to do that or not.
+
+With the symbol table approach, you could add actions to the
+grammar to set the current scope, and add the variables to
+the current scope.  Something like:
+
+@members {
+  SemanticActions sa;
+}
+grammar 
+    : (groupDefinition | varDefinition)+ ;
+groupDefinition
+    : INT ID endLine+
+      { sa.groupDefinition($INT, $ID); }
+      -&gt; ^(ID&lt;ASTGroup&gt;[$INT.level]) ;
+varDefinition
+    : INT ID format endLine+
+      { sa.varDefinition($INT, $ID); }
+      -&gt; ^(ID&lt;ASTVariable&gt;[$INT.level] format) ;
+
+And in the SemanticActions.groupDefinition() you can call something
+like a moveIntoGroupDefinitionScope(scopeLevel, group) method.
+
+And in SemanticActions.varDefinition(), you can look up the
+current scope, then enter the var definitions into the
+group variable found from the scope lookup.
+
+So of course you can create a symbol table data structure that
+looks like the AST you asked for.
+
+(2) Alternatively, if you want an AST like that, then one crazy idea
+is as follows.  I say its crazy because it seems kind of complicated,
+I wonder if there might be an easier way to do it than my suggestion
+here.  I don't know if something like this can be made to work either.
+
+You can create your own AST and Token classes, which are in
+a relationship with each other, something like:
+
+import org.antlr.runtime.tree.CommonTree;
+import org.antlr.runtime.Token;
+import org.antlr.runtime.CommonToken;
+import tntdbo.sym.Symbol;
+
+public class MyAST extends CommonTree {
+    public MyAST(Token t) {
+        super(t);
+        t.setAST(this);
+    }
+
+    public MyAST(int ttype, String text) {
+        Token t = new CommonToken(ttype, text);
+        super(t);
+        t.setAST(this);
+    }
+}
+
+The varDefinition action can dynamically create the returned AST,
+something like:
+
+@members {
+  SemanticActions sa;
+}
+@lexer::members {
+    public Token emit() {
+        Token t = new MyToken(input, state.type, state.channel, state.tokenStartCharIndex, getCharIndex()-1);
+        t.setLine(state.tokenStartLine);
+        t.setText(state.text);
+        t.setCharPositionInLine(state.tokenStartCharPositionInLine);
+        emit(t);
+        return t;
+    }
+grammar 
+    : (groupDefinition | varDefinition)+ ;
+groupDefinition
+    : INT ID endLine+
+      { sa.groupDefinition($INT, $ID); }
+      -&gt; ^(ID&lt;ASTGroup&gt;[$INT.level]) ;
+varDefinition
+    : INT ID format (e+=endLine)+
+      -&gt; { sa.varDefinition(adaptor, $INT, $ID, $format, $e); }
+
+And the method would be something like:
+
+public CommonTree varDefinition(TreeAdaptor adaptor, Token level, Token id,
+                                 List endLineTokenList) {
+  CommonTree groupAST = lookupController.lookup(level, id);
+  adaptor.addChild(groupAST, (CommonTree)adaptor.create(level));
+  return ast;
+}
+
+Its kind of a sketch, not sure if something like this would really
+work or not.
+
+Regards, Mark
+
+-- 
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="029423.html">[antlr-interest] Problems customizing tree construction
+</A></li>
+	<LI>Next message: <A HREF="029418.html">[antlr-interest] Simple problem with tokens string
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#29429">[ date ]</a>
+              <a href="thread.html#29429">[ thread ]</a>
+              <a href="subject.html#29429">[ subject ]</a>
+              <a href="author.html#29429">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

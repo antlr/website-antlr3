@@ -1,0 +1,203 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Appropriate use of honey badger listeners
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Appropriate%20use%20of%20honey%20badger%20listeners&In-Reply-To=%3CCAON31m7md3j%2BZsMuGuoKrCGGmo7rN5D518-s9K8CVr7LToBKGQ%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="043808.html">
+   <LINK REL="Next"  HREF="043841.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Appropriate use of honey badger listeners</H1>
+    <B>Martijn Reuvers</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Appropriate%20use%20of%20honey%20badger%20listeners&In-Reply-To=%3CCAON31m7md3j%2BZsMuGuoKrCGGmo7rN5D518-s9K8CVr7LToBKGQ%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Appropriate use of honey badger listeners">martijn.reuvers at gmail.com
+       </A><BR>
+    <I>Wed Jan 11 23:22:30 PST 2012</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="043808.html">[antlr-interest] Appropriate use of honey badger listeners
+</A></li>
+        <LI>Next message: <A HREF="043841.html">[antlr-interest] Updated honey badger and examples
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#43781">[ date ]</a>
+              <a href="thread.html#43781">[ thread ]</a>
+              <a href="subject.html#43781">[ subject ]</a>
+              <a href="author.html#43781">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hey guys,
+
+For option 1:
+I would suggest you add something on the parsercontext directly
+instead of using a plain hashmap. It should be dynamic I think - and
+be up to the user to set it. You could set a default implementation,
+which 'underwater' could work with the suggested Map and is good
+enough for most. But users are completely free to replace it.
+
+E.g. use a marker interface for the 'storage' thing.
+
+// Marker
+interface Storage {
+
+}
+
+// Provide a default implementation, but which can be replaced by the
+user if needed (e.g. when a parser starts).
+class StorageImpl implements Storage {
+
+   // Implementation is customer specific, whatever you please - you
+can store in whatever way.
+   // In most cases you do not need a map and just want to store
+values directly (after all getStorage().setValue(..) /
+getStorage().getValue() are always much faster than maps due to
+hashing).
+
+}
+
+// Start of parse somewhere user can replace the default (by class,
+MyStorage.class if you need it dynamically), or they just replace it
+on the rules where needed while listening.
+parserContext.replaceStorage(new MyCustomStorage())
+
+Just some thoughts.
+
+Cheers!
+Martijn
+
+On Thu, Jan 12, 2012 at 1:39 AM, Terence Parr &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">parrt at cs.usfca.edu</A>&gt; wrote:
+&gt;<i> hi Kyle,
+</I>&gt;<i>
+</I>&gt;<i> I have 2 questions about the current listener mechanism:
+</I>&gt;<i>
+</I>&gt;<i> 1. How do we return values from listener methods so that we can do computations?
+</I>&gt;<i> 2. How do we alter a parse tree?
+</I>&gt;<i>
+</I>&gt;<i> For 2, I think we return a new tree as a return value and the parse tree walker will incorporate that into the tree if it sees a different tree come back. In other words, it will do something like this in the walker:
+</I>&gt;<i>
+</I>&gt;<i> newtree = listener.someEvent(oldtree);
+</I>&gt;<i> if ( newtree!=oldtree ) replace-oldtree-with-newtree;
+</I>&gt;<i>
+</I>&gt;<i> For 1, I don't have a great answer. To make this more concrete, imagine we have an expression rule and we want to use listener events to compute the value of an expression. So, instead of having actions in the grammar &#160;like:
+</I>&gt;<i>
+</I>&gt;<i> e returns [int v]
+</I>&gt;<i> &#160; &#160; &#160;: a=e '*' b=e {$v = $a.v * $b.v;}
+</I>&gt;<i>
+</I>&gt;<i> we would simply match it
+</I>&gt;<i>
+</I>&gt;<i> e : e '*' e -&gt; mult &#8230;
+</I>&gt;<i>
+</I>&gt;<i> and then have listener events compute values. but where does of the listener object store the intermediate results of a subtree computation? Certainly we don't want to have to add &quot;returns [int v]&quot; to the grammar for every different paths we make over the parse tree. Without a return value from a listener event (which I want to use for tree rewriting), how do we get a value up the tree in a computation? &#160;We can't really use temporary fields of the listener object because it's hard to tell which value gets associated with which listener method. we would need a temporary fields to hold result values from each listener. actually, I'm not even sure that would work. We need to associate result values with sub tree roots (i.e. contexts). In other words, we need a way to dynamically add fields to contexts for the specific purpose of a particular parse tree walk. One can imagine that I have a pass for computing the type of expression and another pass for computing the value. In both cases, I need result values for each subtree (type and then value).
+</I>&gt;<i>
+</I>&gt;<i> Maybe that is just a hash table from ctx node to value; Map&lt;ParserRuleContext, Object&gt;. maybe. That presents a few issues for me because I use hashCode/equals in a weird way for use with grammar analysis, but that would be the idea.
+</I>&gt;<i>
+</I>&gt;<i> class MyGListener extends BlankGListener {
+</I>&gt;<i> &#160; &#160; &#160; &#160;Map&lt;ParserRuleContext, Integer&gt; results = &#8230;;
+</I>&gt;<i>
+</I>&gt;<i> &#160; &#160; &#160; &#160;public void exitRule(AParser.multContext ctx) { results.put(ctx, results.get(ctx.a) * results.get(ctx.b)); }
+</I>&gt;<i> &#160; &#160; &#160; &#160;public void exitRule(AParser.addContext ctx) { results.put(ctx, results.get(ctx.a) + results.get(ctx.b)); }
+</I>&gt;<i> }
+</I>&gt;<i>
+</I>&gt;<i> not very pretty in Java. Python would look better:
+</I>&gt;<i>
+</I>&gt;<i> results[ctx] = results[ctx.a] * results[ctx.b];
+</I>&gt;<i>
+</I>&gt;<i> This way we can associate any values we need to for any node, in effect, decorating the parse tree as needed.
+</I>&gt;<i>
+</I>&gt;<i> What do people think about the solution? is there a way I can automate some of this? I think that Python and Ruby would make short work of that because they allow dynamically adding fields (normally a horrible thing to do) ;) Is there a better way to do decorations in Java?
+</I>&gt;<i>
+</I>&gt;<i> Ter
+</I>&gt;<i>
+</I>&gt;<i> On Jan 11, 2012, at 1:49 PM, Kyle Ferrio wrote:
+</I>&gt;<i>
+</I>&gt;&gt;<i> Excellent, congratulations and thank you.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I just spent about half an hour playing with variations on A.g4 (since it
+</I>&gt;&gt;<i> worked right out of the box I had to keep going...) &#160;and this is really
+</I>&gt;&gt;<i> nice. &#160;This is the first time I've looked at the new-in-antlr listener
+</I>&gt;&gt;<i> paradigm. &#160;I will need a while to fully appreciate the doors this opens.
+</I>&gt;&gt;<i> Honey Badger makes things easy, so I want to stay on his (?) good side.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Q: how do you tell a boy Honey Badger from a girl Honey Badger?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> A: you don't. &#160;they're both bad-ass.
+</I>&gt;<i>
+</I>&gt;<i> nice!
+</I>&gt;<i>
+</I>&gt;<i> Ter
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I></PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="043808.html">[antlr-interest] Appropriate use of honey badger listeners
+</A></li>
+	<LI>Next message: <A HREF="043841.html">[antlr-interest] Updated honey badger and examples
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#43781">[ date ]</a>
+              <a href="thread.html#43781">[ thread ]</a>
+              <a href="subject.html#43781">[ subject ]</a>
+              <a href="author.html#43781">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

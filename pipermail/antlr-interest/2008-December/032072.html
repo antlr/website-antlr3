@@ -1,0 +1,155 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Occasionally match hidden channel
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Occasionally%20match%20hidden%20channel&In-Reply-To=%3C31e910dd0812200532l26e57651lad35f9ff305ad829%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="032063.html">
+   <LINK REL="Next"  HREF="032067.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Occasionally match hidden channel</H1>
+    <B>Zenzike</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Occasionally%20match%20hidden%20channel&In-Reply-To=%3C31e910dd0812200532l26e57651lad35f9ff305ad829%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Occasionally match hidden channel">zenzike at gmail.com
+       </A><BR>
+    <I>Sat Dec 20 05:32:29 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="032063.html">[antlr-interest] Occasionally match hidden channel
+</A></li>
+        <LI>Next message: <A HREF="032067.html">[antlr-interest] antlr.org going down for a few days
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#32072">[ date ]</a>
+              <a href="thread.html#32072">[ thread ]</a>
+              <a href="subject.html#32072">[ subject ]</a>
+              <a href="author.html#32072">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>&gt;<i> This will do it:
+</I>&gt;<i>
+</I>&gt;<i> ((TokenStream)input ).get( input.index()-1 ).sometokenmethodsuchasgetType()
+</I>&gt;<i> == SLASHSLASH
+</I>
+Thanks! I'm amazed at how friendly and quick to reply this community is!
+
+Unfortunately, the problem is a little more subtle than that; there
+might be real whitespace elements that I don't want to parse between
+SLASHSLASH and OTHER.
+However, I thought I solved this by using:
+
+!((CommonTokenStream)input).getTokens(input.LT(-1).getTokenIndex(),
+input.LT(1).getTokenIndex(), SLASHSLASH).isEmpty()
+
+But it turns out the problem is more subtle than this ... consider the
+following snippet of my grammar (the whole this is rather huge, but
+hopefully this will be enough):
+
+display
+  : BDISPLAY item
+      (  sep item
+      | {!((CommonTokenStream)input).getTokens(input.LT(-1).getTokenIndex(),
+input.LT(1).getTokenIndex(), SLASHSLASH).isEmpty()}?=&gt;
+//        {((LateChannelTokenStream)input).setTokenTypeChannel(SLASHSLASH,
+Token.DEFAULT_CHANNEL);}
+//        SLASHSLASH+
+//        {((LateChannelTokenStream)input).resetTokenTypeChannel(SLASHSLASH);}
+//        item
+      )* EDISPLAY            -&gt; ^(DISPLAY item+)
+  ;
+
+sep
+  : SEMICOLON ;
+...
+SLASHSLASH : '\\\\' {$channel=HIDDEN;};
+
+
+The trouble is that matching &quot;item&quot; by itself, rather than &quot;sep item&quot;,
+causes the &quot;multiple alternatives&quot; problem elsewhere in the grammar --
+a separation token like &quot;sep&quot; is really needed
+in this case. The trouble is that as it stands, the grammar seems
+fine, but compiling gives me the following error (due to the semantic
+predicate above):
+
+Error creating resources for Aztex. Cause
+java.util.NoSuchElementException: no such attribute: description in
+template context [outputFile parser genericParser(...) cyclicDFA
+if(dfa.specialStateSTs)_subtemplate anonymous cyclicDFAState
+cyclicDFAEdge notPredicate evalPredicate(...)]
+
+I expect this is because we need to tell the DFA that there is no
+ambiguity here -- which wouldn't be possible for it to detect, since
+SLASHSLASH is in the hidden channel.
+to try and solve this I implemented a LateChannelTokenStream, that has
+the following methods:
+
+	protected int skipOffTokenChannels(int i) {
+		int n = tokens.size();
+		
+		while ( i&lt;n &amp;&amp; ((Token)tokens.get(i)).getChannel()!=channel ) {
+			if (channelOverrideMap!=null) {
+				Integer channelI = (Integer)
+					channelOverrideMap.get(new Integer(((Token)tokens.get(i)).getChannel()));
+				
+				if (channelI.intValue() == channel) {
+					((Token)tokens.get(i)).setChannel(channel);
+					break;
+				}
+			}
+			i++;
+		}
+		return i;
+	}
+	
+	public void resetTokenTypeChannel(int ttype) {
+		if (channelOverrideMap != null)
+			channelOverrideMap.remove(new Integer(ttype));
+	}
+
+The idea is to add the SLASHSLASH token to the default channel by
+using setTokenTypeChannel(SLASHSLASH, DEFAULT_CHANNEL) where
+necessary, then switching it back off with resetTokenTypeChannel()
+when it isn't.
+
+For some reason this isn't working at all, though I expect it's
+because the DFA isn't enabling the actions when doing a lookahead, and
+so the hidden SLASHSLASH isn't visible, and the DFA fails.
+
+To try and counter this, I tried to force backtracking, with the
+options {k=0; backtrack=true;} set for this rule, but that doesn't
+seem to have helped either.
+
+I know this is a fairly involved problem -- I can supply the rest of
+my grammar if it helps, but does anybody have any suggestions?
+
+Thanks lots,
+
+zenzike
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="032063.html">[antlr-interest] Occasionally match hidden channel
+</A></li>
+	<LI>Next message: <A HREF="032067.html">[antlr-interest] antlr.org going down for a few days
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#32072">[ date ]</a>
+              <a href="thread.html#32072">[ thread ]</a>
+              <a href="subject.html#32072">[ subject ]</a>
+              <a href="author.html#32072">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

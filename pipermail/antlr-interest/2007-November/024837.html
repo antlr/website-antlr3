@@ -1,0 +1,189 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Can antlr v3 lex star | tristar properly?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Can%20antlr%20v3%20lex%20star%20%7C%20tristar%20properly%3F&In-Reply-To=%3C%22H0000067000145a4.1195669243.scalix.temporal-wave.com%2A%22%40MHS%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="024832.html">
+   <LINK REL="Next"  HREF="024856.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Can antlr v3 lex star | tristar properly?</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Can%20antlr%20v3%20lex%20star%20%7C%20tristar%20properly%3F&In-Reply-To=%3C%22H0000067000145a4.1195669243.scalix.temporal-wave.com%2A%22%40MHS%3E"
+       TITLE="[antlr-interest] Can antlr v3 lex star | tristar properly?">jimi at temporal-wave.com
+       </A><BR>
+    <I>Wed Nov 21 10:20:44 PST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="024832.html">[antlr-interest] Can antlr v3 lex star | tristar properly?
+</A></li>
+        <LI>Next message: <A HREF="024856.html">[antlr-interest] Can antlr v3 lex star | tristar properly?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24837">[ date ]</a>
+              <a href="thread.html#24837">[ thread ]</a>
+              <a href="subject.html#24837">[ subject ]</a>
+              <a href="author.html#24837">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>You can do this without predicates though. People seem to reach for the predicate stick immediately the lexer doesn't do what they want. Look at the common routes through the tokens and make a single lex rule with alts at each of those points. The lexer code will then be very natural.
+
+If you were coding if statements in a language, you would not code:
+
+If (*(a+2) == '*' &amp;&amp; *(a+1) == '*' &amp;&amp; *a == '*') {sdkdslkf} else if (*a == '*' { ****
+
+You code:
+
+if (*a == '*')
+{
+  If (*(a+1) == '*' &amp;&amp; *(a+2) == '*')
+  {
+    L;
+  }
+  else
+  {
+    X;
+...
+
+So, if you think of constructing the lexer rules as guiding it through the characters it is coming across, you will arrive at:
+
+T : '*'
+     (
+        // Here can be tristar or star
+        //
+          '**'  { $type = T3; } // Tristar
+        | // Anything else means this is just a T
+     )
+  ;
+
+And will require no predicates.
+
+A predicate might help you here if you only want to take the '***' path if there really are three '*', instead of erroring out in the lexer if there are two. However, Personally I prefer to catch things like that and issue a specific error message (which programmers like).
+
+You can say:
+
+T : '*'
+     (
+        // Here can be tristar or star or perhaps error
+        //
+          '*'
+		(
+                 '*'  { $type = T3; } // Tristar
+               | { // call &quot;Error: malformed operator '**' did you mean '*' or '***' }
+             )
+        | // Anything else means this is just a T
+     )
+
+That kind of technique is useful for trapping un-terminated quoted strings while you are in the lexer and so on.
+
+Jim
+
+&gt;<i> -----Original Message-----
+</I>&gt;<i> From: Kay R&#246;pke [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">kroepke at classdump.org</A>]
+</I>&gt;<i> Sent: Wednesday, November 21, 2007 6:22 AM
+</I>&gt;<i> To: Steve Bennett
+</I>&gt;<i> Cc: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> Subject: Re: [antlr-interest] Can antlr v3 lex star | tristar properly?
+</I>&gt;<i> 
+</I>&gt;<i> Hi!
+</I>&gt;<i> 
+</I>&gt;<i> On Nov 21, 2007, at 2:00 PM, Steve Bennett wrote:
+</I>&gt;<i> 
+</I>&gt;<i> &gt; On 11/21/07, Guntis Ozols &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">guntiso at latnet.lv</A>&gt; wrote:
+</I>&gt;<i> &gt;&gt; Is there a way to lex this simple grammar (I am using ANTLRWorks
+</I>&gt;<i> &gt;&gt; 1.1.4):
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Now, I know you said &quot;lex&quot; but just in case, this works:
+</I>&gt;<i> 
+</I>&gt;<i> No, it doesn't. It will always match 'star', and never 'tristar'
+</I>&gt;<i> unless you use a predicate like this:
+</I>&gt;<i> 
+</I>&gt;<i> stars: ((tristar)=&gt;tristar | star)*;
+</I>&gt;<i> 
+</I>&gt;<i> tristar: '*''*''*';
+</I>&gt;<i> star: '*' {System.out.println(&quot;star&quot;);};
+</I>&gt;<i> 
+</I>&gt;<i> Watch what happens in ANTLRWorks!
+</I>&gt;<i> 
+</I>&gt;<i> &gt; ----
+</I>&gt;<i> &gt; stars: (tristar | star )*;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; tristar: '*''*''*';
+</I>&gt;<i> &gt; star: '*';
+</I>&gt;<i> &gt; ----
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Can someone explain to me why this is so hard using just lexing rules?
+</I>&gt;<i> &gt; What goes wrong?
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> The problem is basically that ANTLR doesn't do longest-match matching.
+</I>&gt;<i> It predicts the next rule that can possibly match based on a minimal
+</I>&gt;<i> number of lookahead symbols (characters, tokens or tree nodes).
+</I>&gt;<i> 
+</I>&gt;<i> After seeing two STAR tokens as lookahead, it concludes that the only
+</I>&gt;<i> thing that makes sense should be TRISTAR. This behavior is probably
+</I>&gt;<i> not terribly intuitive, but as ANTLR doesn't backtrack like lex does
+</I>&gt;<i> (lex can simply backtrack in the internal state machine, ANTLR would
+</I>&gt;<i> have to do that across method calls...) it's pretty much unavoidable.
+</I>&gt;<i> In these cases you need to have some kind of predicate to help ANTLR.
+</I>&gt;<i> This should only apply to prefix problems like this, though.
+</I>&gt;<i> 
+</I>&gt;<i> Here's my solution to the problem:
+</I>&gt;<i> 
+</I>&gt;<i> stars	: (STAR | TRISTAR)* EOF;
+</I>&gt;<i> 
+</I>&gt;<i> TRISTAR	: {input.LA(3) == '*'}? =&gt; '*' '*' '*';
+</I>&gt;<i> STAR	: '*';
+</I>&gt;<i> 
+</I>&gt;<i> Works like a charm. Try it with five '*' chars in ANTLRWorks :)
+</I>&gt;<i> You only have to help out at one place here, to force it to match the
+</I>&gt;<i> longer token first. Pretty good tradeoff if you ask me.
+</I>&gt;<i> 
+</I>&gt;<i> cheers,
+</I>&gt;<i> -k
+</I>&gt;<i> --
+</I>&gt;<i> Kay R&#246;pke
+</I>&gt;<i> <A HREF="http://classdump.org/">http://classdump.org/</A>
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>
+
+</PRE>
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="024832.html">[antlr-interest] Can antlr v3 lex star | tristar properly?
+</A></li>
+	<LI>Next message: <A HREF="024856.html">[antlr-interest] Can antlr v3 lex star | tristar properly?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24837">[ date ]</a>
+              <a href="thread.html#24837">[ thread ]</a>
+              <a href="subject.html#24837">[ subject ]</a>
+              <a href="author.html#24837">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

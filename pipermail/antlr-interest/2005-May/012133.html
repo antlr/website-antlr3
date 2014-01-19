@@ -1,0 +1,301 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] SUCCESS! (mostly) detecting transitions in
+	stanza-based files
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20SUCCESS%21%20%28mostly%29%20detecting%20transitions%20in%0A%09stanza-based%20files&In-Reply-To=42813199.9010402%40lotuscat.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="012122.html">
+   <LINK REL="Next"  HREF="012143.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] SUCCESS! (mostly) detecting transitions in
+	stanza-based files</H1>
+    <B>Chris Black</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20SUCCESS%21%20%28mostly%29%20detecting%20transitions%20in%0A%09stanza-based%20files&In-Reply-To=42813199.9010402%40lotuscat.com"
+       TITLE="[antlr-interest] SUCCESS! (mostly) detecting transitions in
+	stanza-based files">chris at lotuscat.com
+       </A><BR>
+    <I>Wed May 11 14:46:02 PDT 2005</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="012122.html">[antlr-interest] detecting transitions in stanza-based files
+</A></li>
+        <LI>Next message: <A HREF="012143.html">[antlr-interest] SUCCESS! (mostly) detecting transitions in
+	stanza-based files
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#12133">[ date ]</a>
+              <a href="thread.html#12133">[ thread ]</a>
+              <a href="subject.html#12133">[ subject ]</a>
+              <a href="author.html#12133">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>First of all, thanks to everyone on the list who read my message, 
+especially those who replied :)
+The main issue I was having was that with a bunch of extra commas added 
+at the end of lines by excel as well as the lack of a newline between 
+stanzas, I was having trouble detecting the transitions between stanzas. 
+After much reading and fiddling around, I now have a preliminary 
+TokenFilter that ONLY looks to analyze these transitions, and when it 
+finds one it adds an imaginary token. This approach was proposed by Ric 
+it worked out quite well and did not seem to slow things down too much. 
+I followed Monty's article 
+<A HREF="http://www.codetransform.com/filterexample.html.">http://www.codetransform.com/filterexample.html.</A> I had to create my own 
+TokenQueue to avoid modifying core antlr classes. It would be nice if 
+the ANTLR distribution's TokenQueue was public and had a length method 
+to facilitate this sort of filtering for others.
+
+Now to my remaining (small) issue :)  For some reason when my 
+parser/treeparser take input from the filtered TokenStream, I get a 
+spurrious message to stderr:
+line n:1: unexpected token: null
+
+I've looked this up and googled around, but none of the fixes suggested 
+get rid of this. I've added token matches for EOF as well as changing my 
+filter to put out an extra NEWLINE rather than an EOF. I've noticed that 
+I don't ever get the println I added to the return EOF condition in 
+nextToken(). Any ideas?
+
+Thanks again everyone,
+Chris
+
+For those who are curious, here is my token filter and the glue that 
+makes it usable:
+header {
+    package mypackage;
+    import antlr.*;
+}
+
+class StanzaParser extends Parser;
+options {
+    importVocab=CSV;
+    k=2;
+}
+
+tokens {
+    STANZASEPARATOR;
+}
+
+{
+    MyTokenQueue queue = new MyTokenQueue(8);
+   
+    public void consume() {
+        try {
+            queue.append(LT(1));
+        } catch(TokenStreamException e) {
+            System.err.println(&quot;error in consume&quot;);
+            System.err.println(e);
+            e.printStackTrace();
+        }
+      super.consume();
+    }
+   
+    public Token nextToken() throws TokenStreamException {
+        Token ret;
+        if(queue.length() &lt;= 0) {
+            try {
+                line();
+            } catch(RecognitionException e) { ; }
+            catch(TokenStreamException e) { ; }
+        }
+        if(queue.length() &gt; 0) {
+            ret = queue.elementAt(0);
+            queue.removeFirst();
+            return ret;
+        }
+        System.out.println(&quot;no more queue, returning EOF&quot;);
+        return new Token(Token.EOF_TYPE,&quot;end of file&quot;);
+    }
+}
+
+line:
+    (NEWLINE) =&gt; emptyLine
+    | ((FIELD | DELIM)+ NEWLINE) =&gt; contentLine
+    | (DELIM (FIELD | DELIM)+ NEWLINE) =&gt; delim1stLine
+    ;
+
+emptyLine: NEWLINE ;
+
+delim1stLine: DELIM (FIELD | DELIM)+ NEWLINE ;
+
+contentLine: firstTok:FIELD
+    {
+        String firstText = firstTok.getText();
+        if(firstText.startsWith(&quot;Data Type&quot;) || 
+firstText.startsWith(&quot;DataType&quot;)
+            || firstText.equals(&quot;Count&quot;) || firstText.equals(&quot;Result&quot;)) {
+            queue.append(new Token(STANZASEPARATOR,&quot;stanza sep&quot;));
+        }
+    }
+    (FIELD | DELIM)* NEWLINE
+    ;
+
+--- and here is the glue ---
+package mypackage;
+
+import antlr.*;
+
+/**
+ * A filtering TokenStream that adds special markers at stanza separations
+ * to make downstream parsing much easier
+ */
+public class StanzaMarker implements TokenStream {
+  StanzaParser filter;
+ 
+  public StanzaMarker(TokenStream input) {
+    filter = new StanzaParser(input);
+  }
+ 
+  public Token nextToken() throws TokenStreamException {
+    Token tok = filter.nextToken();
+    return tok;
+  }
+}
+
+Chris Black wrote:
+
+&gt;<i> Thanks for all your help everyone, I think I'm going to do a 
+</I>&gt;<i> combination approach using a TokenFilter (perhaps extending the newer 
+</I>&gt;<i> TokenStreamRewriteEngine) to add imaginary tokens to tag the beginning 
+</I>&gt;<i> of stanzas and also remove extraneous DELIMs. Part of my difficulty in 
+</I>&gt;<i> writing these parsers is many times people want them to work on 
+</I>&gt;<i> csv-type files that have been mangled by excel. Excel likes to add 
+</I>&gt;<i> enough delimiters at the end of every line so that all lines have an 
+</I>&gt;<i> equal number of columns, this leads to lots of rules in my grammars 
+</I>&gt;<i> that end in &quot;(DELIM)* NEWLINE&quot; which I understand can be inefficient 
+</I>&gt;<i> and also lead to some nondeterminism difficulties. I am going to have 
+</I>&gt;<i> my TokenFilter remove these. This will change my parser flow so the 
+</I>&gt;<i> file goes through the lexer, goes through the filter parser, goes 
+</I>&gt;<i> through my tree building parser, and then goes through the tree 
+</I>&gt;<i> parser. Hopefully by simplifying the tree building parser this will be 
+</I>&gt;<i> acceptably quick.
+</I>&gt;<i>
+</I>&gt;<i> I plan to have a rule that matches a short line (the stanza 
+</I>&gt;<i> headers/separators), one that matches a long line (actual data 
+</I>&gt;<i> records) and one that matches 2 or more DELIMs in a row at the end of 
+</I>&gt;<i> a line. The stanza header rule will add an imaginary token that marks 
+</I>&gt;<i> the beginning of a stanza and the end of line rule will remove 
+</I>&gt;<i> extraneous DELIMs. Hopefully this will work, the one problem I see is 
+</I>&gt;<i> that having DELIM (DELIM)+ NEWLINE at the end of a line would lead to 
+</I>&gt;<i> nondeterminisms for finite lookahead, so I will most likely need to 
+</I>&gt;<i> make some sort of predicate system that matches all the possible types 
+</I>&gt;<i> of lines (short with extra delims, short w/o extra delims, long with 
+</I>&gt;<i> extra delims and long w/o extra delims).
+</I>&gt;<i>
+</I>&gt;<i> I'll start work on this tomorrow so if anyone has any 
+</I>&gt;<i> advice/input/pointers to examples/docs I'd appreciate it.
+</I>&gt;<i>
+</I>&gt;<i> Thanks again!
+</I>&gt;<i> Chris
+</I>&gt;<i>
+</I>&gt;<i> Ric Klaren wrote:
+</I>&gt;<i>
+</I>&gt;&gt;<i> Chris Black wrote:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> I decided perhaps paring down my query would make it a bit easier to 
+</I>&gt;&gt;&gt;<i> read. Sorry for the initial long-winded post. My main problem is 
+</I>&gt;&gt;&gt;<i> trying to detect a transition between lines of 3+ FIELDs long and 
+</I>&gt;&gt;&gt;<i> one of less than 3 FIELDs. I have a token stream after the lexer has 
+</I>&gt;&gt;&gt;<i> run like:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> FIELD DELIM FIELD NEWLINE
+</I>&gt;&gt;&gt;<i> FIELD DELIM FIELD DELIM FIELD DELIM FIELD DELIM NEWLINE
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> ...
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> FIELD DELIM FIELD DELIM FIELD DELIM FIELD DELIM NEWLINE
+</I>&gt;&gt;&gt;<i> FIELD DELIM FIELD NEWLINE
+</I>&gt;&gt;&gt;<i> FIELD DELIM FIELD DELIM FIELD DELIM FIELD DELIM NEWLINE
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> ...
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> FIELD DELIM FIELD DELIM FIELD DELIM FIELD DELIM NEWLINE
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> My difficulty is detecting the transitions from a series of long 
+</I>&gt;&gt;&gt;<i> lines to the short line separating the stanzas.
+</I>&gt;&gt;&gt;<i> What seems to be happening is my rule to match a long line is trying 
+</I>&gt;&gt;&gt;<i> to be applied to the short line since I am in a rule looking for any 
+</I>&gt;&gt;&gt;<i> number of long lines. Why is this? To simplify, it seems like if I 
+</I>&gt;&gt;&gt;<i> have a few rules like:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> multStanzas: (stanza)+
+</I>&gt;&gt;&gt;<i> stanza: shortLine (longLine)+
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> shortLine: FIELD DELIM FIELD DELIM FIELD NEWLINE
+</I>&gt;&gt;&gt;<i> longLine: FIELD DELIM FIELD (DELIM FIELD)+ NEWLINE
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> That it tries to match the whole file as one stanza. I thought that 
+</I>&gt;&gt;&gt;<i> once the longLine match failed seeing a short line of less than 
+</I>&gt;&gt;&gt;<i> three FIELDs that ANTLR would then try to match with a longLine 
+</I>&gt;&gt;&gt;<i> rule. What am I missing or doing wrong?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I guess that this might work it prevents entering the longLine rule 
+</I>&gt;&gt;<i> if there's a shortline on the input (without ridiculous k size):
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> multStanzas: (stanza)+
+</I>&gt;&gt;<i> stanza: shortLine ( { if( LA(6) == NEWLINE ) break;  }: longLine)+
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Maybe also a check on EOF is necessary.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I think a token filter approach might work as well. Put between the 
+</I>&gt;&gt;<i> lexer and parser a filter that inserts before every stanza a 
+</I>&gt;&gt;<i> synthetic token that marks the start of a line. Keep a reference to 
+</I>&gt;&gt;<i> this start marker. Then in the filter buffer up input to the first 
+</I>&gt;&gt;<i> NEWLINE or EOF whilst counting the number of fields so far. When you 
+</I>&gt;&gt;<i> get to the NEWLINE update the start marker's tokentype ($setType) to 
+</I>&gt;&gt;<i> something like SHORTLINE or LONGLINE. At that point you can pass the 
+</I>&gt;&gt;<i> start marker to the calling parser from the filter. And wait until 
+</I>&gt;&gt;<i> the calling parser has consumed the input the filter has read so far 
+</I>&gt;&gt;<i> and redo from start.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Your actual parser would then see:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> shortline: SHORTLINE (FIELD DELIM)+ NEWLINE ;
+</I>&gt;&gt;<i> longline: LONGLINE (FIELD DELIM)+ NEWLINE ;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> My guess is that it would perform better than a syntactic predicate.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Cheers,
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Ric
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>
+</PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="012122.html">[antlr-interest] detecting transitions in stanza-based files
+</A></li>
+	<LI>Next message: <A HREF="012143.html">[antlr-interest] SUCCESS! (mostly) detecting transitions in
+	stanza-based files
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#12133">[ date ]</a>
+              <a href="thread.html#12133">[ thread ]</a>
+              <a href="subject.html#12133">[ subject ]</a>
+              <a href="author.html#12133">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

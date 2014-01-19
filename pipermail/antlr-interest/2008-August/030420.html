@@ -1,0 +1,189 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Accessing HIDDEN tokens in the C target.
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Accessing%20HIDDEN%20tokens%20in%20the%20C%20target.&In-Reply-To=%3C1219966382.15169.511.camel%40jimi%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="030419.html">
+   <LINK REL="Next"  HREF="030421.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Accessing HIDDEN tokens in the C target.</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Accessing%20HIDDEN%20tokens%20in%20the%20C%20target.&In-Reply-To=%3C1219966382.15169.511.camel%40jimi%3E"
+       TITLE="[antlr-interest] Accessing HIDDEN tokens in the C target.">jimi at temporal-wave.com
+       </A><BR>
+    <I>Thu Aug 28 16:33:02 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="030419.html">[antlr-interest] Accessing HIDDEN tokens in the C target.
+</A></li>
+        <LI>Next message: <A HREF="030421.html">[antlr-interest] Accessing HIDDEN tokens in the C target.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30420">[ date ]</a>
+              <a href="thread.html#30420">[ thread ]</a>
+              <a href="subject.html#30420">[ subject ]</a>
+              <a href="author.html#30420">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Thu, 2008-08-28 at 16:16 -0700, Robin Green wrote:
+&gt;<i> Hello!
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> Longtime listener, firstime, er, caller.
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> I am using the &quot;C&quot; target and I am trying to get access to the
+</I>&gt;<i> $channel=HIDDEN tokens from the parser, but only inside one rule. The
+</I>&gt;<i> FAQ and advice on the mailing list that I have read talk about
+</I>&gt;<i> subclassing the ANTLR3_COMMON_TOKEN_STREAM class and rewriting the
+</I>&gt;<i> skipOffTokenChannels() function to send back every token in the
+</I>&gt;<i> stream.
+</I>
+
+When you want to do this in one rule, just use get it directly starting
+from the current index. Say you want to look back from a particular
+token in a rule to see if there was a comment on channel 2 (please note
+that I have not compiled this, just typed it in from memory). Basically
+though you can do anything you can do in Java (more in fact), just by
+looking a ta Java example and realizing that the C methods are all the
+same names (just about) but instead of  x.y(z), you use x-&gt;y(x, z).
+
+rule
+:<i> f=FUNCTION x y z
+</I>    {
+        int sIndex;
+       pANTLR3_COMMON_TOKEN tok;
+
+       sIndex = $f-&gt;getTokenIndex($f) - 1;   // Index for first token
+  
+      // Now look back up looking for tokens
+     tok = INPUT-&gt;get(INPUT, sIndex);
+
+    if (tok-&gt;getChannel(tok) == whatever) { .... }
+
+// and so on
+    
+    }
+;
+
+Use the C runtime for cribbing the functions and also the Doxygen API
+docs (see API docs on antlr home page). You are well advised to read
+through all of this. Also use the search at: <A HREF="http://antlr.markmail.org/">http://antlr.markmail.org/</A>
+- it is very good.
+
+If you really want to override a function, then copy the function from
+the runtime as a start point and put it in your own source. Then in your
+grammar use:
+
+@parser::apifuncs
+ {
+    // Install custom error message display
+    //
+    RECOGNIZER-&gt;displayRecognitionError = produceError;
+ }
+
+
+
+This piece of code will run after all the standard methods are set up
+and you can install your own version of any function whatsoever. No need
+to alter the standard runtime.
+
+
+&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 1. It's unclear how to &quot;subclass&quot; the objects in the C target library,
+</I>&gt;<i> especially how to rewrite a &quot;member&quot; function.
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 2. Even if I do so, how do I switch between token stream as I enter a
+</I>&gt;<i> rule and restore it as I leave? I understand the examples that push
+</I>&gt;<i> the current stream onto a stack for &quot;including&quot; files, but these
+</I>&gt;<i> streams are complete in themselves, so when they swap back they only
+</I>&gt;<i> have to pick up where they left off. I really need to switch on and
+</I>&gt;<i> off the skipping of off-channel tokens.
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> What's technique should I use? I am leaning towards writing my own
+</I>&gt;<i> &quot;get()&quot; in the lookahead:
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> shader
+</I>&gt;<i>   : ( options{greedy=false;}: ( val = ~('technique')
+</I>&gt;<i>     {
+</I>&gt;<i>       ANTLR3_INT32 index = $val.index + 1;
+</I>&gt;<i>       ANTLR3_INT32 max_size = INPUT-&gt;istream-&gt;cachedSize;
+</I>&gt;<i>       while(index &lt; max_size) {
+</I>&gt;<i>          pANTLR_COMMON_TOKEN token = INPUT-&gt;get(INPUT, index);
+</I>&gt;<i>          if (token-&gt;getChannel(token) == HIDDEN) {
+</I>&gt;<i>            // add lookahead token to the output
+</I>&gt;<i>         }
+</I>&gt;<i>       }
+</I>&gt;<i>     }
+</I>&gt;<i>     )* )
+</I>&gt;<i>   ;
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> and using it inside a parser rule to directly diddle with the token
+</I>&gt;<i> stream, but I was wondering if there is a better way that doesn't
+</I>&gt;<i> involve me customizing the C target library (which will require
+</I>&gt;<i> re-customizing every time I update the antlr package). Is there a way
+</I>&gt;<i> to inject my own behavior into the C libs without recompiling it?
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> Thanks in advance,
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> - Robin Green
+</I>&gt;<i>   Google Inc.
+</I>&gt;<i> 
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i> 
+</I>-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20080828/c9a926ba/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20080828/c9a926ba/attachment.html</A> 
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="030419.html">[antlr-interest] Accessing HIDDEN tokens in the C target.
+</A></li>
+	<LI>Next message: <A HREF="030421.html">[antlr-interest] Accessing HIDDEN tokens in the C target.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30420">[ date ]</a>
+              <a href="thread.html#30420">[ thread ]</a>
+              <a href="subject.html#30420">[ subject ]</a>
+              <a href="author.html#30420">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

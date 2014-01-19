@@ -1,0 +1,162 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Best place to modify AST?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Best%20place%20to%20modify%20AST%3F&In-Reply-To=%3C200707061347.34029.rschulz%40sonic.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="022166.html">
+   <LINK REL="Next"  HREF="022167.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Best place to modify AST?</H1>
+    <B>Randall R Schulz</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Best%20place%20to%20modify%20AST%3F&In-Reply-To=%3C200707061347.34029.rschulz%40sonic.net%3E"
+       TITLE="[antlr-interest] Best place to modify AST?">rschulz at sonic.net
+       </A><BR>
+    <I>Fri Jul  6 13:47:33 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="022166.html">[antlr-interest] Best place to modify AST?
+</A></li>
+        <LI>Next message: <A HREF="022167.html">[antlr-interest] what's wrong with my grammar?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#22168">[ date ]</a>
+              <a href="thread.html#22168">[ thread ]</a>
+              <a href="subject.html#22168">[ subject ]</a>
+              <a href="author.html#22168">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Friday 06 July 2007 13:16, Cameron Esfahani wrote:
+&gt;<i> My JSON-derived grammar supports assigning JSON entities to
+</I>&gt;<i> variables.  These variables can then be used in other JSON entities
+</I>&gt;<i> to refer to the original entities:
+</I>&gt;<i>
+</I>&gt;<i> foo = { &quot;tag&quot; : &quot;value&quot; }
+</I>&gt;<i>
+</I>&gt;<i> { &quot;child&quot; : foo }
+</I>
+That's a very interesting idea. It makes me wonder if you've got some 
+client-side (i.e., browser-based) way of exploiting these extended JSON 
+structures.
+
+
+&gt;<i> As far as any consumer of the final tree is concerned, they shouldn't
+</I>&gt;<i> see this.  When they iterate through the tree, I want it to appear,
+</I>&gt;<i> for all intents and purposes, that the above input looks like:
+</I>&gt;<i>
+</I>&gt;<i> { &quot;child&quot; : { &quot;tag&quot; : &quot;value&quot; }
+</I>
+Do you want to do that by replicating the right-hand-side of the 
+variable at the point of reference, or by some kind of structure 
+sharing pointer? See below for more on these alternatives.
+
+
+&gt;<i> I'm trying to decide the best place to handle this.  My initial idea
+</I>&gt;<i> is to have two separate tree walker stages, the first would resolve
+</I>&gt;<i> any of these references and update the AST, and the second would
+</I>&gt;<i> process this updated tree.
+</I>
+A two-pass approach may not be necessary or even the best way.
+
+
+&gt;<i> Is this an appropriate route to take?  Can a tree walker change the
+</I>&gt;<i> underlying as it's, uh, walking it?
+</I>
+Keep in mind that the &quot;tree&quot; you're parsing in an ANTLR tree grammar is 
+a linear / sequential encoding of a tree _traversal_, not the tree as 
+such. (A distinction without a difference you say? Perhaps.) The order 
+of that sequence is that which would result from a depth-first, 
+left-to-right traversal of the AST so encoded. What would ordinarily be 
+parent -&gt; child links are special &quot;down&quot; tokens inserted by the 
+tree-building parser. Where the traversal would ascend from the last 
+sibling to its parent, there's an &quot;up&quot; token inserted.
+
+As I understand it, this encoding is what allows conventional parsing 
+techniques to be readily applied to tree parsing. (And if I might say 
+so, it's brilliant).
+
+
+So what I'd probably do is build the JSON tree structure (a real tree 
+based on your JSON object model) in the tree parser actions with the 
+variable bits handled by:
+
+a) Building a symbol table that accumulates the right-hand-side values 
+(object references to the point in the JSON object tree where the 
+variable is defined)
+
+b) Putting special variable-reference nodes into the JSON object tree at 
+the appropriate point.
+
+When the variable reference you encounter is forward, you'll create a 
+symbol table entry that awaits having its value filled in. A final pass 
+over the symbol table would be needed to make sure no unresolved 
+references were present.
+
+If you want to avoid having to walk the JSON object tree, you could keep 
+a list of all variable-reference nodes in the symbol table entries. 
+Then you can drive the replacement of variable references with their 
+actual content off a scan of the symbol table itself, which is perhaps 
+easier than walking the JSON object tree looking for the 
+variable-reference nodes to be replaced. Perhaps.
+
+
+If you want to do structure sharing, you don't even need a second pass 
+of any sort, though you'd need to verify no unfilled / unresolved 
+variable references were left over. This would require a special 
+delegating JSON node type (or set of types, corresponding to the basic 
+JSON value types).
+
+The structure sharing approach may also require a way to replicate the 
+shared value when it's modified (copy-on-modify), either via a variable 
+or at its original point of definition.
+
+All in all, I'd probably not try the structure sharing approach unless 
+there were some compelling reasons to do so.
+
+
+You'll also need to guard against self-reference (i.e., a variable 
+reference to a definition that dominates that reference in the JSON 
+value tree).
+
+
+&gt;<i> Cameron Esfahani
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">dirty at apple.com</A>
+</I>
+Apple, eh? What are you guys up to, now?? Do you know a Chris Volkert? 
+If you do, tell him Randy says &quot;hi.&quot;
+
+
+Randall Schulz
+</PRE>
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="022166.html">[antlr-interest] Best place to modify AST?
+</A></li>
+	<LI>Next message: <A HREF="022167.html">[antlr-interest] what's wrong with my grammar?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#22168">[ date ]</a>
+              <a href="thread.html#22168">[ thread ]</a>
+              <a href="subject.html#22168">[ subject ]</a>
+              <a href="author.html#22168">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

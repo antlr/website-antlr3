@@ -1,0 +1,198 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Expr.text null?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Expr.text%20null%3F&In-Reply-To=%3C000601c8fcd3%24f58f08f0%24e0ad1ad0%24%40com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="029858.html">
+   <LINK REL="Next"  HREF="029863.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Expr.text null?</H1>
+    <B>Foust</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Expr.text%20null%3F&In-Reply-To=%3C000601c8fcd3%24f58f08f0%24e0ad1ad0%24%40com%3E"
+       TITLE="[antlr-interest] Expr.text null?">javafoust at gmail.com
+       </A><BR>
+    <I>Tue Aug 12 16:34:24 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="029858.html">[antlr-interest] Expr.text null?
+</A></li>
+        <LI>Next message: <A HREF="029863.html">[antlr-interest] Expr.text null?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#29862">[ date ]</a>
+              <a href="thread.html#29862">[ thread ]</a>
+              <a href="subject.html#29862">[ subject ]</a>
+              <a href="author.html#29862">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>&gt;<i> From: Terence Parr [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">parrt at cs.usfca.edu</A>]
+</I>&gt;<i> Sent: Tuesday, August 12, 2008 3:32 PM
+</I>&gt;<i> To: Foust
+</I>&gt;<i> Cc: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> Subject: Re: [antlr-interest] Expr.text null?
+</I>&gt;<i> 
+</I>&gt;<i> should work.  java target right?  did you setTokenStream on the node
+</I>&gt;<i> stream?
+</I>&gt;<i> Ter
+</I>
+Yes, Java target, ASTLabelType set like this:
+
+  tree grammar RunModl;
+  options {
+	tokenVocab=Modl;
+	ASTLabelType=CommonTree;
+  }
+
+And the rule is just a little more complicated, in that
+	expr: a? b;
+
+is actually more like:
+	
+	expr: ^(EXPR_TOKEN a? b)
+		{ $a.text is also null here }
+
+	a   options {backtrack=true; memoize=true;}	
+	   : ^(PART1_TOKEN IDENT ...)
+		{ $IDENT.text is correct here }
+
+
+I'm wondering if the backtrack on that single rule in the tree grammar might
+be causing the strangeness?
+
+Anyway, the generated calls to get the text both return -1:
+
+	input.getTreeAdaptor().getTokenStartIndex(a.start), and
+	input.getTreeAdaptor().getTokenStopIndex(a.start)
+
+Where &quot;a&quot; is the actual Java variable generated for expression &quot;a&quot;.
+
+I think I'm going to just have to use a return parameter on the subrule to
+get the proper text.
+
+Note:
+	1. $b.text works fine in rule &quot;expr&quot;, while:
+
+	2. $a.text returns null
+
+	3. Both rule &quot;a&quot; and &quot;b&quot; are actually matching identical subtrees
+	   (using a different parent node token)
+
+		subRuleA : (^SUB_TOKENA identifier)
+		subRuleB : (^SUB_TOKENB identifier)
+
+	4. differences:
+		&quot;a&quot; is optional in &quot;expr&quot; (uses a closure)
+		rule &quot;a&quot; uses a backtrack option (the only one in the file)
+
+	5. if subrule &quot;a&quot; returns its subrule's text as a return parameter,
+then &quot;expr&quot; sees it just fine.
+
+	   subRuleA : returns [String name]
+			  (^SUB_TOKENA identifier)
+			  { $subRuleA.name = $identifier.text; } // this
+works!
+
+	  Now, although &quot;expr&quot; cannot see $subRuleA.text (null), it can see
+$subRuleA.name.
+
+Brent
+
+
+&gt;<i> On Aug 12, 2008, at 3:23 PM, Foust wrote:
+</I>&gt;<i> 
+</I>&gt;<i> &gt; Does it make sense that a matched sub-rule returns null for its text
+</I>&gt;<i> &gt; attribute?
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; That is, the following rule matches the input AST just fine.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; tree grammar;
+</I>&gt;<i> &gt; expr : a? b;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; a : ^(SOME_TOKEN someargs)
+</I>&gt;<i> &gt; b: ^(etc.)
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; But when the text of a is desired, it always returns null, whether
+</I>&gt;<i> &gt; in the rule action, or in a sub-rule action, as below:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; expr : (a {System.out.println($a.text); } )?  b  ;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; prints &quot;null&quot;.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="029858.html">[antlr-interest] Expr.text null?
+</A></li>
+	<LI>Next message: <A HREF="029863.html">[antlr-interest] Expr.text null?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#29862">[ date ]</a>
+              <a href="thread.html#29862">[ thread ]</a>
+              <a href="subject.html#29862">[ subject ]</a>
+              <a href="author.html#29862">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

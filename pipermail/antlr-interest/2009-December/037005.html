@@ -1,0 +1,345 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] How to skip to end of line on error?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20How%20to%20skip%20to%20end%20of%20line%20on%20error%3F&In-Reply-To=%3C95b1cc100912101625m4ec31b54o471cb23e65502ec%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="037004.html">
+   <LINK REL="Next"  HREF="037006.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] How to skip to end of line on error?</H1>
+    <B>Rick Schumeyer</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20How%20to%20skip%20to%20end%20of%20line%20on%20error%3F&In-Reply-To=%3C95b1cc100912101625m4ec31b54o471cb23e65502ec%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] How to skip to end of line on error?">rschumeyer at gmail.com
+       </A><BR>
+    <I>Thu Dec 10 16:25:47 PST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="037004.html">[antlr-interest] Increasing heap size for antlr3 task
+</A></li>
+        <LI>Next message: <A HREF="037006.html">[antlr-interest] How to skip to end of line on error?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37005">[ date ]</a>
+              <a href="thread.html#37005">[ thread ]</a>
+              <a href="subject.html#37005">[ subject ]</a>
+              <a href="author.html#37005">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I used Jim's code which works well.
+
+I would like to make one change: when an error is encountered, I just want
+to print something like &quot;problem on line 45&quot; (and then continue with the
+next line).
+
+Thanks for any help!
+
+On Sun, Nov 29, 2009 at 1:54 PM, Jim Idle &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">jimi at temporal-wave.com</A>&gt; wrote:
+
+&gt;<i>  This is something I need to write a Wiki article on as it comes up a lot
+</I>&gt;<i> and the solutions are not obvious. Basically, you need to prevent the
+</I>&gt;<i> parsing loop from dropping all the way out of the current rule because it
+</I>&gt;<i> finds an error (in your case within the article rule.) You will also find
+</I>&gt;<i> this much easier if rather than trying to accommodate files without a
+</I>&gt;<i> terminating NL, you just always add an NL to the incoming input, then you
+</I>&gt;<i> will not need the trailing article NL? But can have (article NL)* EOF.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> So, when an error occurs in the article rule, it will drop out of that
+</I>&gt;<i> rule, but may not resync, so you want to force the resync to the NL when the
+</I>&gt;<i> article rule returns. This is pretty simple, but requires quite a bit of
+</I>&gt;<i> &#8216;inside&#8217; knowledge of the ANTLR behavior. What you need to do is create a
+</I>&gt;<i> rule with just the epsilon (nothing) alt, and invoke it directly before the
+</I>&gt;<i> article call but more especially directly after it:
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> articleList
+</I>&gt;<i>
+</I>&gt;<i>     : reSync  (article reSync NL)* EOF // Assuming that this is where EOF
+</I>&gt;<i> should be
+</I>&gt;<i>
+</I>&gt;<i>     ;
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Next, in your resSync rule, you want to resync to the follow set that will
+</I>&gt;<i> now be on the stack, which is actually the same as the first set for the
+</I>&gt;<i> following rule (because ruleSync is empty). Here we know that the followSet
+</I>&gt;<i> will only be NL, so you could hard code that, but this is a generally good
+</I>&gt;<i> technique to know, so let&#8217;s use it generically). If you don&#8217;t really
+</I>&gt;<i> understand this, don&#8217;t worry too much, you can just copy the code and empty
+</I>&gt;<i> rule and it will work:
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> reSync
+</I>&gt;<i>
+</I>&gt;<i> @init
+</I>&gt;<i>
+</I>&gt;<i> {
+</I>&gt;<i>
+</I>&gt;<i>     syncToFirstSet(); // Consume tokens until LA(1) is in the followset at
+</I>&gt;<i> the top of the followSet stack
+</I>&gt;<i>
+</I>&gt;<i> }
+</I>&gt;<i>
+</I>&gt;<i> : // Deliberately match nothing, but will be invoked anyway
+</I>&gt;<i>
+</I>&gt;<i> ;
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Then in your superClass (best) or @members, implement the syncToFirstSet
+</I>&gt;<i> method:
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>     protected void syncToFirstSet ()
+</I>&gt;<i>
+</I>&gt;<i>     {
+</I>&gt;<i>
+</I>&gt;<i>         // Compute the followset that is in context where ever we are in
+</I>&gt;<i> the
+</I>&gt;<i>
+</I>&gt;<i>         // rule chain/stack
+</I>&gt;<i>
+</I>&gt;<i>         //
+</I>&gt;<i>
+</I>&gt;<i>          BitSet follow = state.following[state._fsp];
+</I>&gt;<i> //computeContextSensitiveRuleFOLLOW();
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>          syncToFirstSet (follow);
+</I>&gt;<i>
+</I>&gt;<i>     }
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>     protected void syncToFirstSet (BitSet follow)
+</I>&gt;<i>
+</I>&gt;<i>     {
+</I>&gt;<i>
+</I>&gt;<i>         int mark = -1;
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>         try {
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>             mark = input.mark();
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>             // Consume all tokens in the stream until we find a member of
+</I>&gt;<i> the follow
+</I>&gt;<i>
+</I>&gt;<i>             // set, which means the next production should be guarenteed to
+</I>&gt;<i> be happy.
+</I>&gt;<i>
+</I>&gt;<i>             //
+</I>&gt;<i>
+</I>&gt;<i>             while (! follow.member(input.LA(1)) ) {
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>                 if  (input.LA(1) == Token.EOF) {
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>                     // Looks like we didn't find anything at all that can
+</I>&gt;<i> help us here
+</I>&gt;<i>
+</I>&gt;<i>                     // so we need to rewind to where we were and let normal
+</I>&gt;<i> error handling
+</I>&gt;<i>
+</I>&gt;<i>                     // bail out.
+</I>&gt;<i>
+</I>&gt;<i>                     //
+</I>&gt;<i>
+</I>&gt;<i>                     input.rewind();
+</I>&gt;<i>
+</I>&gt;<i>                     mark = -1;
+</I>&gt;<i>
+</I>&gt;<i>                     return;
+</I>&gt;<i>
+</I>&gt;<i>                 }
+</I>&gt;<i>
+</I>&gt;<i>                 input.consume();
+</I>&gt;<i>
+</I>&gt;<i>             }
+</I>&gt;<i>
+</I>&gt;<i>         } catch (Exception e) {
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>           // Just ignore any errors here, we will just let the recognizer
+</I>&gt;<i>
+</I>&gt;<i>           // try to resync as normal - something must be very screwed.
+</I>&gt;<i>
+</I>&gt;<i>           //
+</I>&gt;<i>
+</I>&gt;<i>         }
+</I>&gt;<i>
+</I>&gt;<i>         finally {
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>             // Always release the mark we took
+</I>&gt;<i>
+</I>&gt;<i>             //
+</I>&gt;<i>
+</I>&gt;<i>             if  (mark != -1) {
+</I>&gt;<i>
+</I>&gt;<i>                 input.release(mark);
+</I>&gt;<i>
+</I>&gt;<i>             }
+</I>&gt;<i>
+</I>&gt;<i>         }
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>     }
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> And that&#8217;s it. Every time you mention reSync in a rule, it will resync the
+</I>&gt;<i> input to a member of the current followSet, which will be the first set of
+</I>&gt;<i> the rule that follows reSync in the current production and you will
+</I>&gt;<i> therefore not drop out of the parsing loop, but reenter your article rule.
+</I>&gt;<i> The first invocation is just in case there is junk before the first article
+</I>&gt;<i> starts (depending on how this rule is invoked, you may need to resync before
+</I>&gt;<i> the articleList rule).
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> I will make a wiki article of this soon as it is commonly required and not
+</I>&gt;<i> particularly obvious.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Jim
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> *From:* <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] *On Behalf Of *Rick Schumeyer
+</I>&gt;<i> *Sent:* Saturday, November 28, 2009 5:20 PM
+</I>&gt;<i> *To:* antlr-interest
+</I>&gt;<i> *Subject:* [antlr-interest] How to skip to end of line on error?
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> I've read the section on error reporting and recovery from &quot;the book&quot; but
+</I>&gt;<i> still can't figure out what may be a simple problem.
+</I>&gt;<i>
+</I>&gt;<i> I want to parse a file that consists of bibliographic entries.  Each entry
+</I>&gt;<i> is on one line (so each record ends with \n).
+</I>&gt;<i>
+</I>&gt;<i> If a record does not match, I just want to print an error message, and skip
+</I>&gt;<i> to the end of line and start again with the next record.
+</I>&gt;<i>
+</I>&gt;<i> If I understand chapter 10 correctly, then '\n' should be in the
+</I>&gt;<i> resynchronization set, and the parser will consume tokens until it finds
+</I>&gt;<i> one.
+</I>&gt;<i>
+</I>&gt;<i> This isn't happening.  Once I get an error, the parser never recovers.  I
+</I>&gt;<i> get a bunch of NoViableAlt exceptions.  I'm hoping someone can explain what
+</I>&gt;<i> I'm doing wrong.
+</I>&gt;<i>
+</I>&gt;<i> Here is a sample input file.  The 1st and 3rd lines are ok, the 2nd line is
+</I>&gt;<i> an error.
+</I>&gt;<i>
+</I>&gt;<i> Name. &quot;Title,&quot; Periodical, 2005, v41(3,Oct), 217-240.
+</I>&gt;<i> Name. &quot;Title,&quot; Periodical, 2005, v41(3,Oct), Article 2.
+</I>&gt;<i> Name. &quot;Title,&quot; Periodical, 2005, v41(3,Oct), 217-240.
+</I>&gt;<i>
+</I>&gt;<i> Here is the grammar:
+</I>&gt;<i>
+</I>&gt;<i> grammar Periodical;
+</I>&gt;<i>
+</I>&gt;<i> article_list
+</I>&gt;<i>     :    (article NL)* article NL?
+</I>&gt;<i>     ;
+</I>&gt;<i>
+</I>&gt;<i> article
+</I>&gt;<i>     :    a=authors PERIOD SPACE QUOTE t=title COMMA QUOTE SPACE j=journal
+</I>&gt;<i> COMMA SPACE y=year COMMA SPACE v=volume COMMA SPACE p=pages PERIOD SPACE*
+</I>&gt;<i>     ;
+</I>&gt;<i>
+</I>&gt;<i> authors    :    (~QUOTE)+;
+</I>&gt;<i>
+</I>&gt;<i> title    :    (~QUOTE)+;
+</I>&gt;<i>
+</I>&gt;<i> journal    :    (LETTER|SPACE|COMMA|DASH)+;
+</I>&gt;<i>
+</I>&gt;<i> volume    :    (LETTER|DIGIT)+
+</I>&gt;<i>     |    (LETTER|DIGIT)+ '(' (LETTER|DIGIT|SLASH|COMMA)+ ')'
+</I>&gt;<i>     ;
+</I>&gt;<i>
+</I>&gt;<i> year    :    DIGIT DIGIT DIGIT DIGIT;
+</I>&gt;<i>
+</I>&gt;<i> pages    :    DIGIT+ DASH DIGIT+;
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> PERIOD    :    '.';
+</I>&gt;<i> QUOTE    :    '&quot;';
+</I>&gt;<i> COMMA    :    ',';
+</I>&gt;<i> SPACE    :    ' ';
+</I>&gt;<i> DIGIT    :    '0'..'9';
+</I>&gt;<i> LETTER  :    ('a'..'z')|('A'..'Z');
+</I>&gt;<i> DASH    :    '-';
+</I>&gt;<i> SLASH    :    '/';
+</I>&gt;<i> NL    :    '\r'? '\n';
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe:
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20091210/d68d9a92/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20091210/d68d9a92/attachment.html</A> 
+</PRE>
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="037004.html">[antlr-interest] Increasing heap size for antlr3 task
+</A></li>
+	<LI>Next message: <A HREF="037006.html">[antlr-interest] How to skip to end of line on error?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37005">[ date ]</a>
+              <a href="thread.html#37005">[ thread ]</a>
+              <a href="subject.html#37005">[ subject ]</a>
+              <a href="author.html#37005">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

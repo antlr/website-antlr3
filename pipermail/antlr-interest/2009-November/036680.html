@@ -1,0 +1,177 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Strange bug in ANTLR version higher than 3.1.2
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Strange%20bug%20in%20ANTLR%20version%20higher%20than%203.1.2&In-Reply-To=%3C19187.25736.160174.760498%40swan.talkbank.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="036679.html">
+   <LINK REL="Next"  HREF="036682.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Strange bug in ANTLR version higher than 3.1.2</H1>
+    <B>FranklinChen at cmu.edu</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Strange%20bug%20in%20ANTLR%20version%20higher%20than%203.1.2&In-Reply-To=%3C19187.25736.160174.760498%40swan.talkbank.org%3E"
+       TITLE="[antlr-interest] Strange bug in ANTLR version higher than 3.1.2">FranklinChen at cmu.edu
+       </A><BR>
+    <I>Thu Nov  5 15:49:28 PST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="036679.html">[antlr-interest] Strange bug in ANTLR version higher than 3.1.2
+</A></li>
+        <LI>Next message: <A HREF="036682.html">[antlr-interest] Strange bug in ANTLR version higher than 3.1.2
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36680">[ date ]</a>
+              <a href="thread.html#36680">[ thread ]</a>
+              <a href="subject.html#36680">[ subject ]</a>
+              <a href="author.html#36680">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>&gt;<i> Franklin,
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> So I spent some time debugging your parser and basically the problem
+</I>&gt;<i> is to do with the way you are building the tree (well actually the
+</I>&gt;<i> problem might be the syntax of the language you are parsing, but you
+</I>&gt;<i> probably don't control that ;-). The new tree stream is making some
+</I>&gt;<i> assumptions about the parents of siblings and you have not kept
+</I>&gt;<i> those relationships intact. So, you can traverse down and along the
+</I>&gt;<i> tree but the new stream also looks at parents to see if it needs to
+</I>&gt;<i> add UP nodes in to the stream. You parents are the wrong parents, so
+</I>&gt;<i> it makes the wrong decision. The old stream will work because it
+</I>&gt;<i> doesn't need that information as it has buffered them all at once.
+</I>&gt;<i> 
+</I>&gt;<i> I think that the issue may well be that you are doing this directly
+</I>&gt;<i> on the nodes, and not via the tree adaptor, but the same thing would
+</I>&gt;<i> happen if the tree adaptor does not call setParent() - pretty sure
+</I>&gt;<i> it does though.
+</I>&gt;<i> 
+</I>&gt;<i> So first, here is your grammar rewritten without anything but standard rewrite rules (lexer skipped and compressed for space). You can see that this is somewhat, err... 'simpler' ;-)
+</I>&gt;<i> 
+</I>&gt;<i> start
+</I>&gt;<i>     : tier+ EOF!
+</I>&gt;<i>     ;
+</I>&gt;<i> 
+</I>&gt;<i> tier
+</I>&gt;<i>     : c+=content+ ';' d+=depContent+ '.'
+</I>&gt;<i>         -&gt; ^(TIER ^(WORD $c $d)+ )
+</I>&gt;<i>     ;
+</I>&gt;<i> 
+</I>&gt;<i> content
+</I>&gt;<i>     :   word |   INT
+</I>&gt;<i>     ;
+</I>&gt;<i> 
+</I>&gt;<i> word
+</I>&gt;<i>     : ID
+</I>&gt;<i>     ;
+</I>&gt;<i> 
+</I>&gt;<i> depContent
+</I>&gt;<i>     : i=INT -&gt; ^(PHO $i)
+</I>&gt;<i>     ;
+</I>&gt;<i> 
+</I>&gt;<i> This builds exactly the same tree as you do, but builds it correctly. Your tree parser then walks this perfectly. I would stick with something like this myself and if you need to check cardinality, set a validity flag before the rewrite and rewrite conditionally.
+</I>&gt;<i> 
+</I>&gt;<i> But the other reason for doing this is that if you now look at the generated Java code for the tier rule, you will see how to use the adaptor to add children to nodes, and this ought to preserve the parent child relationships properly. Basically, if you feel that you MUST write the tree yourself, then write a small piece of grammar that does what you want to do, and use the code that ANTLR generates - that way you will get it correct.
+</I>&gt;<i> 
+</I>&gt;<i> So there is no bug in the new TreeNodeStream and you should go back to it.
+</I>&gt;<i> 
+</I>&gt;<i> Cheers,
+</I>&gt;<i> 
+</I>&gt;<i> Jim
+</I>
+Jim,
+
+Unfortunately, the stripped down grammar you propose is completely
+inequivalent to mine (and mine was a stripped down version of the much
+more complicated version in my real program, in which I have multiple
+alternatives and cases and decisions on what type of tree to create).
+
+Here are some test cases for the stripped down test project:
+
+	java -cp $(CLASSPATH) Main 'a b c d ; 0 1 2 3 .' ;
+	java -cp $(CLASSPATH) Main 'a 7 b c d ; 0 1 2 3 .' ;
+	java -cp $(CLASSPATH) Main 'a b c d ; 0 1 2 3 4 .' ;
+	java -cp $(CLASSPATH) Main 'a b c d ; 0 1 2 .'
+
+My original code results in:
+
+tree = (TIER (WORD a (PHO 0)) (WORD b (PHO 1)) (WORD c (PHO 2)) (WORD d (PHO 3)))
+tree = (TIER (WORD a (PHO 0)) 7 (WORD b (PHO 1)) (WORD c (PHO 2)) (WORD d (PHO 3)))
+Ignoring extra pho info 4
+tree = (TIER (WORD a (PHO 0)) (WORD b (PHO 1)) (WORD c (PHO 2)) (WORD d (PHO 3)))
+Main line missing pho info WORD
+tree = (TIER (WORD a (PHO 0)) (WORD b (PHO 1)) (WORD c (PHO 2)) (WORD d))
+ExprTreeParser.g: node from after line 1:6 mismatched tree node: UP expecting PHO
+
+(The last case throws an exception only because, for brevity, I didn't
+do the length mismatch check in the parser that I did with the third
+case; my real program checks for all these things, and throws an
+exception when there is a length mismatch, while deliberately ignoring
+INT in the main line without generating the &quot;Ignoring&quot; message.)
+
+Your code results in:
+
+tree = (TIER (WORD a (PHO 0)) (WORD b (PHO 1)) (WORD c (PHO 2)) (WORD d (PHO 3)))
+Exception in thread &quot;main&quot; org.antlr.runtime.tree.RewriteCardinalityException: token d
+	at org.antlr.runtime.tree.RewriteRuleElementStream._next(RewriteRuleElementStream.java:165)
+	at org.antlr.runtime.tree.RewriteRuleElementStream.nextTree(RewriteRuleElementStream.java:145)
+	at ExprParser.tier(ExprParser.java:278)
+	at ExprParser.start(ExprParser.java:96)
+	at Main.main(Main.java:15)
+Exception in thread &quot;main&quot; org.antlr.runtime.tree.RewriteCardinalityException: token c
+	at org.antlr.runtime.tree.RewriteRuleElementStream._next(RewriteRuleElementStream.java:165)
+	at org.antlr.runtime.tree.RewriteRuleElementStream.nextTree(RewriteRuleElementStream.java:145)
+	at ExprParser.tier(ExprParser.java:277)
+	at ExprParser.start(ExprParser.java:96)
+	at Main.main(Main.java:15)
+Exception in thread &quot;main&quot; org.antlr.runtime.tree.RewriteCardinalityException: token d
+	at org.antlr.runtime.tree.RewriteRuleElementStream._next(RewriteRuleElementStream.java:165)
+	at org.antlr.runtime.tree.RewriteRuleElementStream.nextTree(RewriteRuleElementStream.java:145)
+	at ExprParser.tier(ExprParser.java:278)
+	at ExprParser.start(ExprParser.java:96)
+	at Main.main(Main.java:15)
+
+so it behaves nothing like my production code.
+
+What I need cannot be expressed purely by means of the built-in tree
+rewrites, because of the conditions and alternatives that occur that
+result in considerable tree manipulation to get it into the desired
+&quot;canonical&quot; form that my tree parsers then handle.
+
+So I think the right thing for me to do is to study the generated code
+for rewrites and mimic the use of the adaptor APIs to link up the
+trees correctly.
+
+-- 
+Franklin
+</PRE>
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="036679.html">[antlr-interest] Strange bug in ANTLR version higher than 3.1.2
+</A></li>
+	<LI>Next message: <A HREF="036682.html">[antlr-interest] Strange bug in ANTLR version higher than 3.1.2
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36680">[ date ]</a>
+              <a href="thread.html#36680">[ thread ]</a>
+              <a href="subject.html#36680">[ subject ]</a>
+              <a href="author.html#36680">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

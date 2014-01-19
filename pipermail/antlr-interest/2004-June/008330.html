@@ -1,0 +1,158 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] unicode 16bit versus new 21bit stuff
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20unicode%2016bit%20versus%20new%2021bit%20stuff&In-Reply-To=20040619180933.E272557C004%40h4866.serverkompetenz.net">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="008328.html">
+   <LINK REL="Next"  HREF="008337.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] unicode 16bit versus new 21bit stuff</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20unicode%2016bit%20versus%20new%2021bit%20stuff&In-Reply-To=20040619180933.E272557C004%40h4866.serverkompetenz.net"
+       TITLE="[antlr-interest] unicode 16bit versus new 21bit stuff">parrt at cs.usfca.edu
+       </A><BR>
+    <I>Sat Jun 19 11:42:57 PDT 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="008328.html">[antlr-interest] unicode 16bit versus new 21bit stuff
+</A></li>
+        <LI>Next message: <A HREF="008337.html">[antlr-interest] unicode 16bit versus new 21bit stuff
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#8330">[ date ]</a>
+              <a href="thread.html#8330">[ thread ]</a>
+              <a href="subject.html#8330">[ subject ]</a>
+              <a href="author.html#8330">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+On Jun 19, 2004, at 11:09 AM, Mike Lischke wrote:
+&gt;&gt;<i> I'm secretly planning to allow all sorts of cool stuff like
+</I>&gt;&gt;<i> parsers that can handle single char tokens w/o going to the
+</I>&gt;&gt;<i> lexer and so on.
+</I>&gt;&gt;<i> Having the parser at runtime be able to distinguish char from
+</I>&gt;&gt;<i> token type just by looking at the value was going to be mighty handy.
+</I>&gt;<i>
+</I>&gt;<i> How's that going to work? Will you let the parser take over some of 
+</I>&gt;<i> the lexer functionality? How often do you expect is
+</I>&gt;<i> it that one needs to recognise single character tokens? Isn't it 
+</I>&gt;<i> usually so that entire words are being tokenized? Well,
+</I>&gt;<i> right, there are the symbols used for example in expressions. But then 
+</I>&gt;<i> you'd need a separate path in the parser a la &quot;is
+</I>&gt;<i> it a single char token then use it now, if not ask the lexer what it 
+</I>&gt;<i> really is&quot;. Doesn't sound like a big speed
+</I>&gt;<i> improvement to me
+</I>
+Well, SEMI and LPAREN etc... come to mind, but I guess you're 
+right--I'm not sure how much the parser will be able to optimize out of 
+this.  I do like the channels idea, however. :)
+
+&gt;<i> .What I rather would like is that the lexer would more work so that I 
+</I>&gt;<i> could use tokens with overlapping definitions. For
+</I>&gt;<i> instance currently I have to make
+</I>&gt;<i>
+</I>&gt;<i>   INPUT_CHARACTER: ~('\n' | '\r' | '\u2028' | '\u2029');
+</I>&gt;<i>
+</I>&gt;<i> protected, otherwise it conflicts with almost anything in my grammar. 
+</I>&gt;<i> Currently I cannot define:
+</I>&gt;<i>
+</I>&gt;<i>   DIGIT:           '0'..'9';
+</I>&gt;<i>   HEX_DIGIT:       DIGIT | 'a'..'f';
+</I>&gt;<i>   OCTAL_DIGIT:     '0'..'7';
+</I>&gt;<i> Without making all three rules protected. I think you got the pattern.
+</I>
+The DIGIT isn't a token by itself though is it?  It should be protected.
+
+The LL-star algorithm will gladly predict anything we throw at it now, 
+but at the cost of possibly examining the chars for some token twice in 
+the worst case.  I expect that we will be able to optimize this out in 
+many cases, but the exact algorithm is still being developed as a 
+background process in my head. ;)  It is essentially related to the 
+idea that most lexer rules have no actions and are inherently regular: 
+let the DFA predictor simply set the token type and return w/o ever 
+calling the rule.  For example, if you have INT and FLOAT as tokens but 
+both have no actions and are clearly regular (no recursion), the DFA 
+predictor would match either and then immediately return the token w/o 
+calling method mINT() or mFLOAT().  In summary, it builds a DFA like 
+all other scanner generators like flex unless you happen to stick an 
+action in the middle of a rule or you use recursion in the lexer.  So, 
+we get the speed *and* power. :)  Woohoo!
+
+&gt;<i> I think ANTLR is pretty damn fast and going 64 bit wouldn't hurt that 
+</I>&gt;<i> much (can't speak for C++, though). I believe you
+</I>&gt;<i> will much more gain than you loose when going that route.
+</I>
+I should look at the bytecodes for a simple lexer to see what long vs 
+int looks like.
+
+&gt;&gt;<i> Too bad I don't have #define or a typename I could use so the
+</I>&gt;&gt;<i> actual type could be changed later.  Would be nice to see
+</I>&gt;&gt;<i> LabelType instead of int.
+</I>&gt;<i>
+</I>&gt;<i> This would make a decision much easier, indeed. And neither generics 
+</I>&gt;<i> nor wrapper classes would help, so even in the
+</I>&gt;<i> future there seem to be no alternatives.
+</I>
+Oh well.  Every language has it's issues. ;)
+
+PS: The level 1 (just lex/parse, no trees etc...) code generator for 
+ANTLR 3.0 is going extremely well.  Literally every single character of 
+output for the java code generator is in a template file.  The code 
+generator has absolutely no idea what language it is generating.  Swap 
+out the template file with another and you will generate a different 
+language. :)  I'm probably going to do LISP next just to see how far I 
+can stretch this concept. ;)
+
+Ter
+--
+CS Professor &amp; Grad Director, University of San Francisco
+Creator, ANTLR Parser Generator, <A HREF="http://www.antlr.org">http://www.antlr.org</A>
+Cofounder, <A HREF="http://www.jguru.com">http://www.jguru.com</A>
+Cofounder, <A HREF="http://www.knowspam.net">http://www.knowspam.net</A> enjoy email again!
+Cofounder, <A HREF="http://www.peerscope.com">http://www.peerscope.com</A> pure link sharing
+
+
+
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+     <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+     <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+     <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="008328.html">[antlr-interest] unicode 16bit versus new 21bit stuff
+</A></li>
+	<LI>Next message: <A HREF="008337.html">[antlr-interest] unicode 16bit versus new 21bit stuff
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#8330">[ date ]</a>
+              <a href="thread.html#8330">[ thread ]</a>
+              <a href="subject.html#8330">[ subject ]</a>
+              <a href="author.html#8330">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

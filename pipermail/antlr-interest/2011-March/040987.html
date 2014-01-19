@@ -1,0 +1,180 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Template rewriting: processing lists of things	(possible bug?)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Template%20rewriting%3A%20processing%20lists%20of%20things%0A%09%28possible%20bug%3F%29&In-Reply-To=%3CE1PvTBD-0005eB-2W%40mouse.home.xrad.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="040998.html">
+   <LINK REL="Next"  HREF="040990.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Template rewriting: processing lists of things	(possible bug?)</H1>
+    <B>Conrad Hughes</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Template%20rewriting%3A%20processing%20lists%20of%20things%0A%09%28possible%20bug%3F%29&In-Reply-To=%3CE1PvTBD-0005eB-2W%40mouse.home.xrad.org%3E"
+       TITLE="[antlr-interest] Template rewriting: processing lists of things	(possible bug?)">antlr at xrad.org
+       </A><BR>
+    <I>Fri Mar  4 03:28:18 PST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="040998.html">[antlr-interest] [SPAM] Re: Syntax ambiguity?
+</A></li>
+        <LI>Next message: <A HREF="040990.html">[antlr-interest] Template rewriting: processing lists of things	(possible bug?)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40987">[ date ]</a>
+              <a href="thread.html#40987">[ thread ]</a>
+              <a href="subject.html#40987">[ subject ]</a>
+              <a href="author.html#40987">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+Dear all,
+
+I'm using ANTLR 3.3.  In a template rewriting grammar, structures like
+
+  rule: l+=otherRule+
+
+create a list of nulls in $l if otherRule isn't a template rewrite.
+This seems undesirable behaviour since I'd've thought that unrewritten
+rules should just appear in $l as their original text?  Am I doing
+something wrong, is it correct behaviour (in which case, is there an
+explanation as to why it's correct please?) or is it a bug?
+
+Below is a grammar playing around with this; to clearly separate
+behaviour, I treat lower case words as tokens, rewrite upper case words
+and don't rewrite numbers.  I then play with collections of all three.
+My sample input is:
+
+  hi there
+  123 456
+  THIRD LIST
+  ; mixture 07 THINGS
+  ; MY 2 mixture
+  ; version 3 MIXTURE
+
+After the three &quot;pure&quot; collections, I try mixing them up.  I've come up
+with two ways of rewriting a list containing a mixture of rules,
+rewrites and tokens (I know ANTLR refuses to mix tokens and rules in its
+own lists):
+
+  - one (mix) is to insert a new rule (mixItem) which turns everything
+    in the mixture into a template (which seems like a lot of work ---
+    is there a templating shorthand for rewriting a rule to its
+    identical self?);
+  - another (hackMix) is to manually build the list using rule.text to
+    work around the rules-turn-into-nulls problem.
+  - I also sketch an &quot;idealMix&quot; rule which doesn't work.
+
+Is there a version of idealMix which does work and is less messy than
+mix or hackMix please?
+
+Any suggestions gratefully received...
+Conrad
+
+grammar PlusEquals;
+
+options {
+  output = template;
+  rewrite = true;
+}
+
+file    : tokeNs rules rewrites ';' mix ';' hackMix ';' idealMix ;
+
+// To collect some tokens, you need &lt;it.text&gt;.  input -&gt; output:
+//    hi there -&gt; Tokens (2): [&quot;hi&quot;, &quot;there&quot;]
+tokeNs  : (w+=TOKEN)+
+          -&gt; template(w={$w})
+             &quot;Tokens (&lt;length(w)&gt;): [&lt;w:{\&quot;&lt;it.text&gt;\&quot;};separator={, }&gt;]&quot;
+        ;
+
+TOKEN   : ('a'..'z')+ ;
+
+// You can't collect rules: $w contains a list of nulls.  input -&gt; output:
+//   123 456 -&gt; Rules (2): []
+rules   : (w+=rule)+
+          -&gt; template(w={$w})
+             &quot;Rules (&lt;length(w)&gt;): [&lt;w:{\&quot;&lt;it&gt;\&quot;};separator={, }&gt;]&quot;
+        ;
+
+rule    : NUMBER ;
+NUMBER  : ('0'..'9')+ ;
+
+// To collect rewrites, you just use &lt;it&gt; directly.  input -&gt; output:
+//   THIRD LIST -&gt; Rewrites (2): [&quot;THIRD&quot;, &quot;LIST&quot;]
+rewrites: (w+=rewrite)+
+          -&gt; template(w={$w})
+             &quot;Rewrites (&lt;length(w)&gt;): [&lt;w:{&lt;it&gt;};separator={, }&gt;]&quot;
+        ;
+
+rewrite : CAPS -&gt; template(w={$text}) &quot;\&quot;&lt;w&gt;\&quot;&quot; ;
+CAPS    : ('A'..'Z')+ ;
+
+// Because rules don't seem to accumulate right, turn everything into rewrites:
+//   mixture 07 THINGS -&gt;
+//     Mixture (3): [Token:&quot;mixture&quot;, Rule:&quot;07&quot;, Rewrite:&quot;THINGS&quot;]
+mix     : (w+=mixItem)+
+          -&gt; template(w={$w})
+             &quot;Mixture (&lt;length(w)&gt;): [&lt;w:{&lt;it&gt;};separator={, }&gt;]&quot;
+        ;
+
+mixItem : rule -&gt; template(w={$text}) &quot;Rule:\&quot;&lt;w&gt;\&quot;&quot;
+        | rewrite -&gt; template(w={$text}) &quot;Rewrite:&lt;w&gt;&quot;
+        | TOKEN -&gt; template(w={$text}) &quot;Token:\&quot;&lt;w&gt;\&quot;&quot;
+        ;
+
+// Build list manually; possible to avoid creating hackMixItem?
+//   My 2 mixture -&gt; Hacky mixture (3): [&quot;MY&quot;, 2, mixture]
+hackMix returns [List w = new ArrayList()]: (hackMixItem { $w.add($hackMixItem.text); })+
+          -&gt; template(w={$w})
+             &quot;Hacky mixture (&lt;length(w)&gt;): [&lt;w:{&lt;it&gt;};separator={, }&gt;]&quot;
+        ;
+
+hackMixItem : rule | rewrite | TOKEN ;
+
+// Doesn't work; no idea whether anything like it could.
+//   version 3 MIXTURE -&gt; Ideal mix (0): []
+// I know ANTLR stops you from mixing tokens and rules in one list anyway.
+idealMix : (w+=(rule | rewrite | TOKEN))+
+          -&gt; template(w={$w})
+             &quot;Ideal mix (&lt;length(w)&gt;): [&lt;w:{&lt;it&gt;};separator={, }&gt;]&quot;
+        ;
+
+WS      : (' '|'\t'|'\n')+ {$channel=HIDDEN;} ;
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="040998.html">[antlr-interest] [SPAM] Re: Syntax ambiguity?
+</A></li>
+	<LI>Next message: <A HREF="040990.html">[antlr-interest] Template rewriting: processing lists of things	(possible bug?)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40987">[ date ]</a>
+              <a href="thread.html#40987">[ thread ]</a>
+              <a href="subject.html#40987">[ subject ]</a>
+              <a href="author.html#40987">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

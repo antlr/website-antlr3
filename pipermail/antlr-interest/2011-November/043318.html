@@ -1,0 +1,259 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] [C] my v3 Parser no reuse() slower 20% than v2. With reuse() 2GB leaks, oops.
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5BC%5D%20my%20v3%20Parser%20no%20reuse%28%29%20slower%2020%25%20than%0A%20v2.%20With%20reuse%28%29%202GB%20leaks%2C%20oops.&In-Reply-To=%3C79bfbf735339a1006cb5ed69c62b816d%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="043316.html">
+   <LINK REL="Next"  HREF="043319.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] [C] my v3 Parser no reuse() slower 20% than v2. With reuse() 2GB leaks, oops.</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5BC%5D%20my%20v3%20Parser%20no%20reuse%28%29%20slower%2020%25%20than%0A%20v2.%20With%20reuse%28%29%202GB%20leaks%2C%20oops.&In-Reply-To=%3C79bfbf735339a1006cb5ed69c62b816d%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] [C] my v3 Parser no reuse() slower 20% than v2. With reuse() 2GB leaks, oops.">jimi at temporal-wave.com
+       </A><BR>
+    <I>Wed Nov 16 08:00:25 PST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="043316.html">[antlr-interest] [C] my v3 Parser no reuse() slower 20% than v2. With reuse() 2GB leaks, oops.
+</A></li>
+        <LI>Next message: <A HREF="043319.html">[antlr-interest] [C] my v3 Parser no reuse() slower 20% than v2. With reuse() 2GB leaks, oops.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#43318">[ date ]</a>
+              <a href="thread.html#43318">[ thread ]</a>
+              <a href="subject.html#43318">[ subject ]</a>
+              <a href="author.html#43318">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>[C] my v3 Parser no reuse() slower 20% than v2. With reuse() 2GB leaks,
+oops.
+
+Do not use the $text annotations if you want performance, they are purely
+for convenience &#8211; I must have said this 5000 times and I wish I had never
+added that bit ;) I also told you 3 or 4 times in various emails not to use
+it. I think that that is in the API docs somewhere, but I should make sure
+that it is, if it is not.
+
+
+There is no memory leak, but the auto string stuff does not release until
+you free the string factory, which only happens when you free the parser,
+not when you reuse it. Because it allocates small strings all the time, it
+kills performance, and then you will page.
+
+
+
+xxx: s=HEX_NUMBER { $s.type = CONST_STR_HEX; } ;
+
+
+
+I think that the field name is type but you get the idea. Don&#8217;t use the
+fake object oriented stuff when you want performance, use the structs
+directly &#8211; you will find that it is many times faster than the v2 C++, not
+slower &#8211; this is C and you should get as close to the metal as you can.
+
+
+
+I think that I will make some time for performance in v3, but moving the
+token interface out of each individual token and so on &#8211; originally I could
+not predict what people wanted to do, but I don&#8217;t see anyone overriding
+anything to do with tokens on an individual basis for instance and that
+eats memory and so on.
+
+
+
+Jim
+
+
+
+*From:* Ruslan Zasukhin [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">ruslan_zasukhin at valentina-db.com</A>]
+*Sent:* Wednesday, November 16, 2011 2:46 AM
+*To:* <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>; Jim Idle
+*Subject:* [C] my v3 Parser no reuse() slower 20% than v2. With reuse() 2GB
+leaks, oops.
+
+
+
+Hi Jim,
+
+I have spent 2 days running around this, and now I am ready describe what I
+see, to get your help, and it seems exists bug/leaks in reuse() area. Or I
+not correctly use it, but I do as you described in single letter 3 months
+ago.
+
+So ... Long story :-)
+
+* I have simple bench that do 100K INSERT commands.
+
+    v2 parser do this in 19 seconds.
+    v3 parser no reuse do this in 24 seconds.
+
+OF COURSE we must expect speedup if to reuse lexer/parser.
+
+So I have design code to be able easy switch between these 2 ways.
+And when I try go with reuse I get comparable speed by 2GB of RAM eaten.
+
+=====================================
+* Using Apple XCODE 4.2 Instruments, I see what is going on.
+
+   this is not leaks actually, just parser always allocate and allocate
+    ANTLR_STRING objects, in parser and tree-parser rules which use
+
+            $c.text
+
+
+=====================================
+FOR EXAMPLE:
+
+* I did have in the parser rule:
+
+    hex_string_literal
+        :    s = HEX_NUMBER     -&gt; CONST_STR_HEX[$s.text-&gt;chars]
+        ;
+
+ZERO my own code here. Right?
+And I see that $s.text    in C code expanded to getText() allocates and
+allocates ...
+So it is never reused as I understand.
+
+
+
+=====================================
+BTW
+
+When I have to see that get_Text() is used, and I remember you told avoid
+this,
+I have jump to sources and have come to  idea:
+
+    why here to create new token, I need getText() ??
+    May be I can just change token type as the following:
+
+hex_string_literal
+    :    s = HEX_NUMBER  { $s-&gt;setType( $s, CONST_STR_HEX ); }
+    ;
+
+And it seems this works fine....
+
+I have correct few rules in such way in the parser....
+But Tree Parser  still have for example this:
+
+general_literal returns [ENode_Const_Ptr res]
+    : cd=CONST_DATE {res=make_enode_date ( GET_FBL_STRING( $cd.text) );}
+    | ct=CONST_TIME {res=make_enode_time ( GET_FBL_STRING( $ct.text) );}
+    | s=const_str   {res=make_enode_str  ( GET_FBL_STRING( $s.text ) );}
+    ;
+
+All these  $c.text  calls getText() -- this makes COPY of string buffer,
+Then I convert into our own FBL_String...
+
+PROBLEM 1:  this ANTLR STRINGs produced by get_Text()  never are reused as
+I see.
+
+PROBLEM 2:  related to speed also &#8212; how we can avoid here make copy of
+string?
+     in sources I see that exists code as
+
+    return ((pANTLR3_COMMON_TREE)(tree-&gt;super))-&gt;token-&gt;getText(
+                           ((pANTLR3_COMMON_TREE)(tree-&gt;super))-&gt;token);
+
+
+May be something can be optimized/hacked here?
+For example may be I can write own func, which check what token have
+  char* or ANTLR_String, and choose way ...
+
+But what syntax come to token in the .g?
+I can do own macro of course ...
+Just I want get some feedback if this can be a good idea for all?
+
+
+=====================================
+And this is how I try reuse Lexer/Parser and NOT TreeParser.
+All follow to your letter Jim:
+
+void SqlParser_v3::ResuseParserObjects(
+    const char*        inTextToParse,
+    vuint32            inLength )
+{
+    // -------------------------------
+   // TREE PARSER cannot be reused. Destroy it.
+   //
+   if( mpTreeParser )
+    {
+        mpTreeParser-&gt;free( mpTreeParser );
+        mpTreeParser = NULL;
+    }
+
+    if( mpNodes )
+    {
+        mpNodes-&gt;free( mpNodes );
+        mpNodes = NULL;
+    }
+
+
+    // -------------------------------
+   // Reuse other objects
+   //
+   mpInput-&gt;reuse(
+        mpInput,
+        (pANTLR3_UINT8) inTextToParse,
+        (ANTLR3_UINT32) inLength,
+        (pANTLR3_UINT8) &quot;VSQL&quot; );
+
+    mpTokenStream-&gt;reset( mpTokenStream );
+    mpLexer         -&gt;reset( mpLexer );
+    mpParser     -&gt;reset( mpParser );
+
+    ResetOwnData( mpParser );
+}
+
+
+
+
+
+-- 
+Best regards,
+
+Ruslan Zasukhin
+VP Engineering and New Technology
+Paradigma Software, Inc
+
+Valentina - Joining Worlds of Information
+<A HREF="http://www.paradigmasoft.com">http://www.paradigmasoft.com</A>
+
+[I feel the need: the need for speed]
+</PRE>
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="043316.html">[antlr-interest] [C] my v3 Parser no reuse() slower 20% than v2. With reuse() 2GB leaks, oops.
+</A></li>
+	<LI>Next message: <A HREF="043319.html">[antlr-interest] [C] my v3 Parser no reuse() slower 20% than v2. With reuse() 2GB leaks, oops.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#43318">[ date ]</a>
+              <a href="thread.html#43318">[ thread ]</a>
+              <a href="subject.html#43318">[ subject ]</a>
+              <a href="author.html#43318">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

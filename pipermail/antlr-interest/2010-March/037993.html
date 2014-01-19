@@ -1,0 +1,183 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Issues with conditional tree rewrites
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Issues%20with%20conditional%20tree%20rewrites&In-Reply-To=%3C4BA27F4D.4050106%40the-olsons.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="037990.html">
+   <LINK REL="Next"  HREF="037994.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Issues with conditional tree rewrites</H1>
+    <B>Mike Olson</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Issues%20with%20conditional%20tree%20rewrites&In-Reply-To=%3C4BA27F4D.4050106%40the-olsons.net%3E"
+       TITLE="[antlr-interest] Issues with conditional tree rewrites">molson at the-olsons.net
+       </A><BR>
+    <I>Thu Mar 18 12:30:21 PDT 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="037990.html">[antlr-interest] ANTLR seems to be incorrectly generating a lexer
+</A></li>
+        <LI>Next message: <A HREF="037994.html">[antlr-interest] Issues with conditional tree rewrites
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37993">[ date ]</a>
+              <a href="thread.html#37993">[ thread ]</a>
+              <a href="subject.html#37993">[ subject ]</a>
+              <a href="author.html#37993">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello,
+
+ I'm trying to rewrite an AST into a tree of my own object types (using 
+TOKEN&lt;MyClassName&gt;) and long they way do some semantic validation.
+
+ I was having great luck until I ran into this issue...which I think my 
+be a bug.
+
+ I have an incoming Tree that looks like this:
+
+10(COLLECTION_LITERAL) 'Sequence'
+ 53(IMPLICIT_VARIABLE_REFERENCE) 'self'
+ 37(BOOLEAN_LITERAL) 'true'
+
+This is my own little dump routine, what it is saying is I have a Token 
+(of type COLLECTION_LITERAL) called &quot;Sequence, with 2 children an 
+IMPLICIT_VARIABLE_REFERENCE called self and a BOOLEAN_LITERAL called 
+'true'.
+
+I'm using the following rewrite rule to handle this:
+
+   | ^(c=COLLECTION_LITERAL (e=exp)* )
+               -&gt; ^(EXPRESSION&lt;CollectionLiteralAst&gt;[$c.token,$c.text] $e*)
+
+My result is:
+
+10(COLLECTION_LITERAL) 'Collection[Sequence]'
+   37(BOOLEAN_LITERAL) 'Boolean'
+
+only the last of the original &quot;exp&quot;s is added to the new tree.
+
+Because I own the class &quot;CollectionLiteralAst&quot; I overrode the &quot;addChild&quot; 
+method to dump all calls to addChild, here is what I see when this 
+production is matched:
+
+&quot;&quot;&quot;
+Adding Child: nil as class CommonTree
+Post Add Count: 0
+Adding Child: Boolean as class BooleanLiteralAst
+Post Add Count: 1
+&quot;&quot;&quot;
+
+ From this, I see that addChild is called once with &quot;nil&quot;, but that 
+happens every time a sub tree is created (from what I can tell) and once 
+for the &quot;second&quot; child in the original tree...
+
+Just a note, when I test it with only 1 child it works fine.  When I 
+test it with 3 children, only the last child is added.
+
+I started looking into the generated code....once I got through the 
+&quot;matching&quot; logic, I see the rewrite logic
+
+&quot;&quot;&quot;
+                       // parser\\My.g:101:20: ^( 
+EXPRESSION[$c.token,$c.text] ( $e)* )
+                       {
+                       CommonTree root_1 = (CommonTree)adaptor.nil();
+                       root_1 = (CommonTree)adaptor.becomeRoot(new 
+CollectionLiteralAst(EXPRESSION, c.token, (c!=null?c.getText():null)), 
+root_1);
+
+                       // parser\\MyAst.g:101:77: ( $e)*
+                       while ( stream_e.hasNext() ) {
+                           adaptor.addChild(root_1, stream_e.nextTree());
+
+                       }
+                       stream_e.reset();
+
+                       adaptor.addChild(root_0, root_1);
+                       }
+&quot;&quot;&quot;
+
+I have stepped through the logic in  a debugger and &quot;stream_e.hasNext()&quot; 
+only returns true the first time and &quot;e.nextTree()&quot; always returns the 
+last of the children.
+
+I then started looking above this in the generated code to see where 
+&quot;stream_e&quot; comes from and found...
+
+&quot;&quot;&quot;
+                   RewriteRuleSubtreeStream stream_e=new 
+RewriteRuleSubtreeStream(adaptor,&quot;rule e&quot;,e!=null?e.tree:null);
+&quot;&quot;&quot;
+
+It looks like it is initialized from the value of &quot;e.tree&quot;....so here 
+did that come from...a bit farther up and we see
+
+&quot;&quot;&quot;
+                       do {
+
+///I CUT OUT A BUNCH OF STUFF HERE
+
+                           switch (alt3) {
+                           case 1 :
+                               _last = (CommonTree)input.LT(1);
+                               
+pushFollow(FOLLOW_exp_in_literalExpression472);
+                               e=exp();
+
+                           default :
+                               break loop3;
+                           }
+                       } while (true);
+&quot;&quot;&quot;
+
+ From this, it looks like that as it is trying to &quot;match&quot; my expression, 
+&quot;e&quot; is set to every (rewritten) child in the source tree.  Once this 
+loop ends, e is set to the last child...this explains why stream_e 
+always returns only one result.
+
+It would seem to me that this is a very common operation, I googled 
+around a bit but could not find a related issue.
+
+Please let me know if there are any know work arounds, or if I am just 
+way off my rocker.
+
+Thanks
+Mike
+
+-- 
+Mike Olson
+
+</PRE>
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="037990.html">[antlr-interest] ANTLR seems to be incorrectly generating a lexer
+</A></li>
+	<LI>Next message: <A HREF="037994.html">[antlr-interest] Issues with conditional tree rewrites
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37993">[ date ]</a>
+              <a href="thread.html#37993">[ thread ]</a>
+              <a href="subject.html#37993">[ subject ]</a>
+              <a href="author.html#37993">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

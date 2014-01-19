@@ -1,0 +1,174 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Jazillian C to Java translator
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Jazillian%20C%20to%20Java%20translator&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="014822.html">
+   <LINK REL="Next"  HREF="014827.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Jazillian C to Java translator</H1>
+    <B>Andy Tripp</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Jazillian%20C%20to%20Java%20translator&In-Reply-To="
+       TITLE="[antlr-interest] Jazillian C to Java translator">atripp at jazillian.com
+       </A><BR>
+    <I>Fri Dec 16 06:15:47 PST 2005</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="014822.html">[antlr-interest] ANTLRWorks hiccup?
+</A></li>
+        <LI>Next message: <A HREF="014827.html">[antlr-interest] Jazillian C to Java translator
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#14826">[ date ]</a>
+              <a href="thread.html#14826">[ thread ]</a>
+              <a href="subject.html#14826">[ subject ]</a>
+              <a href="author.html#14826">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi guys,
+
+Thanks for your interest in Jazillian.
+This page: <A HREF="http://www.jazillian.com/does.html">http://www.jazillian.com/does.html</A> gives a flavor for what it 
+does, at a high level.
+This page: <A HREF="http://www.jazillian.com/how.html">http://www.jazillian.com/how.html</A> gives a fairly complete 
+list of the various transformation
+rules.
+
+As for a design/implementation document, I don't have a complete one yet 
+so I'll try to explain a bit here.
+I apply a series of about 150 transformation rules. Each rule consists 
+of a match() method that
+does a pattern match, and an apply() with does the transformation. For 
+example, the PrintfRule.match()
+method just looks for a &quot;printf&quot; token, and the PrintfRule.apply() 
+method replaces all the tokens in the
+printf statement with tokens for an equivalent Java System.out.println() 
+call.
+
+I have a full class hierarchy of rules. At the top are various abstract 
+classes, but also things like
+FileRenameRule, which just renames files to match Java naming 
+conventions. At the bottom of the
+rule hierarchy are things like SnippetsRule, which reads a file 
+containing simple text transformation rules like:
+
+NULL --&gt; 0   // replace NULL with 0
+unsigned --&gt;         // Java has no unsigned keyword, just delete it
+v1 = sizeof v2 / sizeof (char *); --&gt; v1 = v2.length;  // just one of 
+many ways to get string length in C
+
+Note that the pattern matcher allows placeholders such as &quot;v1&quot; and &quot;v2&quot; 
+above, for which any variable
+can be matched. There is also an &quot;x&quot; placeholder which will match anything:
+if (false) { x } --&gt;      // just delete any code that will never get used.
+
+In addition to the 150 rules written in Java, there are hundreds of 
+these simple pattern-match-and-replace rules.
+All of this is done with streams of tokens on a set of C files. I have 
+built a library of various functions for
+working with these token streams for:
+
+matching patterns and doing replacements, inserts, deletes, moves
+symbol table stuff: finding variable declarations, types, references, etc.
+All the stuff I would have gotten for free if I where doing the 
+traditional tree-transform approach: function scopes,
+ start and end of variables and statements, etc
+
+I did pay a heavy price to implement my transformations on token streams 
+rather than ASTs, but I am still happy
+with the result. For example, I have an elaborate isDeclaration() method 
+that tries to figure out if a given token is
+a variable or function declaration by examining nearby tokens. The 
+payoff is that I can simply write hundreds of
+rules like the ones above without having to think about ASTs.
+
+My GotoRemoverRule is just an implementation of one of the well-known 
+goto removal algorithms, adopted to use
+my library of token-stream functions. I handle preprocessor stuff by 
+cheating: I've added rules to Monty's
+cgram grammar to handle cpp constructs, but only when they appear where 
+people usually put them. In this way,
+I can be smart and make the same changes a human would do (as opposed to 
+forcing a user to run cpp before running
+Jazillian). So I can make changes like:
+#define X 1    becomes   public final static int X = 1;
+#define f(x) x+1   becomes  static int f(int x) { return x+1}
+
+(This sharp crowd is now shaking their collective head. &quot;How do you even 
+know that x is an int? This
+macro works on any type!&quot; Answer: I looked at every reference of x. &quot;But 
+what if you weren't so lucky
+and  you need a &quot;float&quot; version of f? Answer: I'm doing the best I can. 
+I either handle that today, or
+will get to it soon :)
+
+C structs, unions, and enums become their own Java classes. I generate 
+Java 1.4 code - not generating
+any 1.5 stuff (like enums) yet. I do no magical &quot;make it object 
+oriented&quot; tricks: each C file becomes a Java
+class. And I generate the code that a human would generate. For example:
+printf(&quot;i=%d  s=%s\n&quot;);   becomes System.out.println(&quot;i=&quot; + i + &quot; s=&quot; + s);
+(i.e. I see that you're ending with a newline, and so calling println. I 
+will never generate a Java printf call.
+That would work, but it's not what a real person would do).
+
+Pointers are the toughest issue. I basically analyze all pointer usage, 
+looking for the three most common
+usages of pointers:
+As an array index (in which case, I change the pointer to a Java int, 
+and make the pointee an array
+As some sort of pointer-based data structure (linked list, tree, 
+whatever), which requires just minor syntax changes
+As a way of doing pass-by-reference
+
+I use ANTLR for all C lexing. The only place I use ANTLR for parsing and 
+AST generation is for handling
+expressions. Java's boolean type is required in certain places, where C 
+programs use an int because
+there's no built-in boolean type. So when we have &quot;if (x)&quot;, I really 
+have no choice other than to go ahead
+and build an AST from &quot;x&quot; (which could be a large, complex expression), 
+and then walk thru the AST
+replacing various &quot;int&quot; nodes with &quot;boolean&quot; ones.
+
+I guess that's it off the top of my head. I'll be happy to give more 
+specifics if you have questions.
+I'm currently working on a C++ version. I'm proud still have much of my 
+sanity left after trying to map
+templates to generics. That's not to say that I'm ever going to get it 
+to work, but I see keeping my sanity
+as a big plus :)
+
+Andy
+</PRE>
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="014822.html">[antlr-interest] ANTLRWorks hiccup?
+</A></li>
+	<LI>Next message: <A HREF="014827.html">[antlr-interest] Jazillian C to Java translator
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#14826">[ date ]</a>
+              <a href="thread.html#14826">[ thread ]</a>
+              <a href="subject.html#14826">[ subject ]</a>
+              <a href="author.html#14826">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

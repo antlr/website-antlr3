@@ -1,0 +1,175 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Disabling recovery during parsing
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Disabling%20recovery%20during%20parsing&In-Reply-To=%3CF7935B16-0E5A-4A4B-BB3E-E42F816569E9%40cs.usfca.edu%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="025648.html">
+   <LINK REL="Next"  HREF="025650.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Disabling recovery during parsing</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Disabling%20recovery%20during%20parsing&In-Reply-To=%3CF7935B16-0E5A-4A4B-BB3E-E42F816569E9%40cs.usfca.edu%3E"
+       TITLE="[antlr-interest] Disabling recovery during parsing">parrt at cs.usfca.edu
+       </A><BR>
+    <I>Thu Jan 10 13:32:45 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="025648.html">[antlr-interest] CN=Tim Hilgenberg/OU=National/O=Hewitt Associates is out of the office.
+</A></li>
+        <LI>Next message: <A HREF="025650.html">[antlr-interest] added a FAQ entry on making the lexer exit upon	first lexical error
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25649">[ date ]</a>
+              <a href="thread.html#25649">[ thread ]</a>
+              <a href="subject.html#25649">[ subject ]</a>
+              <a href="author.html#25649">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+On Nov 8, 2007, at 2:42 PM, Curtis Clauson wrote:
+
+&gt;<i> The entire error recovery and reporting systems are not  
+</I>&gt;<i> appropriately documented, and your frustration is well understood.
+</I>&gt;<i>
+</I>&gt;<i> Both the lexer and parser handle error recovery similarly, but with  
+</I>&gt;<i> different method calls.
+</I>&gt;<i>
+</I>&gt;<i> The lexer will call
+</I>&gt;<i>  recover(re)
+</I>&gt;<i> before it throws a RecognitionException, which consumes the  
+</I>&gt;<i> unexpected character. The top
+</I>&gt;<i>  nextToken()
+</I>&gt;<i> method has a hard-coded exception handler that catches the  
+</I>&gt;<i> RecognitionException, reports the error, and calls recover(re) again  
+</I>&gt;<i> (a bug in my opinion).
+</I>
+Excellent catch, Curtis.  Fixed by only consuming if not consume  
+previously:
+
+			catch (NoViableAltException nva) {
+				reportError(nva);
+				recover(nva); // throw out current char and try again
+			}
+			catch (RecognitionException re) {
+				reportError(re);
+				// match() routine has already called recover()
+			}
+
+fixed:
+
+<A HREF="http://www.antlr.org:8888/browse/ANTLR-209">http://www.antlr.org:8888/browse/ANTLR-209</A>
+
+
+&gt;<i> One important, and also undocumented, note: CommonTokenStream will  
+</I>&gt;<i> lex the *entire* stream into tokens on the first token fetch. This  
+</I>&gt;<i> means the lexer will process and display all errors before the  
+</I>&gt;<i> parser processes the first token. So much for context.
+</I>
+Ah. I thought I had an unbuffered token buf; somebody else might have  
+sent one to list.  Anyhoo, i only have UnBufferedTreeNodeStream at the  
+moment.
+
+&gt;<i> When the parser fails to match a token, it calls
+</I>&gt;<i>  mismatch(...)
+</I>&gt;<i> which creates the exception object and then calls
+</I>&gt;<i>  recoverFromMismatchedToken(...)
+</I>&gt;<i> This method looks ahead at the next token and if it matches, reports  
+</I>&gt;<i> the error, skips the unexpected token, and returns a successful  
+</I>&gt;<i> match. If it does not match, it calls
+</I>&gt;<i>  recoverFromMismatchedElement(...)
+</I>&gt;<i> This method tests if the unexpected token could follow the expected  
+</I>&gt;<i> token. If so, it will report the error, and return a successful  
+</I>&gt;<i> match (acting as if the missing token were found). If not, the  
+</I>&gt;<i> exception object is finally thrown.
+</I>&gt;<i>
+</I>&gt;<i> If you have not created your own rule exception handler in the  
+</I>&gt;<i> grammar, or configured the default exception handlers with  
+</I>&gt;<i> @rulecatch {}, then the exception will be caught by the default rule  
+</I>&gt;<i> exception handler, which will call
+</I>&gt;<i>  reportError(re)
+</I>&gt;<i>  recover(input, re)
+</I>&gt;<i>
+</I>&gt;<i> The recover(...) method in the parser will try to consume tokens  
+</I>&gt;<i> until one is found that allows it to resynchronize and continue  
+</I>&gt;<i> parsing the rest of the tokens.
+</I>&gt;<i>
+</I>&gt;<i> To change how recovery is handled in the parser, override
+</I>&gt;<i>  recoverFromMismatchedToken(...)
+</I>&gt;<i>  recoverFromMismatchedElement(...)
+</I>&gt;<i> to change those strategies, or override
+</I>&gt;<i>  mismatch(...)
+</I>&gt;<i> to change the whole before-exception response.
+</I>&gt;<i> To change how recovery is done in response to the RecoveryException,  
+</I>&gt;<i> configure or provide a different either default or per-rule  
+</I>&gt;<i> exception handler in the grammar, or override
+</I>&gt;<i>  reportError(re)
+</I>&gt;<i>  recover(input, re)
+</I>&gt;<i> in the parser.
+</I>&gt;<i>
+</I>&gt;<i> I had to spelunk the source to find all of this, since these  
+</I>&gt;<i> questions never get answered. I has worked for me so far.
+</I>
+Thanks for digging around in there.  code is doc ;)  Also, i'm pretty  
+sure a lot of this is covered in book on how to override error message  
+etc...
+
+Ter
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="025648.html">[antlr-interest] CN=Tim Hilgenberg/OU=National/O=Hewitt Associates is out of the office.
+</A></li>
+	<LI>Next message: <A HREF="025650.html">[antlr-interest] added a FAQ entry on making the lexer exit upon	first lexical error
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25649">[ date ]</a>
+              <a href="thread.html#25649">[ thread ]</a>
+              <a href="subject.html#25649">[ subject ]</a>
+              <a href="author.html#25649">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

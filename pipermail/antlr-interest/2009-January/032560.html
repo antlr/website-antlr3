@@ -1,0 +1,143 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] C runtime Memory Usage
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20C%20runtime%20Memory%20Usage&In-Reply-To=%3C497B5433.1060000%40temporal-wave.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="032561.html">
+   <LINK REL="Next"  HREF="032564.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] C runtime Memory Usage</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20C%20runtime%20Memory%20Usage&In-Reply-To=%3C497B5433.1060000%40temporal-wave.com%3E"
+       TITLE="[antlr-interest] C runtime Memory Usage">jimi at temporal-wave.com
+       </A><BR>
+    <I>Sat Jan 24 09:47:31 PST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="032561.html">[antlr-interest] C runtime Memory Usage
+</A></li>
+        <LI>Next message: <A HREF="032564.html">[antlr-interest] C runtime Memory Usage
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#32560">[ date ]</a>
+              <a href="thread.html#32560">[ thread ]</a>
+              <a href="subject.html#32560">[ subject ]</a>
+              <a href="author.html#32560">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Bot Tiger wrote:
+&gt;<i> Hello, I am using the C runtime and experiencing heavy memory usage.
+</I>&gt;<i>
+</I>&gt;<i> I am interpreting an AST tree recursively.
+</I>&gt;<i>
+</I>&gt;<i> In each interpret call, I am checking the token text by using 
+</I>&gt;<i> pANTLR3_BASE_TREE-&gt;getText()-&gt;chars.
+</I>&gt;<i> Am I suppose to manually free this when I am done with it?
+</I>It is a convenience function that creates (and tracks) a memory 
+structure that copies the string from the input every time you call 
+getText(). It is this way because (and I think this is in the docs) 
+sometimes you want a new copy of the input string and sometimes you want 
+to modify the string you get back but not modify the input.
+
+So, you need to do one of the following:
+
+Call getText() once and then cache the result so you don't keep creating 
+copies of the input token;
+Create your own function that you can just pass the token/node pointer 
+to and uses the input stream directly (this is all the getText() call 
+does, but by the way, you usually use the $X.text reference, not 
+getText() directly.
+
+These convenience functions are not intended for use in things like 
+interpreters as every time you reference $X.text you will create a new 
+instance of the string, and though the runtime tracks these references 
+and releases them when you free the recognizer, you will quickly use 
+huge amounts of memory. So, you need your own function that makes more 
+optimal use of memory. All you need do is look at the code for 
+getText(). You will see that it finds the start position in the input 
+stream from the start position of the first token spanned by the node 
+and the end position in the input stream by looking at the end position 
+of the last token spanned by the node. If you know that there is only 
+one token in the node, then you can just use that directly. The main 
+point however, is that you won't allocate memory or copy any strings 
+this way, you will have a pointer into the input stream directly (which 
+is already allocated of course) and you will know how many characters 
+that pointer represents.. So long as you are not going to manipulate the 
+string, then you can use it directly in place.
+
+However, for an interpreter, you probably want to build a table of 
+string literals at parse time and create nodes that just reference them 
+in a string table. There are user definable pointers and integers 
+available in nodes and tokens, specifically to make it easy to do this. 
+So you could use the runtime string tables like this in the parser:
+
+parser grammar fred;
+
+...
+literal:
+    s=STRING_LITERAL  { $s.custom = $s.text; }  // Store the 
+pANTLR3_STRING for use in the interpreter
+;
+
+Or, you could pin the general text reference into the tokText union in 
+the token, if you are willing to dig into the code.
+
+However, for an interpreter, you are probably best building a string 
+table of your own choosing, that does not copy theinput text unless 
+there is some underlying reason that you must.
+
+That is where all your memory is going.
+
+&gt;<i>
+</I>&gt;<i> Also, I am recursively calling the children nodes with 
+</I>&gt;<i> pANTLR3_BASE_TREE-&gt;getChild().
+</I>&gt;<i> Am I also supposed to free these as well? I was assuming that they 
+</I>&gt;<i> returned only 1 copy of the node.
+</I>It just gives you a pointer to the child, it does not duplicate it. It 
+is your string stuff that you need to rethink :-) I shoudl porbaly make 
+this stuff more explicit in the documentation. However I think that 
+there are comments in the examples that tell you all about this. See the 
+polydif example.
+
+Jim
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="032561.html">[antlr-interest] C runtime Memory Usage
+</A></li>
+	<LI>Next message: <A HREF="032564.html">[antlr-interest] C runtime Memory Usage
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#32560">[ date ]</a>
+              <a href="thread.html#32560">[ thread ]</a>
+              <a href="subject.html#32560">[ subject ]</a>
+              <a href="author.html#32560">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

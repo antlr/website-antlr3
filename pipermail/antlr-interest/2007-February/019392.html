@@ -1,0 +1,178 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] C++ TokenStreamSelector
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20C%2B%2B%20TokenStreamSelector&In-Reply-To=%3C20070215183726.0813C64D%40mail.intersystems.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="019389.html">
+   <LINK REL="Next"  HREF="019400.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] C++ TokenStreamSelector</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20C%2B%2B%20TokenStreamSelector&In-Reply-To=%3C20070215183726.0813C64D%40mail.intersystems.com%3E"
+       TITLE="[antlr-interest] C++ TokenStreamSelector">jimi at intersystems.com
+       </A><BR>
+    <I>Thu Feb 15 10:37:16 PST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="019389.html">[antlr-interest] C++ TokenStreamSelector
+</A></li>
+        <LI>Next message: <A HREF="019400.html">[antlr-interest] C++ TokenStreamSelector
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#19392">[ date ]</a>
+              <a href="thread.html#19392">[ thread ]</a>
+              <a href="subject.html#19392">[ subject ]</a>
+              <a href="author.html#19392">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>-----Original Message-----
+From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>
+[mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of John Reid
+Sent: Thursday, February 15, 2007 6:16 AM
+To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: Re: [antlr-interest] C++ TokenStreamSelector
+
+
+&gt;<i> My parsing problem is that sometimes fields in my text file are 
+</I>&gt;<i> delimited by '.', ':', ';', and various other tokens. My problem is
+</I>that 
+&gt;<i> in many cases these characters are part of the values of the fields
+</I>and 
+&gt;<i> in other cases they are delimiters. I can only know which is which at 
+</I>&gt;<i> parse time. So I thought what I was doing was the natural solution. 
+</I>&gt;<i> Obviously I just misinterpreted the documentation!
+</I>
+&gt;<i> Does anyone have any advice for how to approach this problem? None of 
+</I>&gt;<i> the examples in the antlr documentation deal with this sort of
+</I>grammar.
+
+What is usually happening is that you are trying to do too much work in
+the one place (the first parsing pass and the lexer). You could of
+course write a hand crafted recognizer that could do this, but in
+general communications between lexer and parser are difficult and of
+course maintaining a hand crafted recognizer usually outweighs the
+flexibility of parsing.
+
+Try to construct lexer and parser rules that can construct a tree that
+will be valid one way or another. Then, when the parse has consumed the
+tokens, you can either pass the resulting AST to a further pass, that
+will use semantic context to decide what it really means, or, if
+possible at the end of the parse of a particular rule, rewrite the
+tokens you have parsed as a tree with the correct semantics. As in you
+are collecting the information required to make the judgment at the
+first pass time and can guarantee to always have the information at the
+point of disambiguation (at the end of some rule that allows its use.)
+
+Maybe that isn't so easy to follow as text so here is an artificial
+example that might help ;-). 
+
+Let's invent a language that has identifiers with combinations of upper
+case letters and a dot as valid names. But let's suppose that '.' is
+also used as Object.something. When you are lexing this, you don't have
+any context so you don't know whether to return say ID or OBJECT DOT
+METHOD. This should tell you that you don't want to use tokens like
+that, but make compound parsing rules that work on more primitive lexing
+tokens. Then you can do this for your lexer:
+
+fragment
+LETTERS : 'A'..'Z';
+ID: LETTERS+;
+DOT: '.' ;
+
+So whether the input is an ID or an object reference the parser will
+get: ID DOT ID
+
+In your parser you can now do:
+
+thingy: ID (DOT ID)? ;
+
+Now, if you know that the declaration of something being an object will
+ALWAYS precede the use of it as the parser sees it (line 1 through line
+nnn), then when you see a declaration (let's say it is: object ID; which
+makes no sense really but you get the point, then you can do this:
+
+OBJECT : 'object' ;
+SEMI : ';';
+
+objdecl : OBJECT o=ID SEMI
+		{ Some code to add o.text into a symbol table }
+
+Now your thingy rule is (just where you put the actions depends on how
+you detect (DOT ID)? and so on, but again this is just a silly example:
+
+thingy: object=ID (DOT method=ID)? 
+	{
+		Code that sees if object.text is declared as an object 
+		If not assemble the bits of .text into a full id
+	}
+	-&gt;{thingy::isObject}? ^(OREF $object $method)
+	-&gt;                    ^(ID[$thingy::idtext])
+;
+
+You need to add some local variables to check and so on.
+
+Languages may be syntactically constructed such that you cannot
+guarantee to see the OBJECT declaration before the use of it. In this
+case you have to rewrite the tree as it, then use a tree parser/pass to
+find all the declarations at the correct scope, then reparse the tree
+with that information and rewrite it with the correct context. A
+difficult to parse language like C++ comes to mind for instance. 
+
+So:
+ - Split your tokens into the largest character collections that don't
+mean it is too 
+   late by the time the parser gets it (I know that doesn't sound too
+well defined, 
+   if in doubt make new tokens);
+ - Construct parser rules that will accept all the combinations of these
+that COULD be semantically
+   valid. Note that you might end up constructing parser rules that
+accept token strings that are
+   syntactically invalid and have to reject them once you know the
+context;
+ - Either in the first pass if you have all the info as you go, or in a
+subsequent pass if not,
+   rewrite a tree that is now both syntactically and semantically valid.
+Use as many passes as you
+   need to do different things but bear in mind performance when making
+multiple passes.
+
+Then you will have a tree that you can optimize, walk for code gen, and
+so on.
+
+Hope that helps,
+
+Jim
+
+</PRE>
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="019389.html">[antlr-interest] C++ TokenStreamSelector
+</A></li>
+	<LI>Next message: <A HREF="019400.html">[antlr-interest] C++ TokenStreamSelector
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#19392">[ date ]</a>
+              <a href="thread.html#19392">[ thread ]</a>
+              <a href="subject.html#19392">[ subject ]</a>
+              <a href="author.html#19392">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

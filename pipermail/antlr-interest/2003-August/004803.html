@@ -1,0 +1,141 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Re: suggested ANTLR projects?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20suggested%20ANTLR%20projects%3F&In-Reply-To=200308131130.14095.ladermann%40hbg.dpa.de">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004800.html">
+   <LINK REL="Next"  HREF="004806.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Re: suggested ANTLR projects?</H1>
+    <B>tbrandonau</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20suggested%20ANTLR%20projects%3F&In-Reply-To=200308131130.14095.ladermann%40hbg.dpa.de"
+       TITLE="[antlr-interest] Re: suggested ANTLR projects?">tom at psy.unsw.edu.au
+       </A><BR>
+    <I>Wed Aug 13 17:52:17 PDT 2003</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004800.html">[antlr-interest] I'm into anal painting
+</A></li>
+        <LI>Next message: <A HREF="004806.html">[antlr-interest] Re: suggested ANTLR projects?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4803">[ date ]</a>
+              <a href="thread.html#4803">[ thread ]</a>
+              <a href="subject.html#4803">[ subject ]</a>
+              <a href="author.html#4803">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Terr was right, there was a good reason. Basically options section, 
+tokens section and actions are horribly ambiguous, partly due to the 
+opacity of actions. The rules are:
+OPTIONS: &quot;options&quot; (WS|COMMENT)* LCURLY; // Same for tokens
+ACTION: LCURLY (.*) RCURLY; // With extra stuff to handle RCURLY in 
+comment\string literal etc.
+So, if you see a LCURLY it's really hard to know what to do. Is it an 
+action where you want to swallow everything pretty indescriminantly 
+or the start of a tokens\options block where you can actually parse 
+what's inside?
+The solution used in Antlr is to match &quot;options&quot; (WS|COMMENT)* LCURLY 
+in RULEDEF (lowercase starting identifiers).
+
+As Marco says one way to solve it is to use state variables but this 
+doesn't work in incremental lexing (at least in the netbeans 
+implementation), you need some notion of non-restartable tokens so 
+the state is properly updated, e.g. when you change &quot;options&quot; 
+to &quot;optios&quot; it needs to relex the following tokens (left to right), 
+to pick up what is now an action, when you delete the curly it needs 
+to re-lex &quot;options&quot; as a ruleDef not an OPTIONS_BLOCK (left to right) 
+etc. So, what you really need to do is recognise it as a single block 
+and record 'subtokens' for the various parts. That way the re-lexing 
+stuff treats it as one token but you can pull the various parts out. 
+Hence you want a way to return multiple tokens from a single rule. Or 
+you can make a custom token class to store subtokens, but then you 
+have a problem hooking into the incremental lexer. After lexing you 
+need to unpack the subtokens for subsequent stuff and then repack 
+them back up for the incremental lexer, meaning you need to hookinto 
+the lexer. I managed to hack the Netbeans lexer to support non-
+restartable tokens and that kinda worked. There was some problem in 
+there (incremental and batch lexing was slightly different in a few 
+cases) but seemed to get the right stuff.
+
+Ideally you might try and leave it to the parser, but the opacity of 
+actions makes that not possible, there can be stuff in an action that 
+is not lexable (unless you made a new Antlr lexer for every action 
+language).
+
+Tom.
+--- In <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>, Marco Ladermann 
+&lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">ladermann at h...</A>&gt; wrote:
+&gt;<i> Am Mittwoch, 13. August 2003 04:57 schrieb Brian Smith:
+</I>&gt;<i> &gt; tbrandonau wrote:
+</I>&gt;<i> &gt; &gt; Ensemble section). In fact the Netbeans support could be 
+</I>improved
+&gt;<i> &gt; &gt; upon, incremental lexing gains from having a way to in effect 
+</I>return
+&gt;<i> &gt; &gt; multiple tokens at a time, to tell the incremental lexer not to 
+</I>try
+&gt;<i> &gt; &gt; an resume in the middle of a token (e.g. in Antlr you want to
+</I>&gt;<i> &gt; &gt; return &quot;options {&quot; as two tokens: LITERAL_options and LCURLY 
+</I>but you
+&gt;<i> &gt; &gt; want to lex it in a single rule) so either non-restartable 
+</I>tokens or
+&gt;<i> &gt;
+</I>&gt;<i> &gt; Please explain why &quot;options {&quot; is better lexed as a single rule? I
+</I>&gt;<i> &gt; noticed this kind of thing in ANTLR's antlr.g grammar and I 
+</I>simply could
+&gt;<i> &gt; not understand why the grammar was written like that. I feel I 
+</I>must be
+&gt;<i> &gt; overlooking something.
+</I>&gt;<i> 
+</I>&gt;<i> I'm just playing around with what Tom suggests - a ANTLR-Netbeans 
+</I>module - and 
+&gt;<i> my first step was to transform the antlr.g into a tree grammar. The 
+</I>matching 
+&gt;<i> of &quot;options {&quot; (&quot;tokens {&quot;) as one token was indeed a problem. The 
+</I>rationale 
+&gt;<i> behind this, I think, is that there is a need to distuingush action 
+</I>code from 
+&gt;<i> the options/tokens name-value pairs. My solution was to introduce a 
+</I>state 
+&gt;<i> variable and semantic predicates to make the decision. This allows 
+</I>also to 
+&gt;<i> recognize the comments between &quot;options&quot; and &quot;{&quot;, which are simply 
+</I>ignored in 
+&gt;<i> the original antlr.g.
+</I>&gt;<i> 
+</I>&gt;<i> Marco
+</I>
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004800.html">[antlr-interest] I'm into anal painting
+</A></li>
+	<LI>Next message: <A HREF="004806.html">[antlr-interest] Re: suggested ANTLR projects?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4803">[ date ]</a>
+              <a href="thread.html#4803">[ thread ]</a>
+              <a href="subject.html#4803">[ subject ]</a>
+              <a href="author.html#4803">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,158 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Getting the Previously Matched Lexer Token in the C Target
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Getting%20the%20Previously%20Matched%20Lexer%20Token%20in%0A%20the%20C%20Target&In-Reply-To=%3C1279593560.17534.2.camel%40gecko.home.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="039214.html">
+   <LINK REL="Next"  HREF="039216.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Getting the Previously Matched Lexer Token in the C Target</H1>
+    <B>John B. Brodie</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Getting%20the%20Previously%20Matched%20Lexer%20Token%20in%0A%20the%20C%20Target&In-Reply-To=%3C1279593560.17534.2.camel%40gecko.home.org%3E"
+       TITLE="[antlr-interest] Getting the Previously Matched Lexer Token in the C Target">jbb at acm.org
+       </A><BR>
+    <I>Mon Jul 19 19:39:20 PDT 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="039214.html">[antlr-interest] Getting the Previously Matched Lexer Token in	the C Target
+</A></li>
+        <LI>Next message: <A HREF="039216.html">[antlr-interest] converting Java code to C for PHP grammar
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#39215">[ date ]</a>
+              <a href="thread.html#39215">[ thread ]</a>
+              <a href="subject.html#39215">[ subject ]</a>
+              <a href="author.html#39215">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Greetings!
+
+On Mon, 2010-07-19 at 21:00 -0400, Billy O'Neal wrote:
+&gt;<i> Hello, Kirby Bohling.
+</I>&gt;<i> 
+</I>&gt;<i> It's similar to Keyword Vs. ID, but not exact. Consider the following inputs:
+</I>&gt;<i> 
+</I>&gt;<i> -arg#hashed#
+</I>&gt;<i> Result:
+</I>&gt;<i> ARGUMENT (Text=&quot;arg&quot;)
+</I>&gt;<i> ARGEXTRA (Text=&quot;hashed&quot;)
+</I>&gt;<i> 
+</I>&gt;<i> -arg#hashed# #otherData#
+</I>&gt;<i> Result:
+</I>&gt;<i> ARGUMENT (Text=&quot;arg&quot;)
+</I>&gt;<i> ARGEXTRA (Text=&quot;hashed&quot;)
+</I>&gt;<i> OTHER (Text=&quot;#otherdata#&quot;)  &lt;-- Note that the hashes need to be
+</I>&gt;<i> included at this point, but excluded in the ARGEXTRA token type
+</I>&gt;<i> 
+</I>&gt;<i> #otherData#andsomemorethings
+</I>&gt;<i> Result:
+</I>&gt;<i> OTHER (Text=&quot;#otherData#andsomemorethings&quot;)  &lt;-- If I just use a
+</I>&gt;<i> common token for that, then there needs to be a lot of stitching going
+</I>&gt;<i> on in the parser, posing a problem.
+</I>&gt;<i> 
+</I>&gt;<i> Finally, this:
+</I>&gt;<i> -arg #hashed#
+</I>&gt;<i> needs to be:
+</I>&gt;<i> ARGUMENT (Text=&quot;arg&quot;)
+</I>&gt;<i> OTHER (Text=&quot;hashed&quot;)
+</I>&gt;<i> 
+</I>&gt;<i> If I use a common token for things there, then the parser can't
+</I>&gt;<i> correctly discern what to do here -- stitching together here would
+</I>&gt;<i> actually be invalid because of the space, and because the whitespace
+</I>&gt;<i> is dropped by the lexer, the parser cannot make that determination.
+</I>&gt;<i> 
+</I>
+i had some fun with this. thanks! see attached (yes, i am weird)
+   -jbb
+
+-------------- next part --------------
+grammar Test;
+
+options {
+   output = AST;
+   ASTLabelType = CommonTree;
+}
+
+tokens { ARGUMENT; ARGEXTRA; OTHER; }
+
+@members {
+   private static final String [] x = new String[] {
+      &quot;-arg#hashed#&quot;,
+      &quot;-arg#hashed# #otherData#&quot;,
+      &quot;#otherData#andsomemorethings&quot;,
+      &quot;-arg #hashed#&quot;
+   };
+
+   public static void main(String [] args) {
+      for( int i = 0; i &lt; x.length; ++i ) {
+         try {
+            System.out.println(&quot;about to parse:`&quot;+x[i]+&quot;`&quot;);
+            TestLexer lexer = new TestLexer(new ANTLRStringStream(x[i]));
+            CommonTokenStream tokens = new CommonTokenStream(lexer);
+
+            TestParser parser = new TestParser(tokens);
+            TestParser.start_return p_result = parser.start();
+
+            CommonTree ast = p_result.tree;
+            if( ast == null ) {
+               System.out.println(&quot;resultant tree: is NULL&quot;);
+            } else {
+               System.out.println(&quot;resultant tree: &quot; + ast.toStringTree());
+            }
+            System.out.println();
+         } catch(Exception e) {
+            e.printStackTrace();
+         }
+      }
+   }
+}
+
+start : (arg|other) EOF!;
+
+arg : argument
+      ( ( ( argextra (WS other)? )? -&gt; argument (argextra other?)? )
+      | ( WS HASH ID HASH -&gt; argument OTHER[$ID.text] )
+      )
+   ;
+
+argument : DASH ID -&gt; ARGUMENT[$ID.text] ;
+
+argextra : HASH ID HASH -&gt; ARGEXTRA[$ID.text] ;
+
+other : o_data -&gt; OTHER[$o_data.text] ;
+o_data : ( HASH! | ID! )+ ; // avoid building a tree here, just want $text
+
+DASH : '-' ;
+HASH : '#' ;
+ID : ('a'..'z'|'A'..'Z')+ ;
+WS : ' '+ ;
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="039214.html">[antlr-interest] Getting the Previously Matched Lexer Token in	the C Target
+</A></li>
+	<LI>Next message: <A HREF="039216.html">[antlr-interest] converting Java code to C for PHP grammar
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#39215">[ date ]</a>
+              <a href="thread.html#39215">[ thread ]</a>
+              <a href="subject.html#39215">[ subject ]</a>
+              <a href="author.html#39215">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

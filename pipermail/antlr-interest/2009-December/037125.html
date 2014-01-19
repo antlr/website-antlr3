@@ -1,0 +1,160 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] MismatchedTokenException
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20MismatchedTokenException&In-Reply-To=%3C4B297D5C.8060905%40jacaranda.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="037136.html">
+   <LINK REL="Next"  HREF="037137.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] MismatchedTokenException</H1>
+    <B>David-Sarah Hopwood</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20MismatchedTokenException&In-Reply-To=%3C4B297D5C.8060905%40jacaranda.org%3E"
+       TITLE="[antlr-interest] MismatchedTokenException">david-sarah at jacaranda.org
+       </A><BR>
+    <I>Wed Dec 16 16:37:48 PST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="037136.html">[antlr-interest] MismatchedTokenException
+</A></li>
+        <LI>Next message: <A HREF="037137.html">[antlr-interest] MismatchedTokenException
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37125">[ date ]</a>
+              <a href="thread.html#37125">[ thread ]</a>
+              <a href="subject.html#37125">[ subject ]</a>
+              <a href="author.html#37125">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Marcin Rze&#378;nicki wrote:
+&gt;<i> 2009/12/14 Marcin Rze&#378;nicki &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">marcin.rzeznicki at gmail.com</A>&gt;:
+</I>&gt;&gt;<i> 2009/12/13 Jim Idle &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">jimi at temporal-wave.com</A>&gt;:
+</I>&gt;&gt;&gt;<i> This usually means that your lexer token numbers are out of sync with your
+</I>&gt;&gt;&gt;<i> parser tokens. Regen in correct order and make sure all tokens have been
+</I>&gt;&gt;&gt;<i> declared.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;<i> Umm, what if I work with combined grammar? And some of literals are 'inlined'?
+</I>&gt;<i> 
+</I>&gt;<i> I think I know what has been causing this problem but I am scratching
+</I>&gt;<i> my head. It seems that ANTLR lexer is, well, a strange beast.
+</I>&gt;<i> I have a rule, say
+</I>&gt;<i> CLASS
+</I>&gt;<i>   :
+</I>&gt;<i>   'class'
+</I>&gt;<i>   ;
+</I>&gt;<i> 
+</I>&gt;<i> and below
+</I>&gt;<i> 
+</I>&gt;<i> IDENTIFIER
+</I>&gt;<i>   :
+</I>&gt;<i>   {Character.isJavaIdentifierStart(input.LA(1))}?=&gt; . (
+</I>&gt;<i> {Character.isJavaIdentifierPart(input.LA(1))}?=&gt; . )*
+</I>&gt;<i>   ;
+</I>&gt;<i> 
+</I>&gt;<i> (the latter rule has been questioned here, but bear with me a while, I
+</I>&gt;<i> need it to explain my case)
+</I>&gt;<i> 
+</I>&gt;<i> Now, upon seeing input 'class' ANTLR matches IDENTIFIER because of
+</I>&gt;<i> this gating predicate. Well, 'class' would have been a valid
+</I>&gt;<i> identifier, of course but shouldn't it try to match 'class' based on
+</I>&gt;<i> rules precedence?
+</I>
+This seems to be an idiosyncrasy of how ANTLR lexers treat gated semantic
+predicates. Although . can match the 'c' in 'class', it appears that ANTLR
+doesn't recognize that because of the predicate. That is the reason for the
+additional complexity in the rules that I posted earlier:
+
+fragment IdentifierStartASCII
+  : 'a'..'z'
+  | 'A'..'Z'
+  | '$'
+  | '_'
+  ;
+
+fragment IdentifierPart
+  : IdentifierStartASCII
+  | '0'..'9'
+  | { Character.isJavaIdentifierPart(input.LA(1)) }?
+      { matchAny(); }
+  ;
+
+// This generates mIdentifierRest() used below.
+fragment IdentifierRest
+  : IdentifierPart*
+  ;
+
+IDENTIFIER
+  : IdentifierStartASCII IdentifierRest
+  | { if (!Character.isJavaIdentifierStart(input.LA(1))) {
+        throw new NoViableAltException(&quot;identifier start&quot;, 0, 0, input);
+      }
+      matchAny(); mIdentifierRest(); }
+  ;
+
+Because the IdentifierStartASCII production declaratively lists the
+possible start characters that are ASCII (and therefore might also
+begin another rule), there is sufficient information for ANTLR to
+generate a correct *and efficient* DFA. Also note that the fact that
+the second alternative of IDENTIFIER is just a code block and does not
+explicitly match anything, appears to prevent ANTLR from making some
+incorrect inferences. (At least, the generated code is correct as far
+as I can see, whereas minor variants give incorrect code.)
+
+It could be argued that there are some ANTLR bugs here: what should
+happen is that the predicate is hoisted into the DFA and so your original
+code above should work.
+
+On the question of whether to do it this way, or instead match a more
+inclusive grammar and then check validity in the parser: I don't think
+this is as clear-cut as Jim Idle makes it out to be. The above approach
+has the advantage that you don't need to list the Unicode characters
+that might be valid in identifiers, which helps to avoid a lexer size
+explosion. How errors are reported as a separate issue; the code above
+could easily do something else instead of throwing NoViableAltException,
+and it could catch errors from mIdentifierRest(). Personally, I prefer
+to leave the lexer grammar so that it matches only the desired language,
+but overload the error handling methods so that the response to a
+lexer error is to generate a token with the error information attached
+to it.
+
+-- 
+David-Sarah Hopwood  &#9893;  <A HREF="http://davidsarah.livejournal.com">http://davidsarah.livejournal.com</A>
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 292 bytes
+Desc: OpenPGP digital signature
+Url : <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20091217/fbe0f394/attachment.bin">http://www.antlr.org/pipermail/antlr-interest/attachments/20091217/fbe0f394/attachment.bin</A> 
+</PRE>
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="037136.html">[antlr-interest] MismatchedTokenException
+</A></li>
+	<LI>Next message: <A HREF="037137.html">[antlr-interest] MismatchedTokenException
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37125">[ date ]</a>
+              <a href="thread.html#37125">[ thread ]</a>
+              <a href="subject.html#37125">[ subject ]</a>
+              <a href="author.html#37125">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

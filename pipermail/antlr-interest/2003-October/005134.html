@@ -1,0 +1,305 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Javadoc - static verification
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Javadoc%20-%20static%20verification&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005161.html">
+   <LINK REL="Next"  HREF="005141.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Javadoc - static verification</H1>
+    <B>guyveraghtert</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Javadoc%20-%20static%20verification&In-Reply-To="
+       TITLE="[antlr-interest] Javadoc - static verification">guyveraghtert at yahoo.com
+       </A><BR>
+    <I>Wed Oct  8 01:07:00 PDT 2003</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005161.html">[antlr-interest] Re: Limits of  tree generation (C++)
+</A></li>
+        <LI>Next message: <A HREF="005141.html">[antlr-interest] Javadoc - static verification
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5134">[ date ]</a>
+              <a href="thread.html#5134">[ thread ]</a>
+              <a href="subject.html#5134">[ subject ]</a>
+              <a href="author.html#5134">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi all
+
+I'm working on a project to statically check your code against your
+specification. We use Jnome (www.jnome.org), which offers a metamodel
+for java. However, this metamodel represents the formal specification
+as a string. This should be adapted: the formal specifications are
+just java expressions. Only one problem exists, one can use the OCL
+notation @pre te refer to the 'state' of an expression before entering
+a method. I give an example:
+
+/**
+ * Class representing a flipflop
+ */
+public class FlipFlop{
+
+  /**
+   * Variable expressing state of flipflop
+   */
+  private boolean flip;
+
+  /**
+   * Flip the flipflop
+   *
+   * @post     The flipflop flipped
+   *         | flip != <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">flip at pre</A>
+   */
+  public void flipflop(){
+    flip != flip;
+  }
+
+}
+
+
+Another problem is the fact we do not only have the OCL notation
+'@pre', but also a tag '@pre':
+
+...
+
+ /**
+  * Set the name
+  *
+  * @pre    &lt;name&gt; must be effective
+  *       | name != null
+  * @post   &lt;name&gt; is set as the name of this entity
+  *       | getName() == name
+  */
+ public void setName(String name){
+     this.name = name;
+ }
+
+...
+
+The current grammar of jnome for javadoc is: 
+
+
+//----------------------------------------------------------------------------
+// The parser
+//----------------------------------------------------------------------------
+
+header {
+package org.jnome.input.antlr.javadoc.parser;
+}
+
+class JavaDocParser extends Parser;
+options {
+	exportVocab=JavaDoc;             // Call its vocabulary &quot;JavaDoc&quot;
+	buildAST = true;                 // build an AST
+}
+
+tokens {
+	JAVADOC_OPEN; JAVADOC_CLOSE; STAR; TAG; WORD; DESCRBLOCK; VERTICAL_LINE;
+	FORMAL; INFORMAL; NEWLINE; AT; TAGBLOCK; SENTENCEFORMAL;
+}
+
+// a specification block
+specificationBlock
+	:   // A block to describe the method/class/variable/.. briefly
+		(descriptionBlock)?
+
+		// A series of blocks starting with an @-tag
+		(tagBlock)*
+
+		// The end of the specification (&quot;*/&quot;)
+		JAVADOC_CLOSE!
+	;
+
+// the short description at the beginning of a specification block
+descriptionBlock
+	:	(sentence)+
+		{#descriptionBlock = #([DESCRBLOCK, &quot;DESCRBLOCK&quot;], #descriptionBlock);}
+	;
+
+// a part of a specification block, starting with an @-tag
+tagBlock
+	:	tag
+		(informalSpecification)
+		(formalSpecification (emptySentence)* )?
+		{#tagBlock = #([TAGBLOCK, &quot;TAGBLOCK&quot;], #tagBlock);}
+	;
+
+// an '@'-tag
+tag
+	: AT! WORD
+	  {#tag = #([TAG, &quot;TAG&quot;], #tag);}
+	;
+
+// the informal specification in a tagblock
+informalSpecification
+	:	(sentence)+
+		{#informalSpecification = #([INFORMAL, &quot;INFORMAL&quot;],
+#informalSpecification);}
+	;
+
+// the formal specification in a tagblock
+formalSpecification
+	:	(sentenceFormal)+
+		{#formalSpecification = #([FORMAL, &quot;FORMAL&quot;], #formalSpecification);}
+	;
+
+// a sentence can be empty or not
+sentence
+	:   emptySentence | nonEmptySentence
+	;
+
+// a non empty sentence
+nonEmptySentence
+	:   WORD (WORD|STAR|AT|VERTICAL_LINE)* endline
+	;
+
+// an empty sentence
+emptySentence
+	:   endline
+	;
+
+// a sentence from a formal specification
+sentenceFormal
+	:   VERTICAL_LINE! (WORD|STAR|AT|VERTICAL_LINE)* endline
+		{#sentenceFormal = #([SENTENCEFORMAL, &quot;SENTENCEFORMAL&quot;],
+#sentenceFormal);}
+	;
+
+// a newline symbol, followed by zero or more stars
+endline!
+	:   ( NEWLINE(STAR)* )
+	;
+
+//----------------------------------------------------------------------------
+// The lexer
+//----------------------------------------------------------------------------
+
+// Import the necessary classes
+{
+import antlr.TokenStreamSelector;
+}
+
+class JavaDocLexer extends Lexer;
+
+options {
+	exportVocab=JavaDoc;   // call the vocabulary &quot;JavaDoc&quot;
+	testLiterals=true;     // automatically test for literals
+	k=2;                   // two characters of lookahead
+}
+
+// let the lexer know about the selector
+{
+	protected TokenStreamSelector selector;
+
+	public JavaDocLexer(LexerSharedInputState state, TokenStreamSelector
+sel) {
+		this(state);
+		selector = sel;
+	}
+
+}
+
+// a dummy rule to force vocabulary to be all characters (except special
+//   ones that ANTLR uses internally (0 to 2)
+protected
+VOCAB
+	:	'\3'..'\377'
+	;
+
+// end of specification block
+JAVADOC_CLOSE
+	:	&quot;*/&quot;
+		{ selector.pop(); }
+	;
+
+// @-symbol
+AT
+	: '@'
+	;
+
+// star
+STAR
+	: '*'
+	;
+
+// vertical line
+VERTICAL_LINE
+	: '|'
+	;
+
+// word
+WORD
+	// words can't contain whitespace, an '@'-symbol, '*'-symbol or
+'|'-symbol
+	:	(~( ' ' | '\t' | '\f' | '\r' | '\n' | '@' | '*' | '|'))+
+	;
+
+// Whitespace -- ignored
+WS	:	(	' '
+		|	'\t'
+		|	'\f'
+		)
+		{ _ttype = Token.SKIP; }
+	;
+
+// newline character
+NEWLINE
+	:	// handle newlines
+		(	&quot;\r\n&quot;  // Evil DOS
+		|	'\r'    // Macintosh
+		|	'\n'    // Unix
+		)
+		{ newline(); }
+	;
+
+-----------------------------------------------------------------
+
+How can we easily adapt this grammar to our needs?
+
+A minor problem, this grammar doesn't support 
+single line comments /*  */ . The authors told me they didn't how to
+fix is (ambiguities).
+
+I ask a lot, but any help is welcome...
+
+thx
+
+Guy
+
+
+
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005161.html">[antlr-interest] Re: Limits of  tree generation (C++)
+</A></li>
+	<LI>Next message: <A HREF="005141.html">[antlr-interest] Javadoc - static verification
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5134">[ date ]</a>
+              <a href="thread.html#5134">[ thread ]</a>
+              <a href="subject.html#5134">[ subject ]</a>
+              <a href="author.html#5134">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

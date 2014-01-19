@@ -1,0 +1,146 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] collecting tokens without invoking parser rules...
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20collecting%20tokens%20without%20invoking%20parser%20rules...&In-Reply-To=%3COFF4F140CA.3798F165-ON8525781B.005C8B2C-8525781B.007705CE%40LocalDomain%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="040547.html">
+   <LINK REL="Next"  HREF="040549.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] collecting tokens without invoking parser rules...</H1>
+    <B>Alan Lehotsky</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20collecting%20tokens%20without%20invoking%20parser%20rules...&In-Reply-To=%3COFF4F140CA.3798F165-ON8525781B.005C8B2C-8525781B.007705CE%40LocalDomain%3E"
+       TITLE="[antlr-interest] collecting tokens without invoking parser rules...">ALehotsky at ABINITIO.COM
+       </A><BR>
+    <I>Mon Jan 17 13:40:02 PST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="040547.html">[antlr-interest] Patches to fix CSharp2 runtime project and add	VS2010 project files
+</A></li>
+        <LI>Next message: <A HREF="040549.html">[antlr-interest] Antlr 3.3 Generate wrong debug code C# target
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40548">[ date ]</a>
+              <a href="thread.html#40548">[ thread ]</a>
+              <a href="subject.html#40548">[ subject ]</a>
+              <a href="author.html#40548">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Using Antlr 3.2 with language=C as a target
+
+For parsing Teradata's stored-procedure language (SPL), we have the issue 
+of context-sensitive token hiding.
+
+I'm trying to use rules for SQL statements embedded in SPL that just 
+swallow the tokens, so we have rules like:
+
+
+        swallow_to_semi :   ~ (  SEMI  ) * ;
+
+                update_stmt :  UPDATE swallow_to_semi;
+
+We take the stream of tokens from this UPDATE rule and pass them off to an 
+existing SQL parser.
+
+But, because SPL has an assignment statement rule that looks like
+
+                assignment_stmt :  SET  dotted_name '='  expression SEMI;
+
+and teradata SQL uses 'SET' within its own grammar, when I encounter a 
+source statement like
+
+
+               update mytable  set x = y, a = b where a = 'none' ;
+
+I get an error that makes it clear to me that the Antlr parser is 'seeing' 
+the 'set' and trying to invoke the assignment_stmt rule.
+because the complaint is about expecting a &quot;SEMI&quot; at the source position 
+where the comma is.
+
+I don't think that redirecting EVERYTHING in the lexer after the UPDATE to 
+an alternate channel will work in all cases, because there are other 
+context sensitivities in play - for example:
+
+SELECT has to read everything to a SEMI when it appears in a statement 
+context, but when there is a select clause in a FOR statement, it must 
+read upto a USING, FOR, DO or SEMI token.
+
+So, what I tried so far was code that looks like 
+
+
+  static ANTLR3_BOOLEAN semicolonMatch ( pplsqlParser ctx, pANTLR3_VECTOR 
+&amp; tokens)
+  {
+    pANTLR3_PARSER parser = ctx-&gt;pParser;
+    pANTLR3_TOKEN_STREAM ts = parser-&gt;getTokenStream(parser);
+    ANTLR3_INT32 tok;
+    if( ! tokens)      // If we didn't have a token list, start one now
+      tokens = ctx-&gt;vectors-&gt;newVector( ctx-&gt;vectors);
+
+    if (LA(0) == SEMI) return false; // e.g. &quot;COMMIT ;&quot;
+
+    while( ( tok=LA( 1) ) != EOF)
+    {
+      switch( tok)
+      {
+        case SEMI:       return true; 
+        case EOF:        return false;
+        default:
+          tokens-&gt;add( tokens, LT( 1), NULL);
+          ts-&gt;istream-&gt;consume( ts-&gt;istream);
+          continue;
+      }
+    }
+    return false;
+  }
+
+
+And a modified swallow_to_semi rule that looks like
+
+     swallow_to_semi :  tokenlist+=( {semicolonMatch(ctx, $tokenlist) }? ) 
+-&gt; $tokenlist+
+
+but that doesn't work correctly because it seems to preemptively swallow 
+the SEMI and a statement like
+
+        COMMIT;
+
+fails.
+
+This feels like something that should be relatively easy to do, but I 
+don't seem to be able to figure out exactly how to make it happen and I 
+haven't hit upon the right search terms to find an appropriate example in 
+the Antlr-interest archives or the Wiki.
+
+
+
+  
+NOTICE  from Ab Initio: If received in error, please destroy and notify sender, and make no further use, disclosure, or distribution. This email (including attachments) may contain information subject to confidentiality obligations, and sender does not waive confidentiality or privilege.   
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="040547.html">[antlr-interest] Patches to fix CSharp2 runtime project and add	VS2010 project files
+</A></li>
+	<LI>Next message: <A HREF="040549.html">[antlr-interest] Antlr 3.3 Generate wrong debug code C# target
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40548">[ date ]</a>
+              <a href="thread.html#40548">[ thread ]</a>
+              <a href="subject.html#40548">[ subject ]</a>
+              <a href="author.html#40548">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

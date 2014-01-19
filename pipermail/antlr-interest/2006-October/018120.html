@@ -1,0 +1,327 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Rookie attempt at ANTLR 3 (Using ANTLRWORKS	second correction attempt)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Rookie%20attempt%20at%20ANTLR%203%20%28Using%20ANTLRWORKS%0A%09second%20correction%20attempt%29&In-Reply-To=BAY107-F34BD63DACE7431DFB65F53C0070%40phx.gbl">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="018119.html">
+   <LINK REL="Next"  HREF="018123.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Rookie attempt at ANTLR 3 (Using ANTLRWORKS	second correction attempt)</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Rookie%20attempt%20at%20ANTLR%203%20%28Using%20ANTLRWORKS%0A%09second%20correction%20attempt%29&In-Reply-To=BAY107-F34BD63DACE7431DFB65F53C0070%40phx.gbl"
+       TITLE="[antlr-interest] Rookie attempt at ANTLR 3 (Using ANTLRWORKS	second correction attempt)">jimi at intersystems.com
+       </A><BR>
+    <I>Thu Oct 26 14:35:37 PDT 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="018119.html">[antlr-interest] Rookie attempt at ANTLR 3 (Using ANTLRWORKS second	correction attempt)
+</A></li>
+        <LI>Next message: <A HREF="018123.html">[antlr-interest] Rookie attempt at ANTLR 3 (Using ANTLRWORKS	second correction attempt)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#18120">[ date ]</a>
+              <a href="thread.html#18120">[ thread ]</a>
+              <a href="subject.html#18120">[ subject ]</a>
+              <a href="author.html#18120">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>First ALPHANUMSTRING can end up matching nothing as it does not force any character to be there, having a * rather than a +. I think that that is probably your start rule issue.
+
+Next issue is that all your rules are the same thing. Your lexer only recognizes ALPHANUMSTRING and so every rule is just str=ALPHANUMSTRING. 
+
+Next, it is difficult to see exactly what your start rule is trying to achieve but I guess you trying to get it to follow multiple lines and end when you see end. I think that you can throw away the newline tokens unless they end up being significant as you expand the grammar to cover the whole language, which is certainly possible. But you need to formulate this such that there is a rule that can match a valid construct, then use a higher rule to say how this repeats. Try thinking out in words how you can describe it (there you go Anthony ;-), such as a line of code is one statement followed by any number of additional statements separated by a semi-colon, then a NEWLINE. A statement block is any number of statements, including zero, surrounded by {} etc. Once you can describe it to yourself in English, 
+
+However, I am afraid to say that I don't think that this approach is at all correct; basically you are just telling the lexer to tokenize everything that isn't a whitespace into one thing, then are trying to do all the tokenizing in the parser, and not actually doing any parsing. You would be better off, dare I say it, hand crafting such a beast ;-).
+
+All is not lost however, as ANTLR3 can handle your language I believe (but then I believe it can be made to handle anything).
+
+I think that what you should do is lex the keywords, and provide a lex rule, say IDORSTRING that matches anything that isn't a keyword. Then in the parser, at the points you know you can have an non-delimited string, match any possible token that can be a string (with suitable predicated rules to avoid ambiguities where necessary) and interpret it as an non-delimited string. Difficulties arise when an undelimited string is optional and you have to lookahead and use predicates and stuff, but that's what ANTLR is good at. 
+
+Next, if your keywords can be: P PR PRI PRIN PRINT, then code the keyword, accordingly, and distinguish it as a string back in the parser:
+
+PRINT: 'P' ( 'R' ( 'I' ( 'N' ( 'T')? )? )? )? ;
+
+Be careful about ambiguities here. Basically ANTLR will match the first sequence listed (but you may end up with warnings and so on - you will need to experiment).
+
+In order that you have an example of all this, I took the liberty of making something close to your sample, that produces a tree (which is what you want to do here, get your grammar/parser to produce an unambiguous and correct tree, then write your action code to do whatever it is you want to do with this in the tree parser)... that you might try to expand (tested with ANTLRWorks 1.0b5):
+
+grammar TestMe;
+
+options
+{
+	output=AST;
+}
+	
+tokens
+{
+	STRING;
+	CODEBLOCK;
+	CODELINE;
+	MONTH;
+}
+
+codeBlock
+	: (c+= codelines)+
+	  END
+	  
+	  -&gt; ^(CODEBLOCK $c+)
+	;
+	 
+codelines
+	: m=month		-&gt; ^(CODELINE ^(MONTH $m))
+	| PRINT s=string	-&gt; ^(CODELINE ^(PRINT $s))
+	;
+
+string
+	: i=IDORSTRING			     	-&gt; ^(STRING[$i.text] )
+	| (keyword_strings)=&gt; k=keyword_strings -&gt; ^(STRING[$k.text] )
+	;
+	
+keyword_strings
+	: month
+	| PRINT
+	| END
+	;
+
+month	: JAN | FEB | MAR | APR | JUN | JUL | SEP | OCT | NOV | DEC ;
+
+JAN	:	'jan' ;
+FEB	:	'feb' ;
+MAR	:	'mar' ;
+APR	:	'apr' ;
+MAY	:	'may' ;
+JUN	:	'jun' ;
+JUL	:	'aug' ;
+SEP	:	'sep' ;
+OCT	:	'oct' ;
+NOV	:	'nov' ;
+DEC	:	'dec' ;
+
+END	:	'e' 'n' 'd'
+	;
+	
+PRINT	:	'p' ( 'r' ( 'i' ( 'n' ( 't' )? )? )? )? ;
+
+IDORSTRING
+	: (ALPHA | DIGIT)+
+	;
+
+fragment DIGIT 
+	:	('0'..'9')
+	;
+
+fragment ALPHA
+	:	('a'..'z')
+	;
+
+WS	: (' ' | '\t')+ {channel=99;}
+	;
+
+NEWLINE	: ('\r' '\n'? | '\n') { channel=99;}
+	;
+
+
+
+
+
+
+
+
+
+-----Original Message-----
+From: Foolish Ewe [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">foolishewe at hotmail.com</A>] 
+Sent: Thursday, October 26, 2006 11:43 AM
+To: Jim Idle; <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: Rookie attempt at ANTLR 3 (Using ANTLRWORKS second correction attempt)
+
+Hello All:
+
+I had a catastrophe during the edit of my previous attempt at a correction,
+so now I'm really groveling, please forgive me if you get a redundant reply.
+I'm using ANTLR3 using ANTLRworks (which seems very nice so far) under
+Windows XP in case you are wondering. There should be a MIME attached
+ANTLR3 grammar to this message.
+
+When I try to compile TestGrammar.g (a MIME attached file), I get the 
+following errors in the
+console tab in the bottom subwindow.  Although the prior posting omitted the 
+grammar
+(just as well, since I got to correct the java code in the @members 
+section), there really
+was some code generating that message.
+[14:40:33] grammar TestGrammar: no start rule (no rule can obviously be 
+followed by EOF)
+[14:40:33] [Long path omitted]TestGrammar.g:44:3: The following alternatives 
+are unreachable: 3
+
+Note that I'm trying this approach because I've got a strange language that 
+I'm trying
+to scan which has &quot;undelimited&quot; strings (for historical reasons, this wasn't 
+my doing),
+so I sometimes would like to suppress key word recognition.  If I could scan 
+in the language
+properly, I think the parsing itself might not be too bad.
+
+If I comment out the first and second alternative, (so that startRule-&gt;end 
+NEWLINE) then
+ANTLR will generate source but instead I get  (what seems to be) a Java code 
+generation error.
+
+13:06:08] [Long Path Snipped]\TestGrammar.java:78: illegal start of 
+expression
+[13:06:08]         void endtoken = null;
+[13:06:08]         ^
+[13:06:08] 1 error
+
+Once again, sorry about cluttering up the mailing list with the prior 
+malformed message,
+I hope this one is well formed.
+
+Thanks:
+
+Bill M.
+
+&gt;<i>From: &quot;Jim Idle&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">jimi at intersystems.com</A>&gt;
+</I>&gt;<i>To: &quot;Foolish Ewe&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">foolishewe at hotmail.com</A>&gt;,&lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>&gt;
+</I>&gt;<i>Subject: Re: [antlr-interest] Rookie attempt at ANTLR 3 (using 
+</I>&gt;<i>thecurrentANTLRWorks under Window XP)
+</I>&gt;<i>Date: Wed, 25 Oct 2006 18:24:46 -0400
+</I>&gt;<i>
+</I>&gt;<i>Bill,
+</I>&gt;<i>
+</I>&gt;<i>Unless you have missed some of the grammar out from this post, it looks
+</I>&gt;<i>to me like you don't actually have any rules in the grammar, only some
+</I>&gt;<i>member functions? I would think that that you do really have some rules
+</I>&gt;<i>but just have not posted them? ;-)
+</I>&gt;<i>
+</I>&gt;<i>If I take out the java code from your post, we are left with:
+</I>&gt;<i>
+</I>&gt;<i>// Test hoisting and use of predicates to allow us to use &quot;undelimited
+</I>&gt;<i>strings&quot;
+</I>&gt;<i>grammar TestGrammar;
+</I>&gt;<i>
+</I>&gt;<i>// I'm not using tokens in this langauge yet.
+</I>&gt;<i>//tokens = { }
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>If this is really your grammar, then I would think it is pretty obvious
+</I>&gt;<i>;-), that there is no rule for ANTLR to look for EOF in.
+</I>&gt;<i>
+</I>&gt;<i>Jim
+</I>&gt;<i>
+</I>&gt;<i>-----Original Message-----
+</I>&gt;<i>From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>
+</I>&gt;<i>[mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Foolish Ewe
+</I>&gt;<i>Sent: Wednesday, October 25, 2006 1:30 PM
+</I>&gt;<i>To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i>Subject: [antlr-interest] Rookie attempt at ANTLR 3 (using the
+</I>&gt;<i>currentANTLRWorks under Window XP)
+</I>&gt;<i>
+</I>&gt;<i>Hi Folks:
+</I>&gt;<i>
+</I>&gt;<i>I'm trying ANTLR 3 today, using ANTLRworks (so far it seems like Bovet
+</I>&gt;<i>and
+</I>&gt;<i>Parr have some
+</I>&gt;<i>reallly neat stuff in there).
+</I>&gt;<i>
+</I>&gt;<i>I'm trying to compile the attached grammar in the tool and am getting a
+</I>&gt;<i>message:
+</I>&gt;<i>
+</I>&gt;<i>Cannot generate the grammar because grammar TestGrammar : no start rule
+</I>&gt;<i>(no
+</I>&gt;<i>rule can
+</I>&gt;<i>obviously be followed by EOF).
+</I>&gt;<i>
+</I>&gt;<i>This will probably out me to my coauthors and students, but I'm not a
+</I>&gt;<i>big
+</I>&gt;<i>fan of the words
+</I>&gt;<i>obviously/easily or their variants :-).
+</I>&gt;<i>
+</I>&gt;<i>What does this message mean, how can I better convey to ANTLR that
+</I>&gt;<i>startRule
+</I>&gt;<i>is the start rule?
+</I>&gt;<i>
+</I>&gt;<i>Thanks:
+</I>&gt;<i>
+</I>&gt;<i>Bill M.
+</I>&gt;<i>
+</I>&gt;<i>_________________________________________________________________
+</I>&gt;<i>Use your PC to make calls at very low rates
+</I>&gt;<i><A HREF="https://voiceoam.pcs.v2s.live.com/partnerredirect.aspx">https://voiceoam.pcs.v2s.live.com/partnerredirect.aspx</A>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>--
+</I>&gt;<i>No virus found in this incoming message.
+</I>&gt;<i>Checked by AVG Free Edition.
+</I>&gt;<i>Version: 7.1.408 / Virus Database: 268.13.11/496 - Release Date:
+</I>&gt;<i>10/24/2006
+</I>&gt;<i>
+</I>
+_________________________________________________________________
+Stay in touch with old friends and meet new ones with Windows Live Spaces 
+<A HREF="http://clk.atdmt.com/MSN/go/msnnkwsp0070000001msn/direct/01/?href=http://spaces.live.com/spacesapi.aspx?wx_action=create&amp;wx_url=/friends.aspx&amp;mkt=en-us">http://clk.atdmt.com/MSN/go/msnnkwsp0070000001msn/direct/01/?href=http://spaces.live.com/spacesapi.aspx?wx_action=create&amp;wx_url=/friends.aspx&amp;mkt=en-us</A>
+
+-- 
+No virus found in this incoming message.
+Checked by AVG Free Edition.
+Version: 7.1.408 / Virus Database: 268.13.11/498 - Release Date: 10/26/2006
+ 
+  
+
+-- 
+No virus found in this outgoing message.
+Checked by AVG Free Edition.
+Version: 7.1.408 / Virus Database: 268.13.11/498 - Release Date: 10/26/2006
+ 
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="018119.html">[antlr-interest] Rookie attempt at ANTLR 3 (Using ANTLRWORKS second	correction attempt)
+</A></li>
+	<LI>Next message: <A HREF="018123.html">[antlr-interest] Rookie attempt at ANTLR 3 (Using ANTLRWORKS	second correction attempt)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#18120">[ date ]</a>
+              <a href="thread.html#18120">[ thread ]</a>
+              <a href="subject.html#18120">[ subject ]</a>
+              <a href="author.html#18120">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

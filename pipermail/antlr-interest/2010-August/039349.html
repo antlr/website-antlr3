@@ -1,0 +1,192 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Calling a production returns null? And newline as	a separator?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Calling%20a%20production%20returns%20null%3F%20And%20newline%20as%0A%09a%20separator%3F&In-Reply-To=%3CAANLkTi%3DXbNeojh4eoUOOrs3u5kNs56HMF4eFvJWY%2BuO0%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="039348.html">
+   <LINK REL="Next"  HREF="039352.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Calling a production returns null? And newline as	a separator?</H1>
+    <B>bill robertson</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Calling%20a%20production%20returns%20null%3F%20And%20newline%20as%0A%09a%20separator%3F&In-Reply-To=%3CAANLkTi%3DXbNeojh4eoUOOrs3u5kNs56HMF4eFvJWY%2BuO0%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Calling a production returns null? And newline as	a separator?">bill at tekbot.com
+       </A><BR>
+    <I>Fri Aug  6 22:51:15 PDT 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="039348.html">[antlr-interest] Rule returning values and lists of rules
+</A></li>
+        <LI>Next message: <A HREF="039352.html">[antlr-interest] Building a tree grammar expression to recognize	arithmetic expressions
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#39349">[ date ]</a>
+              <a href="thread.html#39349">[ thread ]</a>
+              <a href="subject.html#39349">[ subject ]</a>
+              <a href="author.html#39349">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I'm working on a grammar, and I'm trying to create it such that
+expressions can either be separated by newlines or by semicolons.
+
+While working on unit tests, I found something that I don't
+understand.  I have a &quot;program&quot; that is a sequence of &quot;expressions.&quot;
+If I ask the parser for the program, I get an AST with all of the
+expressions.  However, if I ask for the expressions one by one,
+sometimes I get back a null tree.
+
+Here's sample code...
+
+   public void foo() throws Exception {
+       String script =
+               &quot;1*2\n&quot;              // expr 1
+               + &quot;3+4*55\n&quot;         // expr 2
+               + &quot;(5-6)*(77+88);\n&quot; // expr 3
+               + &quot;7\n&quot;
+               + &quot;/\n&quot;
+               + &quot;8\n&quot;              // expr 4
+               + &quot;9\n&quot;
+               + &quot;\n&quot;
+               + &quot;+\n&quot;
+               + &quot;10;\n&quot;            // expr 5
+               + &quot;11-12\n&quot;
+               + &quot;;\n&quot;              // expr 6
+               + &quot;13%14\n&quot;          // expr 7
+               + &quot;15+16; 17+18\n&quot;;  // expr 8, expr 9
+
+       FooParser parser = create(script);
+       CommonTree all = (CommonTree)parser.prog().getTree();
+       System.out.println(&quot;Child count = &quot; + all.getChildCount());
+                        //  should be 9
+
+       FooParser parser2 = create(script);
+       CommonTree expr1 = (CommonTree)parser2.expr().getTree();
+       CommonTree expr2 = (CommonTree)parser2.expr().getTree();
+       CommonTree expr3 = (CommonTree)parser2.expr().getTree();
+       CommonTree expr4 = (CommonTree)parser2.expr().getTree();
+       CommonTree expr5 = (CommonTree)parser2.expr().getTree();
+
+       System.out.println(&quot;expr1 &quot; + expr1 + &quot; &quot; + expr1.getChild(0));
+       System.out.println(&quot;expr2 &quot; + expr2 + &quot; &quot; + expr2.getChild(0));
+       System.out.println(&quot;expr3 &quot; + expr3 + &quot; &quot; + expr3.getChild(0));
+       System.out.println(&quot;expr4 &quot; + expr4);   //  expr4 is null
+       System.out.println(&quot;expr5 &quot; + expr5 + &quot; &quot; + expr5.getChild(0));
+
+   }
+
+It prints the following output (hopefully enough to show which expr is
+being returned each time...
+
+Child count = 9
+expr1 * 1
+expr2 + 3
+expr3 * -
+expr4 null
+expr5 / 7
+
+Is this normal?  Or is there something wrong with the grammar?  (will
+append to end of this message)
+
+Also, is there a better way to allow expressions to be separated by
+newlines and semi-colons, yet still allow newlines in the middle of
+expressions?   I tried as many ways as I could think of, and I was
+only able to get the extremely verbose method (below) to work.
+
+Thanks!
+
+Grammar follows...
+
+grammar Foo;
+
+options {
+output=AST;
+}
+
+prog
+   :    expr+
+   ;
+
+expr
+   :   expr_plus_minus ( NL! | NL!* SEM! | EOF!)
+   |   NL!
+   ;
+
+
+expr_plus_minus
+   :    expr_mult_div_mod
+       ( NL!* PLUS^ NL!* expr_mult_div_mod
+       | NL!* DASH^ NL!* expr_mult_div_mod
+       )*
+   ;
+
+expr_mult_div_mod
+       :       expr_unary
+               ( NL!* STAR^ NL!* expr_unary
+               | NL!* SLASH^ NL!* expr_unary
+               | NL!* PCT^ NL!* expr_unary
+               )*
+       ;
+
+expr_unary
+       :       expr_atom
+       |       ('~' | '`' | BANG) expr_unary // use temp symbols for now
+//      |       (DASH | PLUS | BANG) expr_unary
+// requires backtracking - don't want to enable yet...
+       ;
+
+expr_atom
+       :       BASE10
+       |   LPAR! NL!* expr_plus_minus NL!* RPAR!
+       ;
+
+BASE10  : ('0'..'9'+ | '0'..'9'* DOT '0'..'9'+);
+
+SEM :   ';';
+PLUS:   '+';
+DASH:   '-';
+STAR:   '*';
+LPAR:   '(';
+RPAR:   ')';
+SLASH : '/';
+PCT     :       '%';
+DOT     :       '.';
+BANG:   '!';
+
+NL      :   '\r'? '\n';
+WS      :   (' '|'\t'|'\f')+    {$channel=HIDDEN;} ;
+</PRE>
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="039348.html">[antlr-interest] Rule returning values and lists of rules
+</A></li>
+	<LI>Next message: <A HREF="039352.html">[antlr-interest] Building a tree grammar expression to recognize	arithmetic expressions
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#39349">[ date ]</a>
+              <a href="thread.html#39349">[ thread ]</a>
+              <a href="subject.html#39349">[ subject ]</a>
+              <a href="author.html#39349">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

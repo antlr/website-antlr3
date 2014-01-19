@@ -1,0 +1,190 @@
+<html>
+
+<head>
+<title>Selectively Matching XML Tags</title>
+</head>
+
+<body>
+
+<i>Terence Parr</i>
+
+<p>
+
+<p><small><font face="Arial">Everything is XML-based these days.&nbsp; If you have a file
+full of data, chances are you are using markup tags to describe the contents.
+Check out the following xml:</font></small></p>
+
+<pre><font face="Courier New">&lt;alice&gt;
+&lt;category&gt;
+&lt;pattern&gt;He says&lt;/pattern&gt;
+&lt;template&gt;She says&lt;/template&gt;
+&lt;/category&gt;
+...
+&lt;/alice&gt;</font></pre>
+
+<p><small><font face="Arial">That's easy enough with ANTLR to recognize.&nbsp; Your lexer
+would match all of those specific tags with explicit rules like:</font></small></p>
+
+<pre>O_CATEGORY : &quot;&lt;category&gt;&quot; ;</pre>
+
+<p><font face="Arial"><small>You could have a parser match up the &lt;category&gt; and
+&lt;/category&gt; tags etc... or have the lexer do it since ANTLR's lexical grammars are
+stronger than regular expressions.&nbsp; The basic rule would look something like
+(ignoring the issue of errant text between tags):</small></font></p>
+
+<pre>protected
+<font face="Courier New">CATEGORY
+    :   O_CATEGORY
+        PATTERN (THAT)? TEMPLATE
+        C_CATEGORY
+    ;</font></pre>
+
+<p><font face="Arial"><small>Easy enough.</small></font></p>
+
+<h3><font face="Arial"><small>The Problem</small></font></h3>
+
+<p><font face="Arial"><small>But, what if you want to allow arbitrary HTML tags within the
+template so that you can format the response provided to the user?&nbsp; In other words,
+you want to specify an AIML category like this:</small></font></p>
+
+<pre><font face="Courier New">&lt;category&gt;
+&lt;pattern&gt;
+What's a grammar?
+&lt;/pattern&gt;
+&lt;template&gt;
+A &lt;b&gt;grammar&lt;/b&gt; looks like this:
+
+&lt;pre&gt;&lt;tt&gt;
+foo : bar | blort | ... ;
+&lt;tt&gt;&lt;/pre&gt;
+&lt;/template&gt;
+&lt;/category&gt;</font></pre>
+
+<p><small><font face="Arial">It's pretty clear you do not want to type in a complete HTML
+specification.&nbsp; So, the question posed for this Field Guide entry is: &quot;How do I
+recognize some tags and ignore others as plain text?&quot;</font></small></p>
+
+<p><small><font face="Arial">Before allowing HTML tags, the rule for a template might look
+like:</font></small></p>
+
+<pre style="font-family: Courier New">protected
+TEMPLATE
+    :   O_TEMPLATE
+        TEXT
+        C_TEMPLATE
+    ;</pre>
+
+<pre style="font-family: Courier New">// Grab text until next tag; presume it's &quot;&lt;/template&gt;&quot;
+protected
+TEXT:   (~'&lt;')+ // chew until you hit a tag start char
+    ;</pre>
+
+<p><small><font face="Arial">Allowing HTML tags such as &lt;b&gt; renders the TEXT rule
+useless because it will match text until it finds any tag not just &lt;/template&gt;.
+&nbsp; Without seeing the entire &lt;...&gt; tag, you do not know whether to stop or not;
+that is, whether the tag is &lt;/template&gt; or not.&nbsp; ANTLR has no look ahead
+operator that says &quot;break out of the (...)+&quot; loop upon a particular pattern (you
+can only say &quot;match <em>x</em>&quot; upon pattern <em>y</em> via the (<em>x</em>)=&gt;<em>y</em>
+operator).&nbsp; [<em>What ANTLR needs is the new PERL nongreedy (...)*? expression, if I
+read the documentation correctly.&nbsp; This same problem is exhibited when trying to stop
+consuming C comment text at string &quot;*/&quot;.</em>]</font></small></p>
+
+<h3><small><font face="Arial">The Solution</font></small></h3>
+
+<p><small><font face="Arial">Clearly you cannot have rule TEXT match tags as well as plain
+text.&nbsp; You will have to match all tags as tags even if you do not need them for
+document structure, leaving TEXT as a simple &quot;anything but a tag&quot; rule.</font></small></p>
+
+<p><small><font face="Arial">Do you delineate all of the HTML tags in the TAG rule?
+&nbsp; No.&nbsp; Have TAG match the lexical form of a tag and then enter those tags you
+care about as literals.&nbsp; The literals testing mechanism in the lexer will compare all
+tags against the set of literals, setting the token type if it finds a match.&nbsp; So,
+&lt;b&gt; will get a token type of TAG as far as the parser is concerned, but
+&lt;template&gt; (in the literals table) will get its unique token type.</font></small></p>
+
+<p><small><font face="Arial">In the parser or the lexer, define the token label / literal
+pairs via the ANTLR 2.6.0 </font><font face="Courier New">tokens</font><font face="Arial">
+section:</font></small></p>
+
+<pre><font face="Courier New">tokens {
+    O_ALICE =&quot;&lt;alice&gt;&quot;,
+    O_CATEGORY=&quot;&lt;category&gt;&quot;,
+    O_PATTERN=&quot;&lt;pattern&gt;&quot;,
+    O_THAT    =&quot;&lt;that&gt;&quot;,
+    O_TEMPLATE=&quot;&lt;template&gt;&quot;,
+    C_ALICE =&quot;&lt;/alice&gt;&quot;,
+    C_CATEGORY=&quot;&lt;/category&gt;&quot;,
+    C_PATTERN=&quot;&lt;/pattern&gt;&quot;,
+    C_THAT    =&quot;&lt;/that&gt;&quot;,
+    C_TEMPLATE=&quot;&lt;/template&gt;&quot;
+}</font></pre>
+
+<p><small><font face="Arial">The complete lexer is trivial:</font></small></p>
+
+<pre><font face="Courier New">class AliceLexer extends Lexer;
+options {
+    charVocabulary = '\3'..'\377';
+}</font></pre>
+
+<pre><font face="Courier New">TAG
+    :   '&lt;' (~'&gt;')* '&gt;'
+    ;</font></pre>
+
+<pre><font face="Courier New">TEXT
+    :   (
+            /* Language for combining any flavor
+             * newline is ambiguous.  Shutting off the warning.
+             * '\r' '\n' can be matched in one alternative or
+             *  by matching'\r' in one iteration and '\n' in
+             *  another.
+             */
+            options {
+                generateAmbigWarnings=false;
+            }
+        :   '\r' '\n'       {newline();}
+        |   '\r'            {newline();}
+        |   '\n'            {newline();}
+        |   ~('&lt;'|'\n'|'\r')
+        )+
+    ;</font></pre>
+
+<p><small>In the parser, you can define template as:</small></p>
+
+<pre><font face="Courier New">template
+    :    O_TEMPLATE
+           stuff
+         C_TEMPLATE
+    ;</font></pre>
+
+<pre><font face="Courier New">stuff
+    :    ( TAG | TEXT )*
+    ;</font></pre>
+
+<p><small><strong>Herein lies the trick</strong>.&nbsp; You cannot easily make
+uninteresting tags come to the parser as TEXT, however, you can lump all uninteresting
+tags together as a single token type: TAG.&nbsp; C_TEMPLATE is a special case of a tag
+just like a keyword is a special case of an identifier and, hence, comes to the parser
+with a unique token type rather than TAG.&nbsp; Also notice that the parser sees complete
+tags of arbitrary length as simple integer token types, thus, overcoming the arbitrary
+lookahead requirements a lexer-only solution has.</small></p>
+
+<h3><small>The Complete System</small></h3>
+
+<p><small>The parser I built for Alice is set up to send an event whenever a category
+(pattern/template) is found.&nbsp; I created an AliceReader that hides all of the
+lexer/parser creation code as well.</small>
+
+<ul>
+  <li><small>The Parser and Lexer, <a href="alice.g">alice.g</a></small></li>
+  <li><a href="Main.java"><small>Main.java</small></a></li>
+  <li><a href="AliceReader.java"><small>AliceReader.java</small></a></li>
+  <li><a href="AliceReaderListener.java"><small>AliceReaderListenter.java</small></a></li>
+  <li><small>Sample <a href="data">data</a></small></li>
+</ul>
+
+<p><small><small>&nbsp;</small></small></p>
+
+<p><small>&nbsp;</small></p>
+</font>
+</body>
+</html>

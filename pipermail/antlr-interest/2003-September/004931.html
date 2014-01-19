@@ -1,0 +1,215 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] inversion problems: unreachable statements &amp;
+	 lex failures
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20inversion%20problems%3A%20unreachable%20statements%20%26%0A%09%20lex%20failures&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004932.html">
+   <LINK REL="Next"  HREF="004933.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] inversion problems: unreachable statements &amp;
+	 lex failures</H1>
+    <B>mzukowski at yci.com</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20inversion%20problems%3A%20unreachable%20statements%20%26%0A%09%20lex%20failures&In-Reply-To="
+       TITLE="[antlr-interest] inversion problems: unreachable statements &amp;
+	 lex failures">mzukowski at yci.com
+       </A><BR>
+    <I>Tue Sep  9 14:07:27 PDT 2003</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004932.html">[antlr-interest] inversion problems: unreachable statements &amp; lex failures
+</A></li>
+        <LI>Next message: <A HREF="004933.html">[antlr-interest] Re: inversion problems: unreachable statements &amp; lex failures
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4931">[ date ]</a>
+              <a href="thread.html#4931">[ thread ]</a>
+              <a href="subject.html#4931">[ subject ]</a>
+              <a href="author.html#4931">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>You really should match something in a non-protected lexer rule
+
+TEXT : (~',')* ;
+
+Should be 
+
+TEXT : (~',')+ ;
+
+Give that a try.  It may still fail, if so let us know.
+
+Also check that you have the charVocabulary option set (no, I guess you
+don't looking below.)  If it is not set then your entire lexical alphabet is
+whatever is referenced from lexer and parser.  In these examples that is
+just ',' and nothing else.  ANTLR does not match all ASCII characters by
+default.  
+
+Monty
+
+-----Original Message-----
+From: girard_chandler [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">girard_chandler at yahoo.com</A>] 
+Sent: Tuesday, September 09, 2003 1:43 PM
+To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>
+Subject: [antlr-interest] inversion problems: unreachable statements &amp; lex
+failures
+
+
+I've tried to scan the archives and web for similar problems but I haven't
+found any solutions.  Apologies if these are known problems.
+
+1st, the following produces code which can't compile:
+
+        class P extends Parser;
+        startRule :  TEXT ( COMMA TEXT )* ;
+
+        class L extends Lexer;
+        TEXT : (~',')* ;
+        COMMA : &quot;,&quot;;
+
+Gives:
+
++ java antlr.Tool -trace t.g
+ANTLR Parser Generator   Version 2.7.2   1989-2003 jGuru.com
+warning: public lexical rule TEXT is optional (can match &quot;nothing&quot;)
++ javac L.java Main.java P.java PTokenTypes.java
+L.java:100: unreachable statement
+                        if ( _createToken &amp;&amp; _token==null &amp;&amp;
+_ttype!=Token.SKIP ) {
+                        ^
+1 error
+
+
+This error can be eliminated by lexing a bogus keyword which overlaps the
+TEXT token.  However, the result fails to run:
+
+        class P extends Parser;
+        options { buildAST=true; }
+        startRule :  a:TEXT
+                { System.out.println(&quot;a:&quot; + a.getText()); }
+                ( COMMA b:TEXT
+                { System.out.println(&quot;b:&quot; + b.getText()); }
+                )*
+                ;
+
+        class L extends Lexer;
+        options { k=2; }
+        TEXT : (~',')+ ;
+        COMMA : &quot;,&quot;;
+        HACK: &quot;,==&quot;;
+
+When run, with input &quot;a,b,c&quot;, I get:
+
+java Main
+ &gt; startRule; a,b,c
+exception: line 1:1: unexpected char: 'a'
+line 1:1: unexpected char: 'a'
+        at L.nextToken(L.java:78)
+        at antlr.TokenBuffer.fill(TokenBuffer.java:69)
+        at antlr.TokenBuffer.LT(TokenBuffer.java:86)
+        at antlr.LLkParser.LT(LLkParser.java:56)
+        at antlr.LLkParser.trace(LLkParser.java:66)
+        at antlr.LLkParser.traceIn(LLkParser.java:78)
+        at P.startRule(P.java:56)
+        at Main.main(Main.java:8)
+
+This can be partially fixed by not using an inverse rule, and substituting
+the following for TEXT:
+
+TEXT : ('a'..'z'|'A'..'Z')+;
+
+Then the above example works fine.  However, I want to read all possible
+characters, except for ','.
+
+Can this be done with Antlr?
+
+Thanks,
+
+Girard
+
+p.s.
+Partial java output for the 1st example:
+L.java:
+        public final void mTEXT(boolean _createToken) throws
+RecognitionException, CharStreamException, TokenStreamException {
+                int _ttype; Token _token=null; int _begin=text.length();
+                traceIn(&quot;mTEXT&quot;);
+                _ttype = TEXT;
+                int _saveIndex;
+                try { // debugging
+
+                        {
+                        _loop6:
+                        do {
+                                {
+                                        matchNot(',');
+                                }
+
+                        } while (true);
+                        }
+                        if ( _createToken &amp;&amp; _token==null &amp;&amp;
+_ttype!=Token.SKIP ) {
+                                _token = makeToken(_ttype);
+                                _token.setText(new String(text.getBuffer(),
+_begin, text.length()-_begin));
+                        }
+                        _returnToken = _token;
+                } finally { // debugging
+                        traceOut(&quot;mTEXT&quot;);
+                }
+        }
+
+p.p.s:
+My Main.java:
+import java.io.*;
+class Main {
+    public static void main(String[] args) {
+        try {
+            L lexer = new L(new DataInputStream(System.in));
+            P parser = new P(lexer);
+            parser.startRule();
+        } catch(Exception e) {
+            System.err.println(&quot;exception: &quot;+e);
+            e.printStackTrace();
+        }
+    }
+}
+
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004932.html">[antlr-interest] inversion problems: unreachable statements &amp; lex failures
+</A></li>
+	<LI>Next message: <A HREF="004933.html">[antlr-interest] Re: inversion problems: unreachable statements &amp; lex failures
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4931">[ date ]</a>
+              <a href="thread.html#4931">[ thread ]</a>
+              <a href="subject.html#4931">[ subject ]</a>
+              <a href="author.html#4931">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

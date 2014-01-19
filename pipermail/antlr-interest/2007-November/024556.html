@@ -1,0 +1,184 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Bug in antlr-3.0.1 DOTTreeGenerator.getNodeST()
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Bug%20in%20antlr-3.0.1%20DOTTreeGenerator.getNodeST%28%29&In-Reply-To=%3CB5ACD5B0D63ABA4FB1A1B6C467964FBD072049BA%40NA-PA-VBE01.na.tibco.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="024555.html">
+   <LINK REL="Next"  HREF="024535.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Bug in antlr-3.0.1 DOTTreeGenerator.getNodeST()</H1>
+    <B>Pranab Dhar</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Bug%20in%20antlr-3.0.1%20DOTTreeGenerator.getNodeST%28%29&In-Reply-To=%3CB5ACD5B0D63ABA4FB1A1B6C467964FBD072049BA%40NA-PA-VBE01.na.tibco.com%3E"
+       TITLE="[antlr-interest] Bug in antlr-3.0.1 DOTTreeGenerator.getNodeST()">pdhar at tibco.com
+       </A><BR>
+    <I>Mon Nov  5 12:21:27 PST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="024555.html">[antlr-interest] Bug in antlr-3.0.1 DOTTreeGenerator.getNodeST()
+</A></li>
+        <LI>Next message: <A HREF="024535.html">[antlr-interest] Basic grammar problem
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24556">[ date ]</a>
+              <a href="thread.html#24556">[ thread ]</a>
+              <a href="subject.html#24556">[ subject ]</a>
+              <a href="author.html#24556">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Ter,
+
+All those \ characters can quickly become confusing. :-)
+Let me try to clarify:
+
+
+In general, what is needed is:
+
+1) Choose an escape character.
+-&gt; Here, backslash. In java: '\\'.
+
+2) Start by escaping the escape character itself. This is what is
+missing in the 3.0.1 DOTGenerator code.
+-&gt; In java: &quot;\\&quot; (string that contains one backslash character) needs to
+become &quot;\\\\&quot; (string that contains two backslash characters).
+
+3) Then, escape whatever other character needs escaping.
+-&gt; Here, double quotes. In java: &quot;\&quot;&quot; (string that contains only '&quot;')
+needs to become &quot;\\\&quot;&quot; (string that contains one backslash character and
+one double quote).
+
+
+Now, there are multiple ways to do that. Either 2 followed by 3, or 2
+and 3 at the same time, which is what was proposed in the previous
+email:
+
+    text.replaceAll(&quot;(\\\\|\&quot;)&quot;,&quot;\\\\$1&quot;);      // steps 2 and 3
+
+You can try it, it works :-).
+Let's have a look at both parameters:
+
+&quot;(\\\\|\&quot;)&quot; is a regular expression that contains one matching group
+(expression between parentheses) that can be referred to in the
+replacement string. It matches, in the input string:
+ * either one single backslash, noted \\\\ (backslash is a special
+character in regex so it needs to be escaped =&gt; doubled, and a special
+character in java string so it needs to be escaped a second time =&gt; to
+express one backslash you need to type four backslashes...),
+ * or one single double quote, noted \&quot;
+
+&quot;\\\\$1&quot; is the replacement string. It contains one backslash character,
+noted \\\\ (similar as above: \ is a special char in both replacement
+text and java string so it has to be escaped twice), followed by the
+first group that matched in the regexp, noted $1.
+
+
+To summarize:
+We try to match one character which is \ or &quot;, and for all we find
+(replaceAll), we prefix them with a \
+
+
+
+Alternatively, you can use two steps instead, but I am not sure that it
+is more readable:
+
+    text.replaceAll(&quot;\\\\&quot;,&quot;\\\\\\\\&quot;)     // step 2
+        .replaceAll(&quot;\&quot;&quot;,&quot;\\\\\&quot;&quot;);        // step 3
+
+
+
+Let us know if it helps... :-)
+Nicolas and Pranab.
+
+
+
+PS: Also, it may be more efficient to use a statically compiled regular
+expression, something like:
+
+
+private static final Pattern BACKSLASH_OR_DOUBLE_QUOTE_PATTERN =
+                                 Pattern.compile(&quot;(\\\\|\&quot;)&quot;);
+
+
+text =
+BACKSLASH_OR_DOUBLE_QUOTE_PATTERN.matcher(text).replaceAll(&quot;\\\\$1&quot;);
+
+
+
+-----Original Message-----
+From: Terence Parr [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">parrt at cs.usfca.edu</A>] 
+Sent: Monday, November 05, 2007 11:17 AM
+To: Pranab Dhar
+Cc: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: Re: [antlr-interest] Bug in antlr-3.0.1
+DOTTreeGenerator.getNodeST()
+
+
+On Nov 3, 2007, at 9:17 AM, Pranab Dhar wrote:
+
+&gt;<i> Hi,
+</I>&gt;<i>
+</I>&gt;<i>      In the 3.0.1 release of antlr, the DOTTreeGenerator  escapes  
+</I>&gt;<i> &quot;  with \  but   not    \  character like \\ . As a result token  
+</I>&gt;<i> string that includes \&quot;  is incorrectly escaped to \\&quot; instead of \\\&quot;
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> The current code shows this
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> if (text!=null) text = text.replaceAll(&quot;\&quot;&quot;, &quot;\\\\\&quot;&quot;);
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> and this should be
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> if (text!=null) text = text.replaceAll(&quot;(\\\\|\&quot;)&quot;,&quot;\\\\$1&quot;);
+</I>hi. What's $1?
+
+\\\\\&quot; yields \\&quot; in output; hmm...i guess we want \&quot; in output so we  
+need \\\&quot; instead?
+
+Also I need a &quot;\\\\ -&gt; &quot;\\&quot; right?
+
+Ter
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="024555.html">[antlr-interest] Bug in antlr-3.0.1 DOTTreeGenerator.getNodeST()
+</A></li>
+	<LI>Next message: <A HREF="024535.html">[antlr-interest] Basic grammar problem
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24556">[ date ]</a>
+              <a href="thread.html#24556">[ thread ]</a>
+              <a href="subject.html#24556">[ subject ]</a>
+              <a href="author.html#24556">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

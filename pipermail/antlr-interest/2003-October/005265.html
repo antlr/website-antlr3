@@ -1,0 +1,230 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Simple nondeterminism help
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Simple%20nondeterminism%20help&In-Reply-To=006701c39690%249b929dc0%240200a8c0%40viper2000">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005256.html">
+   <LINK REL="Next"  HREF="005298.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Simple nondeterminism help</H1>
+    <B>jbb at acm.org</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Simple%20nondeterminism%20help&In-Reply-To=006701c39690%249b929dc0%240200a8c0%40viper2000"
+       TITLE="[antlr-interest] Simple nondeterminism help">jbb at acm.org
+       </A><BR>
+    <I>Mon Oct 20 21:20:18 PDT 2003</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005256.html">[antlr-interest] Simple nondeterminism help
+</A></li>
+        <LI>Next message: <A HREF="005298.html">[antlr-interest] Simple nondeterminism help
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5265">[ date ]</a>
+              <a href="thread.html#5265">[ thread ]</a>
+              <a href="subject.html#5265">[ subject ]</a>
+              <a href="author.html#5265">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Nico!
+
+This is probably way too long a reply, but here goes...
+
+You asked (in summary):
+&gt;<i>.....but I still have
+</I>&gt;<i>nondeterminism in number RULE.
+</I>&gt;<i>
+</I>&gt;<i>I am converting a grammar from an BNF And I always have this nondeterminism
+</I>&gt;<i>errors.
+</I>&gt;<i>
+</I>&gt;<i>Does anybody know some guidelines to avoid this?
+</I>
+....grammar sniped....
+
+I think that the general concepts of &quot;Left Factoring&quot; and probably
+&quot;Left Recursion Removal&quot; form the sort of guidelines to help avoid
+non-determinism problems in LL grammars.
+
+Any decent compiler book should discuss these concepts.
+
+The rest of this message discusses how I fixed your non-determinism
+problem...
+
+First here is your original grammar with repairs in order to make the
+lexer supply all of the tokens that the parser needs. I hope you will
+agree that this grammar is the same as yours...
+
+-----Begin S2.g-----
+class S2Parser extends Parser;
+
+// nondeterminism here !!
+number :
+	(digits LOWER_R)?	   // a
+	(MINUS)?		   // b
+	bigDigits		   // c
+	(DOT bigDigits)?	   // d
+	(LOWER_E (MINUS)? digits)? // e
+    ;
+
+bigDigits: (bigDigit)+ ;
+
+bigDigit: DIGIT | CAPITALLETTER ;
+
+letter: lowerletter | CAPITALLETTER ;
+
+lowerletter : LOWER_A_D | LOWER_E | LOWER_F_Q | LOWER_R | LOWER_S_Z ;
+
+digits: (DIGIT)+ ;
+
+class S2Lexer extends Lexer;
+
+DOT : '.' ;
+MINUS : '-' ;
+
+DIGIT : '0'..'9' ;
+CAPITALLETTER: 'A'..'Z' ;
+
+LOWER_A_D : 'a'..'d' ;
+LOWER_E   : 'e'      ;
+LOWER_F_Q : 'f'..'q' ;
+LOWER_R   : 'r'      ;
+LOWER_S_Z : 's'..'z' ;
+-----End S2.g-----
+
+and here are some strings that are (apparently) valid numbers under
+your grammar - will use these for testing.
+
+-----Begin test.txt-----
+2
+-2
+2.0
+A
+-A
+A.B
+2r1
+2r-1
+2r-1.3
+2r-1.3e4
+2r-1.3e-44
+2rA
+2r-A
+2r-A.Be9
+2r-A.Be-9
+-----End test.txt-----
+
+Our non-determinism problem is that at the beginning of processing of
+the number rule. If the lexer returns a DIGIT token, the parser can
+not know whether that DIGIT is part of the optional 'r' phrase (which
+I marked with the comment // a) or is that DIGIT part of the required
+bigDigits phrase (which I marked with a // c).
+
+And so we must left factor the first 3 phrases of the number
+(e.g. what I marked as a, b, and c).
+
+And here is a grammar that has that left factoring:
+
+-----Begin S2_1.g-----
+class S2Parser extends Parser;
+
+entry : (number EOL)+ EOF;
+
+number : number_front number_tail ;
+
+number_front :
+      (DIGIT)+
+	( LOWER_R (MINUS)? (bigDigit)+
+	| CAPITALLETTER (bigDigit)* )?
+    | MINUS (bigDigit)+
+    | CAPITALLETTER (bigDigit)*
+    ;
+
+number_tail : (DOT (bigDigit)+)? (LOWER_E (MINUS)? (DIGIT)+)? ;
+
+bigDigit: DIGIT | CAPITALLETTER ;
+
+letter: lowerletter | CAPITALLETTER ;
+
+lowerletter : LOWER_A_D | LOWER_E | LOWER_F_Q | LOWER_R | LOWER_S_Z ;
+
+class S2Lexer extends Lexer;
+
+options {
+    k = 2;
+}
+
+DOT : '.' ;
+MINUS : '-' ;
+
+DIGIT : '0'..'9' ;
+CAPITALLETTER: 'A'..'Z' ;
+
+LOWER_A_D : 'a'..'d' ;
+LOWER_E   : 'e'      ;
+LOWER_F_Q : 'f'..'q' ;
+LOWER_R   : 'r'      ;
+LOWER_S_Z : 's'..'z' ;
+
+WS  : ( ' '|'\t') { $setType(Token.SKIP); } ;
+EOL : &quot;\r\n&quot;|'\r'|'\n' { newline(); } ;
+-----End S2_1.g-----
+
+Run this grammar with this Main using the test.txt as input and see no
+errors...
+
+-----Begin Main.java-----
+import java.io.*;
+
+class Main {
+    public static void main(String[] args) {
+	try {
+	    S2Lexer lexer =
+		new S2Lexer(new DataInputStream(System.in));
+	    S2Parser parser = new S2Parser(lexer);
+	    parser.entry();
+	} catch(Exception e) {
+	    System.err.println(&quot;exception: &quot;+e);
+	}
+    }
+}
+-----End Main.java-----
+
+And lastly, I believe that the number rule (and all its attendant
+sub-rules) should really be placed in the lexer and not in the
+parser. But haven't really thought about how to do that.
+
+Hope this helps....
+
+	-jbb
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005256.html">[antlr-interest] Simple nondeterminism help
+</A></li>
+	<LI>Next message: <A HREF="005298.html">[antlr-interest] Simple nondeterminism help
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5265">[ date ]</a>
+              <a href="thread.html#5265">[ thread ]</a>
+              <a href="subject.html#5265">[ subject ]</a>
+              <a href="author.html#5265">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

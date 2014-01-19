@@ -1,0 +1,173 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Is this a bug of ANTLR3.1?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Is%20this%20a%20bug%20of%20ANTLR3.1%3F&In-Reply-To=%3C005201c9099a%24d15cc020%244307430a%40RYUSA%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="030402.html">
+   <LINK REL="Next"  HREF="030397.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Is this a bug of ANTLR3.1?</H1>
+    <B>Ronghui Yu</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Is%20this%20a%20bug%20of%20ANTLR3.1%3F&In-Reply-To=%3C005201c9099a%24d15cc020%244307430a%40RYUSA%3E"
+       TITLE="[antlr-interest] Is this a bug of ANTLR3.1?">Ronghui.Yu at SierraAtlantic.com
+       </A><BR>
+    <I>Thu Aug 28 22:48:09 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="030402.html">[antlr-interest] Is this a bug of ANTLR3.1?
+</A></li>
+        <LI>Next message: <A HREF="030397.html">[antlr-interest] ParseTree::getLine problem
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30427">[ date ]</a>
+              <a href="thread.html#30427">[ thread ]</a>
+              <a href="subject.html#30427">[ subject ]</a>
+              <a href="author.html#30427">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+The following information is output from gdb
+
+Program received signal SIGSEGV, Segmentation fault.
+0xb7341e78 in getMissingSymbol (recognizer=0x83e6a48, istream=0x83e5410,
+    e=0x83e9f70, expectedTokenType=4, follow=0xb6fe0810)
+    at src/antlr3baserecognizer.c:2199
+2199    src/antlr3baserecognizer.c: No such file or directory.
+  in src/antlr3baserecognizer.c
+(gdb) where
+#0  0xb7341e78 in getMissingSymbol (recognizer=0x83e6a48, istream=0x83e5410,
+    e=0x83e9f70, expectedTokenType=4, follow=0xb6fe0810)
+    at src/antlr3baserecognizer.c:2199
+#1  0xb73413e4 in recoverFromMismatchedToken (recognizer=0x83e6a48, ttype=4,
+    follow=0xb6fe0810) at src/antlr3baserecognizer.c:1510
+#2  0xb73407b1 in match (recognizer=0x83e6a48, ttype=4, follow=0x0)
+    at src/antlr3baserecognizer.c:448
+
+
+
+Information output from valgrind is similiar
+
+==32170==    at 0x4C45E78: getMissingSymbol (antlr3baserecognizer.c:2199)
+==32170==    by 0x4C453E3: recoverFromMismatchedToken (antlr3baserecognizer.c:1510)
+==32170==    by 0x4C447B0: match (antlr3baserecognizer.c:448)
+
+
+
+The code should be 
+                  token   = recognizer-&gt;state-&gt;tokFactory-&gt;newToken(recognizer-&gt;state-&gt;tokFactory);
+   2184
+   2185         // Set some of the token properties based on the current token
+   2186         //
+   2187         token-&gt;setLine                                  (token, current-&gt;getLine(current));
+   2188         token-&gt;setCharPositionInLine    (token, current-&gt;getCharPositionInLine(current));
+   2189         token-&gt;setChannel                               (token, ANTLR3_TOKEN_DEFAULT_CHANNEL);
+   2190         token-&gt;setType                                  (token, expectedTokenType);
+   2191
+   2192         // Create the token text that shows it has been inserted
+   2193         //
+   2194         token-&gt;setText8(token, (pANTLR3_UINT8)&quot;&lt;missing &quot;);
+   2195         text = token-&gt;getText(token);
+   2196
+   2197         if      (text != NULL)
+   2198         {
+   2199                 text-&gt;append8(text, (const char *)recognizer-&gt;state-&gt;tokenNames[expectedTokenType]);
+   2200                 text-&gt;append8(text, (const char *)&quot;&gt;&quot;);
+   2201         }
+
+Thanks
+==============================
+Regards,
+Ronghui Yu
+Sierra Atlantic
+  ----- Original Message ----- 
+  From: Jim Idle 
+  To: Ronghui Yu 
+  Cc: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A> 
+  Sent: Thursday, August 28, 2008 11:17 PM
+  Subject: Re: [antlr-interest] Is this a bug of ANTLR3.1?
+
+
+  On Thu, 2008-08-28 at 18:40 +0800, Ronghui Yu wrote: 
+    I am using ANTLR3.1 for developing a SQL parser 
+     
+    One of my main rule looks like this 
+     
+    sql_statement: 
+        sql_statement_command (';')? 
+     
+    But when generating parser codes from grammar file to C source, it always take a very long time and consume as much as 5G memory because of the optional semicolon 
+    Then in order to make the development easier, I make the semicolon a mandatory by removing the question mark, like this 
+     
+    sql_statement: 
+        sql_statement_command ';' 
+     
+    It does make the building faster and require much less memory.
+
+
+  This indicates that there is something wrong with the formulation of your grammar - getting the terminators correct in SQL is not easy. 
+     
+    But the problem now is, when parsing a statement without the semicolon, such as the following 
+     
+    select * from tt 
+     
+    ANTLR won't handle this but issue a signal 11 
+    His is the stack information when this happening, when all test has been matched and is going to match the last semicolon 
+     
+    Program received signal SIGSEGV, Segmentation fault.
+    0xb7370a09 in getMissingSymbol () from /home/oracle/install/lib/libantlr3c.so
+    (gdb) where
+    #0  0xb7370a09 in getMissingSymbol ()
+       from /home/oracle/install/lib/libantlr3c.so
+    #1  0xb73701d0 in recoverFromMismatchedToken ()
+       from /home/oracle/install/lib/libantlr3c.so
+    #2  0xb736f7bb in match () from /home/oracle/install/lib/libantlr3c.so
+
+
+  Yes - this probably is a bug. TO give me a bettr chance of seeing what is happening, can you rebuild the runtime with debug information included (see configure --help) and run it via valgrind? It is probably some boundary condition that I did not anticipate.
+
+  Jim
+
+
+
+
+__________________________________________________________________________________________________________________
+DISCLAIMER:&quot;The information contained in this message and the attachments (if any) may be privileged and confidential and protected from disclosure. You are hereby notified that any unauthorized use, dissemination, distribution or copying of this communication, review, retransmission, or taking of any action based upon this information, by persons or entities other than the intended recipient, is strictly prohibited. If you are not the intended recipient or an employee or agent responsible for delivering this message, and have received this communication in error, please notify us immediately by replying to the message and kindly delete the original message, attachments, if any, and all its copies from your computer system. Thank you for your cooperation.&quot; 
+________________________________________________________________________________________________________________
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20080829/90e81e24/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20080829/90e81e24/attachment.html</A> 
+</PRE>
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="030402.html">[antlr-interest] Is this a bug of ANTLR3.1?
+</A></li>
+	<LI>Next message: <A HREF="030397.html">[antlr-interest] ParseTree::getLine problem
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30427">[ date ]</a>
+              <a href="thread.html#30427">[ thread ]</a>
+              <a href="subject.html#30427">[ subject ]</a>
+              <a href="author.html#30427">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

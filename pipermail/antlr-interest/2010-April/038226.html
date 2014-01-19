@@ -1,0 +1,211 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Processing/traversing a rule -- dealing with	conditionals
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Processing/traversing%20a%20rule%20--%20dealing%20with%0A%09conditionals&In-Reply-To=%3Cl2j1bb620341004081842r829ecc0ifa6a6b03251c4e0c%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="038212.html">
+   <LINK REL="Next"  HREF="038213.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Processing/traversing a rule -- dealing with	conditionals</H1>
+    <B>Tyler Distad</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Processing/traversing%20a%20rule%20--%20dealing%20with%0A%09conditionals&In-Reply-To=%3Cl2j1bb620341004081842r829ecc0ifa6a6b03251c4e0c%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Processing/traversing a rule -- dealing with	conditionals">tyler.distad at gmail.com
+       </A><BR>
+    <I>Thu Apr  8 18:42:54 PDT 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="038212.html">[antlr-interest] Processing/traversing a rule -- dealing with conditionals
+</A></li>
+        <LI>Next message: <A HREF="038213.html">[antlr-interest] New partial methods in the C# 3 generated code
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#38226">[ date ]</a>
+              <a href="thread.html#38226">[ thread ]</a>
+              <a href="subject.html#38226">[ subject ]</a>
+              <a href="author.html#38226">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>John,
+
+Yes, I'm trying to deal with the conditional aspects of my grammar, but not
+quite in the sense you suggest. My processor is not interpreting the
+grammar, it's emitting assembly code for later compilation by gcc.
+
+So, I want to process all of the expressions regardless of the truth value
+of the conditional. In between each node of my stmtIf rule, I need to emit
+assembly to account for tests, jumps, etc.
+
+Do I have to &quot;physically&quot; place calls to my processor actions in between
+each of the grammar nodes? I have multiple processing classes that each do
+different things depending on their intent. I don't really want to create
+excess methods on the root class for things that only my code generator pass
+will do.
+
+I guess my question boils back down to: Is there a way to override the
+traversal of a single rule?
+
+Tyler Distad
+
+On Thu, Apr 8, 2010 at 11:39 AM, Farr, John &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">john.farr at medtronic.com</A>&gt; wrote:
+
+&gt;<i> Tyler,
+</I>&gt;<i>
+</I>&gt;<i> It appears that you're trying to deal with the conditional aspect of your
+</I>&gt;<i> IF and WHILE statements in the tree grammar actions. I haven't found a way
+</I>&gt;<i> to do this exclusively in actions because the conditions determine which
+</I>&gt;<i> parts of the tree to &quot;evaluate&quot; and which parts to &quot;skip over&quot;.
+</I>&gt;<i>
+</I>&gt;<i> The way I deal with this in an expression evaluator tree is something like
+</I>&gt;<i> the following:
+</I>&gt;<i>
+</I>&gt;<i> //-------------
+</I>&gt;<i>
+</I>&gt;<i> @header { bool booleanResult; }
+</I>&gt;<i>
+</I>&gt;<i> expression returns [Result result]
+</I>&gt;<i>    : ^( IF     cond=expression
+</I>&gt;<i>                { booleanResult = $cond.result.asBool(); }
+</I>&gt;<i>                ( { booleanResult }?=&gt;
+</I>&gt;<i>                  s1=expression unevaluatedExpression
+</I>&gt;<i>                  { $result = $s1.result; }
+</I>&gt;<i>                | unevaluatedExpression s2=expression
+</I>&gt;<i>                  { $result = $s2.result; }
+</I>&gt;<i>                )
+</I>&gt;<i>       )
+</I>&gt;<i>    | ^( OR     op1=expression { booleanResult = $op1.result.asBool(); }
+</I>&gt;<i>                ( { booleanResult }?=&gt; unevaluatedExpression { $result =
+</I>&gt;<i> $op1.result; }
+</I>&gt;<i>                | op2=expression { $result = $op2.result; }
+</I>&gt;<i>                )
+</I>&gt;<i>       )
+</I>&gt;<i>    | ^( AND    op1=expression
+</I>&gt;<i>                { booleanResult = $op1.result.asBool(); }
+</I>&gt;<i>                ( { !booleanResult }?=&gt;
+</I>&gt;<i>                  unevaluatedExpression
+</I>&gt;<i>                  { $result = $op1.result; }
+</I>&gt;<i>                | op2=expression
+</I>&gt;<i>                  { $result = $op2.result; }
+</I>&gt;<i>                )
+</I>&gt;<i>       )
+</I>&gt;<i>    // ... other operators, literals, etc.
+</I>&gt;<i>    ;
+</I>&gt;<i>
+</I>&gt;<i> unevaluatedExpression
+</I>&gt;<i>    : ^( ( IF | OR | AND
+</I>&gt;<i>         | // other operators, etc.
+</I>&gt;<i>         ) unevaluatedExpression* )
+</I>&gt;<i>    | // literals, etc.
+</I>&gt;<i>    ;
+</I>&gt;<i>
+</I>&gt;<i> //-------------
+</I>&gt;<i>
+</I>&gt;<i> This is obviously simplified and incomplete but I hope you'll get the idea.
+</I>&gt;<i> There are a couple of things this approach depends on:
+</I>&gt;<i>
+</I>&gt;<i> 1. A rule, unevaluatedExpression, that is like the main expression rule,
+</I>&gt;<i> but contains no evaluating actions.
+</I>&gt;<i>
+</I>&gt;<i> 2. A data member of the parser class, booleanResult, used in semantic
+</I>&gt;<i> predicates to select which subexpressions to evaluate. It needs to be at the
+</I>&gt;<i> parser level (or in a scope), so that it can be seen by the code generated
+</I>&gt;<i> for the semantic predicate.
+</I>&gt;<i>
+</I>&gt;<i> 3. The semantic predicates that select the appropriate subexpressions.
+</I>&gt;<i>
+</I>&gt;<i> I hope this helps.
+</I>&gt;<i>
+</I>&gt;<i> --John
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> -----Original Message-----
+</I>&gt;<i> From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Tyler Distad
+</I>&gt;<i> Sent: Thursday, April 08, 2010 6:16 AM
+</I>&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> Subject: [antlr-interest] Processing/traversing a rule
+</I>&gt;<i>
+</I>&gt;<i> I have a tree parser which is traversing the nodes of my AST. At points
+</I>&gt;<i> within the grammar, I use action blocks to call methods on my processing
+</I>&gt;<i> object, thus keeping large amounts of action code abstracted into a separate
+</I>&gt;<i> file.
+</I>&gt;<i>
+</I>&gt;<i> This has worked fine, but now I have the &quot;if&quot; and &quot;while&quot; statements
+</I>&gt;<i> visible
+</I>&gt;<i> below:
+</I>&gt;<i>
+</I>&gt;<i> stmtIf
+</I>&gt;<i>    : ^(STMT_IF expr trueStmts=stmt* (ELSE_KW falseStmts=stmt*)?)
+</I>&gt;<i>        { proc.outStmtIf($expr.start, $trueStmts.start,
+</I>&gt;<i> $falseStmts.start);    }
+</I>&gt;<i>    ;
+</I>&gt;<i>
+</I>&gt;<i> stmtWhile
+</I>&gt;<i>    : ^(STMT_WHILE expr stmt*)
+</I>&gt;<i>        { proc.outStmtWhile($expr.start, $stmt.start);    }
+</I>&gt;<i>    ;
+</I>&gt;<i>
+</I>&gt;<i> Obviously, this works fine for actions which take place after the entire if
+</I>&gt;<i> or while tree has been processed. But I want to do some processing before
+</I>&gt;<i> the tree is traversed, as well as some at specific points during. I could
+</I>&gt;<i> create more method calls in my processing object and sprinkle them
+</I>&gt;<i> throughout the above AST, but that feels so clunky. I'd like to be able to
+</I>&gt;<i> override the entire traversal of the rule at this point and do some custom
+</I>&gt;<i> work.
+</I>&gt;<i>
+</I>&gt;<i> So, two questions:
+</I>&gt;<i>  * In general, is my method of making calls to a processing object
+</I>&gt;<i> sane/normal/best practice?
+</I>&gt;<i>  * In the above cases, is there any practical method of manually processing
+</I>&gt;<i> an entire rule and its descendant tree?
+</I>&gt;<i>
+</I>&gt;<i> Tyler Distad
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe:
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> [CONFIDENTIALITY AND PRIVACY NOTICE]
+</I>&gt;<i>
+</I>&gt;<i> Information transmitted by this email is proprietary to Medtronic and is
+</I>&gt;<i> intended for use only by the individual or entity to which it is addressed,
+</I>&gt;<i> and may contain information that is private, privileged, confidential or
+</I>&gt;<i> exempt from disclosure under applicable law. If you are not the intended
+</I>&gt;<i> recipient or it appears that this mail has been forwarded to you without
+</I>&gt;<i> proper authority, you are notified that any use or dissemination of this
+</I>&gt;<i> information in any manner is strictly prohibited. In such cases, please
+</I>&gt;<i> delete this mail from your records.
+</I>&gt;<i>
+</I>&gt;<i> To view this notice in other languages you can either select the following
+</I>&gt;<i> link or manually copy and paste the link into the address bar of a web
+</I>&gt;<i> browser: <A HREF="http://emaildisclaimer.medtronic.com">http://emaildisclaimer.medtronic.com</A>
+</I>&gt;<i>
+</I>&gt;<i>
+</I></PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="038212.html">[antlr-interest] Processing/traversing a rule -- dealing with conditionals
+</A></li>
+	<LI>Next message: <A HREF="038213.html">[antlr-interest] New partial methods in the C# 3 generated code
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#38226">[ date ]</a>
+              <a href="thread.html#38226">[ thread ]</a>
+              <a href="subject.html#38226">[ subject ]</a>
+              <a href="author.html#38226">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

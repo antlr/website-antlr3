@@ -1,0 +1,142 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Scanning Perl-style quoted strings	q{foo{bar}quux}?!
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Scanning%20Perl-style%20quoted%20strings%0A%09q%7Bfoo%7Bbar%7Dquux%7D%3F%21&In-Reply-To=%3C20090729210745.GA9258%40engelschall.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="035379.html">
+   <LINK REL="Next"  HREF="035380.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Scanning Perl-style quoted strings	q{foo{bar}quux}?!</H1>
+    <B>Ralf S. Engelschall</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Scanning%20Perl-style%20quoted%20strings%0A%09q%7Bfoo%7Bbar%7Dquux%7D%3F%21&In-Reply-To=%3C20090729210745.GA9258%40engelschall.com%3E"
+       TITLE="[antlr-interest] Scanning Perl-style quoted strings	q{foo{bar}quux}?!">rse+antlr-interest at engelschall.com
+       </A><BR>
+    <I>Wed Jul 29 14:07:45 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="035379.html">[antlr-interest] rule return value not declared
+</A></li>
+        <LI>Next message: <A HREF="035380.html">[antlr-interest] Scanning Perl-style quoted	strings	q{foo{bar}quux}?!
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#35378">[ date ]</a>
+              <a href="thread.html#35378">[ thread ]</a>
+              <a href="subject.html#35378">[ subject ]</a>
+              <a href="author.html#35378">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>To a small ANTLR-based expression language I would like to add
+Perl-style quoted strings:
+
+    q{foo{bar}quux}
+    q(foo(bar)quux)
+    q!foo/bar/quux!
+
+For those who don't know these constructs: it is a variant of
+non-interpolating strings where one doesn't have to quote the quote
+character. And in case of one of the open/close pairs of quote
+characters (&quot;(&quot; + &quot;)&quot;, &quot;&lt;&quot; + &quot;&gt;&quot;, &quot;[&quot; + &quot;]&quot; and &quot;{&quot; + &quot;}&quot;) one can even
+nest them without escaping (as long as there as the nesting is correct,
+i.e., equal number of open and close characters).
+
+Remains the question: what is the best way to implement this in ANTLR 3?
+
+Although my general knowledge about parsing is good, I'm not an ANTLR
+expert. Hence, my naive and best attempt with ANTLR current is (trying
+to leverage ANTLR predicates):
+
+QSTRING    @init { int n = 0; }
+           : 'q'
+             ( options { greedy=false; }:
+               open=('&lt;'|'{'|'['|'('|'/'|'!')
+               ( { (   $open == '&lt;' &amp;&amp; input.LT(1) == '&lt;'
+                    || $open == '{' &amp;&amp; input.LT(1) == '{'
+                    || $open == '[' &amp;&amp; input.LT(1) == '['
+                    || $open == '(' &amp;&amp; input.LT(1) == '(')
+                 }? . { n++; }
+               | { (   $open == '&lt;' &amp;&amp; input.LT(1) == '&gt;'
+                    || $open == '{' &amp;&amp; input.LT(1) == '}'
+                    || $open == '[' &amp;&amp; input.LT(1) == ']'
+                    || $open == '(' &amp;&amp; input.LT(1) == ')') &amp;&amp; n &gt; 0
+                 }? . { n--; }
+               | { (   $open == '&lt;' &amp;&amp; input.LT(1) != '&gt;'
+                    || $open == '{' &amp;&amp; input.LT(1) != '}'
+                    || $open == '[' &amp;&amp; input.LT(1) != ']'
+                    || $open == '(' &amp;&amp; input.LT(1) != ')'
+                    ||                 input.LT(1) != $open)
+                 }? .
+               )*
+               ( { $open == '&lt;' }?         '&gt;'
+               | { $open == '{' }?         '}'
+               | { $open == '[' }?         ']'
+               | { $open == '(' }?         ')'
+               | { input.LT(1) == $open }? .
+               )
+             )
+           ;
+
+The ANTLR 3.1.3 generation process is happy about this, but the
+resulting Java code cannot be compiled because some symbols are not
+available:
+
+|<i> $ make
+</I>|<i> [generate] SCLLexer.java SCLParser.java &lt;- SCL.g
+</I>|<i> [compile] SCLLexer.class &lt;- SCLLexer.java
+</I>|<i> SCLLexer.java:2210: cannot find symbol
+</I>|<i> symbol  : variable open
+</I>|<i> location: class SCLLexer.DFA11
+</I>|<i>                         if ( (( (   open == '&lt;' &amp;&amp; input.LT(1) == '&lt;'
+</I>|<i>                                     ^
+</I>|<i> SCLLexer.java:2210: cannot find symbol
+</I>|<i> symbol  : method LT(int)
+</I>|<i> location: interface org.antlr.runtime.IntStream
+</I>|<i>                         if ( (( (   open == '&lt;' &amp;&amp; input.LT(1) == '&lt;'
+</I>|<i>                                                         ^
+</I>|<i> SCLLexer.java:2211: cannot find symbol
+</I>
+The reason seems to be because ANTLR puts some of the stuff into an
+own Java class (for a sub-DFA?) and this cannot access the &quot;open&quot; and
+&quot;input&quot; variables. Is there a workaround?
+
+But ok, perhaps I'm totally wrong with my whole solution attempt at
+all. Perhaps those ANTLR semantic predicates would not even work the
+way I expect them to work. Perhaps there is a lot easier approach in
+scanning and recognizing those Perl-style quoted strings. Has anybody
+any hints? Perhaps scanning the input tokens with an embedded Java-only
+loop construct?
+                                       Ralf S. Engelschall
+                                       <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">rse at engelschall.com</A>
+                                       www.engelschall.com
+
+</PRE>
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="035379.html">[antlr-interest] rule return value not declared
+</A></li>
+	<LI>Next message: <A HREF="035380.html">[antlr-interest] Scanning Perl-style quoted	strings	q{foo{bar}quux}?!
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#35378">[ date ]</a>
+              <a href="thread.html#35378">[ thread ]</a>
+              <a href="subject.html#35378">[ subject ]</a>
+              <a href="author.html#35378">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

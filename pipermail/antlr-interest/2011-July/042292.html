@@ -1,0 +1,781 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Have I found an Antlr CSharp3 lexer bug if...
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Have%20I%20found%20an%20Antlr%20CSharp3%20lexer%20bug%20if...&In-Reply-To=%3C9A8169D51FEB4E14A5EC55A7CE2F09BD%40Mothership%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="042287.html">
+   <LINK REL="Next"  HREF="042297.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Have I found an Antlr CSharp3 lexer bug if...</H1>
+    <B>Gary R. Van Sickle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Have%20I%20found%20an%20Antlr%20CSharp3%20lexer%20bug%20if...&In-Reply-To=%3C9A8169D51FEB4E14A5EC55A7CE2F09BD%40Mothership%3E"
+       TITLE="[antlr-interest] Have I found an Antlr CSharp3 lexer bug if...">g.r.vansickle at att.net
+       </A><BR>
+    <I>Fri Jul 29 06:00:31 PDT 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="042287.html">[antlr-interest] Have I found an Antlr CSharp3 lexer bug if...
+</A></li>
+        <LI>Next message: <A HREF="042297.html">[antlr-interest] Have I found an Antlr CSharp3 lexer bug if...
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#42292">[ date ]</a>
+              <a href="thread.html#42292">[ thread ]</a>
+              <a href="subject.html#42292">[ subject ]</a>
+              <a href="author.html#42292">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Chris,
+
+What you're describing sounds a lot like the &quot;Start Condition&quot; feature 
+implemented in lex (flex has it as well).
+
+Quoting 
+&lt;<A HREF="http://flex.sourceforge.net/manual/Start-Conditions.html#Start-Conditions">http://flex.sourceforge.net/manual/Start-Conditions.html#Start-Conditions</A>&gt;:
+
+&quot;
+10 Start Conditions
+flex provides a mechanism for conditionally activating rules. Any rule whose 
+pattern is prefixed with `&lt;sc&gt;' will only be active when the scanner is in 
+the start condition named sc. For example,
+
+
+         &lt;STRING&gt;[^&quot;]*        { /* eat up the string body ... */
+                     ...
+                     }
+
+
+will be active only when the scanner is in the STRING start condition, and
+
+
+
+         &lt;INITIAL,STRING,QUOTE&gt;\.        { /* handle an escape ... */
+                     ...
+                     }
+
+
+will be active only when the current start condition is either INITIAL, 
+STRING, or QUOTE.
+&quot;
+
+I say &quot;sounds a lot like&quot; vs. &quot;is&quot; because you refer to &quot;...based on context 
+known to the parser&quot;, which I read as the parser state feeds back into the 
+lexer and affects the lexing.  I think in a flex/bison setup, bison does 
+have the ability to alter the flex start condition (and supports this sort 
+of parser-to-lexer communication in general), but ANTLR has historically 
+religiously avoided this, primarily (as I understand it) due to complexities 
+involving getting LL(*) to work with a non-static token stream.
+
+I think what you're suggesting[1] though is entirely doable in the lexer, 
+and doesn't require feedback from the parser.  If ANTLR doesn't have 
+something like start conditions, you could relatively easily write a flex 
+preprocessor to pre-tokenize your input.
+
+-- 
+Gary R. Van Sickle
+[1] DISCLAIMER: It's early, I'm tired, and I haven't been closely following 
+this thread, so I may very well have misunderstood what your suggestion is 
+;-).
+
+-----Original Message----- 
+From: chris king
+Sent: Friday, July 29, 2011 1:42 AM
+To: Sam Harwell
+Cc: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: Re: [antlr-interest] Have I found an Antlr CSharp3 lexer bug if...
+
+Sam, thanks again for taking the time to put that together for me. I owe you
+a beer. And if I had a deadline to meet I'd copy paste your code and move
+on. But what did Terence say in his book? Why spend 5 minutes doing
+something procedurally when you can spend 5 weeks doing it declaratively?
+For better or for worse, I think I suffer from the same affliction. :) So
+please allow me to play Devils Advocate for a second and try and propose a
+declarative solution using both lexer and parser (and possibly requiring new
+ANTLR declarations). And finally I'll hop up on my soap box and suggest that
+such a solution is a worthy goal of ANTLR.
+
+Basically the idea is to take what you've done procedurally, generalize it,
+and expose it declaratively. To do this I'd introducing declarative syntax
+which would allow lexer rules to be partitioned and then allow those
+partitions to be toggled on and off based on context known to the parser.
+Given that, I think the pre-processor could be done without procedural
+logic. The partitioning syntax could be borrowed from C# custom attribute
+syntax. So
+
+// No declaration so in default partition
+VERBATIM_STRING_LITERAL
+  : '@&quot;' F_VERBATIM_STRING_LITERAL_CHARACTER* '&quot;'
+  ;
+
+
+[Partition(&quot;PP&quot;)] // Part of pre-processor partition
+DEFINE: F_POUND_SIGN 'define';
+
+[Partition(&quot;IfDefedOut&quot;)] // Only member of if-defed-out partition
+PP_SKIPPED_CHARACTERS
+  : ( ~(F_NEW_LINE_CHARACTER | F_POUND_SIGN) F_INPUT_CHARACTER* F_NEW_LINE
+)*
+  ;
+
+Putting it together this is how it could solve the verbatim string problem:
+
+#if false
+@&quot;
+#endif
+
+
+We start by partition our lexer rules into three groups. First (1) would be
+pre-processor, second (2) C# grammer (including the verbatim string rule),
+and third (3) would be the rule to &quot;consume all text till the next pragma&quot;
+rule. After establishing the partitions we need to add logic to toggle them
+on and off. We'd add that logic to the #if/#elif/#else parser rules. That
+logic would detect that the #if false expression trivially evaluates to
+false and would disable the (2) C# partition and activate the third (3)
+&quot;consume all text till the next pragma&quot; partition thereby deactivating the
+verbatim rule and allowing all text up to the #endif to be consumed.
+
+Basically all this is repeating exactly what you've done procedurally. You
+already established these groups in your solution. The first (1) is the set
+of rules in the lexer, the second (2) is implemented separately and handed
+tokens as they are produced by the pre-processor, and the third (3) is
+implemented procedurally with the regexs. And you switch to that third (3)
+partition and disable the second (2) at the point where you intercept the
+the input stream. So both approaches are basically doing the same thing.
+
+
+Finally, why would ANTLR want do do this? Well, because enabling this
+scenario is right up ANTLRs design-philosophy-alley! ANTLR makes common
+compiler building tasks simple. And it seems to me that pre-processors fall
+into this bucket of
+common-compiler-problems-that-could-have-simpler-solutions. And that the C#
+pre-processor is so extremely basic, as you say, makes it ripe as a first
+goal of a declarative solution. I know pre-processors have always been done
+in the lexer but I got the feeling reading Terence's book that he was more
+than happy to take a second look at common compiler problems and solve 'em
+in different ways by introducing previously unheard of concepts (at least to
+me): Lexers and parsers in one file. Semantic and syntactic
+predicates. Infinite look ahead with back tracking. And my favorite example
+of ANTLR simplifying the declarative syntax for a common parsing
+problem is DELIMITED_COMMENT:
+'/*' .* '*/'; Wow. Why wasn't it that easy with lex/yacc?! Maybe the time
+has come for us to take a look at the idea that the pre-processor needs to
+be done in the lexer and see if we can simplify that too!
+
+So, what do you think? Can it be done?
+
+And thanks again for your time and the VS tools!
+
+Thanks,
+Chris
+
+
+
+On Thu, Jul 28, 2011 at 7:26 PM, Sam Harwell 
+&lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">sharwell at pixelminegames.com</A>&gt;wrote:
+
+&gt;<i> Fortunately the C# preprocessor is extremely basic, so the task shouldn&#8217;t
+</I>&gt;<i> be hard at all. To start with, it&#8217;s important to understand that the
+</I>&gt;<i> preprocessor **must** be implemented with the lexer, because the following
+</I>&gt;<i> is valid:****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i> #if false****
+</I>&gt;<i>
+</I>&gt;<i> @&quot;****
+</I>&gt;<i>
+</I>&gt;<i> #endif****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i> If the @&quot; is processed by the lexer, it will consume the #endif as part of
+</I>&gt;<i> the verbatim string and mess everything up. Here&#8217;s what I would do:****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i> **&#183;         **Implement a basic lexer rule to consume the characters
+</I>&gt;<i> following the #directive, up to but not including a single line comment
+</I>&gt;<i> marker //****
+</I>&gt;<i>
+</I>&gt;<i> **&#183;         **Use a separate expression grammar to parse preprocessor
+</I>&gt;<i> expressions.****
+</I>&gt;<i>
+</I>&gt;<i> **&#183;         **Set a flag in the lexer if the next code is excluded code.**
+</I>&gt;<i> **
+</I>&gt;<i>
+</I>&gt;<i> **&#183;         **Override NextToken for the lexer, and if the flag is set to
+</I>&gt;<i> true, call out to a rule other than mTokens (a basic implementation of 
+</I>&gt;<i> lexer
+</I>&gt;<i> modes).****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i> When I release version 3.4 of the runtime, the Lexer class has a new 
+</I>&gt;<i> method
+</I>&gt;<i> ParseNextToken which can be overridden to help perform this task. I haven&#8217;t
+</I>&gt;<i> tested the following, but it&#8217;s what I would start with if I wanted to make 
+</I>&gt;<i> a
+</I>&gt;<i> C# preprocessor.****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i> fragment PP_DEFINE:;****
+</I>&gt;<i>
+</I>&gt;<i> fragment PP_UNDEF:;****
+</I>&gt;<i>
+</I>&gt;<i> fragment PP_IF:;****
+</I>&gt;<i>
+</I>&gt;<i> fragment PP_ELSE:;****
+</I>&gt;<i>
+</I>&gt;<i> fragment PP_ENDIF:;****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i> PP_TOKEN****
+</I>&gt;<i>
+</I>&gt;<i>         :       {input.CharPositionInLine == 0}? =&gt;****
+</I>&gt;<i>
+</I>&gt;<i>                 WS? '#' WS?****
+</I>&gt;<i>
+</I>&gt;<i>                 (       'define' {$type=PP_DEFINE;}****
+</I>&gt;<i>
+</I>&gt;<i>                 |       'undef' {$type=PP_UNDEF;}****
+</I>&gt;<i>
+</I>&gt;<i>                 |       'if'    {$type=PP_IF;}****
+</I>&gt;<i>
+</I>&gt;<i>                 |       'else'  {$type=PP_ELSE;}****
+</I>&gt;<i>
+</I>&gt;<i>                 |       'endif' {$type=PP_ENDIF;}****
+</I>&gt;<i>
+</I>&gt;<i>                 )****
+</I>&gt;<i>
+</I>&gt;<i>                 ~('\r' | '\n' | '/')*****
+</I>&gt;<i>
+</I>&gt;<i>         ;****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i> fragment****
+</I>&gt;<i>
+</I>&gt;<i> EXCLUDED_CODE****
+</I>&gt;<i>
+</I>&gt;<i>         :       PP_TOKEN****
+</I>&gt;<i>
+</I>&gt;<i>         |       (       WS****
+</I>&gt;<i>
+</I>&gt;<i>                 |       ~(' ' | '\t' | '#')+****
+</I>&gt;<i>
+</I>&gt;<i>                 )****
+</I>&gt;<i>
+</I>&gt;<i>                 {state.type = EXCLUDED_CODE; state.channel = Hidden;}****
+</I>&gt;<i>
+</I>&gt;<i>         ;****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i> WS****
+</I>&gt;<i>
+</I>&gt;<i>         :       (' ' | '\t')+****
+</I>&gt;<i>
+</I>&gt;<i>         ;****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i> partial class CSharpLexer {****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i> private readonly HashSet&lt;string&gt; _definitions = new HashSet&lt;string&gt;(new
+</I>&gt;<i> string[] { &quot;true&quot; });****
+</I>&gt;<i>
+</I>&gt;<i> private readonly Stack&lt;IncludedCodeState&gt; _includedCode = new Stack&lt;
+</I>&gt;<i> IncludedCodeState&gt;(new IncludedCodeState[] { new IncludedCodeState(true,
+</I>&gt;<i> true) });****
+</I>&gt;<i>
+</I>&gt;<i> private bool _foundToken = false;****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i> public override IToken NextToken() {****
+</I>&gt;<i>
+</I>&gt;<i>     while (true) {****
+</I>&gt;<i>
+</I>&gt;<i>         IToken token = base.NextToken();****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i>         switch (token.Type) {****
+</I>&gt;<i>
+</I>&gt;<i>         case PP_DEFINE:****
+</I>&gt;<i>
+</I>&gt;<i>             if (_includedCode.Peek().IsIncluded)****
+</I>&gt;<i>
+</I>&gt;<i>             {****
+</I>&gt;<i>
+</I>&gt;<i>                 if (_foundToken)****
+</I>&gt;<i>
+</I>&gt;<i>                     throw new RecognitionException(&quot;Cannot define/undefine
+</I>&gt;<i> preprocessor symbols after first token in file&quot;);****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i>                 string name = token.Text;****
+</I>&gt;<i>
+</I>&gt;<i>                 name = name.Substring(name.IndexOf(&quot;define&quot;) + 6).Trim();*
+</I>&gt;<i> ***
+</I>&gt;<i>
+</I>&gt;<i>                 if (name == &quot;true&quot; || !Regex.IsMatch(name,
+</I>&gt;<i> @&quot;^[A-Za-z_][\w]*$&quot;))****
+</I>&gt;<i>
+</I>&gt;<i>                     throw new RecognitionException(&quot;Expected identifier in
+</I>&gt;<i> preprocessor.&quot;);****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i>                 _definitions.Add(name);****
+</I>&gt;<i>
+</I>&gt;<i>             }****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i>             continue;****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i>         case PP_UNDEF:****
+</I>&gt;<i>
+</I>&gt;<i>             if (_includedCode.Peek().IsIncluded)****
+</I>&gt;<i>
+</I>&gt;<i>             {****
+</I>&gt;<i>
+</I>&gt;<i>                 if (_foundToken)****
+</I>&gt;<i>
+</I>&gt;<i>                     throw new RecognitionException(&quot;Cannot define/undefine
+</I>&gt;<i> preprocessor symbols after first token in file&quot;);****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i>                 string name = token.Text;****
+</I>&gt;<i>
+</I>&gt;<i>                 name = name.Substring(name.IndexOf(&quot;undef&quot;) + 5).Trim();**
+</I>&gt;<i> **
+</I>&gt;<i>
+</I>&gt;<i>                 if (name == &quot;true&quot; || !Regex.IsMatch(name,
+</I>&gt;<i> @&quot;^[A-Za-z_][\w]*$&quot;))****
+</I>&gt;<i>
+</I>&gt;<i>                     throw new RecognitionException(&quot;Expected identifier in
+</I>&gt;<i> preprocessor.&quot;);****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i>                 _definitions.Remove(name);****
+</I>&gt;<i>
+</I>&gt;<i>             }****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i>             continue;****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i>         case PP_IF:****
+</I>&gt;<i>
+</I>&gt;<i>             {****
+</I>&gt;<i>
+</I>&gt;<i>                 string expression = token.Text;****
+</I>&gt;<i>
+</I>&gt;<i>                 expression = expression.Substring(expression.IndexOf(&quot;if&quot;)
+</I>&gt;<i> + 2).Trim();****
+</I>&gt;<i>
+</I>&gt;<i>                 _includedCode.Push(new 
+</I>&gt;<i> IncludedCodeState(EvaluatePreprocessorExpression(expression),
+</I>&gt;<i> false));****
+</I>&gt;<i>
+</I>&gt;<i>             }****
+</I>&gt;<i>
+</I>&gt;<i>             continue;****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i>         case PP_ENDIF:****
+</I>&gt;<i>
+</I>&gt;<i>             if (_includedCode.Count == 1)****
+</I>&gt;<i>
+</I>&gt;<i>                 throw new RecognitionException(&quot;Mismatched #endif in
+</I>&gt;<i> preprocessor.&quot;);****
+</I>&gt;<i>
+</I>&gt;<i>             _includedCode.Pop();****
+</I>&gt;<i>
+</I>&gt;<i>             continue;****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i>         case PP_ELSE:****
+</I>&gt;<i>
+</I>&gt;<i>             if (_includedCode.Peek().FoundElseDirective)****
+</I>&gt;<i>
+</I>&gt;<i>                 throw new RecognitionException(&quot;Mismatched #else in
+</I>&gt;<i> preprocessor.&quot;);****
+</I>&gt;<i>
+</I>&gt;<i>             _includedCode.Push(_includedCode.Pop().ElseState);****
+</I>&gt;<i>
+</I>&gt;<i>             continue;****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i>         default:****
+</I>&gt;<i>
+</I>&gt;<i>             if (token.Channel == TokenChannels.Default)****
+</I>&gt;<i>
+</I>&gt;<i>                 _foundToken = true;****
+</I>&gt;<i>
+</I>&gt;<i>             return token;****
+</I>&gt;<i>
+</I>&gt;<i>         }****
+</I>&gt;<i>
+</I>&gt;<i>     }****
+</I>&gt;<i>
+</I>&gt;<i> }****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i> private bool? EvaluatePreprocessorExpression(string expression) {****
+</I>&gt;<i>
+</I>&gt;<i>     if (!_includedCode.Peek().IsIncluded)****
+</I>&gt;<i>
+</I>&gt;<i>         return null;****
+</I>&gt;<i>
+</I>&gt;<i>     throw new NotImplementedException(&quot;Use a very simple expression parser
+</I>&gt;<i> here to parse evaluate the Boolean expression.&quot;);****
+</I>&gt;<i>
+</I>&gt;<i> }****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i> protected override void ParseNextToken() {****
+</I>&gt;<i>
+</I>&gt;<i>     if (!_includedCode.Peek().IsIncluded)****
+</I>&gt;<i>
+</I>&gt;<i>         mEXCLUDED_CODE();****
+</I>&gt;<i>
+</I>&gt;<i>     else****
+</I>&gt;<i>
+</I>&gt;<i>         base.ParseNextToken();****
+</I>&gt;<i>
+</I>&gt;<i> }****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i> public struct IncludedCodeState {****
+</I>&gt;<i>
+</I>&gt;<i>     public readonly bool FoundElseDirective;****
+</I>&gt;<i>
+</I>&gt;<i>     private readonly bool? _isIncluded;****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i>     public IncludedCodeState(bool? isIncluded, bool foundElseDirective) {*
+</I>&gt;<i> ***
+</I>&gt;<i>
+</I>&gt;<i>         _isIncluded = isIncluded;****
+</I>&gt;<i>
+</I>&gt;<i>         FoundElseDirective = foundElseDirective;****
+</I>&gt;<i>
+</I>&gt;<i>     }****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i>     public bool IsIncluded { get { return _isIncluded ?? false; } }****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i>     public IncludedCodeState ElseState {****
+</I>&gt;<i>
+</I>&gt;<i>         get {****
+</I>&gt;<i>
+</I>&gt;<i>             if (_isIncluded == null)****
+</I>&gt;<i>
+</I>&gt;<i>                 return new IncludedCodeState(_isIncluded, true);****
+</I>&gt;<i>
+</I>&gt;<i>             return new IncludedCodeState(!_isIncluded, true);****
+</I>&gt;<i>
+</I>&gt;<i>         }****
+</I>&gt;<i>
+</I>&gt;<i>     }****
+</I>&gt;<i>
+</I>&gt;<i> }****
+</I>&gt;<i>
+</I>&gt;<i> }****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i> Sam****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i> *From:* chris king [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">kingces95 at gmail.com</A>]
+</I>&gt;<i> *Sent:* Thursday, July 28, 2011 7:05 PM
+</I>&gt;<i> *To:* Sam Harwell
+</I>&gt;<i> *Cc:* <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> *Subject:* Re: Have I found an Antlr CSharp3 lexer bug if...****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i> Sam, thanks so much for taking the time to look at that. If I could, let 
+</I>&gt;<i> me
+</I>&gt;<i> try and explain what I'm trying to do and tell me if you think it's
+</I>&gt;<i> possible. For my own edification, I'm trying to implement a C# grammar. 
+</I>&gt;<i> I'd
+</I>&gt;<i> like to implement the pre-processor at the moment. Implementations I've 
+</I>&gt;<i> seen
+</I>&gt;<i> generally using only a lexer and use some type of trick to maintain a 
+</I>&gt;<i> stack
+</I>&gt;<i> (e.g. for nested ifdefs and simple if/elif expressions). I figure why not
+</I>&gt;<i> use a parser to maintain the stack -- isn't that the reason
+</I>&gt;<i> for existence for parsers anyway? So that's what I'm trying to do -- use a
+</I>&gt;<i> lexer and parser to implement the pre-processor. ****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i> The big difficulty is changing the lexer rules depending on whether I'm in
+</I>&gt;<i> a #if def block that is active or not. I figured with ANTLR I'd be able to
+</I>&gt;<i> compute if the #ifdef block is active and then throw a switch to either
+</I>&gt;<i> parse tokens and hand those tokens off to the C# parser or consume and
+</I>&gt;<i> ignore all input up to the next pre-processor instruction thereby 
+</I>&gt;<i> disabling
+</I>&gt;<i> that chunk of code. If I can do this then I could put the pre-processor 
+</I>&gt;<i> and
+</I>&gt;<i> parser in the same file and construct the AST in one pass! Would that be
+</I>&gt;<i> cool? And clean? And maybe worth making a goal for ANTLR to be able to do?
+</I>&gt;<i> :)****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i> To be a bit more concrete: Here is the production for matching newline at
+</I>&gt;<i> the end of pre-processor instructions. The idea would be to enable
+</I>&gt;<i> PP_SKIPPED_CHARACTERS only if inside a disabling #ifdef block which would
+</I>&gt;<i> consume all characters till the next pre-processing instruction.****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i> pp_new_line****
+</I>&gt;<i>
+</I>&gt;<i>   : SINGLE_LINE_COMMENT? ((NEW_LINE! PP_SKIPPED_CHARACTERS) | EOF!)****
+</I>&gt;<i>
+</I>&gt;<i>   ;****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i> Here is what I was hoping would work as PP_SKIPPED_CHARACTERS. 
+</I>&gt;<i> Unfortunately I
+</I>&gt;<i> don't seem to understand how to flip lexer rules on and off well enough to
+</I>&gt;<i> make this work...****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i> PP_SKIPPED_CHARACTERS****
+</I>&gt;<i>
+</I>&gt;<i>   : { IfDefedOut }? ( ~(F_NEW_LINE_CHARACTER | F_POUND_SIGN)
+</I>&gt;<i> F_INPUT_CHARACTER* F_NEW_LINE )*****
+</I>&gt;<i>
+</I>&gt;<i>   ;****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i> I hope that is enough to give you an idea of what I'm trying to do. This
+</I>&gt;<i> approach just seems so elegant to me (by which I mean almost all 
+</I>&gt;<i> declarative
+</I>&gt;<i> -- no need to sprinkle procedural logic in among my productions to 
+</I>&gt;<i> maintain
+</I>&gt;<i> a stack or whatever) that I'd hope that it would be do able in ANTLR. What
+</I>&gt;<i> do you think? Is it a worthy goal? Does it feel possible to you? If not, 
+</I>&gt;<i> is
+</I>&gt;<i> a goal worth trying to achieve?****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i> Thanks,
+</I>&gt;<i> Chris****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>&gt;<i> On Thu, Jul 28, 2011 at 2:37 PM, Sam Harwell &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">sharwell at pixelminegames.com</A>&gt;
+</I>&gt;<i> wrote:****
+</I>&gt;<i>
+</I>&gt;<i> Hi Chris,****
+</I>&gt;<i>
+</I>&gt;<i>  ****
+</I>&gt;<i>
+</I>&gt;<i> Lookahead prediction occurs before predicates are evaluated. If fixed
+</I>&gt;<i> lookahead uniquely determines the alternative with a  semantic predicate,
+</I>&gt;<i> the predicate will not be evaluated as part of the decision process. I&#8217;m
+</I>&gt;<i> guessing (but not 100% sure) if you use a gated semantic predicate, then 
+</I>&gt;<i> it
+</I>&gt;<i> will not be entering the rule:****
+</I>&gt;<i>
+</I>&gt;<i>  ****
+</I>&gt;<i>
+</I>&gt;<i> PP_SKIPPED_CHARACTERS****
+</I>&gt;<i>
+</I>&gt;<i>   : {false}? =&gt; ( ~(F_NEW_LINE_CHARACTER | '#') F_INPUT_CHARACTER*
+</I>&gt;<i> F_NEW_LINE )*****
+</I>&gt;<i>
+</I>&gt;<i>   ;****
+</I>&gt;<i>
+</I>&gt;<i>  ****
+</I>&gt;<i>
+</I>&gt;<i> Also, a word of warning: this lexer rule can match a zero-length character
+</I>&gt;<i> span, which could result in an infinite loop. You should always ensure 
+</I>&gt;<i> that
+</I>&gt;<i> every path through any lexer rule that&#8217;s not marked &#8220;fragment&#8221; will 
+</I>&gt;<i> consume
+</I>&gt;<i> at least 1 character. There&#8217;s also a bug with certain exceptions in the
+</I>&gt;<i> lexer that can cause infinite loops &#8211; this has been resolved for release 
+</I>&gt;<i> 3.4
+</I>&gt;<i> but I haven&#8217;t released it yet.****
+</I>&gt;<i>
+</I>&gt;<i>  ****
+</I>&gt;<i>
+</I>&gt;<i> Sam****
+</I>&gt;<i>
+</I>&gt;<i>  ****
+</I>&gt;<i>
+</I>&gt;<i> *From:* chris king [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">kingces95 at gmail.com</A>]
+</I>&gt;<i> *Sent:* Thursday, July 28, 2011 4:19 PM
+</I>&gt;<i> *To:* <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>; Sam Harwell
+</I>&gt;<i> *Subject:* Have I found an Antlr CSharp3 lexer bug if...****
+</I>&gt;<i>
+</I>&gt;<i>  ****
+</I>&gt;<i>
+</I>&gt;<i> Have I found an Antlr lexer CSharp3 bug if I can alter program execution
+</I>&gt;<i> (exception instead of no exception) by introducing a lexer production with 
+</I>&gt;<i> a
+</I>&gt;<i> predicate that is always false? For example****
+</I>&gt;<i>
+</I>&gt;<i>  ****
+</I>&gt;<i>
+</I>&gt;<i> PP_SKIPPED_CHARACTERS****
+</I>&gt;<i>
+</I>&gt;<i>   : { false }? ( ~(F_NEW_LINE_CHARACTER | '#') F_INPUT_CHARACTER*
+</I>&gt;<i> F_NEW_LINE )*****
+</I>&gt;<i>
+</I>&gt;<i>   ;****
+</I>&gt;<i>
+</I>&gt;<i>  ****
+</I>&gt;<i>
+</I>&gt;<i> I would think that such a production should always be ignored because it's
+</I>&gt;<i> predicate is always false and therefore would never alter program 
+</I>&gt;<i> execution.
+</I>&gt;<i> Yet I'm seeing a change in the execution of my program. I'm seeing it 
+</I>&gt;<i> enter
+</I>&gt;<i> this function and throw a FailedPredicateException. I wouldn't have 
+</I>&gt;<i> expected
+</I>&gt;<i> that this function should ever even have been executed because the 
+</I>&gt;<i> predicate
+</I>&gt;<i> is always false.****
+</I>&gt;<i>
+</I>&gt;<i>  ****
+</I>&gt;<i>
+</I>&gt;<i>      [GrammarRule(&quot;PP_SKIPPED_CHARACTERS&quot;)]****
+</I>&gt;<i>
+</I>&gt;<i>      private void mPP_SKIPPED_CHARACTERS()****
+</I>&gt;<i>
+</I>&gt;<i>      {****
+</I>&gt;<i>
+</I>&gt;<i>           EnterRule_PP_SKIPPED_CHARACTERS();****
+</I>&gt;<i>
+</I>&gt;<i>           EnterRule(&quot;PP_SKIPPED_CHARACTERS&quot;, 31);****
+</I>&gt;<i>
+</I>&gt;<i>           TraceIn(&quot;PP_SKIPPED_CHARACTERS&quot;, 31);****
+</I>&gt;<i>
+</I>&gt;<i>           try****
+</I>&gt;<i>
+</I>&gt;<i>           {****
+</I>&gt;<i>
+</I>&gt;<i>               int _type = PP_SKIPPED_CHARACTERS;****
+</I>&gt;<i>
+</I>&gt;<i>               int _channel = DefaultTokenChannel;****
+</I>&gt;<i>
+</I>&gt;<i>               // CSharp\\CSharpPreProcessor.g:197:3: ({...}? (~ (
+</I>&gt;<i> F_NEW_LINE_CHARACTER | F_POUND_SIGN ) ( F_INPUT_CHARACTER )****
+</I>&gt;<i>
+</I>&gt;<i>               DebugEnterAlt(1);****
+</I>&gt;<i>
+</I>&gt;<i>               // CSharp\\CSharpPreProcessor.g:197:5: {...}? (~ (
+</I>&gt;<i> F_NEW_LINE_CHARACTER | F_POUND_SIGN ) ( F_INPUT_CHARACTER )****
+</I>&gt;<i>
+</I>&gt;<i>               {****
+</I>&gt;<i>
+</I>&gt;<i>               DebugLocation(197, 5);****
+</I>&gt;<i>
+</I>&gt;<i>               if (!(( false )))****
+</I>&gt;<i>
+</I>&gt;<i>               {****
+</I>&gt;<i>
+</I>&gt;<i>                    throw new FailedPredicateException(input,
+</I>&gt;<i> &quot;PP_SKIPPED_CHARACTERS&quot;, &quot; False() &quot;);****
+</I>&gt;<i>
+</I>&gt;<i>               }****
+</I>&gt;<i>
+</I>&gt;<i>  ****
+</I>&gt;<i>
+</I>&gt;<i> Sam, I'm on an all CSharp stack v3.3.1.7705. I'm using your VS plugin
+</I>&gt;<i> (which is wonderful) and build integration to generate the lexer/parser
+</I>&gt;<i> (also wonderful) and then running on top of your CSharp port of the 
+</I>&gt;<i> runtime.
+</I>&gt;<i> If you think this is a bug and you'd like to have a look at the repro 
+</I>&gt;<i> please
+</I>&gt;<i> let me know. The project is open source up on CodePlex. ****
+</I>&gt;<i>
+</I>&gt;<i>  ****
+</I>&gt;<i>
+</I>&gt;<i> Thanks,
+</I>&gt;<i> Chris****
+</I>&gt;<i>
+</I>&gt;<i> ** **
+</I>&gt;<i>
+</I>
+List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+Unsubscribe: 
+<A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+
+
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="042287.html">[antlr-interest] Have I found an Antlr CSharp3 lexer bug if...
+</A></li>
+	<LI>Next message: <A HREF="042297.html">[antlr-interest] Have I found an Antlr CSharp3 lexer bug if...
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#42292">[ date ]</a>
+              <a href="thread.html#42292">[ thread ]</a>
+              <a href="subject.html#42292">[ subject ]</a>
+              <a href="author.html#42292">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

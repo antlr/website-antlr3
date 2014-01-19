@@ -1,0 +1,159 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] ANTLR running out of memory during generation
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20ANTLR%20running%20out%20of%20memory%20during%20generation&In-Reply-To=%3C7277098525d5fb4685c662b1fba4f4e2%40temporal-wave.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="037449.html">
+   <LINK REL="Next"  HREF="037455.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] ANTLR running out of memory during generation</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20ANTLR%20running%20out%20of%20memory%20during%20generation&In-Reply-To=%3C7277098525d5fb4685c662b1fba4f4e2%40temporal-wave.com%3E"
+       TITLE="[antlr-interest] ANTLR running out of memory during generation">jimi at temporal-wave.com
+       </A><BR>
+    <I>Sat Jan 30 11:42:12 PST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="037449.html">[antlr-interest] ANTLR running out of memory during generation
+</A></li>
+        <LI>Next message: <A HREF="037455.html">[antlr-interest] ANTLR running out of memory during generation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37452">[ date ]</a>
+              <a href="thread.html#37452">[ thread ]</a>
+              <a href="subject.html#37452">[ subject ]</a>
+              <a href="author.html#37452">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Ron,
+
+First you really need to switch off backtracking unless the objective of your parser is to analyze SQL (you gave it away when you mentioned 632 keywords that can be identifiers). There are not as many predicates required as you think so long as you left factor everything.
+
+Your tokens should be consecutive so long as you list them that way in the lexer. 
+
+The problem might well be that although SQL sort of allows all keywords to be identifiers, it does not allow all because some of them would be to ambiguous even for a syntax directed hand crafted parser. If you turn on backtracking then try to allow one of these reserved words to be an identifier, then you will probably mask the issue because all warnings and errors are turned off. 
+
+It is entirely feasible to create a full SQL parser without backtracking, very little look ahead and few predicates (all of the one or two token lookahead type). I have an online demo of T-SQL for instance on my web site at www.temporal-wave.com  (select 'online demos' link), and Oracle SQL/PLSQL will be up there before long too.
+
+So, I think you will need to do the following to have a chance of generating the code:
+
+1) Use -Xconversiontimeout 10000
+2) Cause switches to be generated rather than ifs: -Xmaxswitchcaselabels 32000 -Xminswitchalts 1-xmaxinlineddfastates 65534
+3) Use -Xmx2G when invoking the java command (assuming your jvm allows that)
+
+But if you cannot get it going that way, then basically you are masking a bigger problem in your grammar that you are not seeing because of global backtracking. 
+
+Jim
+
+&gt;<i> -----Original Message-----
+</I>&gt;<i> From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:antlr-interest-
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">bounces at antlr.org</A>] On Behalf Of Ron Hunter-Duvar
+</I>&gt;<i> Sent: Friday, January 29, 2010 8:52 PM
+</I>&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> Subject: [antlr-interest] ANTLR running out of memory during generation
+</I>&gt;<i> 
+</I>&gt;<i> I'm having a strange problem with ANTLR. I'm building a grammar for a
+</I>&gt;<i> language with a huge number (hundreds) of non-reserved keywords. I'm
+</I>&gt;<i> using the approach of having the lexer return a different token type
+</I>&gt;<i> for
+</I>&gt;<i> each keyword, and then having a parser rule of the form:
+</I>&gt;<i> 
+</I>&gt;<i>     id : ( ID | QUOTED_ID | KW_A | KW_B | ... | KW_ZZZ );
+</I>&gt;<i> 
+</I>&gt;<i> This was working great until today. In fact, ANTLR 3.2 generates
+</I>&gt;<i> surprisingly clever code for this - all the keywords are assigned
+</I>&gt;<i> consecutive token numbers, and generated code just says:
+</I>&gt;<i> 
+</I>&gt;<i>     if ( (input.LA(1)&gt;=KW_A &amp;&amp; input.LA(1)&lt;=KW_ZZZ)||(input.LA(1)&gt;=ID
+</I>&gt;<i> &amp;&amp;
+</I>&gt;<i> input.LA(1)&lt;=QUOTED_ID) ) {
+</I>&gt;<i>         input.consume();
+</I>&gt;<i>         ...
+</I>&gt;<i> 
+</I>&gt;<i> This works all the way up to 631 keywords. ANTLR runs in about 20
+</I>&gt;<i> seconds, and never uses more than 269MB of memory. When I add a 632nd
+</I>&gt;<i> keyword (doesn't matter what the keyword is), and change nothing else,
+</I>&gt;<i> ANTLR runs for 2 minutes and runs out of heap space. I kept bumping the
+</I>&gt;<i> max space up, but even going to 2GB doesn't make any difference.
+</I>&gt;<i> 
+</I>&gt;<i> What's really interesting is that I was using ANTLR 3.1 until now. When
+</I>&gt;<i> I ran into this I upgraded to 3.2, but both of them fail at exactly the
+</I>&gt;<i> same spot, 632 keywords. Not surprisingly, the stack trace varies from
+</I>&gt;<i> one run to the next, depending on the exact point it runs out of
+</I>&gt;<i> memory,
+</I>&gt;<i> but it always has deeply nested calls to these and other methods:
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> org.antlr.stringtemplate.language.ASTExpr.writeTemplate(ASTExpr.java:75
+</I>&gt;<i> 0)
+</I>&gt;<i>     org.antlr.stringtemplate.language.ASTExpr.write(ASTExpr.java:680)
+</I>&gt;<i> 
+</I>&gt;<i> org.antlr.stringtemplate.language.ASTExpr.writeAttribute(ASTExpr.java:6
+</I>&gt;<i> 60)
+</I>&gt;<i> 
+</I>&gt;<i> org.antlr.stringtemplate.language.ActionEvaluator.action(ActionEvaluato
+</I>&gt;<i> r.java:86)
+</I>&gt;<i>     org.antlr.stringtemplate.language.ASTExpr.write(ASTExpr.java:149)
+</I>&gt;<i> 
+</I>&gt;<i> org.antlr.stringtemplate.StringTemplate.write(StringTemplate.java:705)
+</I>&gt;<i> 
+</I>&gt;<i> I don't know if it makes a difference, but I'm using backtracking
+</I>&gt;<i> (otherwise, this approach to non-reserved keywords doesn't work without
+</I>&gt;<i> a lot of synpreds), and outputting ASTs.
+</I>&gt;<i> 
+</I>&gt;<i> Since this is size related, it's hard to narrow it down to a simple
+</I>&gt;<i> example. I could try to duplicate it with just the id rule and nothing
+</I>&gt;<i> else.
+</I>&gt;<i> 
+</I>&gt;<i> Any ideas what might be happening here, and whether a fix might be
+</I>&gt;<i> possible?
+</I>&gt;<i> 
+</I>&gt;<i> Thanks,
+</I>&gt;<i> Ron
+</I>&gt;<i> 
+</I>&gt;<i> --
+</I>&gt;<i> Ron Hunter-Duvar | Software Developer V | 403-272-6580
+</I>&gt;<i> Oracle Service Engineering
+</I>&gt;<i> Gulf Canada Square 401 - 9th Avenue S.W., Calgary, AB, Canada T2P 3C5
+</I>&gt;<i> 
+</I>&gt;<i> All opinions expressed here are mine, and do not necessarily represent
+</I>&gt;<i> those of my employer.
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-">http://www.antlr.org/mailman/options/antlr-interest/your-</A>
+</I>&gt;<i> email-address
+</I>
+
+
+</PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="037449.html">[antlr-interest] ANTLR running out of memory during generation
+</A></li>
+	<LI>Next message: <A HREF="037455.html">[antlr-interest] ANTLR running out of memory during generation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37452">[ date ]</a>
+              <a href="thread.html#37452">[ thread ]</a>
+              <a href="subject.html#37452">[ subject ]</a>
+              <a href="author.html#37452">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

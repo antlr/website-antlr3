@@ -1,0 +1,253 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Can't figure this one out
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Can%27t%20figure%20this%20one%20out&In-Reply-To=%3CE1QNErW-0004na-5b%40elasmtp-spurfowl.atl.sa.earthlink.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="041638.html">
+   <LINK REL="Next"  HREF="041643.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Can't figure this one out</H1>
+    <B>David Smith</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Can%27t%20figure%20this%20one%20out&In-Reply-To=%3CE1QNErW-0004na-5b%40elasmtp-spurfowl.atl.sa.earthlink.net%3E"
+       TITLE="[antlr-interest] Can't figure this one out">david.smith at cc.gatech.edu
+       </A><BR>
+    <I>Thu May 19 18:47:49 PDT 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="041638.html">[antlr-interest] Parsing self-defined methods
+</A></li>
+        <LI>Next message: <A HREF="041643.html">[antlr-interest] Can't figure this one out
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#41642">[ date ]</a>
+              <a href="thread.html#41642">[ thread ]</a>
+              <a href="subject.html#41642">[ subject ]</a>
+              <a href="author.html#41642">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I developed a tree parser by making minor changes to Scott 
+Stanchfield's tutorial videos.  I don't know where to start looking 
+to explain the problem.
+Here are the pieces:
+
+//                 The grammar:
+grammar GTMat;
+
+options {
+   language = Java;
+   output=AST;
+   ASTLabelType=CommonTree;
+}
+
+tokens {
+         NEGATION;
+}
+
+
+@header {
+   package parser;
+}
+
+@lexer::header {
+   package parser;
+}
+
+script
+         :       statement*
+         ;
+
+statement
+         :       assignmentStatement
+         ;
+
+assignmentStatement
+         :       IDENT GETS^ expression SEMI?
+         ;
+
+actualParameters
+         :       expression (COMMA expression)*
+         ;
+
+
+// expressions -- fun time!
+
+term
+         :       (IDENT OPENP ) =&gt; IDENT '(' actualParameters ')'
+         |       OPENP! expression CLOSEP!
+         |       INTEGER
+         |       IDENT
+         ;
+
+
+unary
+         :       (PLUS! | negation^)* term
+         ;
+
+negation
+         :       MINUS -&gt; NEGATION
+         ;
+
+mult
+         :       unary ((MULT^ | DIV^ ) unary)*
+         ;
+
+add
+         :       mult ((PLUS^ | MINUS^) mult)*
+         ;
+
+relation
+         :       add ((EQUALS^ | NOTEQ^ | LESS^ | LESSEQ^ | GT^ | GTEQ^) add)*
+         ;
+
+expression
+         :       relation ((AND^ | OR^) relation)*
+         ;
+
+GETS    :       '=';
+SWITCH  :       'switch';
+CASE    :       'case';
+OTHERWISE
+         :       'otherwise';
+IF      :       'if';
+ELSE    :       'else';
+ELSEIF  :       'elseif';
+END     :       'end';
+FOR     :       'for';
+WHILE   :       'while';
+ANS     :       'ans';
+COMMA   :       ',';
+OPENP   :       '(';
+CLOSEP  :       ')';
+NOT     :       '~';
+SEMI    :       ';';
+PLUS    :       '+';
+MINUS   :       '-';
+MULT    :       '*';
+DIV     :       '/';
+EQUALS  :       '==';
+NOTEQ   :       '!=';
+LESS    :       '&lt;';
+LESSEQ  :       '&lt;=';
+GT      :       '&gt;';
+GTEQ    :       '&gt;=';
+AND     :       '&amp;&amp;';
+OR      :       '||';
+SINGLE  :       '\'';
+
+fragment LETTER : ('a'..'z' | 'A'..'Z') ;
+fragment DIGIT : '0'..'9';
+INTEGER : DIGIT+ ;
+IDENT : LETTER (LETTER | DIGIT)*;
+WS : (' ' | '\t' | '\n' | '\r' | '\f')+ {$channel = HIDDEN;};
+COMMENT : '%' .* ('\n'|'\r') {$channel = HIDDEN;};
+
+// The Walker Grammar:
+tree grammar EvaluatorWalker;
+
+options {
+   language = Java;
+   tokenVocab = GTMat;
+   ASTLabelType = CommonTree;
+}
+
+@header {
+   package parser;
+   import java.util.Map;
+   import java.util.HashMap;
+}
+
+@members {
+   private Map&lt;String, Integer&gt; variables = new HashMap&lt;String, Integer&gt;();
+}
+
+evaluator
+         :       assignment* EOF
+         ;
+
+assignment
+         :       ^('=' IDENT e=expression)
+                         { variables.put($IDENT.text, e); }
+         ;
+
+expression returns [int result]
+         :       ^('+' op1=expression op2=expression) { result = op1 + op2; }
+         |       ^('-' op1=expression op2=expression) { result = op1 - op2; }
+         |       ^('*' op1=expression op2=expression) { result = op1 * op2; }
+         |       ^('/' op1=expression op2=expression) { result = op1 / op2; }
+         |       ^(NEGATION e=expression)  { result = -e; }
+         |       IDENT { result = variables.get($IDENT.text); }
+         |       INTEGER { result = Integer.parseInt($INTEGER.text); }
+         ;
+// The Test Program:
+package parser;
+
+import org.antlr.runtime.ANTLRFileStream;
+import org.antlr.runtime.CharStream;
+import org.antlr.runtime.CommonTokenStream;
+import org.antlr.runtime.RecognitionException;
+import org.antlr.runtime.TokenStream;
+import org.antlr.runtime.tree.CommonTreeNodeStream;
+import java.io.IOException;
+
+public class Test4 {
+         public static void main(String[] args)
+                 throws RecognitionException, IOException {
+                 CharStream stream =
+                         new ANTLRFileStream(&quot;Test.m&quot;);
+                 GTMatLexer lexer = new GTMatLexer(stream);
+                 TokenStream tokenStream = new CommonTokenStream(lexer);
+                 GTMatParser parser = new GTMatParser(tokenStream);
+                 GTMatParser.script_return evaluator = parser.script();
+                 System.out.println(evaluator.tree.toStringTree());
+                 CommonTreeNodeStream nodeStream = new
+                                      CommonTreeNodeStream(evaluator.tree);
+                 EvaluatorWalker walker = new EvaluatorWalker(nodeStream);
+                 walker.evaluator();
+                 System.out.println(&quot;ok&quot;);
+         }
+}
+// The input code:
+x = 8
+y = 2 + 3
+ans = 3 * (-x + y) * 4
+
+// When I run it, I get this:
+
+(= x 8) (= y (+ 2 3))
+C:&lt;snip&gt;src\parser\EvaluatorWalker.g: node from line 1:2 mismatched 
+tree node: = expecting EOF
+ok
+
+David M. Smith <A HREF="http://www.cc.gatech.edu/fac/David.Smith">http://www.cc.gatech.edu/fac/David.Smith</A>
+Georgia Institute of Technology, College of Computing
+Sent from my ASR-33 Teletype 
+
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="041638.html">[antlr-interest] Parsing self-defined methods
+</A></li>
+	<LI>Next message: <A HREF="041643.html">[antlr-interest] Can't figure this one out
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#41642">[ date ]</a>
+              <a href="thread.html#41642">[ thread ]</a>
+              <a href="subject.html#41642">[ subject ]</a>
+              <a href="author.html#41642">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

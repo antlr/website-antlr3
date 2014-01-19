@@ -1,0 +1,169 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] 3.0.1 C target woes
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%203.0.1%20C%20target%20woes&In-Reply-To=%3C13FBAB91-7E8D-4D2D-B423-C0165DD5977C%40wincent.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="024203.html">
+   <LINK REL="Next"  HREF="024210.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] 3.0.1 C target woes</H1>
+    <B>Wincent Colaiuta</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%203.0.1%20C%20target%20woes&In-Reply-To=%3C13FBAB91-7E8D-4D2D-B423-C0165DD5977C%40wincent.com%3E"
+       TITLE="[antlr-interest] 3.0.1 C target woes">win at wincent.com
+       </A><BR>
+    <I>Tue Oct 16 02:56:07 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="024203.html">[antlr-interest] @lexer::header{} or @parser::header{} doesn't work	in v3
+</A></li>
+        <LI>Next message: <A HREF="024210.html">[antlr-interest] 3.0.1 C target woes
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24205">[ date ]</a>
+              <a href="thread.html#24205">[ thread ]</a>
+              <a href="subject.html#24205">[ subject ]</a>
+              <a href="author.html#24205">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Had some problems trying to get my lexer that worked under the 3.0 C  
+target runtime to work under the 3.0.1 runtime.
+
+The problem is solved now, so I'm posting this here for others in  
+case they run into similar issues.
+
+Basically, the lexer was crashing after lines like this:
+
+   start = (const char *)(stream-&gt;data + (token-&gt;start * 2));
+   len   = (token-&gt;stop - token-&gt;start + 1) * 2;
+
+Here I'm just trying to get a pointer to the start of the token text,  
+and its length in bytes. (Note that this is with a UCS-2 stream; the  
+multiply-by-two operations are because each UCS-2 character occupies  
+2 bytes.)
+
+Inspecting the values of the variables revealed that while under 3.0,  
+token-&gt;start was a character index (the number of characters, not  
+bytes, relative to the start of the stream), in 3.0.1 it is an  
+absolute pointer.
+
+Similarly, where token-&gt;stop was a character index in 3.0 (the number  
+of characters, not bytes, relative to the start of the stream), in  
+3.0.1 it is an absolute pointer as well. Strangely, it is not a  
+pointer to the end of the token text, but to the byte immediately  
+preceding it. In the case of UCS-2 that means that it's a pointer to  
+the second half of a character and isn't valid. Although this is  
+correct for ASCII streams, it seems like a bug for UCS-2 streams.
+
+That is, whereas in 3.0 given a character &quot;a&quot; at address 0x0f00:
+
+- let's say stream-&gt;data is 0x0f00
+- token-&gt;start is 0
+- token-&gt;stop is 1
+- the token's address is 0x0f00 + 0
+- and its length is 1 * 2 (2 bytes)
+
+But in 3.0.1:
+
+- let stream-&gt;data be 0x0f00
+- token-&gt;start is now 0x0f00
+- token-&gt;stop is 0x0f01
+- the token's address is 0x0f00
+- and its length is (stop + 1) - start
+
+So I was able to get my recognizer running by changing:
+
+   start = (const char *)(stream-&gt;data + (token-&gt;start * 2));
+   len   = (token-&gt;stop - token-&gt;start + 1) * 2;
+
+To:
+
+   start = (const char *)token-&gt;start;
+   len = (token-&gt;stop + 1 - token-&gt;start);
+
+Jim, is there anywhere where this kind of API-level change is  
+documented in the release notes? It would be nice if this kind of  
+information were included with future releases (or if it is already  
+included, it would be nice if the info were made more prominent).
+
+Another thing is that although the behaviour of the API changed, the  
+documentation in the header files did not. The start field in  
+&quot;antlr3commontoken.h&quot; is still documented as being &quot;The character  
+offset in the input stream where the text for this token starts.&quot;
+
+I spent several hours last night trying to find the changeset which  
+introduced these changes and I had little success. In the spirit of  
+constructive criticism, there are a couple of things you could do to  
+make the development history easier to search:
+
+- in many changesets the commit message describes what sounds like a  
+limited fix but the actual diff includes very extensive whitespace  
+fixes; this makes it much harder to see the actual substantive change  
+underneath all the cosmetic changes. Keeping your whitespace changes  
+in separate commits would be a huge help.
+
+- the same goes for spelling errors in comments; sometimes the number  
+of corrections drowns out the changes to the non-comment lines in the  
+source files. It would be great if you could keep such corrections in  
+separate changesets.
+
+- often it seems that unrelated topics are bundled together in single  
+changesets, making it harder to understand the nature of the changes  
+because they're all mixed in together.
+
+- the commit messages tend to be fairly brief and it can be quite  
+hard to figure out the purpose of a given changeset.
+
+Hope I haven't caused any offense with this feedback; I think I've  
+been spoilt lately by observing the Git development history. Check  
+out their changelog for a shining example of ultra-clean development  
+history:
+
+   &lt;<A HREF="http://repo.or.cz/w/git.git?a=log">http://repo.or.cz/w/git.git?a=log</A>&gt;
+
+Cheers,
+Wincent
+
+
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="024203.html">[antlr-interest] @lexer::header{} or @parser::header{} doesn't work	in v3
+</A></li>
+	<LI>Next message: <A HREF="024210.html">[antlr-interest] 3.0.1 C target woes
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24205">[ date ]</a>
+              <a href="thread.html#24205">[ thread ]</a>
+              <a href="subject.html#24205">[ subject ]</a>
+              <a href="author.html#24205">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

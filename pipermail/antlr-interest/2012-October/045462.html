@@ -1,0 +1,144 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Reuse of same token in multiple lexer modes
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Reuse%20of%20same%20token%20in%20multiple%20lexer%20modes&In-Reply-To=%3C5076205D.8000201%40certiv.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="045457.html">
+   <LINK REL="Next"  HREF="045458.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Reuse of same token in multiple lexer modes</H1>
+    <B>Gerald Rosenberg</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Reuse%20of%20same%20token%20in%20multiple%20lexer%20modes&In-Reply-To=%3C5076205D.8000201%40certiv.net%3E"
+       TITLE="[antlr-interest] Reuse of same token in multiple lexer modes">gerald at certiv.net
+       </A><BR>
+    <I>Wed Oct 10 18:26:53 PDT 2012</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="045457.html">[antlr-interest] Reuse of same token in multiple lexer modes
+</A></li>
+        <LI>Next message: <A HREF="045458.html">[antlr-interest] (no subject)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#45462">[ date ]</a>
+              <a href="thread.html#45462">[ thread ]</a>
+              <a href="subject.html#45462">[ subject ]</a>
+              <a href="author.html#45462">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Do you really need to recursively pushMode(PAR) when you are already in 
+PAR mode?  Or, do you just need to match parens to know when to exit PAR 
+mode?
+
+If the latter, you should be able to use a redundant string literal 
+(TDAR4, pg 275):
+
+// default mode
+OPAR : '(' -&gt; pushMode(PAR);
+CPAR : ')' ;
+mode PAR
+OTHINGY : '(' {cnt++;} ;
+CTHINGY : ')'   ( { cnt == 0 }?  -&gt; type(CPAR), popMode )? { if (cnt &gt; 
+0) cnt-- ; } ;
+
+Lexer actions are limited in where they can appear.  Coding is from 
+memory, but should be close.
+
+
+
+On 10/10/2012 5:32 AM, Kai Burjack (HBT) wrote:
+&gt;<i> Hey Terence,
+</I>&gt;<i>
+</I>&gt;<i> thanks. I did not know of that 'type' command. But now, that clutters up my grammar heavily.
+</I>&gt;<i>
+</I>&gt;<i> What would be totally awesome, I guess, would be the possibility to specify the tokens once with their definitions at the start of the lexer grammar and then enumerate the token names under all modes in which they should be active/recognized together with their respective commands, such as pushMode, popMode, skip, etc...
+</I>&gt;<i>
+</I>&gt;<i> Just a suggestion, though for ANTLR v5 ;-)
+</I>&gt;<i>
+</I>&gt;<i> -----Urspr&#252;ngliche Nachricht-----
+</I>&gt;<i> Von: Terence Parr [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">parrt at cs.usfca.edu</A>]
+</I>&gt;<i> Gesendet: Di 09.10.2012 19:23
+</I>&gt;<i> An: Kai Burjack (HBT)
+</I>&gt;<i> Cc: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> Betreff: Re: [antlr-interest] Reuse of same token in multiple lexer modes
+</I>&gt;<i>   
+</I>&gt;<i> hi. Since the parser needs to have a unique token type, ANTLR does not allow you to redefine token roles. You can of course use a lexer command to change the token type of something after you match it with -&gt; type(OPEN_PAREN).
+</I>&gt;<i>
+</I>&gt;<i>   I should also note that it sounds like what you really want is a recursive lexer rule, given that you are doing a push in the lexer mode as well.
+</I>&gt;<i> Ter
+</I>&gt;<i> On Oct 9, 2012, at 5:30 AM, Kai Burjack (HBT) wrote:
+</I>&gt;<i>
+</I>&gt;&gt;<i> Hello Terrence,
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> first of all, many thanks for ANTLR and ANTLRv4 in particular, with its (among other things) greatly improved error reporting!
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I have a question about lexer modes. I want to write an &quot;island grammar&quot;, as it is called in your ANTLR4 beta2 book, and have found that it does not seem to be possible to reference the same token rule in multiple lexer modes.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Simplified example grammar:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> lexer grammar MyLexer;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> OPEN_PAREN : '(' -&gt; pushMode(PAR) ;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> mode PAR ;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> OPEN_PAREN : '(' -&gt; pushMode(PAR) ;
+</I>&gt;&gt;<i> CLOSE_PAREN : ')' -&gt; popMode ;
+</I>&gt;&gt;<i> ...other tokens that are otherwise not allowed outside of parenthese...
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> What I am trying to do there is to &quot;know&quot; when I am in parenthesis in order to allow more tokens (such as '&gt;' for freemarker template language style) that were otherwise not allowed outside of that mode.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> The &quot;Tool&quot; runs through this grammar fine, but the generated Java code contains errors due to non-existing identifier &quot;PAR&quot;.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Can you help me on this one, please?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Thanks.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Best Regards,
+</I>&gt;&gt;<i> Kai
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i>
+</I>
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="045457.html">[antlr-interest] Reuse of same token in multiple lexer modes
+</A></li>
+	<LI>Next message: <A HREF="045458.html">[antlr-interest] (no subject)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#45462">[ date ]</a>
+              <a href="thread.html#45462">[ thread ]</a>
+              <a href="subject.html#45462">[ subject ]</a>
+              <a href="author.html#45462">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

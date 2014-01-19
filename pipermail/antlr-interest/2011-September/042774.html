@@ -1,0 +1,162 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] [C] code to change Token type, use char* and loose data when buffer destroyed
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5BC%5D%20code%20to%20change%20Token%20type%2C%0A%20use%20char%2A%20and%20loose%20data%20when%20buffer%20destroyed&In-Reply-To=%3C8d2fd7b3278df9f58934c91e7b753845%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="042771.html">
+   <LINK REL="Next"  HREF="042756.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] [C] code to change Token type, use char* and loose data when buffer destroyed</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5BC%5D%20code%20to%20change%20Token%20type%2C%0A%20use%20char%2A%20and%20loose%20data%20when%20buffer%20destroyed&In-Reply-To=%3C8d2fd7b3278df9f58934c91e7b753845%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] [C] code to change Token type, use char* and loose data when buffer destroyed">jimi at temporal-wave.com
+       </A><BR>
+    <I>Wed Sep 28 08:49:04 PDT 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="042771.html">[antlr-interest] [C] code to change Token type, use char* and loose data when buffer destroyed
+</A></li>
+        <LI>Next message: <A HREF="042756.html">[antlr-interest] antlr-interest Digest, Vol 82, Issue 22
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#42774">[ date ]</a>
+              <a href="thread.html#42774">[ thread ]</a>
+              <a href="subject.html#42774">[ subject ]</a>
+              <a href="author.html#42774">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>You can of course process things anywhere that it does not cause ambiguity
+but the best approach is to defer any processing that you can until the
+last point in time, so that you do not process anything that you find you
+don't actually need to. The second 'rule' is that you only want to process
+things once, so process and cache the result for later.
+
+If you can modify the input stream, then you don't need to copy anything
+here, just move the start and end pointers in the token and overwrite the
+few bytes that you are moving. That way there is no malloc and nothing to
+free. If you cannot modify the input stream, then you will need to copy
+from the token pointers of course.
+
+So, here you should lex the escape characters and the embedded '' in to
+STRING_LITERAL but not try to process the WS* there, return two or more
+tokens. Then the parser or tree parser can process the strings. If you are
+going to do multiple walks, then probably in the parser, but if just one
+walk (ot only one walk where you care about the text represented by the
+tokens), then process in the tree parser when you hit the STRING_LITERAL+
+
+Jim
+
+&gt;<i> -----Original Message-----
+</I>&gt;<i> From: Ruslan Zasukhin [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">ruslan_zasukhin at valentina-db.com</A>]
+</I>&gt;<i> Sent: Tuesday, September 27, 2011 11:41 PM
+</I>&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>; Jim Idle
+</I>&gt;<i> Subject: Re: [antlr-interest] [C] code to change Token type, use char*
+</I>&gt;<i> and loose data when buffer destroyed
+</I>&gt;<i>
+</I>&gt;<i> Hi Jim,
+</I>&gt;<i>
+</I>&gt;<i> What you think about this idea to resolve everything on the LEXER
+</I>&gt;<i> level?
+</I>&gt;<i>
+</I>&gt;<i> So we must resolve tokens as
+</I>&gt;<i>
+</I>&gt;<i> * STRING_LITERAL          'aa'
+</I>&gt;<i> * STRING_LITERAL          'aa' ws* 'bb'     =&gt; Token( &quot;aabb&quot; )
+</I>&gt;<i>
+</I>&gt;<i> * STRING_LITERAL          'aa\'bb'          =&gt; Token( &quot;aa'bb&quot; )
+</I>&gt;<i> * STRING_LITERAL          'aa''bb'           =&gt; Token( &quot;aa'bb&quot; )
+</I>&gt;<i> * STRING_LITERAL          'aa''bb''cc'      =&gt; Token( &quot;aa'bb'cc&quot; )
+</I>&gt;<i>
+</I>&gt;<i> * HEX_LITERAL              x'aa'                  =&gt; Token( &quot;aabb&quot; )
+</I>&gt;<i> * HEX_LITERAL              x'aa' ws* 'bb'     =&gt; Token( &quot;aabb&quot; )
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Do you think we can do this in [C] without copying buffers?
+</I>&gt;<i> I think not.
+</I>&gt;<i>
+</I>&gt;<i> Then question is:
+</I>&gt;<i>     how this can be solved using minimal copies?
+</I>&gt;<i>
+</I>&gt;<i> Or you think that better really use
+</I>&gt;<i>     Lexer -&gt; Parser -&gt; TreeParser combination ?
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> On 9/28/11 1:34 AM, &quot;Ruslan Zasukhin&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">ruslan_zasukhin at valentina-</A>
+</I>&gt;<i> db.com&gt;
+</I>&gt;<i> wrote:
+</I>&gt;<i>
+</I>&gt;<i> &gt; On 9/28/11 12:46 AM, &quot;Douglas Godfrey&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">douglasgodfrey at gmail.com</A>&gt;
+</I>&gt;<i> wrote:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Hi Douglas,
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Yes, I have thinked about this way also.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; But in your solution you use helper functions as
+</I>&gt;<i> &gt;     RemoveQuotePairs()
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Which, I guess do some coping in additional ram buffers.
+</I>&gt;<i> &gt; This is fine for Java guys, but in C code, as Jim likes underline
+</I>&gt;<i> each
+</I>&gt;<i> &gt; time, we tend to use only pointers to input buffer, as long as
+</I>&gt;<i> possible.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;&gt; You need to modify your string lexing rules to use sub-rules for the
+</I>&gt;<i> &gt;&gt; elementary strings and return the concatenated string as the lexer
+</I>&gt;<i> &gt;&gt; token value.
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; The value of
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; StringConstant: QuotedString
+</I>&gt;<i> &gt;&gt; {RemoveQuotePairs($QuotedString);};
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; fragment
+</I>&gt;<i> &gt;&gt; QuotedString:  ( StringTerm )+;
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; fragment
+</I>&gt;<i> &gt;&gt; StringTerm:  Dquote ( Character )* Dquote;
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; fragment
+</I>&gt;<i> &gt;&gt; Character: ( ' ' | AlphaChar | Punctuation | Digit );
+</I>&gt;<i>
+</I>&gt;<i> --
+</I>&gt;<i> Best regards,
+</I>&gt;<i>
+</I>&gt;<i> Ruslan Zasukhin
+</I>&gt;<i> VP Engineering and New Technology
+</I>&gt;<i> Paradigma Software, Inc
+</I>&gt;<i>
+</I>&gt;<i> Valentina - Joining Worlds of Information <A HREF="http://www.paradigmasoft.com">http://www.paradigmasoft.com</A>
+</I>&gt;<i>
+</I>&gt;<i> [I feel the need: the need for speed]
+</I>&gt;<i>
+</I></PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="042771.html">[antlr-interest] [C] code to change Token type, use char* and loose data when buffer destroyed
+</A></li>
+	<LI>Next message: <A HREF="042756.html">[antlr-interest] antlr-interest Digest, Vol 82, Issue 22
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#42774">[ date ]</a>
+              <a href="thread.html#42774">[ thread ]</a>
+              <a href="subject.html#42774">[ subject ]</a>
+              <a href="author.html#42774">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,220 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Expression parsing ideas for ANTLR v4
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Expression%20parsing%20ideas%20for%20ANTLR%20v4&In-Reply-To=%3C4B82021D.3020301%40onsemi.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="037716.html">
+   <LINK REL="Next"  HREF="037704.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Expression parsing ideas for ANTLR v4</H1>
+    <B>Alan Rooks</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Expression%20parsing%20ideas%20for%20ANTLR%20v4&In-Reply-To=%3C4B82021D.3020301%40onsemi.com%3E"
+       TITLE="[antlr-interest] Expression parsing ideas for ANTLR v4">Alan.Rooks at onsemi.com
+       </A><BR>
+    <I>Sun Feb 21 20:03:41 PST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="037716.html">[antlr-interest] Reg LR-style expression parsing in wiki
+</A></li>
+        <LI>Next message: <A HREF="037704.html">[antlr-interest] Multiple Lines with Implicit Endings in ANTLR
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37703">[ date ]</a>
+              <a href="thread.html#37703">[ thread ]</a>
+              <a href="subject.html#37703">[ subject ]</a>
+              <a href="author.html#37703">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Sam,
+
+I've followed your posts about expression parsing with much interest - both 
+this one to which I'm replying and your earlier ones in Aug 2008 - but only 
+now have starting looking into speeding up a parser using these ideas.
+
+The code you posted is really helpful.  I can easily see how it works and 
+should have no problem implementing it, especially because my expressions 
+only really have left-associative binary operators (I don't need to optimize 
+the handling of the unary ops and there are no assignments or ternary 
+conditional).
+
+But there's one aspect of both your newer code and the code that you posted 
+in 2008 that either I'm not getting, or is incorrect: it really looks to me 
+like the trees you're building for left-associative binary operators are 
+treating those ops as right-associative, and the ops marked 
+right-associative are getting left-associative trees made for them.  Am I 
+wrong, or what have I missed?
+
+The code scans the operators from left to right, finding the first 
+occurrence (for left-assoc operators) of the lowest-precedence operator, and 
+then building a tree with that op as the root and the parts of the 
+expression to the left and right of that operator as the left and right 
+children of the root.  That's what it looks like it's doing to me, that is.
+
+But that means that for &quot;a - b + c&quot; the &quot;-&quot; will be chosen as the root, 
+resulting in this tree:
+
+         '-'
+        /   \
+       a    '+'
+           /   \
+          b     c
+
+That's treating those operators as *right-associative*, though, not 
+left-associative; it's implicitly parenthesizing the expression as &quot;a - (b + 
+c)&quot;.  The left-associative interpretation of &quot;a - b + c&quot; is &quot;(a - b) + c&quot;, 
+of course, which usually evaluates to a different value, and would have this 
+tree:
+
+            '+'
+           /   \
+         '-'    c
+        /   \
+       a     b
+
+It looks to me like the code should just scan in the opposite direction - it 
+should scan from right to left for the lowest-precedence operator, for 
+left-associative binary operators.  (Or equivalently, find the last 
+lowest-precedence operator, instead of the first, in a left-to-right scan.) 
+  And right-associative operators would do the opposite, of course.
+
+But have I missed something?  I've looked at this quite a bit, and I can't 
+see how I'm misunderstanding your code, if I am.
+
+Thanks muchly in advance for any enlightenment,
+
+Alan
+
+--------------------------
+Alan Rooks
+ON Semiconductor
+Medical Division
+Waterloo, Ontario, Canada
+<A HREF="http://www.onsemi.com/">http://www.onsemi.com/</A>
+--------------------------
+
+
+On Jan 19 2010 Sam Harwell wrote:
+&gt;<i> Several expression parsers are limited to handling the binary operator
+</I>&gt;<i> portion of the expression. In addition to the obvious limitations, it
+</I>&gt;<i> poses an additional problem for languages like C++ where the assignment
+</I>&gt;<i> operators are split (in precedence) from the rest of the binary
+</I>&gt;<i> operators by the ternary operator (?:). My most complicated production
+</I>&gt;<i> ANTLR grammar (parses the UnrealScript language) currently uses a
+</I>&gt;<i> completely new expression parser that offers a great deal more
+</I>&gt;<i> flexibility than the previous approaches I tried. I don't think it's the
+</I>&gt;<i> end-all solution for integrating expression parsing into ANTLR for v4,
+</I>&gt;<i> but I believe it's a worthwhile example to show what's possible. Here
+</I>&gt;<i> are some pros and cons of the implementation:
+</I>&gt;<i> 
+</I>&gt;<i> Pros:
+</I>&gt;<i> 
+</I>&gt;<i> * The source code declaring the operator precedence and
+</I>&gt;<i>   associativity is very clean (see reference to
+</I>&gt;<i>   UnrealScriptParserHelper.cs below)
+</I>&gt;<i> 
+</I>&gt;<i> * Very fast execution
+</I>&gt;<i> 
+</I>&gt;<i> * Supports a great deal more operations than simply binary
+</I>&gt;<i>   operators
+</I>&gt;<i> 
+</I>&gt;<i> * Supports operator precedence and associativity in groups
+</I>&gt;<i> 
+</I>&gt;<i> * Directly supports changing the token type during AST
+</I>&gt;<i>   generation - for example if the token '-' is named MINUS, you could
+</I>&gt;<i>   produce an AST with AST_SUBTRACT when it appears as a binary operator
+</I>&gt;<i>   and AST_NEGATE when it appears as a unary operator.
+</I>&gt;<i> 
+</I>&gt;<i> Cons:
+</I>&gt;<i> 
+</I>&gt;<i> * Not currently integrated into the ANTLR language (executes in code)
+</I>&gt;<i> 
+</I>&gt;<i> * No compile-time detection of ambiguous operator rules
+</I>&gt;<i> 
+</I>&gt;<i> * Not implemented as fully as is possible
+</I>&gt;<i> 
+</I>&gt;<i> General idea: Parse every component of an expression into a list - this
+</I>&gt;<i> includes all operators and &quot;atoms&quot;. The list is then passed to a
+</I>&gt;<i> &quot;precedence processor&quot; to produce a tree for that expression.
+</I>&gt;<i>  
+</I>&gt;<i> Operator categories: This parser was built with the following categories
+</I>&gt;<i> in mind, but the grouping operators are not implemented at this point.
+</I>&gt;<i> With this as a starting place, it's clear how the list might be expanded
+</I>&gt;<i> in the future:
+</I>&gt;<i> 
+</I>&gt;<i> * Unary operator: either prefix or postfix
+</I>&gt;<i> 
+</I>&gt;<i> * Binary operator
+</I>&gt;<i> 
+</I>&gt;<i> * Ternary operator
+</I>&gt;<i> 
+</I>&gt;<i> * Grouping operator: for example, the ( and ) in (expression)
+</I>&gt;<i> 
+</I>&gt;<i> * Postfix grouping operator: for example, the ( and ) in
+</I>&gt;<i>   methodName(args) or the [ and ] in var[index].
+</I>&gt;<i> 
+</I>&gt;<i> * Prefix grouping operator: for example, the ( and ) in
+</I>&gt;<i>   (TargetType)objectToCast.
+</I>&gt;<i> 
+</I>&gt;<i> Attached is:
+</I>&gt;<i> 
+</I>&gt;<i> * UnrealScriptParserHelper.cs: The complete code for declaring a
+</I>&gt;<i>   working precedence parser for UnrealScript.
+</I>&gt;<i> 
+</I>&gt;<i> * Antlr.Runtime.Expressions.zip: The current implementation of
+</I>&gt;<i>   this feature.
+</I>&gt;<i> 
+</I>&gt;<i> I'm very interested in any feedback y'all may have on this.
+</I>&gt;<i> 
+</I>&gt;<i> Thank you,
+</I>&gt;<i> 
+</I>&gt;<i> Sam Harwell
+</I></PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="037716.html">[antlr-interest] Reg LR-style expression parsing in wiki
+</A></li>
+	<LI>Next message: <A HREF="037704.html">[antlr-interest] Multiple Lines with Implicit Endings in ANTLR
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37703">[ date ]</a>
+              <a href="thread.html#37703">[ thread ]</a>
+              <a href="subject.html#37703">[ subject ]</a>
+              <a href="author.html#37703">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

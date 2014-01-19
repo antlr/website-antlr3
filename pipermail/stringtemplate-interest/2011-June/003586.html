@@ -1,0 +1,813 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [stringtemplate-interest] Group	Syntax	extension	for	ModelAdapter and Renderer
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20Group%0A%09Syntax%09extension%09for%09ModelAdapter%20and%20Renderer&In-Reply-To=%3C00b801cc34de%24b9471810%242bd54830%24%40pixelminegames.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003612.html">
+   <LINK REL="Next"  HREF="003588.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[stringtemplate-interest] Group	Syntax	extension	for	ModelAdapter and Renderer</H1>
+    <B>Sam Harwell</B> 
+    <A HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20Group%0A%09Syntax%09extension%09for%09ModelAdapter%20and%20Renderer&In-Reply-To=%3C00b801cc34de%24b9471810%242bd54830%24%40pixelminegames.com%3E"
+       TITLE="[stringtemplate-interest] Group	Syntax	extension	for	ModelAdapter and Renderer">sharwell at pixelminegames.com
+       </A><BR>
+    <I>Mon Jun 27 08:27:26 PDT 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003612.html">[stringtemplate-interest] Group	Syntax	extension	for	ModelAdapter and Renderer
+</A></li>
+        <LI>Next message: <A HREF="003588.html">[stringtemplate-interest] Group	Syntax	extension	for	ModelAdapter and Renderer
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3586">[ date ]</a>
+              <a href="thread.html#3586">[ thread ]</a>
+              <a href="subject.html#3586">[ subject ]</a>
+              <a href="author.html#3586">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Your particular example leads me to think you may be trying to use renderers
+to replace templates.
+
+ 
+
+javadoc(s) ::= &lt;&lt;
+
+/**
+
+* &lt;s; wrap=&quot;\n * &quot;&gt;
+
+*/
+
+&gt;&gt;<i> 
+</I>
+ 
+
+Sam
+
+ 
+
+From: <A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">stringtemplate-interest-bounces at antlr.org</A>
+[mailto:<A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">stringtemplate-interest-bounces at antlr.org</A>] On Behalf Of Udo
+Borkowski
+Sent: Monday, June 27, 2011 8:55 AM
+To: Terence Parr
+Cc: stringtemplate-interest Template
+Subject: Re: [stringtemplate-interest] Group Syntax extension for
+ModelAdapter and Renderer
+
+ 
+
+Inheritance will work on this.  it's the only way polymorphism works with
+template instantiation; same for adaptors/renderers.  If A imports B we
+created templates relative to A even if defined in B.  Therefore, a renderer
+for A works for B.  A's renderer overrides any you set in B as well.  No
+need to think about propagation or whatever.
+
+ 
+
+I think we don't need polymorphism for renderer/adapter lookup. Also I do
+have my doubts polymorphism is an appropriate way to work with
+renderers/adapters. 
+
+ 
+
+The main reason is we are very limited in choosing the &quot;selector&quot; in the
+renderer/adapter case, because we can only use the Java classes we want to
+render/adapter. In the template lookup we are free to select any valid
+template name and thus can easily decide if it will later be &quot;overloaded&quot; by
+a calling group or not. In the renderer case in nearly all my
+AttributeRenderers I am using &quot;String.class&quot; as the selector.
+
+ 
+
+To explain this a little more and motivate a solution let me give you an
+example.
+
+ 
+
+I have a group J with this template:
+
+ 
+
+--- template J.stg ---------------
+
+javadoc(s) ::= &lt;&lt;
+
+&lt;s;format=&quot;javadoc&quot;&gt;
+
+&gt;&gt;<i> 
+</I>
+-----------------------------------------
+
+ 
+
+The template uses a custom attribute renderer (JavaDocRenderer) that renders
+the given text as a JavaDoc comment, e.g.:
+
+ 
+
+/**
+
+ * hello
+
+ */
+
+ 
+
+The way to achieve this today is load the group J and register the
+attributeRenderer for that group:
+
+ 
+
+       groupJ.registerRenderer(String.class, new JavaDocRenderer());
+
+ 
+
+The group J is a general purpose group, intended to be used in other groups.
+Now lets discuss two different cases.
+
+ 
+
+CASE A
+
+======
+
+ 
+
+I have a group main that imports J programmatically, to use the &quot;javadoc&quot;
+template:
+
+ 
+
+--- template main.stg ---------
+
+main(cmt) ::= &lt;&lt;
+
+&lt;javadoc(cmt)&gt;
+
+.
+
+&gt;&gt;<i> 
+</I>
+-----------------------------------------
+
+ 
+
+Rendering main will however not render the expected JavaDoc comment, as only
+the AttributeRenderers registered to group main are used. 
+
+ 
+
+So the way to cure this problem in the current implementation is to register
+the JavaDocRenderer also to the main group:
+
+ 
+
+       group.registerRenderer(String.class, new JavaDocRenderer());
+
+ 
+
+If we would implement the &quot;inheritance&quot; mechanism as Terence suggested, this
+extra statement would no longer be necessary, as the code will look for a
+renderer of String.class in the current scope. It will find a renderer in J.
+So here inheritance is fine.
+
+ 
+
+CASE B
+
+======
+
+ 
+
+But now assume we have a slightly different main template:
+
+ 
+
+--- template main.stg ---------
+
+main(s,cmt) ::= &lt;&lt;
+
+&lt;javadoc(cmt)&gt;
+
+String f() {
+
+   return &lt;s;format=&quot;quote&quot;&gt;;
+
+}
+
+&gt;&gt;<i> 
+</I>
+-----------------------------------------
+
+ 
+
+Here template main needs an attribute renderer for the &quot;quote&quot; format
+(QuotedStringRenderer). Therefore we add this:
+
+ 
+
+       group.registerRenderer(String.class, new QuotedStringRenderer());
+
+ 
+
+Now the &quot;quote&quot; renders fine, however the JavaDoc is not ok. 
+
+ 
+
+Note we cannot just add
+
+ 
+
+       group.registerRenderer(String.class, new JavaDocRenderer());
+
+ 
+
+to the main group as we have already registered a renderer for String.class.
+
+ 
+
+Also the &quot;inheritance&quot; mechanism will not help here, as the lookup for a
+renderer for String.class will find the QuotedStringRenderer in group main
+and also use this one for the &quot;javadoc&quot; case.
+
+ 
+
+ 
+
+PROPOSAL
+
+=========
+
+ 
+
+Instead of using inheritance we could make the attributeRender lookup a
+simple two step approach: 
+
+ 
+
+Before using the renderer as provided by the current implementation check if
+the group containing the template using the &quot;format&quot; option defines an
+appropriate renderer. If yes, use that, otherwise use the &quot;old&quot; one.
+
+ 
+
+    protected int writePOJO(STWriter out, ST self, Object o, String[]
+options) throws IOException {
+
+        String formatString = null;
+
+        if ( options!=null ) formatString =
+options[Option.FORMAT.ordinal()];
+
+                                
+
+        AttributeRenderer r =
+self.impl.nativeGroup.getAttributeRenderer(o.getClass());
+
+        if (r == null) {
+
+            r = group.getAttributeRenderer(o.getClass());
+
+        }
+
+        ...
+
+ 
+
+This will work fine in both case A and case B.
+
+ 
+
+This is a simple solution, simpler than any &quot;inheritance&quot; or &quot;propagation&quot;
+approach. Actually I currently cannot think of a use case I would need
+anything more sophisticated.
+
+ 
+
+Note if someone prefers to define all renderers in the root group (and not
+in imported groups) he is still free to do so. The proposed solution will
+then automatically fall back to the current behavior (as no
+attributeRenderers are found in the imported groups).
+
+ 
+
+ 
+
+BTW: this suggested extension to the attributeRenderer lookup is not
+directly related to the &quot;syntax extension&quot; I proposed. Actually the
+&quot;programmatic&quot; approach to add renderers and do imports will benefit from
+the new lookup rules as well.
+
+ 
+
+ 
+
+ 
+
+Udo
+
+ 
+
+ 
+
+ 
+
+On 25.06.2011, at 20:08, Terence Parr wrote:
+
+
+
+
+
+hiya.  Inheritance will work on this.  it's the only way polymorphism works
+with template instantiation; same for adaptors/renderers.  If A imports B we
+created templates relative to A even if defined in B.  Therefore, a renderer
+for A works for B.  A's renderer overrides any you set in B as well.  No
+need to think about propagation or whatever.
+
+I'll go look at inheritance mech. i see on my list &quot;should adaptors get
+imported from super group?&quot;
+
+<A HREF="http://www.antlr.org/wiki/display/ST4/ST+v4+TODO+list">http://www.antlr.org/wiki/display/ST4/ST+v4+TODO+list</A>
+
+Ter
+On Jun 24, 2011, at 7:20 AM, Sam Barnett-Cormack wrote:
+
+
+
+
+On 24/06/2011 14:59, Sam Harwell wrote:
+
+The VM-wide setting approach seems like a possibility, but only if the &quot;VM&quot;
+
+is an instance object. There are a number of cases where I run several
+
+independent ST &quot;sessions&quot; within a single process, so I'm trying hard to
+
+remove every last mutable static variable from the entire [C# port of the]
+
+library. Perhaps an Interpreter object could be stored in an STGroup at the
+
+time when the group is constructed, and that interpreter used for all
+
+rendering of templates accessed through that group's getInstanceOf() method.
+
+That way, we have a &quot;VM&quot; which is a single interpreter used for that group's
+
+operations. I'd even go so far as to declare the Interpreter field of
+
+STGroup final, giving a fixed view of the VM.
+
+ 
+
+I used the term VM based on my understanding of the Java version. I 
+
+would agree that it would be best not to have such things truly static - 
+
+I would support a (for example) STInterpreter class, an instance of 
+
+which can be used when creating a group, or it be specified with a 
+
+boolean parameter that a new one should be created (otherwise a truly 
+
+VM-wide default shared one would be used). I imagine implementation 
+
+would be awkward if you could import groups that use a different 
+
+STInterpreter from the one doing the important (depending on what 
+
+actually gets stored in the instance), but otherwise it's a good way to 
+
+share details of such things between multiple groups under control. 
+
+Perhaps allow STInterpreters to be defined as 'children' of another 
+
+STInterpreter, with any properties not specifically set in that child 
+
+being proxied to the parent (implementation details could vary, but I 
+
+can see that being easiest with a specialised subclass).
+
+ 
+
+And yes, it would make sense for the interpreter of any given STGroup to 
+
+be final, to whatever extent is possible in any given implementation 
+
+language. You don't want to be changing back and forth all of those 
+
+things after a group is created, though you may want to manipulate the 
+
+interpreter itself.
+
+ 
+
+This would also fit with the usual patterns used for such things in Java 
+
+these days, particularly EE, allowing it to fit better with Dependency 
+
+Injection and Contexts. It's definitely more common in my experience to 
+
+have some sort of context class to hold such things than it is to have 
+
+anything global/static.
+
+ 
+
+Sam
+
+ 
+
+-----Original Message-----
+
+From: Sam Barnett-Cormack [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">s.barnett-cormack at lancaster.ac.uk</A>]
+
+Sent: Friday, June 24, 2011 5:17 AM
+
+To: Udo Borkowski
+
+Cc: Sam Harwell; 'stringtemplate-interest Template'; 'Terence Parr'
+
+Subject: Re: [stringtemplate-interest] Group Syntax extension for
+
+ModelAdapter and Renderer
+
+ 
+
+Sorry to top-post, but this is a very general statement/opinion...
+
+ 
+
+Renderers and ModelAdapters need to be entirely in the programming side,
+
+surely, to keep the complete language-agnostic value of template code.
+
+Unlike Antlr grammars, for instance, there's nothing in a StringTemplate
+
+that is ever language-specific (in terms of implementation), that I'm aware
+
+of, and I devoutly hope it will remain so.
+
+ 
+
+Furthermore, whether it happens at the programming level or in the group
+
+file (and what about people not using group files, but group dirs or a
+
+custom group type), whatever is chosen in terms of when to propagate and in
+
+which direction, there will always be situations where what happens isn't
+
+what makes sense for that use-case. Thus, what would really be ideal is a
+
+way of controlling it more finely, as to when it propagates or doesn't, some
+
+sort of configuration. This would, however, likely be a huge burden on the
+
+ST developers, and a pretty big burden on those using it.
+
+ 
+
+One alternative that occurs to me as probably working in most cases, is to
+
+allow a VM-wide setting of model adapters and renderers, and then allow
+
+group-specific overriding of this. Whether the group-specific ones then
+
+propagate or not, and in which direction, I'm not sure. You obviously can't
+
+have them propagating in both directions without every change always
+
+affecting the whole constellation of groups involved, which would seem
+
+suboptimal to me.
+
+ 
+
+Anyway, that's just some software engineering thoughts. To get a better
+
+decision, it would really make sense to drill down to some competing
+
+use-cases and see if there's a common denominator that would work in all
+
+cases that anyone can think of.
+
+ 
+
+Sam
+
+ 
+
+On 24/06/2011 10:41, Udo Borkowski wrote:
+
+The &quot;propagation&quot; approach solves one half of the problem: with this
+
+approach one could use renderers and adapters in groups that are
+
+imported through the &quot;import&quot; statement (and not programmatically).
+
+This is currently not possible.
+
+ 
+
+But the other half of the problem still exists: assume I change a
+
+group G and use some special renderer in the new version. The group G
+
+is imported by many other groups (maybe indirectly). I now need to
+
+find all the &quot;roots&quot; of imports to G and add the new renderer there.
+
+This can really become a maintenance nightmare. Providing the
+
+&quot;renderer&quot; syntax extension and defining the renderer in the group
+
+text would solve this issue.
+
+ 
+
+Regarding the implementation of the &quot;propagation&quot; approach:
+
+registering a renderer will require to visit all directly and
+
+indirectly imported groups and add the renderer to all of them,
+
+possibly creating new maps etc.. Most of the times this will be extra
+
+work as the imported groups don't reference that renderer. Propagating
+
+a renderer to all imported groups may lead to a performance issue when
+
+using large systems.
+
+ 
+
+I would also hesitate to use the &quot;propagation&quot; approach as it adds a
+
+new concept to StringTemplate (&quot;propagation of renderers&quot;) that in
+
+addition seems to &quot;reverse&quot; an already existing concept
+
+(&quot;inheritance&quot;). I guess this may to misunderstandings.
+
+ 
+
+In contrast to this the &quot;renderer&quot; syntax extension does not use a new
+
+concept but rather makes an existing feature (&quot;registerRenderer&quot;)
+
+accessible to those users who prefer to work on the group text than
+
+coding in Java.
+
+ 
+
+As the &quot;propagation&quot; approach does not solve the whole problem I still
+
+think we should add the &quot;renderer&quot;/&quot;adapter&quot; feature I suggested.
+
+ 
+
+Udo
+
+ 
+
+P.S.: all stuff mentioned regarding &quot;renderer&quot; also applied &quot;adapter&quot;.
+
+ 
+
+ 
+
+ 
+
+On 23.06.2011, at 23:38, Sam Harwell wrote:
+
+ 
+
+This is an interesting problem. Normally when things are inherited,
+
+they start at the imported group and propagate to the group that
+
+imported them. In this case, it sounds like you want to propagate it
+
+from the topmost group to all the groups it imports.
+
+Perhaps the thing to do here is propagate renderers to groups
+
+imported with STGroup.importTemplates(Token) (those are the ones
+
+imported via the group file), but don't propagate them to groups
+
+imported with a direct call to importTemplates(STGroup)?
+
+If you look at the diff of TemplateGroup.cs in CL8734 (it's a small
+
+diff), you can see how I adjusted the import code to handle the
+
+unload() method in everyone's cases. If the java code is adjusted in
+
+the same way (I can make the change if you want), then it's easy to
+
+propagate renderers by the following two rules:
+
+1.When STGroup.importTemplates(Token) is called, the current group's
+
+renderers are added to the group that just got imported. This handles
+
+the case where the renderer is registered before the group is
+
+imported (especially relevant in reloading a group file after calling
+
+unload()).
+
+2.When a renderer is added to a group, it is automatically added (by
+
+calling registerRenderer) to all groups in the importsToClearOnUnload
+
+list. This handles the case where the group is imported before the
+
+renderer is registered.
+
+Sam
+
+*From:*<A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">stringtemplate-interest-bounces at antlr.org</A>
+
+&lt;mailto:<A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">stringtemplate-interest-bounces at antlr.org</A>&gt;[mailto:stringtempl
+
+<A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">ate-interest-bounces at antlr.org</A>]*On
+
+Behalf Of*Terence Parr
+
+*Sent:*Thursday, June 23, 2011 1:44 PM *To:*Udo Borkowski
+
+*Cc:*stringtemplate-interest Template
+
+*Subject:*Re: [stringtemplate-interest] Group Syntax extension for
+
+ModelAdapter and Renderer I think that we should probably keep this
+
+at the programming level.
+
+should we make renderers inherited instead to solve your problem?
+
+Ter
+
+On Jun 21, 2011, at 1:17 AM, Udo Borkowski wrote:
+
+ 
+
+ 
+
+Hi,
+
+currently we programmatically register ModelAdapters and Renderers to
+
+an STGroup.
+
+What about providing an extension to the syntax of Group to also
+
+define these in a Group file?
+
+E.g. I could imagine to use something like
+
+ 
+
+   adapter &quot;org.w3c.dom.Node&quot;
+
+   &quot;com.collinfagan.strum.adapters.xml.NodeModelAdapter&quot;
+
+   renderer &quot;org.w3c.dom.Node&quot;
+
+   &quot;com.collinfagan.strum.adapters.xml.NodeRenderer&quot;
+
+ 
+
+at the top of an Group file. This would mean the same as running this
+
+Java code for the group:
+
+ 
+
+   group.registerRenderer(org.w3c.dom.Node.class, new
+
+   com.collinfagan.strum.adapters.xml.NodeRenderer());
+
+ 
+
+   group.registerModelAdaptor(org.w3c.dom.Node.class, new
+
+   com.collinfagan.strum.adapters.xml.NodeModelAdapter());
+
+ 
+
+Especially when importing groups this feature comes in handy as I
+
+cannot register adapters/renderers when importing. In these cases I
+
+must rely on the root group. For this group R we must register ALL
+
+adapters/renders used in ANY group R imports. This make things hard
+
+to maintain as using a &quot;new&quot; renderer in some template T requires me
+
+to add the &quot;registerRenderer&quot; in EVERY code using T, maybe indirectly
+
+through imports.
+
+Similar to features discussed earlier this feature is easy to
+
+implement for the STGroupFile, but the STGroupDir currently has no
+
+proper place to hold this information. So we may also need to tackle
+
+this re-appearing topic, too.
+
+What do others think?
+
+Udo
+
+_______________________________________________
+
+stringtemplate-interest mailing list
+
+<A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">stringtemplate-interest at antlr.org</A>
+
+&lt;mailto:<A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">stringtemplate-interest at antlr.org</A>&gt;
+
+<A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">http://www.antlr.org/mailman/listinfo/stringtemplate-interest</A>
+
+ 
+
+ 
+
+ 
+
+_______________________________________________
+
+stringtemplate-interest mailing list
+
+<A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">stringtemplate-interest at antlr.org</A>
+
+<A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">http://www.antlr.org/mailman/listinfo/stringtemplate-interest</A>
+
+ 
+
+ 
+
+ 
+
+_______________________________________________
+
+stringtemplate-interest mailing list
+
+<A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">stringtemplate-interest at antlr.org</A>
+
+<A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">http://www.antlr.org/mailman/listinfo/stringtemplate-interest</A>
+
+
+_______________________________________________
+stringtemplate-interest mailing list
+<A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">stringtemplate-interest at antlr.org</A>
+<A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">http://www.antlr.org/mailman/listinfo/stringtemplate-interest</A>
+
+ 
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/stringtemplate-interest/attachments/20110627/4cd1dadd/attachment-0001.html">http://www.antlr.org/pipermail/stringtemplate-interest/attachments/20110627/4cd1dadd/attachment-0001.html</A> 
+</PRE>
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003612.html">[stringtemplate-interest] Group	Syntax	extension	for	ModelAdapter and Renderer
+</A></li>
+	<LI>Next message: <A HREF="003588.html">[stringtemplate-interest] Group	Syntax	extension	for	ModelAdapter and Renderer
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3586">[ date ]</a>
+              <a href="thread.html#3586">[ thread ]</a>
+              <a href="subject.html#3586">[ subject ]</a>
+              <a href="author.html#3586">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">More information about the stringtemplate-interest
+mailing list</a><br>
+</body></html>

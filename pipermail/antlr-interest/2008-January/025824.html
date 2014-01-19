@@ -1,0 +1,181 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Workaround for the &quot;code too large&quot; problem
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Workaround%20for%20the%20%22code%20too%20large%22%20problem&In-Reply-To=%3C2944.88.166.61.40.1200851954.squirrel%40webmail.octo.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="025823.html">
+   <LINK REL="Next"  HREF="025825.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Workaround for the &quot;code too large&quot; problem</H1>
+    <B>Thomas VIAL</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Workaround%20for%20the%20%22code%20too%20large%22%20problem&In-Reply-To=%3C2944.88.166.61.40.1200851954.squirrel%40webmail.octo.com%3E"
+       TITLE="[antlr-interest] Workaround for the &quot;code too large&quot; problem">tvial at octo.com
+       </A><BR>
+    <I>Sun Jan 20 09:59:14 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="025823.html">[antlr-interest] Tree grammar/stringtemplate: do I need this?
+</A></li>
+        <LI>Next message: <A HREF="025825.html">[antlr-interest] target language independent action code
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25824">[ date ]</a>
+              <a href="thread.html#25824">[ thread ]</a>
+              <a href="subject.html#25824">[ subject ]</a>
+              <a href="author.html#25824">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+I have been running into the &quot;Code too large&quot; problem. I have already changed my tokens to abstract ones with a
+keyword lookup table (simplifying lexer code, as per
+<A HREF="http://www.antlr.org/pipermail/antlr-interest/2007-August/023007.html">http://www.antlr.org/pipermail/antlr-interest/2007-August/023007.html</A>). It worked for a while but when I threw in
+a few more tokens the error came back again, on the parser this time.
+
+I have identified 2 causes:
+- big inline array tokenNames, which seems to serves informational purposes only (not used internally by ANTLR)
+- big static initialization block at the end of the file, for the FOLLOW_* BitSet's
+
+My grammar is ~400 tokens large which is too much apparentlty. As a workaround I have put together a small awk script
+(see below), to be used as a post-processing step after generating the parser. It removes the supposedly unused
+tokenNames array (and getter), and splits the BitSet initialization block is small methods called from the
+constructor.
+
+Of course it relies heavily on the precise layout and formatting used by ANTLR when generating the parser; it is
+designed for ANTLR v3.0.1. And it works like a charm ;)
+
+Hoping it will help others who have this very annoying &quot;code too large&quot; error!
+
+Thomas
+
+
+------------------------------------------------------------
+function dumpBitSetGroup() {
+	print &quot;\tprivate void bitSetInitGroup_&quot; bitSetGroups &quot;()\n\t{&quot;;
+	for (i = 0; i &lt; bitSetIdx; i++)
+		print &quot;\t\t&quot; (bitSetName[i]) &quot; = &quot; (bitSetDef[i]);
+	print &quot;\t}\n&quot;;
+	bitSetIdx = 0;
+	bitSetGroups++;
+}
+
+BEGIN {
+	BITSET_GROUPING = 50;
+
+	skipLine = 0;
+	tokenNamesDef = 1;
+	ctrLines = 0;
+	inConstructor = 0;
+	bitSetIdx = 0;
+	bitSetGroups = 0;
+}
+
+# Get class name
+/^public class/ {
+	className = $3;
+}
+
+# Token names definition - we probably don't need it
+/public static .* tokenNames/ {
+	skipLine = 1;
+	tokenNamesDef = 1;
+}
+# The array declaration spans 3 lines, skip them all
+($0 ~ /^[[:blank:]]*&quot;&lt;invalid&gt;&quot;/) &amp;&amp; tokenNamesDef {
+	skipLine = 1;
+}
+($0 ~ /^[[:blank:]]*};[[:blank:]]*$/) &amp;&amp; tokenNamesDef {
+	skipLine = 1;
+	tokenNamesDef = 0;
+}
+
+# Remove the getter method accordingly (it fits on one line)
+/public .* getTokenNames/ {
+	skipLine = 1;
+}
+
+# Remember constructor definition, we will output it later
+($0 ~ /^[[:blank:]]*public/) &amp;&amp; ($2 ~ (&quot;^&quot; className &quot;\\(&quot;)) {
+	inConstructor = 1;
+}
+(inConstructor) {
+	constructor[ctrLines++] = $0;
+	skipLine = 1;
+}
+($0 ~ /^[[:blank:]]*}[[:blank:]]*$/) &amp;&amp; inConstructor {
+	inConstructor = 0;
+}
+
+# BitSet's definition
+/^[[:blank:]]*public static final BitSet FOLLOW_/ {
+	# Remember definition
+	split($0, decl, &quot; = &quot;);
+	bitSetName[bitSetIdx] = $5;
+	bitSetDef[bitSetIdx++] = decl[2];
+
+	# Reduce to simple declaration, no initialization (but remove &quot;final&quot; attribute!)
+	$0 = &quot;\tpublic static BitSet &quot; $5 &quot;;&quot;
+
+	# Output group
+	if (bitSetIdx == BITSET_GROUPING)
+		dumpBitSetGroup();
+}
+
+# End of file
+/^}$/ {
+	# Remaining BitSet's
+	dumpBitSetGroup();
+
+	# Constructor
+	print constructor[0];
+	print constructor[1];
+	for (i = 0; i &lt; bitSetGroups; i++)
+		print &quot;\t\t\tbitSetInitGroup_&quot; i &quot;();&quot;;
+	for (i = 2; i &lt; ctrLines; i++)
+		print constructor[i];
+}
+
+# Output
+(!skipLine) {
+	print;
+}
+{
+	skipLine = 0;
+}
+
+</PRE>
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="025823.html">[antlr-interest] Tree grammar/stringtemplate: do I need this?
+</A></li>
+	<LI>Next message: <A HREF="025825.html">[antlr-interest] target language independent action code
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25824">[ date ]</a>
+              <a href="thread.html#25824">[ thread ]</a>
+              <a href="subject.html#25824">[ subject ]</a>
+              <a href="author.html#25824">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

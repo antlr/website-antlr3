@@ -1,0 +1,209 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] ANTLR3 AST construction with options	andalternatives
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20ANTLR3%20AST%20construction%20with%20options%0A%09andalternatives&In-Reply-To=BAY107-F32499B1EB4AE783FB23F78C0F40%40phx.gbl">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="018344.html">
+   <LINK REL="Next"  HREF="018348.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] ANTLR3 AST construction with options	andalternatives</H1>
+    <B>Foolish Ewe</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20ANTLR3%20AST%20construction%20with%20options%0A%09andalternatives&In-Reply-To=BAY107-F32499B1EB4AE783FB23F78C0F40%40phx.gbl"
+       TITLE="[antlr-interest] ANTLR3 AST construction with options	andalternatives">foolishewe at hotmail.com
+       </A><BR>
+    <I>Mon Nov 13 09:26:12 PST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="018344.html">[antlr-interest] ANTLR3 AST construction with options and	alternatives
+</A></li>
+        <LI>Next message: <A HREF="018348.html">[antlr-interest] ANTLR3 AST construction with options	andalternatives
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#18347">[ date ]</a>
+              <a href="thread.html#18347">[ thread ]</a>
+              <a href="subject.html#18347">[ subject ]</a>
+              <a href="author.html#18347">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+Hello All:
+
+Just in case anyone besides me is reading this, I've discovered another 
+construct
+where the &quot;do it or skip it&quot; construct may require refactoring in order to 
+build an
+AST from a working parser.  I'm not sure if these are of general interest, 
+unless
+I hear interest from the community, I'll drop this topic.
+
+If you have a construct like:
+
+a: B (C)?;  // valid parser construction if (i)A is a token and (ii) B and C 
+are defined in the lexer
+
+then ANTLR3 does not seem to like something of the form:
+
+a: b=b (c+=C)?-&gt;^(A $b $c+); // Doesn't seem to work if C is not scanned
+
+so some refactoring is required to avoid using an uninitialized $c+ in the 
+AST
+
+I'm going to try something like
+
+a:  B                 -&gt;^(A $b)
+  | B C              -&gt;^(A $b $c)
+  ;
+
+I think some additional discussion should be added to the wiki by someone
+knowledgeable about ANTLR about what sorts of restrictions there are
+on ANTLR grammars if you want to have AST support.  It is not clear
+to me that if a grammar parses that the AST can be built directly from that
+grammar.  If that is so, it may be a good idea for a seasoned veteran or two 
+to
+write about what constructs to avoid and how to refactor preexisting 
+constructs
+to bring the grammar into compliance with the AST construction requirements.
+
+Regards:
+
+Bill M.
+
+&gt;<i>From: &quot;Foolish Ewe&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">foolishewe at hotmail.com</A>&gt;
+</I>&gt;<i>To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">foolishewe at hotmail.com</A>, <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i>Subject: Re: [antlr-interest] ANTLR3 AST construction with options 
+</I>&gt;<i>andalternatives
+</I>&gt;<i>Date: Mon, 13 Nov 2006 15:43:31 +0000
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>Hello All:
+</I>&gt;<i>
+</I>&gt;<i>I think the previous approach had an error in it, which was detected at 
+</I>&gt;<i>run-time.
+</I>&gt;<i>The problem lies in that a &quot;zero repetition&quot; scenario may leave an 
+</I>&gt;<i>attribute uninitilized,
+</I>&gt;<i>in which case it should not be inserted into the AST.
+</I>&gt;<i>
+</I>&gt;<i>This can be fixed by refactoring rules to use recursion and not variable 
+</I>&gt;<i>repetition operators.
+</I>&gt;<i>Note that the proposed changes may impact treewalking. So a rule of the 
+</I>&gt;<i>form:
+</I>&gt;<i>
+</I>&gt;<i>a: (b=B)? c:C-&gt;^(A $b $c);
+</I>&gt;<i>
+</I>&gt;<i>may run into trouble if the optional B is not encountered, since $b will be 
+</I>&gt;<i>uninitialized
+</I>&gt;<i>We can fix this by doing:
+</I>&gt;<i>
+</I>&gt;<i>a: b=optionalB c:C-&gt;^(A $b $c);
+</I>&gt;<i>
+</I>&gt;<i>optionalB: b=B-&gt;^(OPTIONALB $b)
+</I>&gt;<i>             |      -&gt;^(OPTIONALB) // empty case
+</I>&gt;<i>             ;
+</I>&gt;<i>
+</I>&gt;<i>And if we have a case like say
+</I>&gt;<i>
+</I>&gt;<i>a: (B | C)+  D;
+</I>&gt;<i>
+</I>&gt;<i>we can then create an AST using something like
+</I>&gt;<i>tokens{
+</I>&gt;<i>    BORC; // B or C
+</I>&gt;<i>}
+</I>&gt;<i>
+</I>&gt;<i>a: (bc+=bOrC)+ d=D    -&gt;^(A $bc+ $d)
+</I>&gt;<i>
+</I>&gt;<i>bOrC:  b=B                 -&gt;^(BORC $b)
+</I>&gt;<i>       | c=C                  -&gt;^(BORC $c)
+</I>&gt;<i>       ;
+</I>&gt;<i>
+</I>&gt;<i>At this point however, I am less certain about how to handle a zero or more 
+</I>&gt;<i>repetition case
+</I>&gt;<i>such that we don't try to insert an uninitialized attribute into the AST, 
+</I>&gt;<i>e.g.
+</I>&gt;<i>
+</I>&gt;<i>What should we do with:
+</I>&gt;<i>
+</I>&gt;<i>a: (B|C)* D;
+</I>&gt;<i>
+</I>&gt;<i>Regards:
+</I>&gt;<i>
+</I>&gt;<i>Bill M.
+</I>&gt;<i>
+</I>&gt;&gt;<i>From: &quot;Foolish Ewe&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">foolishewe at hotmail.com</A>&gt;
+</I>&gt;&gt;<i>To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;&gt;<i>CC: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">FoolishEwe at hotmail.com</A>
+</I>&gt;&gt;<i>Subject: ANTLR3 AST construction with options and alternatives
+</I>&gt;&gt;<i>Date: Mon, 13 Nov 2006 02:27:05 +0000
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>Hello All:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>I've not heard back on a previous question about how to generate AST's.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>I have a construct in a grammar that looks something like:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>// allows optional override of default version id
+</I>&gt;&gt;<i>versionInfo: (id+=versionId)? (f1+=fieldType1 | f2+=fieldType2 | 
+</I>&gt;&gt;<i>f3+=fieldType3)*
+</I>&gt;&gt;<i>   -&gt;^(VERSIONINFO $id+ $f1+ $f2+ $f3+);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>but it doesn't work the way I would like, meaning that I run the debugger 
+</I>&gt;&gt;<i>for a test case that
+</I>&gt;&gt;<i>has well defined ASTs are constructed for some of the fields, but some 
+</I>&gt;&gt;<i>some are not populated.
+</I>&gt;&gt;<i>This debugger halts and won't proceed to construct the VERSIONINFO node, 
+</I>&gt;&gt;<i>although
+</I>&gt;&gt;<i>before I decorated the grammar with action annotations for AST 
+</I>&gt;&gt;<i>construction, the grammar
+</I>&gt;&gt;<i>created a well formed parse tree.   I looked at the wiki  for AST related 
+</I>&gt;&gt;<i>stuff, and
+</I>&gt;&gt;<i>I am still not sure how to fix this problem or if it is a bug in ANTLR3.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>Regards:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>Bill M.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>_________________________________________________________________
+</I>&gt;&gt;<i>Find a local pizza place, music store, museum and more&#133;then map the best 
+</I>&gt;&gt;<i>route!  <A HREF="http://local.live.com?FORM=MGA001">http://local.live.com?FORM=MGA001</A>
+</I>&gt;&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>_________________________________________________________________
+</I>&gt;<i>Get today's hot entertainment gossip  
+</I>&gt;<i><A HREF="http://movies.msn.com/movies/hotgossip?icid=T002MSN03A07001">http://movies.msn.com/movies/hotgossip?icid=T002MSN03A07001</A>
+</I>&gt;<i>
+</I>
+_________________________________________________________________
+Try the next generation of search with Windows Live Search today!  
+<A HREF="http://imagine-windowslive.com/minisites/searchlaunch/?locale=en-us&amp;source=hmtagline">http://imagine-windowslive.com/minisites/searchlaunch/?locale=en-us&amp;source=hmtagline</A>
+
+</PRE>
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="018344.html">[antlr-interest] ANTLR3 AST construction with options and	alternatives
+</A></li>
+	<LI>Next message: <A HREF="018348.html">[antlr-interest] ANTLR3 AST construction with options	andalternatives
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#18347">[ date ]</a>
+              <a href="thread.html#18347">[ thread ]</a>
+              <a href="subject.html#18347">[ subject ]</a>
+              <a href="author.html#18347">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

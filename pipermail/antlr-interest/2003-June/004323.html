@@ -1,0 +1,363 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] PATCH: Preprocessor fixes for Class Grammar extends SubGrammar(SubParserClass)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20PATCH%3A%20Preprocessor%20fixes%20for%20Class%20Grammar%20extends%20SubGrammar%28SubParserClass%29&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004322.html">
+   <LINK REL="Next"  HREF="004324.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] PATCH: Preprocessor fixes for Class Grammar extends SubGrammar(SubParserClass)</H1>
+    <B>wnreynolds</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20PATCH%3A%20Preprocessor%20fixes%20for%20Class%20Grammar%20extends%20SubGrammar%28SubParserClass%29&In-Reply-To="
+       TITLE="[antlr-interest] PATCH: Preprocessor fixes for Class Grammar extends SubGrammar(SubParserClass)">grendel at swcp.com
+       </A><BR>
+    <I>Sun Jun 29 22:50:14 PDT 2003</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004322.html">[antlr-interest] JavaEmitter class to print Java AST available
+</A></li>
+        <LI>Next message: <A HREF="004324.html">[antlr-interest] ambigous language...
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4323">[ date ]</a>
+              <a href="thread.html#4323">[ thread ]</a>
+              <a href="subject.html#4323">[ subject ]</a>
+              <a href="author.html#4323">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I've attached a patch below which fixes the antlr preprocessor to
+support the syntax (already defined in antlr.g):
+
+class Grammar extends Subgrammar(SubParserClass) ;
+
+
+here SubParserClass is a subclass of LLkParser, TreeParser or Lexer
+(at least in java).
+The patch involves only a few new lines to preproc.g and Grammar.java.
+
+Here is some documentation:
+
+
+Why would you want to do this? Consider the inheritance problem:
+
+
+  class Base extends Parser;
+    options {
+    k = 2;
+    }
+    {
+     void aAction(AST a, AST b)
+      {
+        // code deleted.
+      }
+     void cAction(AST c)
+      {
+        // code deleted
+      }
+    }
+   a : A B {aAction(A, B); }
+     | A C
+     ;
+   c : C {cAction(C); }
+     ;
+
+
+   class Derived extends Base;
+   options {
+     k = 3;        // need more lookahead; override
+     buildAST=true;// add an option
+   }
+   {
+     void aAction(AST a, AST b) // Overload
+      {
+        // code deleted.
+      }
+     void aActionTwo(AST a, AST c)
+      {
+        // code deleted.
+      }
+	
+     void bAction(AST a, AST b, AST d)
+     {
+	//  code deleted
+     }
+    }
+   a : A B { aAction(A, B); }
+     | A C { aActionTwo(A, C); }
+     | Z           // add an alt to rule a
+     ;
+   b : a
+     | A B D      { bAction(A, B, D); }
+     ;
+
+
+ antlr will generate a temporary grammar that looks like this:
+
+   class Derived extends Parser;
+   options {
+     k = 3;        // need more lookahead; override
+     buildAST=true;// add an option
+   }
+   {
+     void aAction(AST a, AST b) // Overload
+      {
+        // code deleted.
+      }
+     void aActionTwo(AST a, AST c)
+      {
+        // code deleted.
+      }
+	
+     void bAction(AST a, AST b, AST d)
+     {
+	//  code deleted
+     }
+    }
+   a : A B { aAction(A, B); }
+     | A C { aActionTwo(A, C); }
+     | Z           // add an alt to rule a
+     ;
+   b : a
+     | A B D      { bAction(A, B, D); }
+     ;
+   c : C {cAction(C); }
+     ;
+
+
+
+Notice the problem? rule c uses method cAction(AST c) for its action,
+but the method does not get included in the expanded grammar. 
+
+There are two ways around this. One could simply make a copy of the
+code for cAction() from Base and put it into Derived, but this is very
+poor practice. Every time cAction is changed in Base, it would also
+need be changed in Derived and every other subgrammar of Base.
+
+The correct approach is to rewrite Base as follows:
+
+  class Base extends Parser(BaseLLkParser);
+    options {
+    k = 2;
+    }
+    {
+      // no code here!
+    }
+   a : A B {aAction(A, B); }
+     | A C
+     ;
+   c : C {cAction(C); }
+     ;
+
+and define a new class, which is a subclass of LLkParser, BaseParser: 
+
+  class BaseParser extends LLkParser
+  {
+     void aAction(AST a, AST b)
+      {
+        // code deleted
+      }
+     void cAction(AST c)
+      {
+        // code deleted
+      }
+
+      // ALERT: Other code needed by LLkParser subclasses.
+      // code deleted
+
+  }
+
+(we'll ignore the ALERT line for now). 
+
+The java code generated from this grammar will look like:
+
+  class Base extends BaseParser
+  {
+
+
+	public final void a() throws RecognitionException, TokenStreamException
+	{
+	  // code deleted
+	  { aAction(A, B); }
+	}
+
+	public final void c() throws RecognitionException, TokenStreamException
+	{
+	  // code deleted
+	  { cAction(C); }
+	}
+
+      // code deleted
+  }
+
+
+
+The action methods are now inherited from BaseParser, and no longer
+explicitly included in the generated grammar code. Defining a
+subgrammar is easy:
+
+   class Derived extends Parser(BaseParser);
+   options {
+     k = 3;        // need more lookahead; override
+     buildAST=true;// add an option
+   }
+   {
+     void aAction(AST a, AST b) // Overloads method in BaseParser
+      {
+        // code deleted.
+      }
+     void aActionTwo(AST a, AST c)
+      {
+        // code deleted.
+      }
+	
+     void bAction(AST a, AST b, AST d)
+     {
+	//  code deleted
+     }
+    }
+   a : A B { aAction(A, B); }
+     | A C { aActionTwo(A, C); }
+     | Z           // add an alt to rule a
+     ;
+   b : a
+     | A B D      { bAction(A, B, D); }
+     ;
+   c : C {cAction(C); }
+     ;
+
+
+This will automatically pick up all methods defined in BaseParser and
+override them as necessary. All grammars that will be subclassed
+should use this method for defining methods.
+
+Now we get to the icky part, referred to in the ALERT line
+above. Children of antlr parser classes have certain contracts they
+must obey. Sometimes this will be pointed out to you by compile errors
+(For example, subclasses of LLkParser are expected to have 5 distinct
+constructors, each with a particular signature). Other requirements
+are more subtle and may not show up until the derived grammar starts
+crashing mysteriously (for example, TreeParser constructors are
+expected to make the assignment tokenNames = _tokenNames). Look at the
+code generated by antlr to see exactly what is expected of the various
+parser and lexer classes. 
+
+Suggestion: One approach to making this less problematic would be for
+future versions of antlr to emit something like a 'parserInitialize()'
+method that would correctly fulfill all contracts and which chould
+then be called by custom constructors.
+
+Here's the patch:
+
+diff -u --ignore-space-change --ignore-blank-lines -r
+antlr-2.7.2/antlr/preprocessor/Grammar.java
+antlr-2.7.2.new/antlr/preprocessor/Grammar.java
+--- antlr-2.7.2/antlr/preprocessor/Grammar.java	2003-01-19
+17:38:00.000000000 -0700
++++ antlr-2.7.2.new/antlr/preprocessor/Grammar.java	2003-06-29
+22:14:48.000000000 -0600
+@@ -16,7 +16,8 @@
+ class Grammar {
+     protected String name;
+     protected String fileName;		// where does it come from?
+-    protected String superGrammar;	// null if no super class
++    protected String superGrammar;	// null if no super grammar
++    protected String superClass;	// null if no super class
+     protected String type;				// lexer? parser? tree parser?
+     protected IndexedVector rules;	// text of rules as they were read in
+     protected IndexedVector options;// rule options
+@@ -32,9 +33,16 @@
+     protected String exportVocab = null;
+     protected antlr.Tool antlrTool;
+ 
+-    public Grammar(antlr.Tool tool, String name, String superGrammar,
+IndexedVector rules) {
++	public Grammar(antlr.Tool tool, String name, String superGrammar,
+IndexedVector rules) 
++	{
++		this(tool, name, superGrammar, rules, null);
++	}
++
++	public Grammar(antlr.Tool tool, String name, String superGrammar,
+IndexedVector rules, String superClass) 
++	{
+         this.name = name;
+         this.superGrammar = superGrammar;
++        this.superClass = superClass;
+         this.rules = rules;
+         this.antlrTool = tool;
+     }
+@@ -243,7 +251,8 @@
+             return &quot;class &quot; + name + &quot;;&quot;;
+         }
+         String sup = &quot;&quot;;
+-        s.append(&quot;class &quot; + name + &quot; extends &quot; + type + sup + &quot;;&quot; +
++        String superClassSpec = (superClass==null)?&quot;&quot;:superClass;
++        s.append(&quot;class &quot; + name + &quot; extends &quot; + type + sup +
+superClassSpec + &quot;;&quot; +
+             System.getProperty(&quot;line.separator&quot;) +
+             System.getProperty(&quot;line.separator&quot;));
+         if (options != null) {
+diff -u --ignore-space-change --ignore-blank-lines -r
+antlr-2.7.2/antlr/preprocessor/preproc.g
+antlr-2.7.2.new/antlr/preprocessor/preproc.g
+--- antlr-2.7.2/antlr/preprocessor/preproc.g	2003-01-19
+17:38:00.000000000 -0700
++++ antlr-2.7.2.new/antlr/preprocessor/preproc.g	2003-06-29
+22:14:24.000000000 -0600
+@@ -118,7 +118,7 @@
+ 	IndexedVector classOptions = null;
+ }
+ 	:	( preamble:ACTION )?
+-		&quot;class&quot; sub:ID &quot;extends&quot; sup:ID SEMI
++		&quot;class&quot; sub:ID &quot;extends&quot;  sup:ID (supClass:SUBRULE_BLOCK)? SEMI
+ 		{
+ 			gr = (Grammar)hier.getGrammar(sub.getText());
+ 			if ( gr!=null ) {
+@@ -127,7 +127,7 @@
+ 				throw new SemanticException(&quot;redefinition of grammar
+&quot;+sub.getText(), file, sub.getLine(), sub.getColumn());
+ 			}
+ 			else {
+-				gr = new Grammar(hier.getTool(), sub.getText(), sup.getText(),
+rules);
++				gr = new Grammar(hier.getTool(), sub.getText(), sup.getText(),
+rules, (supClass==null)?null:supClass.getText());
+ 				if ( preamble!=null ) {
+ 					gr.setPreambleAction(preamble.getText());
+ 				}
+
+
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004322.html">[antlr-interest] JavaEmitter class to print Java AST available
+</A></li>
+	<LI>Next message: <A HREF="004324.html">[antlr-interest] ambigous language...
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4323">[ date ]</a>
+              <a href="thread.html#4323">[ thread ]</a>
+              <a href="subject.html#4323">[ subject ]</a>
+              <a href="author.html#4323">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

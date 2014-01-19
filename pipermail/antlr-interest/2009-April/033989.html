@@ -1,0 +1,311 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] How can I find the line number and column for	asemantic error
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20How%20can%20I%20find%20the%20line%20number%20and%20column%20for%0A%09asemantic%20error&In-Reply-To=%3C86403CA0939415448BCCB83855EFE09AA67D3D%40Bloodymary.ironwillgames.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="033987.html">
+   <LINK REL="Next"  HREF="033995.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] How can I find the line number and column for	asemantic error</H1>
+    <B>Sam Harwell</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20How%20can%20I%20find%20the%20line%20number%20and%20column%20for%0A%09asemantic%20error&In-Reply-To=%3C86403CA0939415448BCCB83855EFE09AA67D3D%40Bloodymary.ironwillgames.com%3E"
+       TITLE="[antlr-interest] How can I find the line number and column for	asemantic error">sharwell at pixelminegames.com
+       </A><BR>
+    <I>Fri Apr 10 09:41:04 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="033987.html">[antlr-interest] How can I find the line number and column for a	semantic error
+</A></li>
+        <LI>Next message: <A HREF="033995.html">[antlr-interest] How can I find the line number and column for	asemantic error
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#33989">[ date ]</a>
+              <a href="thread.html#33989">[ thread ]</a>
+              <a href="subject.html#33989">[ subject ]</a>
+              <a href="author.html#33989">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Add an ErrorHandler member to your parser, with an AddError method. Call
+it from both your override of ReportError and wherever you want to add
+your own semantic error. I have a whole bunch of helper methods like the
+following as well. Please note that this code is not plug-and-play;
+you'll have to implement your own ErrorHandler class and TextSpan is
+probably not a type in your program, etc. I only mean this as a
+human-readable example of a method that's worked for me. :)
+
+ 
+
+public override void ReportError( RecognitionException e )
+
+{
+
+    if ( state.backtracking == 0 )
+
+    {
+
+        string message = GetErrorMessage( e, GetTokenNames() );
+
+        TextSpan span = new TextSpan()
+
+        {
+
+            iStartLine = e.line - 1,
+
+            iStartIndex = e.charPositionInLine,
+
+            iEndLine = e.line - 1,
+
+            iEndIndex = e.charPositionInLine + 1
+
+        };
+
+ 
+
+        if ( ( e.token == null || e.token.Type == 0 )
+
+            &amp;&amp; e.node is CommonErrorNode
+
+            &amp;&amp; ( (CommonErrorNode)e.node ).trappedException != null )
+
+        {
+
+            e.token = ( (CommonErrorNode)e.node
+).trappedException.token;
+
+        }
+
+ 
+
+        if ( e.token != null )
+
+        {
+
+            if ( e.token.Type != (int)CharStreamConstants.Eof )
+
+                span = e.token.ToTextSpan();
+
+            else
+
+                span = TokenStream.LT( -1 ).ToTextSpan();
+
+        }
+
+ 
+
+        string tokentext = e.token.Text ?? string.Empty;
+
+ 
+
+        if ( ErrorHandler != null )
+
+            ErrorHandler.AddError( &quot;Parser: &quot; + message, span.iStartLine
++ 1, span.iStartIndex, tokentext.Length, Severity.Error, true );
+
+    }
+
+ 
+
+    base.ReportError( e );
+
+}
+
+ 
+
+public void AddError( string message, CommonTree tree )
+
+{
+
+    if ( tree == null )
+
+        return;
+
+ 
+
+    AddError( message, (CommonToken)tree.Token );
+
+}
+
+public void AddError( string message, CommonTree tree, Severity severity
+)
+
+{
+
+    if ( tree == null )
+
+        return;
+
+ 
+
+    AddError( message, (CommonToken)tree.Token, severity );
+
+}
+
+public void AddError( string message, CommonToken token )
+
+{
+
+    if ( token == null )
+
+        return;
+
+ 
+
+    AddError( message, token, Severity.Error );
+
+}
+
+public void AddError( string message, CommonToken token, Severity
+severity )
+
+{
+
+    if ( string.IsNullOrEmpty( message ) || token == null ||
+ErrorHandler == null )
+
+        return;
+
+ 
+
+    int line = token.Line;
+
+    int col = token.CharPositionInLine;
+
+    int length = token.StopIndex - token.StartIndex + 1;
+
+    // these errors aren't forcing the parser into recovery mode so they
+
+    // shouldn't have the same devastating performance impact
+
+    bool canCancel = false;
+
+ 
+
+    ErrorHandler.AddError( message, line, col, length, severity,
+canCancel );
+
+}
+
+ 
+
+public void AddWarning( string message, CommonTree tree )
+
+{
+
+    AddError( message, tree, Severity.Warning );
+
+}
+
+public void AddWarning( string message, CommonToken token )
+
+{
+
+    AddError( message, token, Severity.Warning );
+
+}
+
+ 
+
+ 
+
+Sam Harwell
+
+ 
+
+-----Original Message-----
+From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>
+[mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of dhjdhj
+Sent: Friday, April 10, 2009 11:16 AM
+To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: [antlr-interest] How can I find the line number and column for
+asemantic error
+
+ 
+
+I understand that if I get a RecognitionException, I can extract the  
+
+line and column from the exeception.
+
+ 
+
+However, suppose I'm inside a rule and I decide that I have a semantic  
+
+error (i.e, variable types aren't compatible  or something). At that  
+
+point I want to generate a Semantic Error that will be caught at the  
+
+top level but I still need to know (at least) what line the semantic  
+
+error occurred. I tried to get that info out of the lexer but it  
+
+always returns the last line of the source code so that doesn't help.
+
+ 
+
+I must be missing something non-obvious (to me) and would appreciate  
+
+suggestions.
+
+ 
+
+Thanks,
+
+David Jameson
+
+ 
+
+List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+
+Unsubscribe:
+<A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20090410/24b82aed/attachment-0001.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20090410/24b82aed/attachment-0001.html</A> 
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="033987.html">[antlr-interest] How can I find the line number and column for a	semantic error
+</A></li>
+	<LI>Next message: <A HREF="033995.html">[antlr-interest] How can I find the line number and column for	asemantic error
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#33989">[ date ]</a>
+              <a href="thread.html#33989">[ thread ]</a>
+              <a href="subject.html#33989">[ subject ]</a>
+              <a href="author.html#33989">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

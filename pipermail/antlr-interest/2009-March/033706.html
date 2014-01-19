@@ -1,0 +1,187 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Tree-based interpreters
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Tree-based%20interpreters&In-Reply-To=%3C717d79080903260142t7f865392g4dcd9cb1aa798181%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="033687.html">
+   <LINK REL="Next"  HREF="033683.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Tree-based interpreters</H1>
+    <B>Joern Gebhardt</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Tree-based%20interpreters&In-Reply-To=%3C717d79080903260142t7f865392g4dcd9cb1aa798181%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Tree-based interpreters">gebhardt at joern-gebhardt.de
+       </A><BR>
+    <I>Thu Mar 26 01:42:40 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="033687.html">[antlr-interest] Tree-based interpreters
+</A></li>
+        <LI>Next message: <A HREF="033683.html">[antlr-interest] Specifying optional elements in a tree grammar.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#33706">[ date ]</a>
+              <a href="thread.html#33706">[ thread ]</a>
+              <a href="subject.html#33706">[ subject ]</a>
+              <a href="author.html#33706">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+I found a solution how to handle the interpretation of if-statements with
+the CommonTreeNodeStream.
+
+Basically we store the stream index of the if and else begin positions in
+local variables:
+
+ifstat
+    :   ^('if' c=expr
+           *{int ifStatIdx = input.index()}* s=.
+           *{int elseStatIdx = input.index()}* e=.?) // ^('if' expr stat
+stat?)
+         {
+         int next = input.index();
+         if ( ((Boolean)$c.value).booleanValue() ) {
+             input.seek(*ifStatIdx*);
+             stat();
+         }
+         else if ( $e!=null ) {
+             input.seek(*elseStatIdx*);
+             stat();
+         }
+         input.seek(next);
+
+         }
+     ;
+
+However, this solution doesn't work because the variables &quot;ifStatIdx&quot; and
+&quot;elseStatIdx&quot; are not visible (due to an inner statement block { .. } in the
+generated Java code. Therefore, we have to add the declaration into the
+@init block:
+
+
+ifstat
+*@init {* *int* *ifStatIdx;
+        int **elseStatIdx; }**
+*     :   ^('if' c=expr
+           *{ifStatIdx = input.index()}* s=.
+           *{elseStatIdx = input.index()}* e=.?) // ^('if' expr stat stat?)
+         {
+         int next = input.index();
+         if ( ((Boolean)$c.value).booleanValue() ) {
+             input.seek(*ifStatIdx*);
+             stat();
+         }
+         else if ( $e!=null ) {
+             input.seek(*elseStatIdx*);
+             stat();
+         }
+         input.seek(next);
+
+         }
+     ;
+
+@Ter: should I add this as remark to your wiki page?
+
+
+Regards,
+Joern
+
+
+On Wed, Mar 25, 2009 at 6:48 PM, Terence Parr &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">parrt at cs.usfca.edu</A>&gt; wrote:
+
+&gt;<i> Hi. they use a custom AST node.
+</I>&gt;<i> Ter
+</I>&gt;<i> On Mar 25, 2009, at 9:58 AM, Joern Gebhardt wrote:
+</I>&gt;<i>
+</I>&gt;<i> &gt; Hi,
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; I found in the wiki (
+</I>&gt;<i> <A HREF="http://www.antlr.org/wiki/display/CS652/Tree-based+interpreters">http://www.antlr.org/wiki/display/CS652/Tree-based+interpreters</A>
+</I>&gt;<i> &gt; ) a page that describes how an if-statement could be processed based
+</I>&gt;<i> &gt; on an AST.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; The grammar stated there looks like this:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; ifstat
+</I>&gt;<i> &gt;     :   ^('if' c=expr s=. e=.?) // ^('if' expr stat stat?)
+</I>&gt;<i> &gt;         {
+</I>&gt;<i> &gt;         int next = input.index();
+</I>&gt;<i> &gt;         if ( ((Boolean)$c.value).booleanValue() ) {
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;             input.seek($s.start.streamIndex);
+</I>&gt;<i> &gt;             stat();
+</I>&gt;<i> &gt;         }
+</I>&gt;<i> &gt;         else if ( $e!=null ) {
+</I>&gt;<i> &gt;             input.seek($e.start.streamIndex);
+</I>&gt;<i> &gt;             stat();
+</I>&gt;<i> &gt;         }
+</I>&gt;<i> &gt;         input.seek(next);
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;         }
+</I>&gt;<i> &gt;     ;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; I tried this out but wasn't able to extract the &quot;streamIndex&quot; out of
+</I>&gt;<i> &gt; the statement CommonTree objects &quot;s&quot; and &quot;e&quot; (by the way, this is
+</I>&gt;<i> &gt; already stated as comment on the wiki).
+</I>&gt;<i> &gt; I only found was the &quot;startIndex&quot; and &quot;stopIndex&quot; but I guess that
+</I>&gt;<i> &gt; these attribute refer to the token position in the token stream
+</I>&gt;<i> &gt; created by the lexer.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Is there any possibility to get the index of the
+</I>&gt;<i> &gt; CommonTreeNodeStream (and not the token stream)? Or do you have any
+</I>&gt;<i> &gt; other suggestions how I could use a tree-grammar
+</I>&gt;<i> &gt; to process if-statements?
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Thanks in advance,
+</I>&gt;<i> &gt; Joern
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> &gt; Unsubscribe:
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe:
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i>
+</I>-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20090326/232063e5/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20090326/232063e5/attachment.html</A> 
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="033687.html">[antlr-interest] Tree-based interpreters
+</A></li>
+	<LI>Next message: <A HREF="033683.html">[antlr-interest] Specifying optional elements in a tree grammar.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#33706">[ date ]</a>
+              <a href="thread.html#33706">[ thread ]</a>
+              <a href="subject.html#33706">[ subject ]</a>
+              <a href="author.html#33706">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

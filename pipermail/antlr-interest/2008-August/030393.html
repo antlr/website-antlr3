@@ -1,0 +1,565 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Can't recoginze a file start with HIDDENlexer	since 3.1b1
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Can%27t%20recoginze%20a%20file%20start%20with%20HIDDENlexer%0A%09since%203.1b1&In-Reply-To=%3C005101c908cf%2401b82e70%244307430a%40RYUSA%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="030386.html">
+   <LINK REL="Next"  HREF="030400.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Can't recoginze a file start with HIDDENlexer	since 3.1b1</H1>
+    <B>Ronghui Yu</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Can%27t%20recoginze%20a%20file%20start%20with%20HIDDENlexer%0A%09since%203.1b1&In-Reply-To=%3C005101c908cf%2401b82e70%244307430a%40RYUSA%3E"
+       TITLE="[antlr-interest] Can't recoginze a file start with HIDDENlexer	since 3.1b1">Ronghui.Yu at SierraAtlantic.com
+       </A><BR>
+    <I>Wed Aug 27 22:29:13 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="030386.html">[antlr-interest] Can't recoginze a file start with HIDDEN	lexer	since 3.1b1
+</A></li>
+        <LI>Next message: <A HREF="030400.html">[antlr-interest] Can't recoginze a file start with	HIDDENlexer	since 3.1b1
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30393">[ date ]</a>
+              <a href="thread.html#30393">[ thread ]</a>
+              <a href="subject.html#30393">[ subject ]</a>
+              <a href="author.html#30393">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>The following is the complete implementation of CREATE DATABASE of our Sybase parser, and it shows its structures.
+The text in red below was added a few days ago when I found this problem. I commented it because they would introduce some other problems. God....
+
+Thanks
+
+grammar Sybase;
+options
+{
+    language    = C;
+    backtrack   = true;
+}
+
+scope ActivityScope
+{
+    ANTLR3_INT32 activityId; 
+    ANTLR3_INT32 objectId;
+}
+
+@header
+{
+    #include &quot;Activities.h&quot;
+    #include &quot;LumActivityTypeIds.h&quot;
+}
+
+@members
+{
+    void* activityVectorPtr;
+}
+
+@rulecatch
+{
+    if (HASEXCEPTION())
+    {
+        // Report the exception and attempt to recover from it.
+        PREPORTERROR();
+        PRECOVER();
+
+        // Record the exception in the current activity record.
+        if (SCOPE_TOP(ActivityScope) != NULL)
+            recordException(activityVectorPtr, SCOPE_TOP(ActivityScope)-&gt;activityId);
+    }
+}
+
+
+start[void* ptr] :
+
+        { activityVectorPtr = ptr; }
+
+        (
+
+         //SQL_Comment
+
+         //|
+
+         //Line_Comment
+
+         //|
+
+         //Multi_Line_Comment
+
+         //|
+
+         //Whitespace
+
+         //|
+
+         //We need the above alternatives to match the comments, empty line at the beginning of a file
+
+         //Ronghui 08/21/2008
+
+         sql_statement
+
+        )+ 
+
+    ;
+sql_statement
+
+scope 
+
+        {
+
+            ANTLR3_INT32 activityId; 
+
+            ANTLR3_INT32 objectId;
+
+        }
+
+    :
+
+        {
+
+            if (SCOPE_SIZE(sql_statement) == 1)
+
+            {
+
+                $sql_statement::activityId = createActivity(activityVectorPtr);
+
+            }
+
+            else
+
+            {
+
+                $sql_statement::activityId = createSubActivity(activityVectorPtr, 
+
+                    ((SCOPE_TYPE(sql_statement))SCOPE_INSTANCE(sql_statement, SCOPE_SIZE(sql_statement)-1))-&gt;activityId);
+
+            }
+
+        }
+
+
+
+        sql_statement_command (SemiColon)?
+
+
+
+        {
+
+            if (hasException(activityVectorPtr, $sql_statement::activityId))
+
+                handleException(activityVectorPtr, $sql_statement::activityId, $text);
+
+        }
+
+    ;
+sql_statement_command :
+
+       create_database
+
+    ;
+create_database :
+
+        'CREATE' ('TEMPORARY')? 'DATABASE' qual_object_name_saved // database_name 
+
+        ('ON' database_options)?
+
+        ('LOG' 'ON' database_options)?
+
+        (alter_database_option)*
+
+        {
+
+            addActivityInfo(activityVectorPtr, $sql_statement::activityId, &quot;CREATE_DATABASE&quot;, AC_CREATE_DATABASE, $text);
+
+        }
+
+    ;
+qual_object_name_saved :
+
+        {
+
+            // ANTLR doesn't seem to initialize these variables.
+
+            memset(&amp;srv, 0, sizeof(srv));
+
+            memset(&amp;db, 0, sizeof(db));
+
+            memset(&amp;own, 0, sizeof(own));
+
+            memset(&amp;obj, 0, sizeof(obj));
+
+        }
+
+        ( srv=server_name '.' (db=database_name)? '.' (own=owner_name)? '.' obj=object_name
+
+        | '.'? db=database_name '.' (own=owner_name)? '.' obj=object_name
+
+        | '.'? '.'? own=owner_name '.' obj=object_name
+
+        | '.'? '.'? '.'? obj=object_name
+
+        )
+
+        {
+
+            addObjectInfo(activityVectorPtr, $sql_statement::activityId, $srv.text, $db.text, $own.text, NULL, $obj.text);
+
+        }
+
+    ;
+server_name                         : object;
+object :
+
+        Identifier
+
+    |   Bracketed_Identifier
+
+    |   Single_Quoted_String 
+
+    |   Double_Quoted_String
+
+    |   non_reserved_keywords
+
+    ;
+non_reserved_keywords :
+
+        'NAME' | 'ADDRESS' | 'XML' | 'TYPE' | 'STATE' | 'ROWS' | 'STATUS' | 'DOCUMENT' | 'ACTION' |
+
+        'SERVER' | 'MASTER' | 'COUNT' | 'SIZE' | 'RESUME' | 'SOURCE' | 'INSERTED' | 'DELETED' | 'SAFETY' | 
+
+        'PARTITION' | 'BINARY' | 'CHECKSUM' | 'MAX' | 'LOG' | 'FIRST' | 'LAST' | 'FILENAME' | 'LOW' | 
+
+        'NORMAL' | 'HIGH' | 'CONTEXT_INFO' | 'IDENTITY' | 'SQL' | 'STOP' | 'START' | 'LENGTH' | 'UNPARTITION' |
+
+        'ASE' | 'ONLY' | 'CALLER' | 'SELF' | 'OWNER' | 'ISOLATION' | 'LEVEL' | 'PERMENENT' | 'PUBLIC' |
+
+        'DATEFORMAT' | 'DATEFIRST' | 'LANGUAGE' | 'CLIENT' | 'OPERATIOR_CONSOLE' | 'CURRENT' | 'TIME' | 'FUNC'
+
+    ;
+database_name                       : object;
+owner_name                          : object;
+object_name                         : object;
+database_options
+
+ : ('DEFAULT'| db1=database_device {addObjectInfo(activityVectorPtr, $sql_statement::activityId, NULL, NULL, NULL, NULL, $db1.text);})( '=' size)? 
+
+  (',' db2=database_device {addObjectInfo(activityVectorPtr, $sql_statement::activityId, NULL, NULL, NULL, NULL, $db2.text);} ('=' size)?)*
+
+ ;
+database_device       : object;
+size : 
+
+        constant //( size_units )?
+
+    ;
+constant :
+
+        Binary_Constant
+
+    |   Integer_Constant
+
+    |   Floating_Point_Constant
+
+    |   Money_Constant
+
+    |   Single_Quoted_String
+
+    |   Double_Quoted_String
+
+    | true_or_false
+
+    |   'NULL'
+
+    ;
+true_or_false
+
+ : ('TRUE' | 'FALSE')
+
+ ;
+alter_database_option
+
+ : (with_option_rule)
+
+        | ('FOR' ('LOAD'|'PROXY_UPDATE'))
+
+ ;
+with_option_rule
+
+ : 'WITH' with_option_list
+
+ ;
+with_option_list :
+
+ with_option ( ',' with_option )* 
+
+    ;
+with_option :
+
+  with_option_name (('=')? with_option_value)? ('PERCENT')?
+
+ | ( 'DISMOUNT' | 'NODISMOUNT' )
+
+ | ( 'NOUNLOAD' | 'UNLOAD')
+
+ | ( 'NOINIT' | 'INIT')
+
+ | 'NO_TRUNCATE'
+
+ | 'STANDBY_ACCESS'
+
+ | 'TRUNCATE_ONLY'
+
+ | 'NO_LOG'
+
+ | 'LOG'
+
+ | 'OVERRIDE'
+
+ | 'RECOMPILE'
+
+ | ('CHECK'|'GRANT') 'OPTION'
+
+ | 'ERROR'
+
+ | 'NO_ERROR'
+
+ | 'WAIT'
+
+ | 'NOWAIT'
+
+        | 'IGNORE_DUP_KEY'
+
+        | 'SORTED_DATA'
+
+        | 'IGNORE_DUP_ROW'
+
+        | 'ALLOW_DUP_ROW'
+
+        | 'RESUME'
+
+        | 'STATISTICS' using_clause
+
+    ;
+with_option_name
+
+ : 'DENSITY'
+
+ | 'BLOCKSIZE'
+
+ | 'CAPACITY'
+
+ | 'COMPRESSION'
+
+ | 'DUMPVOLUME'
+
+ | 'FILE'
+
+ | 'IDENTITY_GAP'
+
+ | 'UNTIL_TIME'
+
+ | 'RETAINDAYS'
+
+ | 'EXP_ROW_SIZE'
+
+ | 'MAX_ROWS_PER_PAGE'
+
+        | 'RESERVEPAGEGAP'
+
+        | 'FILLFACTOR'
+
+        | 'CONSUMERS'
+
+        | 'DEFAULT_LOCATION'
+
+        | 'PASSWORD'
+
+        | 'PASSWD'
+
+        | 'LISTONLY'
+
+        | 'HEADERONLY'
+
+        | 'VERIFY' ('ONLY')?
+
+        | 'NOTIFY'
+
+ | 'TIME'
+
+ | 'SAMPLING'
+
+ ;
+with_option_value
+
+ : constant
+
+ | file_name //object('.' extension)?, including object
+
+ | 'CLIENT' 
+
+ | 'OPERATIOR_CONSOLE'
+
+ | 'HEADER' 
+
+ | 'FULL'
+
+ ;
+file_name                           : object('.' extension)?;
+extension       : object;
+using_clause:
+
+ 'USING' using_item ( ',' using_item )*
+
+ ;
+using_item
+
+ : (constant (('=' constant)|('VALUES'))?)
+
+ | ('BYTES'|'CHARS'|'CHARACTERS')
+
+ ;
+label_name                          : object;
+SQL_Comment :
+
+        '--' ~('\n'|'\r')* '\r'? '\n' {$channel=HIDDEN;} ;
+Line_Comment :
+
+        '//' ~('\n'|'\r')* '\r'? '\n' {$channel=HIDDEN;} ;
+Multi_Line_Comment :
+
+        //'/*' ((Multi_Line_Comment) =&gt; Multi_Line_Comment | (options {greedy=false;} : .))* '*/' {$channel=HIDDEN;}
+
+     '/*'
+
+     (
+
+      ('/*') =&gt; Multi_Line_Comment
+
+      |
+
+      ('*' ~'/') =&gt; '*'
+
+      |
+
+      ~'*'
+
+     )*
+
+     '*/'
+
+     {$channel=HIDDEN;}
+
+
+
+        ;
+Whitespace :
+
+        ('\u0000'..'\u0020') {$channel=HIDDEN;} ;
+Identifier :
+
+        ('a'..'z'|'A'..'Z'|'_'|'$'|'#') ('a'..'z'|'A'..'Z'|'0'..'9'|'_'|'$'|'#')*
+
+        ( {LA(1) == ':' &amp;&amp; LA(2) != ':'}? =&gt; ':' { $type = Label_Identifier; } )? ;
+Bracketed_Identifier :
+
+        '[' ( ~']' )* ']' ;
+Single_Quoted_String :
+
+        ('N')? ( '\'' ( ~'\'' )* '\'' )+ ;
+Double_Quoted_String :
+
+        '&quot;' ( ~'&quot;' )* '&quot;' ;
+Binary_Constant 
+
+ : 
+
+        '0' ('x'|'X') ('0'..'9'|'a'..'f'|'A'..'F')* ;
+Integer_Constant :
+
+        ('0'..'9')+ ;
+Floating_Point_Constant :
+
+        ('0'..'9')+ '.' ('0'..'9')* (Exponent)?
+
+    |   '.' ('0'..'9')+ (Exponent)?
+
+    |   ('0'..'9')+ Exponent ;
+fragment
+
+Exponent : 
+
+        ('e'|'E') ('+'|'-')? ('0'..'9')+ ;
+Money_Constant :
+
+        '$' ( Integer_Constant | Floating_Point_Constant ) ;
+SemiColon :
+
+        ';' ;
+
+
+==============================
+Regards,
+Ronghui Yu
+Sierra Atlantic
+  ----- Original Message ----- 
+  From: Jim Idle 
+  To: Ronghui Yu 
+  Cc: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A> 
+  Sent: Wednesday, August 27, 2008 11:42 PM
+  Subject: Re: [antlr-interest] Can't recoginze a file start with HIDDENlexer since 3.1b1
+
+
+  On Wed, 2008-08-27 at 15:39 +0800, Ronghui Yu wrote: 
+    We're developing several SQL parsers for different major DBMS, before 3.1b1 was available, we finished development based 3.0.1, and run a bunch of *.sql files with a great amout of SQL statements againt this parser. Everything went well at that time. 
+     
+    Then when 3.1b1 was available, we switched to it with exactly the same grammar code, and run the same *sql files. Something different happened, all *.sql files start with empty line or lines, SQL comment line or lines, could not pass the test. Now when 3.1 available, the situation is the same as that of 3.1b1. And I learnt that if the file start with lexers with HIDDEN channel, it would fail against the test. 
+     
+    I wonder if anyone else ever comes across the same situtation? And if yes, any suggestion to solve it? 
+
+
+  I'll take a look - maybe there is some issue with one of the bug fixes. Do you have some small example to reproduce this? My own SQL parsers all work correctly so thre must be some particular aspect fo your grammars that makes this happen.
+
+
+    By the way, I am using the C target. 
+
+  Jim 
+
+
+__________________________________________________________________________________________________________________
+DISCLAIMER:&quot;The information contained in this message and the attachments (if any) may be privileged and confidential and protected from disclosure. You are hereby notified that any unauthorized use, dissemination, distribution or copying of this communication, review, retransmission, or taking of any action based upon this information, by persons or entities other than the intended recipient, is strictly prohibited. If you are not the intended recipient or an employee or agent responsible for delivering this message, and have received this communication in error, please notify us immediately by replying to the message and kindly delete the original message, attachments, if any, and all its copies from your computer system. Thank you for your cooperation.&quot; 
+________________________________________________________________________________________________________________
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20080828/99160262/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20080828/99160262/attachment.html</A> 
+</PRE>
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="030386.html">[antlr-interest] Can't recoginze a file start with HIDDEN	lexer	since 3.1b1
+</A></li>
+	<LI>Next message: <A HREF="030400.html">[antlr-interest] Can't recoginze a file start with	HIDDENlexer	since 3.1b1
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30393">[ date ]</a>
+              <a href="thread.html#30393">[ thread ]</a>
+              <a href="subject.html#30393">[ subject ]</a>
+              <a href="author.html#30393">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

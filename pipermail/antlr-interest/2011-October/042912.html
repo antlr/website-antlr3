@@ -1,0 +1,310 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Custom ASTLabelType - setParent called with Null?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Custom%20ASTLabelType%20-%20setParent%20called%20with%20Null%3F&In-Reply-To=%3CCAKAumBGuFXQXSP2pPPL%3D9Rg7Zwn_dwirEUVb2-OMR12dhymgWA%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="042991.html">
+   <LINK REL="Next"  HREF="042916.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Custom ASTLabelType - setParent called with Null?</H1>
+    <B>Jeremy Long</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Custom%20ASTLabelType%20-%20setParent%20called%20with%20Null%3F&In-Reply-To=%3CCAKAumBGuFXQXSP2pPPL%3D9Rg7Zwn_dwirEUVb2-OMR12dhymgWA%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Custom ASTLabelType - setParent called with Null?">jeremy.long at gmail.com
+       </A><BR>
+    <I>Sat Oct 15 13:23:19 PDT 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="042991.html">[antlr-interest] Something Wrong in Antlr3CSharpReleases 3.4?
+</A></li>
+        <LI>Next message: <A HREF="042916.html">[antlr-interest] Custom ASTLabelType - setParent called with	Null?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#42912">[ date ]</a>
+              <a href="thread.html#42912">[ thread ]</a>
+              <a href="subject.html#42912">[ subject ]</a>
+              <a href="author.html#42912">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello,
+
+I'm still relatively new to antlr, but basically I'm trying to generate an
+AST and auto-populate a Neo4j Graph. My initial thought was to use a custom
+ASTLabelType with my object over-riding the setParent method of the
+CommonTree to build the relationship. However, on a very simple grammar
+(Expr.g) parsing the input of  &quot;1+2\n&quot; of the 10 calls to setParent, 6 of
+the calls where passed a null token?  Any thoughts on this?
+
+The grammar, extended commonTree, and test case are below (however, none of
+this will run as the overall project is bigger than this one piece).
+
+Thanks in advance if anyone can clue me into why there are so many calls to
+setParent passing a null token in.
+
+--Jeremy
+
+
+
+//////////////////////Eval Grammar
+
+grammar Eval;
+
+options {
+ASTLabelType=BaseModelNode;
+output = AST;
+}
+
+@header {
+
+package org.sangine.translator.antlr3.generated;
+
+import org.sangine.translator.antlr3.model.BaseModelNode;
+
+}
+@lexer::header {
+package org.sangine.translator.antlr3.generated;
+
+import org.sangine.translator.antlr3.model.BaseModelNode;
+}
+
+prog : stat+
+;
+
+stat : expr NEWLINE
+|<i> ID '=' expr NEWLINE
+</I>|<i> NEWLINE
+</I>;
+
+
+expr
+:<i> multExpr (('+'|'-') multExpr)*
+</I>;
+multExpr
+:<i> atom ('*' atom)*
+</I>;
+atom
+:<i> INT
+</I>|<i> ID
+</I>|<i> '(' expr ')'
+</I>;
+
+ID : ('a'..'z'|'A'..'Z')+;
+INT : '0'..'9'+;
+NEWLINE : '\r'?'\n';
+WS : (' '|'\t'|'\n'|'\r')+ {skip();};
+
+---------------------------------------------------
+
+/////////////////////////////////////////BaseModelNode.java
+
+
+/**
+ *
+ */
+package org.sangine.translator.antlr3.model;
+
+import org.antlr.runtime.Token;
+import org.antlr.runtime.tree.CommonTree;
+import org.antlr.runtime.tree.Tree;
+import org.neo4j.graphdb.Node;
+import org.sangine.model.ModelNode;
+import org.sangine.model.ModelRelationshipType;
+import org.sangine.store.ApplicationGraph;
+
+/**
+ * @author Jeremy
+ *
+ */
+public class BaseModelNode extends CommonTree {
+
+private final Node underlyingNode;
+ protected Node getUnderlyingNode()
+{
+return underlyingNode;
+}
+ /**
+ *
+ */
+public BaseModelNode(Node node)
+{
+this.underlyingNode = node;
+}
+
+/**
+ *
+ */
+public BaseModelNode(BaseModelNode node)
+{
+this.underlyingNode = node.underlyingNode;
+}
+ /**
+ * @param node
+ */
+public BaseModelNode(CommonTree node) {
+super(node);
+this.underlyingNode = ApplicationGraph.getInstance().createNode();
+}
+
+/**
+ * @param t
+ */
+public BaseModelNode(Token t) {
+super(t);
+this.underlyingNode = ApplicationGraph.getInstance().createNode();
+ if (t==null) {
+System.err.println(&quot;token was null&quot;);
+return;
+}
+System.err.println(&quot;token was NOT null&quot;);
+this.underlyingNode.setProperty(&quot;text&quot;, t.getText());
+this.underlyingNode.setProperty(&quot;linenumber&quot;, t.getLine());
+this.underlyingNode.setProperty(&quot;offset&quot;, t.getCharPositionInLine());
+}
+
+public BaseModelNode()
+{
+this.underlyingNode = ApplicationGraph.getInstance().createNode();
+}
+
+ @Override
+public void setParent(Tree t) {
+if (t==null) return;
+this.parent = (CommonTree) t;
+BaseModelNode parent = (BaseModelNode) t;
+parent.underlyingNode.createRelationshipTo(this.underlyingNode,
+ModelRelationshipType.NEXT);
+}
+ @Override
+public int hashCode()
+{
+    return underlyingNode.hashCode();
+}
+
+@Override
+public boolean equals( Object o )
+{
+    return o instanceof BaseModelNode &amp;&amp;
+            underlyingNode.equals( ( (BaseModelNode)o ).getUnderlyingNode()
+);
+}
+
+@Override
+public String toString()
+{
+    return &quot;BaseModelNode[]&quot;;
+}
+
+}
+
+/////////////////////////////////////////////////////////// test code
+
+package org.sangine;
+
+import org.antlr.runtime.ANTLRStringStream;
+import org.antlr.runtime.CommonTokenStream;
+import org.antlr.runtime.RecognitionException;
+import org.neo4j.graphdb.Transaction;
+import org.sangine.store.ApplicationGraph;
+import org.sangine.translator.antlr3.ModelTreeAdaptor;
+import org.sangine.translator.antlr3.generated.EvalLexer;
+import org.sangine.translator.antlr3.generated.EvalParser;
+
+import junit.framework.Test;
+import junit.framework.TestCase;
+import junit.framework.TestSuite;
+
+public class EvalTest
+    extends TestCase
+{
+
+public EvalTest( String testName )
+    {
+        super( testName );
+    }
+
+    public static Test suite()
+    {
+        return new TestSuite( EvalTest.class );
+    }
+
+    public void testApp()
+    {
+    ApplicationGraph.loadOrCreateDB(&quot;evaldb&quot;);
+
+    Transaction tx =
+ApplicationGraph.getInstance().getGraphDatabaseService().beginTx();
+
+    String java = &quot;1+2&quot;;
+
+    ANTLRStringStream input = null;
+input = new org.antlr.runtime.ANTLRStringStream(java);
+
+
+EvalLexer lexer = new EvalLexer(input);
+
+
+    CommonTokenStream tokens = new CommonTokenStream(lexer);
+
+    ModelTreeAdaptor adaptor = new ModelTreeAdaptor();
+
+    EvalParser parser = new EvalParser(tokens);
+    parser.setTreeAdaptor(adaptor);
+
+    EvalParser.stat_return cu = null;
+
+    try {
+cu = parser.stat();
+tx.success();
+assertTrue( true );
+} catch (RecognitionException e) {
+// TODO Auto-generated catch block
+e.printStackTrace();
+assertTrue( false );
+}
+    finally {
+    tx.finish();
+    ApplicationGraph.close();
+    }
+    }
+}
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="042991.html">[antlr-interest] Something Wrong in Antlr3CSharpReleases 3.4?
+</A></li>
+	<LI>Next message: <A HREF="042916.html">[antlr-interest] Custom ASTLabelType - setParent called with	Null?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#42912">[ date ]</a>
+              <a href="thread.html#42912">[ thread ]</a>
+              <a href="subject.html#42912">[ subject ]</a>
+              <a href="author.html#42912">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

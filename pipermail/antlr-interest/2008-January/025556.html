@@ -1,0 +1,175 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Error nodes created upon syntax error
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Error%20nodes%20created%20upon%20syntax%20error&In-Reply-To=%3Cbe9e4140801060848y575f9302t9b4fdfd5b20cb77d%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="025557.html">
+   <LINK REL="Next"  HREF="025667.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Error nodes created upon syntax error</H1>
+    <B>Alessandro</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Error%20nodes%20created%20upon%20syntax%20error&In-Reply-To=%3Cbe9e4140801060848y575f9302t9b4fdfd5b20cb77d%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Error nodes created upon syntax error">alessnet at gmail.com
+       </A><BR>
+    <I>Sun Jan  6 08:48:03 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="025557.html">[antlr-interest] insert after tree?
+</A></li>
+        <LI>Next message: <A HREF="025667.html">[antlr-interest] Error nodes created upon syntax error
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25556">[ date ]</a>
+              <a href="thread.html#25556">[ thread ]</a>
+              <a href="subject.html#25556">[ subject ]</a>
+              <a href="author.html#25556">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello,
+(sorry for my bad english)
+
+I can see that there is a problem with token deletion/insertion if you
+are also building trees.
+Take this rule, for exemple :
+
+test	:	'var' ID ';'    -&gt; ^('var' ID);
+
+If the input if &quot;var ;&quot;, the token insertion system detect that the
+token &quot;ID&quot; is missing, then report the error, but continue parsing.
+
+If you look closer to the generated code, you will see :
+
+-----
+ID2=(Token)input.LT(1); // save ID2
+match(input,ID,FOLLOW_ID_in_test26);
+stream_ID.add(ID2); // ID2 have a bad reference
+----
+
+ID2 contains a reference to the token ';' and not to the token ID. The
+&quot;match&quot; procedure doesn't thow any exception because of the &quot;token
+insertion&quot; system.
+
+So the resulting tree will be in reality ^( 'var' ';') ....and it is
+totally incorrect, am I right ?
+
+If I want to use the &quot;token deletion/insertion symbol&quot; with tree
+building, can I modify the &quot;match&quot; procedure in order to modify, for
+instance, the content of &quot;ID2&quot; ( without altering the reference) ?
+
+I imagined a workaround. ( LA(i) is the token at the index
+current_pos+i in the stream ).
+
+if there is a token insertion, do this in the &quot;match&quot; procedure :
+
+1. add the &quot;special&quot; imaginary token (matching the missing token) in
+the stream at the postion LA(2) (position is wrong now). The stream
+must allow token insertion.
+2. Swap (contents and not references) LA(1) and LA(2). (you have to
+correct index informations)
+3. ID2 still has a reference to LA(1), but the content of the token is
+now &quot;special imaginary ID token&quot;.
+
+
+if there is a token deletion, do this in the &quot;match&quot; procedure :
+
+1. Save LA(1) content to a temporary variable : temp_var
+2. Copy the content of LA(2) in LA(1)
+3. Copy the content of temp_var in LA(2)
+4. Swap (references only) LA(1) AND LA(2)
+5. ID2 has reference to **OLD** LA(1), but now it is LA(2).
+
+
+In the commonTreeAdaptator.create procedure :
+
+1. if the token is a &quot;special&quot; imaginary token : return an ERROR node
+(like Terence proposal)
+2. else : create a node like usual.
+
+What do you think about this this (non-tested) workaround ?
+
+The best solution, I think, is that &quot;match&quot; procedure returns the
+reference of the real matched token.
+
+On Dec 2, 2007 8:24 PM, Terence Parr &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">parrt at antlr.org</A>&gt; wrote:
+&gt;<i> hi,
+</I>&gt;<i>
+</I>&gt;<i> Currently syntax errors cause invalid trees and possibly even runtime
+</I>&gt;<i> exceptions when building ASTs. What we really need I believe is to
+</I>&gt;<i> have rules that encounter syntax errors return an ERROR node of some
+</I>&gt;<i> sort that records where the error occurred and, with luck, the tokens
+</I>&gt;<i> consumed during recovery. I started an improvement request:
+</I>&gt;<i>
+</I>&gt;<i> <A HREF="http://www.antlr.org:8888/browse/ANTLR-193">http://www.antlr.org:8888/browse/ANTLR-193</A>
+</I>&gt;<i>
+</I>&gt;<i> The basic idea is that ERROR nodes get used in place of ASTs that
+</I>&gt;<i> would normally be produced by rule indications.  For example, the
+</I>&gt;<i> following rule would return a valid AST except for the subtrees
+</I>&gt;<i> associated with rule refs in encountering syntax errors:
+</I>&gt;<i>
+</I>&gt;<i> forDecl : 'for' '(' decl ';' expr ';' expr ')' stat -&gt; ... ;
+</I>&gt;<i>
+</I>&gt;<i> If there is an error inside decl, the tree would return
+</I>&gt;<i>
+</I>&gt;<i> ^('for' ERROR subtree-expr subtree-expr)
+</I>&gt;<i>
+</I>&gt;<i> This effectively means that I must turn off the single token
+</I>&gt;<i> insertion and deletion that occurs automatically within a single
+</I>&gt;<i> rule.  If a syntax error occurs, the immediately surrounding rule
+</I>&gt;<i> must terminate in return an error node.
+</I>&gt;<i>
+</I>&gt;<i> Does this make sense? I would like to stick this into 3.1 release.
+</I>&gt;<i>
+</I>&gt;<i> Ter
+</I>&gt;<i>
+</I></PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="025557.html">[antlr-interest] insert after tree?
+</A></li>
+	<LI>Next message: <A HREF="025667.html">[antlr-interest] Error nodes created upon syntax error
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25556">[ date ]</a>
+              <a href="thread.html#25556">[ thread ]</a>
+              <a href="subject.html#25556">[ subject ]</a>
+              <a href="author.html#25556">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,186 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Ignoring comments in predicates problem
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Ignoring%20comments%20in%20predicates%20problem&In-Reply-To=Pine.LNX.4.44.0501301116360.2294-100000%40g4.pauljlucas.org">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="011033.html">
+   <LINK REL="Next"  HREF="011051.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Ignoring comments in predicates problem</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Ignoring%20comments%20in%20predicates%20problem&In-Reply-To=Pine.LNX.4.44.0501301116360.2294-100000%40g4.pauljlucas.org"
+       TITLE="[antlr-interest] Ignoring comments in predicates problem">parrt at cs.usfca.edu
+       </A><BR>
+    <I>Mon Jan 31 14:05:11 PST 2005</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="011033.html">[antlr-interest] Ignoring comments in predicates problem
+</A></li>
+        <LI>Next message: <A HREF="011051.html">[antlr-interest] Ignoring comments in predicates problem
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#11043">[ date ]</a>
+              <a href="thread.html#11043">[ thread ]</a>
+              <a href="subject.html#11043">[ subject ]</a>
+              <a href="author.html#11043">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Jan 30, 2005, at 11:48 AM, Paul J. Lucas wrote:
+&gt;<i> Given:
+</I>&gt;<i>
+</I>&gt;<i>     protected Ignore
+</I>&gt;<i>         :   (   WhiteSpaceChar
+</I>&gt;<i>             |   &quot;(:&quot; ( options { greedy = false; } : . )* &quot;:)&quot;
+</I>&gt;<i>             )+
+</I>&gt;<i>         ;
+</I>&gt;<i>
+</I>&gt;<i>     protected Keywords
+</I>&gt;<i>         :   // ...
+</I>&gt;<i>         |   (Identifier (Ignore)? '(' ~':')=&gt; Identifier {
+</I>&gt;<i>                 $setType( FUNCTION_NAME );
+</I>&gt;<i>             }
+</I>&gt;<i>         ;
+</I>&gt;<i>
+</I>&gt;<i> That is &quot;Ignore&quot; is used in predicates to ignore either whitespace or 
+</I>&gt;<i> comments
+</I>&gt;<i> -- a comment in XQuery is (: like this :)
+</I>&gt;<i>
+</I>&gt;<i> I do get a &quot;nongreedy block may exit incorrectly due to limitations of 
+</I>&gt;<i> linear
+</I>&gt;<i> approximate lookahead&quot; warning for &quot;Ignore&quot;.
+</I>
+Hi Paul, I believe in this case the warning is overly careful.  As long 
+as the follow set is exactly a single sequence of chars, it will always 
+work.
+
+&gt;<i> If I have an &quot;Idenfitier&quot; optionally followed by &quot;Ignore&quot; followed by 
+</I>&gt;<i> '(' but
+</I>&gt;<i> not followed by a ':', then I have a function name.  I want to handle 
+</I>&gt;<i> all the
+</I>&gt;<i> cases of:
+</I>&gt;<i>
+</I>&gt;<i>     foo( ...
+</I>&gt;<i>     foo ( ...
+</I>&gt;<i>     foo (: comment :) ( ...
+</I>&gt;<i>
+</I>&gt;<i> That is allow zero or more whitespaces or comments in between the 
+</I>&gt;<i> Identifier
+</I>&gt;<i> and the '('.  The second case above doesn't work.
+</I>
+I assume that the &quot;foo (&quot; is indeed not followed by a ':'.
+
+&gt;<i> For the ANTLR-generated code for &quot;Ignore&quot; I get in part:
+</I>&gt;<i>
+</I>&gt;<i>     switch ( LA(1)) {
+</I>&gt;<i>     case '\t':  case '\n':  case '\r':  case ' ':
+</I>&gt;<i>     {
+</I>&gt;<i>         mWhiteSpaceChar(false);
+</I>&gt;<i>         break;
+</I>&gt;<i>     }
+</I>&gt;<i>     case '(':
+</I>&gt;<i>     {
+</I>&gt;<i>         match(&quot;(:&quot;);
+</I>&gt;<i>
+</I>&gt;<i> The execution enters the '(' case above, but then match() throws a
+</I>&gt;<i> RecognitionException because it doesn't match &quot;(:&quot;.  Back in the 
+</I>&gt;<i> &quot;Keywords&quot;
+</I>&gt;<i> ANTLR-generated code, it's:
+</I>&gt;<i>
+</I>&gt;<i>     try {
+</I>&gt;<i>         mIdentifier(false);
+</I>&gt;<i>         if ((_tokenSet_6.member(LA(1))) &amp;&amp; 
+</I>&gt;<i> (_tokenSet_7.member(LA(2)))) {
+</I>&gt;<i>             mIgnore(false);
+</I>&gt;<i>         }
+</I>&gt;<i>         else if ((LA(1)=='(') &amp;&amp; (_tokenSet_8.member(LA(2)))) {
+</I>&gt;<i>         }
+</I>&gt;<i>         else {
+</I>&gt;<i>             throw new NoViableAltForCharException((char)LA(1), 
+</I>&gt;<i> getFilename(), getLine(), getColumn());
+</I>&gt;<i>         }
+</I>&gt;<i>         match('(');
+</I>&gt;<i>         matchNot(':');
+</I>&gt;<i>     }
+</I>&gt;<i>     catch (RecognitionException pe) {
+</I>&gt;<i>         synPredMatched255 = false;
+</I>&gt;<i>     }
+</I>&gt;<i>
+</I>&gt;<i> What I *want* to happen is for execution to pick up at the &quot;else if&quot; 
+</I>&gt;<i> above, but
+</I>&gt;<i> since mIgnore throws a RecognitionException, it jumps to the &quot;catch&quot; 
+</I>&gt;<i> which is
+</I>&gt;<i> *not* what I want.
+</I>&gt;<i>
+</I>&gt;<i> It seems to me that the ANTLR-generated code for &quot;Ignore&quot; should *not* 
+</I>&gt;<i> throw a
+</I>&gt;<i> RecognitionException for my second case.  Why doesn't the generated 
+</I>&gt;<i> code
+</I>&gt;<i> explicitly check for ':' after '(' and if the character is *not* ':' 
+</I>&gt;<i> simply
+</I>&gt;<i> exit?
+</I>
+Hmm...this is odd.  You have k&gt;=2 I see.  It should not enter ignore if 
+there is no &quot;(:&quot;.  Can you tell me what the _tokenSet_7 set looks like 
+from:
+
+&gt;<i>         if ((_tokenSet_6.member(LA(1))) &amp;&amp; 
+</I>&gt;<i> (_tokenSet_7.member(LA(2)))) {
+</I>&gt;<i>             mIgnore(false);
+</I>&gt;<i>         }
+</I>&gt;<i>         else if ((LA(1)=='(') &amp;&amp; (_tokenSet_8.member(LA(2)))) {
+</I>&gt;<i>         }
+</I>
+it should not enter this first IF and should go to the second else.  If 
+you turn on the codeGenBitSetThreshold to a big number option (or 
+whatever it's called) it should list the chars it's testing for LA(2).
+
+I think that is our key.
+
+&gt;<i> How can I get what I want?
+</I>
+You could swat the fly with a hammer (read that &quot;hack&quot; it) by adding a 
+semantic predicate:
+
+         |   (Identifier (({LA(1)=='('&amp;&amp;LA(2)!=':')||(is whitespace)}? 
+Ignore)? '(' ~':')=&gt; ...
+
+Shouldn't be necessary though...let's explore the lookahead set.
+
+Ter
+--
+CS Professor &amp; Grad Director, University of San Francisco
+Creator, ANTLR Parser Generator, <A HREF="http://www.antlr.org">http://www.antlr.org</A>
+Cofounder, <A HREF="http://www.jguru.com">http://www.jguru.com</A>
+
+
+
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="011033.html">[antlr-interest] Ignoring comments in predicates problem
+</A></li>
+	<LI>Next message: <A HREF="011051.html">[antlr-interest] Ignoring comments in predicates problem
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#11043">[ date ]</a>
+              <a href="thread.html#11043">[ thread ]</a>
+              <a href="subject.html#11043">[ subject ]</a>
+              <a href="author.html#11043">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

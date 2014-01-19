@@ -1,0 +1,224 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Re: Merging token vocabularies; Ter adds grammar composition
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20Merging%20token%20vocabularies%3B%20Ter%20adds%20grammar%20composition&In-Reply-To=16603.12563.9617.727906%40SWAN.PSY.cmu.edu">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="008414.html">
+   <LINK REL="Next"  HREF="008423.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Re: Merging token vocabularies; Ter adds grammar composition</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20Merging%20token%20vocabularies%3B%20Ter%20adds%20grammar%20composition&In-Reply-To=16603.12563.9617.727906%40SWAN.PSY.cmu.edu"
+       TITLE="[antlr-interest] Re: Merging token vocabularies; Ter adds grammar composition">parrt at cs.usfca.edu
+       </A><BR>
+    <I>Thu Jun 24 15:59:22 PDT 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="008414.html">[antlr-interest] Merging token vocabularies
+</A></li>
+        <LI>Next message: <A HREF="008423.html">[antlr-interest] Re: Merging token vocabularies; Ter adds grammar composition
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#8420">[ date ]</a>
+              <a href="thread.html#8420">[ thread ]</a>
+              <a href="subject.html#8420">[ subject ]</a>
+              <a href="author.html#8420">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Jun 24, 2004, at 12:52 PM, <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">FranklinChen at cmu.edu</A> wrote:
+&gt;<i> I think I need one huge token vocabulary in order to avoid overloading
+</I>&gt;<i> integers when embedding ASTs, as I mentioned.
+</I>&gt;<i>
+</I>&gt;<i> Suppose (for illustration only; this is nothing like what I'm actually
+</I>&gt;<i> doing) I want to process a file that looks like
+</I>&gt;<i>
+</I>&gt;<i> ===
+</I>&gt;<i> This is a document with C code and Java code:
+</I>&gt;<i> &lt;c&gt;
+</I>&gt;<i> class Bar {};
+</I>&gt;<i> &lt;/c&gt;
+</I>&gt;<i> Java is here.
+</I>&gt;<i> &lt;java&gt;
+</I>&gt;<i> public class Foo {};
+</I>&gt;<i> &lt;/java&gt;
+</I>&gt;<i> ===
+</I>&gt;<i>
+</I>&gt;<i> Presumably, I want to build an AST that looks like
+</I>&gt;<i> (DOCUMENT (TEXT &quot;This is a document with C code and Java code:\n&quot;)
+</I>&gt;<i>   (C (CLASS (NAME &quot;Bar&quot;) ...))
+</I>&gt;<i>   (TEXT &quot;\nJava is here.\n&quot;)
+</I>&gt;<i>   (JAVA (CLASS (NAME &quot;Foo&quot;) ...)))
+</I>&gt;<i>
+</I>&gt;<i> and then use a tree walker to do my work.
+</I>&gt;<i>
+</I>&gt;<i> Assume that I have an independently created C parser and Java parser
+</I>&gt;<i> that I want to just use.  I can't just use in my own parser
+</I>&gt;<i>
+</I>&gt;<i> options {
+</I>&gt;<i>   importVocab = CParser;
+</I>&gt;<i>   importVocab = JavaParser;
+</I>&gt;<i> }
+</I>&gt;<i>
+</I>&gt;<i> so I have to do something else.  As I mentioned, what I am doing is
+</I>&gt;<i> generating a CommonTokenTypes.txt by parsing the CParserTokenTypes.txt
+</I>&gt;<i> and JavaParserTokenTypes.txt and merging the vocabularies, and then
+</I>&gt;<i> importing Common back into CParser and JavaParser and regenerating.
+</I>&gt;<i> This seems to be exactly what you are proposing:  ensuring that a
+</I>&gt;<i> Common vocabulary be imported!  Or am I misunderstanding you?
+</I>
+Hi Gang,
+
+[warning: this got long] ;)
+
+Good question / interesting problem.  Since I'm working on the vocab 
+stuff for 3.0 at the moment, perhaps I'll think about this for a 
+paragraph or two or ten.
+
+The problem you have is that both a C and a Java grammar will export 
+the same token, say, IF with different token types.  Moreover, the 
+parsers have generated constant defs that say IF=342 and IF=2 or 
+something.  Seems like it would be pretty hard to get a single lexer to 
+generate two different values.  Ok, so that means one needs to have 
+separate lexers for both C and for Java.  No problems as the token 
+&quot;spaces&quot; are then totally independent.  One simply needs an overall 
+&quot;controller&quot; (could be a higher-level grammar) that invokes the C or 
+Java parser.  Problem is the trees of course...
+
+Second choice is as you did: create a merged vocab and have both C and 
+Java parsers/lexers import that merged vocab.  Only trouble is that the 
+vocab files needed to merge are created after ANTLR has generated the 
+parsers so one needs to run ANTLR again on the C and Java parser to get 
+their token types in sync.
+
+One could have the Java parser import the C parser's vocab then the 
+output vocab of the Java parser would be the combined one.  The C 
+parser would have to be regenerated though.  This is a drag.  I wonder 
+if we shouldn't change the problem around.  You are really saying that 
+you want to build a new grammar composed of other grammars.  That is, 
+you want to import the grammar not the vocabulary really.  I plan on 
+*not* allowing inheritance ala ANTLR 2.x.  It will become grammar 
+composition or I may leave it to an IDE tool living above ANTLR to do 
+the composition, but for now let's look at what it might look like:
+
+grammar combined;
+
+import C; // include all rules from C
+import Java.expr; // include rule expr and all rules invoked by expr
+
+In this way, the token type issue is resolved because I don't have to 
+rely on two different recognizers generated with independent token 
+types.  I would literally cut/paste (like I did with inheritance) the 
+appropriate rules into the new combined grammar.  Yes, i have to 
+cut/paste because rules are not independent.  If I override a rule in 
+combined that is invoked by a rule in Java or C grammars then every 
+rule could change it's lookahead (this is very unlike method 
+inheritance).
+
+Now on to trees.  Problem is solved because ID for both input grammars 
+is now the single ID of combined grammar.  Any trees created have the 
+unique ID token type value. :)
+
+There are systems such as Visser's SDF that allow grammars to be reused 
+when they are placed in so-called &quot;modules&quot;.  You can import whatever 
+rules you want or whole grammars.  You can set parameters too.  I can 
+imagine a generic rule for a list of IDs that could handle 
+comma-separated, colon-separated, or whatever lists.  You could define 
+the grammar like a template:
+
+grammar commonStuff;
+idList&lt;separator&gt; : ID (&lt;separator&gt; ID)* ;
+
+Then in another grammar, you could do this:
+
+grammar whatever;
+
+import commonStuff.idList&lt;COMMA&gt; as idList;
+
+decl : &quot;int&quot; idList SEMI ;
+
+Something like that.  Looks cool, but you know every time I try to 
+think of a really great example of re-usage with parameterized rule 
+imports, I get stuck.  Seems like just plain &quot;import a bunch of rules&quot; 
+is what we want.  The normal usage would be to import an existing 
+grammar and then change a few rules (for syntax or action changes) or 
+to import rules from a few grammars to make a new one.  The latter case 
+is the only time it's more &quot;powerful&quot; than plain single inheritance.
+
+Still I question whether even this is that useful (ignoring tree 
+walkers for now).  Are you really ever going to build a new grammar by 
+grabbing the Java expr rule set and the C statement set and then 
+somehow hope the merged grammar will work?  Perhaps if we made smaller 
+grammars that were really just grammar subsets that were useful.  
+Hmm...even then, I've never ever been in a situation where I felt I 
+could wholesale grab large chunks of another grammar and reuse without 
+serious modifications (read that cut/paste and modify).  Now, I start 
+most grammars by having to type or cut/paste lexer rules such as ID, 
+WS, INT, and so on.  I can see importing lexer rules as they are 
+independent of each other, but an IDE could simply let you pick from a 
+list of standard lexical rules to get you started.  Seems hardly worth 
+complicating the tool for this simple application.
+
+Back to trees with vocab not grammar imports...I'd like to hear from 
+Monty to hear more about his use of combined vocabs in his tree walkers 
+and his use of inheritance.  I think Monty made a tree supergrammar 
+that had all the tokens in it and then each tree walker phase of the 
+translator subclassed that grammar to get all the tokens.  That is 
+basically the same as doing an importVocab on a combined vocab you 
+built.
+
+In summary, i have no good solution ;)  Can anybody add to this 
+conversation about importing grammars and such?
+
+Ter
+--
+CS Professor &amp; Grad Director, University of San Francisco
+Creator, ANTLR Parser Generator, <A HREF="http://www.antlr.org">http://www.antlr.org</A>
+Cofounder, <A HREF="http://www.jguru.com">http://www.jguru.com</A>
+Cofounder, <A HREF="http://www.knowspam.net">http://www.knowspam.net</A> enjoy email again!
+Cofounder, <A HREF="http://www.peerscope.com">http://www.peerscope.com</A> pure link sharing
+
+
+
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+     <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+     <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+     <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="008414.html">[antlr-interest] Merging token vocabularies
+</A></li>
+	<LI>Next message: <A HREF="008423.html">[antlr-interest] Re: Merging token vocabularies; Ter adds grammar composition
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#8420">[ date ]</a>
+              <a href="thread.html#8420">[ thread ]</a>
+              <a href="subject.html#8420">[ subject ]</a>
+              <a href="author.html#8420">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

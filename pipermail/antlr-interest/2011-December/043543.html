@@ -1,0 +1,133 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] De-emphasizing tree grammars?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20De-emphasizing%20tree%20grammars%3F&In-Reply-To=%3CD977C814-4754-48F7-BEB1-88DD9798D137%40cs.usfca.edu%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="043546.html">
+   <LINK REL="Next"  HREF="043545.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] De-emphasizing tree grammars?</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20De-emphasizing%20tree%20grammars%3F&In-Reply-To=%3CD977C814-4754-48F7-BEB1-88DD9798D137%40cs.usfca.edu%3E"
+       TITLE="[antlr-interest] De-emphasizing tree grammars?">parrt at cs.usfca.edu
+       </A><BR>
+    <I>Sat Dec 24 12:11:13 PST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="043546.html">[antlr-interest] Composite Grammars
+</A></li>
+        <LI>Next message: <A HREF="043545.html">[antlr-interest] Grammar hints?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#43543">[ date ]</a>
+              <a href="thread.html#43543">[ thread ]</a>
+              <a href="subject.html#43543">[ subject ]</a>
+              <a href="author.html#43543">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi gang! Thanks to George, Gavin, Kyle, Jason, et al for bringing up this topic. First, let me point out some blog entries that I have that describe the new parser listener stuff:
+
+<A HREF="http://www.antlr.org/wiki/display/~admin/2011/09/08/Sample+v4+generated+visitor">http://www.antlr.org/wiki/display/~admin/2011/09/08/Sample+v4+generated+visitor</A>
+
+<A HREF="http://www.antlr.org/wiki/display/~admin/2011/09/05/Auto+tree+construction+and+visitors">http://www.antlr.org/wiki/display/~admin/2011/09/05/Auto+tree+construction+and+visitors</A>
+
+I recently had the opportunity to examine some software that made extensive use of visitors over a bytecode stream to not only collect information but to translate into another form. I decided to experiment with ANTLR v4's implementation. I was able to collapse all of my tree grammars into a single tree grammar that triggered listener events like SAX. (I did not alter the fact that my parser built an AST not parse tree.) What I ended up with is a tree grammar that sent high-level events like &quot;found rule definition&quot;, &quot;found token reference&quot;, and so on.   It became extremely easy to, say, make another pass over the tree to grab information.  As I looked at the event listener mechanism, I realized that: *a parse tree would give me the exact same thing without a tree grammar and the parse tree can be automatically generated.* My bias towards compiler style AST expression trees may have blinded me to a simple truth. um&#8230;for 20 years.
+
+With a single decision, I had stripped away 2 large pieces of work: AST specification and tree grammar specification. The only question is, is it useful? Well, first, why do we build trees at all? The answer is we sometimes need to process information in a non-sequential   manner and sometimes we need to make multiple passes over the tree. For example, we might want to go find all symbol definitions and then process all symbol references.  Neither requirement says we have to have any particular kind of tree.
+
+As Gavin points out, getting error nodes into the AST to represent error recovery token consumption is not well done in v3. In v4, it doesn't bother since it puts all of that error information in the parse tree.
+
+I will also point out that it's really hard to get the original input sequence back from an AST, particularly if you have hidden tokens. Parse trees in contrast make this very easy. Parse trees are just much more natural for use with IDEs.
+
+Gavin asks about a type safe syntax tree. I believe v4 will provide this because there is a node type for each rule in the grammar, or optionally each alternative in the grammar. The listener interface generates enter and exit rule events for each type. For example,
+
+public interface TListener extends ParseTreeListener {
+    void enterRule(TParser.ifstatContext ctx);
+    void exitRule(TParser.ifstatContext ctx);
+&#8230;
+}
+
+The context object coincidentally is also where I store all parameters, locals, return values, and labels etc. That means that listener methods have access to the complete context of the rule invocation. (In ifstatContext, you'll see the usual double dispatch methods that trigger appropriate event listener.)
+
+If you don't want to use the listener interface, you have the entire parse tree so you can treat it like a DOM thingie if you want; e.g., you can build your own visitors.
+
+You can turn this feature on without regenerating anything. just turn on a runtime flag and ANTLR will stitch the rule invocation contexts together to form a parse tree.
+
+Nothing is lost. tokens consumed or missing during the parse, appear in the parse tree.  For example, here are 2 parse trees associated with extra tokens and missing tokens:
+
+
+
+
+These were generated by calling inspect on the root of the parse tree--a GUI pops up; some sample code:
+
+ParserRuleContext tree = parser.prog();
+tree.save(parser, &quot;/tmp/t.ps&quot;); // Generate postscript:
+tree.inspect(parser); // or view in dialog box
+
+@Jason: yep, I am basically following the approach you have. You no longer have to put actions in the grammar, because the listener methods have access to all labels and other attributes of each rule invocation.   If you take a look at this new mechanism, I think you'll agree that it gives you the super simplicity of the SAX listener you want.
+
+I like my listener event mechanism because the listener methods do not have to include the boilerplate code to visit the children. all you do is respond to the event.  Listener methods don't have a return value because any values needed by processing up the tree, can simply reference the rule return values which are also stored in the context object.
+
+As Kyle points out, a big benefit of this automatic parse tree construction and listener event mechanism is that it renders grammars 100% reusable and retargetable to any target programming language. (Sam Harwell has convinced me to include things like skip in setting channels in the lexer with special syntax rather than actions&#8230; again we get retargeting).
+
+Concerning the neutral imperative language, which we discussed before, I love the idea but I'm not sure how much this helps us. I think that the biggest problem in creating a target is not the code generation templates, which are much improved in v4, but rather the largish library. Of course, if we strip out all of the AST stuff in the tree grammar stuff, it's actually pretty simple ;)
+
+Oh,  let me also mention that I have implemented a twist on Jim Idle's magic sync function to really improve error correction. In a nutshell, it tries extremely hard to stay within the current rule and recover in line instead of punting and consuming until it sees a token in the follow set.
+
+Gavin says:
+
+&gt;<i> I was more thinking along the lines of I wish ANTLR would be able to
+</I>&gt;<i> build the tree for me, but out of typesafe node classes, and without
+</I>&gt;<i> the throwing-away-bits-of-the-tree behaviour that caused me so many
+</I>&gt;<i> problems. But perhaps a SAX-style API would just be a simpler, more
+</I>&gt;<i> robust solution.
+</I>
+Ask and ye shall receive. What I have built is exactly what you asked for. Type safe, automatically constructed, DOM or SAX model.
+
+sorry for the stream of consciousness&#8230; just core dumping so I can get back to work ;) I apologize for my extreme absence on the mailing lists&#8230; last semester kicked my ass and I'm now trying to catch up on research.
+
+Ter
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="043546.html">[antlr-interest] Composite Grammars
+</A></li>
+	<LI>Next message: <A HREF="043545.html">[antlr-interest] Grammar hints?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#43543">[ date ]</a>
+              <a href="thread.html#43543">[ thread ]</a>
+              <a href="subject.html#43543">[ subject ]</a>
+              <a href="author.html#43543">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,160 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] ENHANCEMENT - Have &quot;lexer grammar&quot; generate recognition for string literals in tokenVocab
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20ENHANCEMENT%20-%20Have%20%22lexer%20grammar%22%20generate%0A%20recognition%20for%20string%20literals%20in%20tokenVocab&In-Reply-To=%3C470CB8AD.7060909%40Yahoo.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="024071.html">
+   <LINK REL="Next"  HREF="024073.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] ENHANCEMENT - Have &quot;lexer grammar&quot; generate recognition for string literals in tokenVocab</H1>
+    <B>Austin Hastings</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20ENHANCEMENT%20-%20Have%20%22lexer%20grammar%22%20generate%0A%20recognition%20for%20string%20literals%20in%20tokenVocab&In-Reply-To=%3C470CB8AD.7060909%40Yahoo.com%3E"
+       TITLE="[antlr-interest] ENHANCEMENT - Have &quot;lexer grammar&quot; generate recognition for string literals in tokenVocab">Austin_Hastings at Yahoo.com
+       </A><BR>
+    <I>Wed Oct 10 04:34:05 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="024071.html">[antlr-interest] ENHANCEMENT - Have &quot;lexer grammar&quot; generate recognition for string literals in tokenVocab
+</A></li>
+        <LI>Next message: <A HREF="024073.html">[antlr-interest] BUG - ANT plugin for Antlr3 does not parse &quot;parser grammar&quot; at top of file (Workaround)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24072">[ date ]</a>
+              <a href="thread.html#24072">[ thread ]</a>
+              <a href="subject.html#24072">[ subject ]</a>
+              <a href="author.html#24072">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Gavin,
+
+Let's try this again. I'm pretty sure there's no cycle.
+
+Let's say my DESIRED lexer looks like this:
+
+lexer grammar Lex;
+options {tokenVocab = Parser;}
+ID : ('a'..'z')+ ;
+WS: (' '|'\t'|'\n')* {skip();}
+
+Further, my DESIRED parser looks like this:
+
+parser grammar Parser;
+options {output=AST;}    // Note: no tokenVocab here - this is the 
+source of tokens
+
+file: (decl | call )*;
+
+decl: 'int' ID ';' ;
+
+call : ID '(' args? ')' ';'
+     ;
+
+args: ID ( ',' ID )* ;
+
+My DESIRED AST parser looks like this:
+
+tree grammar AST;
+options {tokenVocab = Parser;}
+tokens { CALL; DECLARE; ARGS; }
+
+file: (decl|call)* ;
+decl: 'int' ID ';'
+    -&gt; ^(DECLARE ID)
+    ;
+call: ID '(' args? ')' ';'
+    -&gt; ^(CALL ID args)
+    ;
+args: a+=ID (',' a+=ID)*
+    -&gt; ^(ARGS $a+)
+    ;
+
+Notice that the lexer takes tokens from the parser. The AST parser takes 
+tokens from the parser, then adds a few of its own. The parser takes 
+tokens from nobody. So the tsort is going to be Parser first, then 
+lexer/ast in any order. What I'm proposing is that the parser would emit 
+lines like
+
+ID = 7;
+'int' = 3;
+
+in its tokens file (it already does). Currently, the lexer can read this 
+with no problems, but then it doesn't do anything with the 'int'=3 
+tokens - imaginary token ids auto-generated in the parser.
+
+What I want is for the lexer to automatically do what it ALREADY does in 
+combined mode - generate rules for recognizing the 'int'=3 tokens, and 
+return them to the parser.
+
+What is interesting is that this all happens smoothly in the combined 
+mode. But if you hack at the separated parser/lexer, you can eventually 
+get around the error messages and get both of them on the same page, 
+token-list-wise, but the lexer mode stubbornly refuses to generate magic 
+tokens if it isn't a combined grammar.
+
+I *can* get it to generate with a sed script, by taking the parser 
+tokens file and generating a bogus rule inside the lexer grammar 
+[[not_used: 'int' '(' ';' ')' ',' ID ; ]] and then running the lexer 
+grammar as a combined grammar. But I'm not confident that the generated 
+output is going to be valid, and I don't know where to begin testing it. :(
+
+=Austin
+
+
+
+Gavin Lambert wrote:
+&gt;<i> Mere moments ago, I wrote:
+</I>&gt;<i> &gt;What you'd need to be able to do to resolve this is to build an
+</I>&gt;<i> &gt;initial lexer ignoring the vocab, then build the parser and figure
+</I>&gt;<i> &gt;out its tokens, then go back and build the lexer again, inserting
+</I>&gt;<i> &gt;the new tokens, and finally build the parser yet again since the
+</I>&gt;<i>
+</I>&gt;<i> Gah, sorry, accidentally pressed the Send key sequence.  Anyway:
+</I>&gt;<i>
+</I>&gt;<i> ... finally build the parser yet again since the lexer may have 
+</I>&gt;<i> changed its token ids around.
+</I>&gt;<i>
+</I>&gt;<i> All of which is quite a mess, and is what combined grammars do for you 
+</I>&gt;<i> anyway.
+</I>&gt;<i>
+</I>&gt;<i> &gt;The multiple parsers problem just doesn't happen - at least for me
+</I>&gt;<i> &gt;- because there's one syntax parser and the rest are tree parsers.
+</I>&gt;<i> &gt;The tree parsers depend on the output (AST) of the syntax parser,
+</I>&gt;<i> &gt;so basically everybody want's to use the tokenVocab from the
+</I>&gt;<i> &gt;syntax parser, instead of the lexer.
+</I>&gt;<i>
+</I>&gt;<i> But you can already do that.  And if you don't have multiple syntax 
+</I>&gt;<i> parsers then I don't see why you're not using a combined grammar 
+</I>&gt;<i> anyway, since that would do everything you seem to want to do.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="024071.html">[antlr-interest] ENHANCEMENT - Have &quot;lexer grammar&quot; generate recognition for string literals in tokenVocab
+</A></li>
+	<LI>Next message: <A HREF="024073.html">[antlr-interest] BUG - ANT plugin for Antlr3 does not parse &quot;parser grammar&quot; at top of file (Workaround)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24072">[ date ]</a>
+              <a href="thread.html#24072">[ thread ]</a>
+              <a href="subject.html#24072">[ subject ]</a>
+              <a href="author.html#24072">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,240 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] funny things with the generated C target
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20funny%20things%20with%20the%20generated%20C%20target&In-Reply-To=%3C1216281198.3033.26.camel%40tc35%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="029196.html">
+   <LINK REL="Next"  HREF="029177.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] funny things with the generated C target</H1>
+    <B>Davyd Madeley</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20funny%20things%20with%20the%20generated%20C%20target&In-Reply-To=%3C1216281198.3033.26.camel%40tc35%3E"
+       TITLE="[antlr-interest] funny things with the generated C target">davyd at fugro-fsi.com.au
+       </A><BR>
+    <I>Thu Jul 17 00:53:18 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="029196.html">[antlr-interest] Bug in Generated Parser?
+</A></li>
+        <LI>Next message: <A HREF="029177.html">[antlr-interest] funny things with the generated C target
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#29175">[ date ]</a>
+              <a href="thread.html#29175">[ thread ]</a>
+              <a href="subject.html#29175">[ subject ]</a>
+              <a href="author.html#29175">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi all,
+
+I'm just getting started with using ANTLR. I wrote a grammar and knocked
+together a quick tree walker in Python and everything looked good. Now
+I'm looking to use the C target to build upon this parser.
+
+I changed the language to C, generated and compiled the grammar. My
+first problem was that I was unable to have a lexer rule named LT (?),
+so I renamed it. Now it's segfaulting inside the generated code...
+
+(gdb) r ../antlr-parse-1.def 
+Starting program: /home/davyd/src/uniseis2/c/test ../antlr-parse-1.def
+
+Program received signal SIGSEGV, Segmentation fault.
+0x00fd6e42 in fillBuffer () from /home/davyd/install/lib/libantlr3c.so
+(gdb) bt
+#0  0x00fd6e42 in fillBuffer ()
+from /home/davyd/install/lib/libantlr3c.so
+#1  0x00fd721a in tokLT () from /home/davyd/install/lib/libantlr3c.so
+#2  0x0804ac04 in phaseBlock (ctx=0x8fc19e8) at UniseisPhaseParser.c:527
+#3  0x080489a0 in main (argc=1457883477, argv=0xb0ec8153)
+    at SemanticChecker.c:56
+
+I've attached my file, SemanticChecker.c, which currently does nothing
+more than load and parse the file. I've also attached the grammar.
+
+What might I be doing wrong?
+
+Regards,
+--davyd
+
+-- 
+Davyd Madeley        Software Engineer
+Fugro Seismic Imaging, Perth Australia
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: SemanticChecker.c
+Type: text/x-csrc
+Size: 1296 bytes
+Desc: not available
+Url : <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20080717/79a3f310/attachment-0001.bin">http://www.antlr.org/pipermail/antlr-interest/attachments/20080717/79a3f310/attachment-0001.bin</A> 
+-------------- next part --------------
+grammar UniseisPhase;
+
+options
+{
+	output=AST;
+	language=C;
+}
+
+tokens
+{
+	PHASE;
+	CARD;
+	PARAMETER;
+	MANUAL;
+}
+
+// the definition for a phase block
+//     phase NAME { properties }
+// phases can accept
+//    - properties
+//    - manual entries
+//    - card definitions
+phaseBlock
+	: 'phase' UNISEIS_NAME LINE_TERMINATOR? '{' LINE_TERMINATOR* (phaseDefinition LINE_TERMINATOR*)* '}'
+	-&gt; ^(PHASE UNISEIS_NAME phaseDefinition*)
+	;
+
+phaseDefinition
+	: propertyAssignment
+	| cardBlock
+	| MANUAL_XML
+	;
+
+// the definition for a card block
+//     card NAME { properties }
+// cards can accept:
+//    - properties
+//    - manual entries
+//    - parameter definitions
+cardBlock
+	: 'card' UNISEIS_NAME LINE_TERMINATOR? '{' LINE_TERMINATOR* (cardDefinition LINE_TERMINATOR*)* '}'
+	-&gt; ^(CARD UNISEIS_NAME cardDefinition*)
+	;
+
+cardDefinition
+	: propertyAssignment
+	| parameterBlock
+	| MANUAL_XML
+	;
+
+// the definition for a parameter block:
+//     parameter NAME { properties }
+// parameters can accept:
+//    - properties
+//    - manual entries
+parameterBlock
+	: 'parameter' UNISEIS_NAME LINE_TERMINATOR? '{' LINE_TERMINATOR* (parameterDefinition LINE_TERMINATOR*)* '}'
+	-&gt; ^(PARAMETER UNISEIS_NAME parameterDefinition*)
+	;
+
+parameterDefinition
+	: propertyAssignment
+	| MANUAL_XML
+	;
+
+// rule for a property assignment
+// properties are assigned using the syntax:
+//    property: value
+propertyAssignment
+	: PROPERTY ':' values LINE_TERMINATOR
+	-&gt; ^(PROPERTY values)
+	;
+
+// these are the different types of values a property can take
+fragment
+values
+	: STRING
+	| DATE
+	| BOOLEAN
+	;
+
+// These are the lexer rules
+// Note that ORDER MATTERS, that is to say, the top-most rule will be matched first
+// specific rules should go before generic rules
+STRING
+	: '&quot;' ~('&quot;')* '&quot;'
+	;
+
+MANUAL_XML
+	: '&lt;manual&gt;' .* '&lt;/manual&gt;'
+	;
+
+BOOLEAN
+	: 'true'
+	| 'false'
+	;
+
+DATE
+	: DIGIT DIGIT DIGIT DIGIT '-' DIGIT DIGIT '-' DIGIT DIGIT
+	;
+
+UNISEIS_NAME
+	: ('A'..'Z')('A'..'Z'|DIGIT)+
+	;
+
+PROPERTY
+	: ('a'..'z')('a'..'z'|'-')*
+	;
+
+fragment
+DIGIT
+	: '0'..'9'
+	;
+
+WS // Tab, vertical tab, form feed, space, non-breaking space and any other unicode &quot;space separator&quot;.
+	: ('\t' | '\v' | '\f' | ' ' | '\u00A0') {$channel=HIDDEN;}
+	;
+
+COMMENT
+	: '/*' (options {greedy=false;} : . )* '*/' {$channel=HIDDEN;}
+	;
+
+LINE_COMMENT
+	: '//' ~('\n'|'\r')* LINE_TERMINATOR {$channel=HIDDEN;}
+	;
+
+LINE_TERMINATOR
+	: '\n'		// Line feed
+	| '\r'		// Carriage return
+	| '\u2028'	// Line separator
+	| '\u2029'	// Paragraph separator
+	;
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="029196.html">[antlr-interest] Bug in Generated Parser?
+</A></li>
+	<LI>Next message: <A HREF="029177.html">[antlr-interest] funny things with the generated C target
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#29175">[ date ]</a>
+              <a href="thread.html#29175">[ thread ]</a>
+              <a href="subject.html#29175">[ subject ]</a>
+              <a href="author.html#29175">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

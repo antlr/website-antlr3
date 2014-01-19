@@ -1,0 +1,188 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Using own ASTLabelType and quantification
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Using%20own%20ASTLabelType%20and%20quantification&In-Reply-To=%3C1263319781.769.27.camel%40gecko.home.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="037282.html">
+   <LINK REL="Next"  HREF="037285.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Using own ASTLabelType and quantification</H1>
+    <B>John B. Brodie</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Using%20own%20ASTLabelType%20and%20quantification&In-Reply-To=%3C1263319781.769.27.camel%40gecko.home.org%3E"
+       TITLE="[antlr-interest] Using own ASTLabelType and quantification">jbb at acm.org
+       </A><BR>
+    <I>Tue Jan 12 10:09:41 PST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="037282.html">[antlr-interest] Using own ASTLabelType and quantification
+</A></li>
+        <LI>Next message: <A HREF="037285.html">[antlr-interest] Issue with antlrworks 1.3.1 and JDK 1.6 update	17?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37283">[ date ]</a>
+              <a href="thread.html#37283">[ thread ]</a>
+              <a href="subject.html#37283">[ subject ]</a>
+              <a href="author.html#37283">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Greetings!
+
+On Tue, 2010-01-12 at 17:06 +0100, Olaf Keijsers wrote:
+&gt;<i> Greetings,
+</I>&gt;<i> 
+</I>&gt;<i> I am trying to make a treewalker for my grammar in order to check if it 
+</I>&gt;<i> contains nondeterminism. I would like to be able to set some properties for 
+</I>&gt;<i> every node I encounter, so I figured it would be a good idea to use my own 
+</I>&gt;<i> ASTLabelType.
+</I>&gt;<i> 
+</I>&gt;<i> I have set &quot;ASTLabelType=GrooveTree&quot; in my options, and my grammar uses this 
+</I>&gt;<i> labeltype now, but I get the following exception when trying to use the 
+</I>&gt;<i> checker:
+</I>&gt;<i> java.lang.ClassCastException: org.antlr.runtime.tree.CommonTree cannot be 
+</I>&gt;<i> cast to groove.control.parse.GrooveTree
+</I>&gt;<i>  at 
+</I>&gt;<i> groove.control.parse.GCLDeterminismChecker.program(GCLDeterminismChecker.java:139)
+</I>&gt;<i> 
+</I>&gt;<i> This line contains:
+</I>&gt;<i> root_0 = (GrooveTree)adaptor.nil();
+</I>&gt;<i> 
+</I>&gt;<i> and is part of the program() method. Somehow I think this is a beginner's 
+</I>&gt;<i> error, but I cannot find the solution. I have tried to work around it by 
+</I>&gt;<i> using the default ASTLabelType and keeping a Map&lt;CommonTree,Boolean&gt; to keep 
+</I>&gt;<i> track of the property I would like, but this seems cumbersome. Could anyone 
+</I>&gt;<i> point me in a good direction?
+</I>
+You need to setup a tree adaptor so that the runtime knows how to
+construct your nodes.
+
+These are the things I had to do in order to get my own ASTLabelType,
+note that my AST is called ExprAST -- so replace all occurrances of that
+string below with yours. also note that I did this over a year ago using
+an earlier version of ANTLR v3, so altho this still works, just re-ran
+my tests, today's version of ANTLR may make some of my steps simpler
+and/or entirely un-necessary... YMMV
+
+1) in the grammar add the ASTLabelType= option (as you have already
+done)
+
+2) create your new tree node class, ensuring that it extends CommonTree.
+Here is my ExprAST (note that Type is also one of my classes):
+
+//----begin ExprAST here....
+import org.antlr.runtime.Token;
+import org.antlr.runtime.tree.*;
+
+public class ExprAST extends CommonTree {
+
+   public Type type;
+
+   public ExprAST() {
+      super();
+      type = null;
+   }
+
+   public ExprAST(Token tok) {
+      super(tok);
+      type = null;
+   }
+
+   public ExprAST(ExprAST tree) {
+      super(tree);
+      this.type = tree.type;
+   }
+
+   public ExprAST(Token tok, Type type) {
+      super(tok);
+      this.type = type;
+   }
+
+   @Override public Tree dupNode() {
+      return new ExprAST(this);
+   }
+
+   @Override public String toString() {
+      final String result;
+      if (type==null) {
+         result = super.toString();
+      } else {
+         result = String.format(&quot;%s[%s]&quot;,
+                     super.toString(),type.nickName());
+      }
+      return result;
+   }
+}
+//----end ExprAST
+
+3) copy org.antlr.runtime.tree.CommonErrorNode from the ANTLR run-time
+sources. I called mine ExprASTErrorNode. Edit your copy so that is
+extends your new tree node class rather than CommonTree.
+
+4) create an instance of the adaptor class, i do this in my main:
+
+//---begin adaptor code here...
+   // Custom adaptor to create ExprAST node type
+   private static final TreeAdaptor adaptor = new CommonTreeAdaptor() {
+         @Override public Object create(Token payload) {
+            return new ExprAST(payload);
+         }
+         @Override public Object dupNode(Object old) {
+            return (old==null)? null : ((ExprAST)old).dupNode();
+         }
+         @Override public Object errorNode(TokenStream input,
+                                           Token start, Token stop,
+                                           RecognitionException e) {
+            return new ExprASTErrorNode(input, start, stop, e);
+         }
+      };
+//----end adaptor code.
+
+5) call the parser's setAdaptor method with the above adaptor. I invoke
+my parser with something similar to this:
+
+//----begin parser invocation code here...
+   ExprLexer lexer = new ExprLexer(...whatever....);
+   CommonTokenStream tokens = new CommonTokenStream(lexer);
+   ExprParser parser = new ExprParser(tokens);
+   parser.setTreeAdaptor(adaptor);
+   ExprParser.program_return p_result = parser.program();
+
+   ast = p_result.tree;
+//----end parser invocation code.
+
+&gt;<i> 
+</I>&gt;<i> Thanks!
+</I>
+Hope this helps...
+   -jbb
+
+
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="037282.html">[antlr-interest] Using own ASTLabelType and quantification
+</A></li>
+	<LI>Next message: <A HREF="037285.html">[antlr-interest] Issue with antlrworks 1.3.1 and JDK 1.6 update	17?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37283">[ date ]</a>
+              <a href="thread.html#37283">[ thread ]</a>
+              <a href="subject.html#37283">[ subject ]</a>
+              <a href="author.html#37283">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

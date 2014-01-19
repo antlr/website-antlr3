@@ -1,0 +1,210 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Summary of ANTLR Issues
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Summary%20of%20ANTLR%20Issues&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004421.html">
+   <LINK REL="Next"  HREF="004423.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Summary of ANTLR Issues</H1>
+    <B>Tiller, Michael (M.M.)</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Summary%20of%20ANTLR%20Issues&In-Reply-To="
+       TITLE="[antlr-interest] Summary of ANTLR Issues">mtiller at ford.com
+       </A><BR>
+    <I>Mon Jul  7 10:22:30 PDT 2003</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004421.html">[antlr-interest] Need help to finish a grammar for the IETF's ABNF language
+</A></li>
+        <LI>Next message: <A HREF="004423.html">[antlr-interest] Summary of ANTLR Issues
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4422">[ date ]</a>
+              <a href="thread.html#4422">[ thread ]</a>
+              <a href="subject.html#4422">[ subject ]</a>
+              <a href="author.html#4422">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I'm working on putting together a paper on some work I've been doing.  I've used ANTLR on this project and I'm quite pleased with it overall.  Nevertheless, there are some aspects of ANTLR that I found cumbersome.  In the paper, I plan to document some of the issues I had with ANTLR and I thought it would be best to lay these things out here in the newsgroup so that people can correct any possible misunderstandings I've had and also to give &quot;the powers that be&quot; some feedback as well so that future versions of ANTLR might address some of these issues.
+ 
+My goal here is to be as constructive as possible and I hope nobody takes this too personally.
+ 
+First, some background:  This is a parser for the Modelica modeling language.  An interesting thing to keep in mind about this project (and this will be covered in the paper) is that I'm not building a compiler.  I'm building something more like a source code analysis tool.  Another thing to keep in mind is that I am an engineer with no real formal training in compiler design (which might be apparent from the goofy way I've done things :-).
+ 
+OK, now for some observations:
+ 
+Synthetic tokens:
+ 
+I find myself using &quot;synthetic&quot; tokens quite often.  However, I'm not sure if this is because I think in some &quot;strange&quot; way about the AST I'm building or if perhaps that the language I'm parsing just doesn't suit itself to utilizing the existing tokens?
+ 
+I like to see an AST that is populated with meaningful structural entities.  That means nodes for &quot;declarations&quot;, &quot;definitions&quot;, &quot;inheritance&quot;, etc.  All the examples I see in ANTLR use existing tokens as the roots for these trees.  Now this works reasonably well for expression parsing where the operators exist as tokens already and they really are fundamentally the nodes in the system (i.e. [+ [* 2 3] 7]).  But it doesn't seem to make sense for things like declarations.  I mean sure you might have a token (e.g. a keyword) in your particular language (e.g. &quot;declare&quot; in something like &quot;declare Int x;&quot;) that would work for this, but I didn't have something like that most of the time.
+ 
+Another interesting observation.  Many books use the word &quot;terminals&quot; when discussing the tokens that the lexer generates.  I find it somewhat ironic therefore that without synthetic nodes, these &quot;terminals&quot; end up being the nodes in the AST rather than the leaves.  In other words, they are the leaves of the grammar, but the nodes in the AST.  Perhaps I'm just dense, but I haven't really been able to reconcile that in my head.  It seems to me that it makes sense to introduce nodes that are related to *rules* (some rules, not all rules) as well as tokens.
+ 
+So, you are probably saying...ANTLR supports imaginary tokens so what are you on about here.  And that is certainly true.  But I get the sense that synthetic tokens are considered &quot;second class&quot; because there doesn't seem to be direct support for them.  By &quot;direct support&quot;, I mean the ability to use them for automatic AST construction.  For example, why not allow the following:
+ 
+declaration&lt;AST=DeclarationNode&gt;
+  : type name &quot;;&quot;
+  ;
+ 
+The idea here would be to allow something like the &quot;^&quot; operator for the rule itself and be able to specify a synthetic token.  This could be equivalent to:
+ 
+declaration
+  : type name &quot;;&quot;
+   { ## = #[DECLARATION, &quot;declaration&quot;, ##]; }
+  ;
+ 
+Which I find myself doing all through my code.  This not only has benefits in terms of automatic tree construction, but it would be very handy for issues related to heterogeneous ASTs...which leads me to...
+ 
+Heterogeneous ASTs:
+ 
+For my project, I used heterogeneous ASTs.  What can I say, I guess I was just born hetero!  :-).  But I feel a little out of place in a largely homogenous AST world (I'm sure there are other heteros out there, but we definitely seem to be in the minority).
+ 
+Again, you are probably saying &quot;but ANTLR doesn't show any bias for AST orientation, what are you complaining about?&quot;.  Well, it is true that ANTLR supports heterogeneous ASTs for the most part.  It seems that it probably works better in Java than in C++.  I had several problems with trying to use heterogeneous ASTs in C++.  Perhaps some of this is my own stupidity, but what I found was:
+ 
+1) There is a major bug in 2.7.2 that prevents you from cloning hetero ASTs in C++ (another indication that most people use homogenous ASTs).
+2) Even though I can associate heterogeneous types with tokens, ANTLR doesn't respect them for synthetic tokens.  By &quot;respect&quot; I mean that it doesn't generate the appropriate factory initialization code (there is a workaround for this by creating a dummy rule that utilizes the synthetic tokens as terminals) and it doesn't allow you to operate on specific members and methods for your heterogeneous ASTs in the production rules (because you have to manually create them so it has to use the factory and therefore uses a generic interface).  The former is what I was eluding to at the end of the previous section on synthetic nodes.
+3) Building your own custom AST types is a tedious task.  Ideally, it would be quite slick if you could formalize some kind of &quot;mixin&quot; idiom in the grammar itself so that you didn't have to worry about the explicit details of how to inherit from this or define a template method for that.  Currently, you have to really get to know the C++ AST classes and the class hierarchy is (in my opinion) pretty awkward, which leads me to....
+ 
+C++ AST Classes:
+ 
+If you look at the C++ hierarchy for AST components, you see all sorts of types.  Off the top of my head you have AST, BaseAST, CommonAST, ASTRef, RefAST, nullAST (along with several other types I cannot remember).  In addition, every time you want to create your own AST, you have to not only define your own type but also define several methods *that cannot be inherited* and then define a reference type (at least the examples indicate you should, but I think that currently this only applies if you are associating the type with a terminal token but if synthetic nodes were properly supported you'd need to do this in every case).
+ 
+Looking at the current structure, there has to be a better way.  Ric Klaren put it very nicely when he said:
+ 
+&quot;The big annoyance in my experience is the reference counter and the
+reliance of the support code on RefAST's. Those usually defeat any chance
+at using template or nice ways to leverage polymorphism.&quot;
+ 
+But I think there is a bigger picture here to keep in mind.  Ric is right, much of the complexity comes from the RefAST material.  But what do you need reference counting for?!?  It seems to me that this was probably meant to mirror the way things on done on the Java side.  But when I think of reference counting, I think of situations where one object is likely to be referenced (i.e. shared) by several other objects.  But this isn't the case for AST nodes.  An AST node cannot be shared in practice (e.g., because it includes too much specific information about its siblings).  That is why we have the &quot;clone&quot; method in the first place.  So if ASTs cannot, for practical purposes, be shared then why not simply reimplement them with a memory management scheme that makes sense for non-sharing objects (e.g. the parent explicitly deletes its children when it gets deleted).  This kind of setup would greatly simplify the class structure and facilitate either templates or (even better) !
+ polymorphism.
+ 
+My goal would be that I can implement something as simple as:
+ 
+class MyNode : public antlr::AST
+{
+   // My data, my methods
+};
+ 
+...rather than the current approach which is quite a bit more involved...
+
+typedef antlr::ASTRefCount&lt;My_AST&gt; RefMyAST;
+
+class MyAST : public antlr::CommonAST {
+public:
+    MyAST( void )
+    {
+    }
+    ~MyAST( void )
+    {
+    }
+    void initialize( antlr::RefToken t )
+    {
+        antlr::CommonAST::initialize(t);
+        // more stuff....
+        // ...
+    }
+    void initialize(int t,const std::string&amp; txt)
+    {
+        setType(t);
+        setText(txt);
+    }
+    /// Initialize the AST from a stream (need to document this!)
+    void initialize( std::istream&amp; infile );
+    /// Clone this instance (used by several support lib algorithms)
+    antlr::RefAST clone( void )
+    {
+        MyAST *ast = new MyAST(*this);
+        return antlr::RefAST(ast);
+    }
+    void addChild( RefMy_AST c )
+    {
+        antlr::BaseAST::addChild( static_cast&lt;antlr::RefAST&gt;(c) );
+    }
+    static antlr::RefAST factory( void )
+    {
+        antlr::RefAST ret = static_cast&lt;antlr::RefAST&gt;(RefMyAST(new MyAST));
+        return ret;
+    }
+};
+
+By utilizing the C pre-processor I was able to simplify the above considerably which is a good thing because I have about 35 individual synthetic token types in my system.
+ 
+Now I recognize that it may not always be possible to get things as simple as &quot;class MyNode : public antlr::AST { ... };&quot;.  If it isn't possible, then it would be ideal to have some facility for having ANTLR using some kind of &quot;mix-in&quot; approach where I can just define:
+ 
+class MyNode : public antlr::AST {
+};
+ 
+...and then ANTLR does something like what CORBA does where it uses that original class and its own specific stuff together to form another class to be used in the framework, e.g.
+ 
+class MyNode_Impl : public MyNode, public antlr::AST_Impl {
+   // Add clone methods, etc.
+};
+ 
+The idea would be to minimize the work necessary in creating the custom types.
+ 
+XML, DOM, ASTs, etc:
+ 
+OK, one last thing.  One of the issues that anyone working with a custom language these days has to face is &quot;Why didn't you just develop and XML schema and forget about all this lexer parser stuff?&quot;.  The answer to this question is pretty much what Terrence laid out in &quot;Humans should not have to grok XML&quot; which addresses the issues nicely (but still doesn't quite convince most people who only have on neuron and it always fires &quot;XML!&quot;).
+ 
+But, there is a more subtle issue here.  While it may be true that the language itself may not be ideally represented in XML, I have to wonder whether it might make sense to try and mimic (or, as an option, use) a DOM interface for describing ASTs.  It seems like the DOM is essentially the AST for XML and perhaps it might make sense to use the same approach in ANTLR.  I was thinking specifically about reuse of algorithms and libraries built around a DOM interface.  To me, there is much more &quot;synergy&quot; at this level than in trying to cram domain-specific languages into an XML formalism.
+ 
+Conclusion:
+ 
+I think that with the exception of the C++ class hierarchy, much of this is easy to address.  Looking at my grammar, things would be greatly simplified if the following were possible:
+ 
+1) Automatic construction of synthetic nodes via a syntax like:
+ 
+declaration&lt;AST=DeclarationNode&gt;
+  : type name &quot;;&quot;
+  ;
+ 
+2) Ability to reference heterogeneous methods and members , e.g.:
+ 
+type&lt;AST=TypeNode&gt;
+  IDENT (&quot;.&quot; IDENT)* { ... }
+  ;
+ 
+declaration&lt;AST=DeclarationNode&gt;
+  : t:type name &quot;;&quot; { ##-&gt;setType(t-&gt;getTypeName()); }
+  ;
+ 
+3) Definitions of custom AST types should involve a minimum of code.
+ 
+ 
+OK, so that is my feedback.  As I said, I've tried to be constructive and propose solutions and not just complain about the current functionality.  I don't know enough about the backend side of ANTLR to be more specific.
+ 
+--
+Mike
+ 
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20030707/59c4b030/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20030707/59c4b030/attachment.html</A>
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004421.html">[antlr-interest] Need help to finish a grammar for the IETF's ABNF language
+</A></li>
+	<LI>Next message: <A HREF="004423.html">[antlr-interest] Summary of ANTLR Issues
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4422">[ date ]</a>
+              <a href="thread.html#4422">[ thread ]</a>
+              <a href="subject.html#4422">[ subject ]</a>
+              <a href="author.html#4422">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,258 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] What to expect next
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20What%20to%20expect%20next&In-Reply-To=%3C47C5B720.9020304%40xs4all.nl%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="026876.html">
+   <LINK REL="Next"  HREF="026857.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] What to expect next</H1>
+    <B>Jan van der Ven</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20What%20to%20expect%20next&In-Reply-To=%3C47C5B720.9020304%40xs4all.nl%3E"
+       TITLE="[antlr-interest] What to expect next">jhvdven at xs4all.nl
+       </A><BR>
+    <I>Wed Feb 27 11:16:48 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="026876.html">[antlr-interest] Retaining comments
+</A></li>
+        <LI>Next message: <A HREF="026857.html">[antlr-interest] Conversion of Antlr v2 grammars to v3: tokens	section for lexers.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#26847">[ date ]</a>
+              <a href="thread.html#26847">[ thread ]</a>
+              <a href="subject.html#26847">[ subject ]</a>
+              <a href="author.html#26847">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Dear list,
+
+
+
+I am a contributor to an eclipse plugin 
+(<A HREF="http://sourceforge.net/projects/quantum">http://sourceforge.net/projects/quantum</A>). I am responsible for the SQL 
+Editor and want to increase user experience by offering content assist. 
+We use antlr 2.7.x to check valid syntax. That works reasonably fine, 
+but I would like to have more information on incomplete statements.
+
+Using actions I have divided a SQL statement into several parts and have 
+managed to have content assist based on that. But this is not as 
+fine-grained as I want it to be. What I would really like is that the 
+syntax check would tell us what it expects next: a column definition,  a 
+keyword, a table and so on. The content assist would then be able to 
+show just those assists. The problem is of course that the syntax that 
+the user is entering is wrong, so will cause an error. Somehow I do not 
+get as many  &quot;expected &lt;this&gt; found 'null'&quot; errors as I expected (if you 
+get my expectation;-)).
+
+I have added exception handling around my entry rule, hoping to achieve 
+that if one statement does not compile, the next one might. So I consume 
+everything up to and including the next SEMI. I think that my 
+implementation somehow hides the errors I want to catch.
+
+sql_script:
+     sql_stmt 
+(s:SEMICOLON!{currentStatement.setLength(#s.getColumn()-currentStatement.getOffset());} 
+(sql_stmt)?)*
+    {
+        ##=#([SQL_SCRIPT,&quot;script&quot;], #sql_script);
+    }
+;
+exception
+catch [MismatchedTokenException mce]
+{
+     QError e = new QError();
+   // .... omitted for brevity
+    errors.add(e);
+    if(LA(1)==SEMICOLON)
+    {
+        consume();
+        returnAST = sql_script_AST;
+        sql_stmt();
+        return;
+    }
+    consume();
+    while (LA(1) != Token.EOF_TYPE &amp;&amp; (LA(1)!=SEMICOLON)) {
+        consume();
+    }
+    if(LA(1)==SEMICOLON){
+        consume();
+    }
+    returnAST = sql_script_AST;
+    sql_stmt();
+    return;
+}
+catch [NoViableAltException nvae]
+{
+    QError e = new QError();
+   // .... omitted for brevity
+    errors.add(e);
+      if(LA(1)==SEMICOLON)
+    {
+        consume();
+        sql_stmt();
+        return;
+    }
+    consume();
+    while (LA(1) != Token.EOF_TYPE &amp;&amp; (LA(1)!=SEMICOLON)) {
+        consume();
+    }
+    if(LA(1)==SEMICOLON){
+        consume();
+    }
+    if(LA(1)!=EOF){
+        sql_script();
+    }
+    return;
+}
+catch [RecognitionException re]
+{
+    QError e = new QError();
+   // .... omitted for brevity
+    errors.add(e);
+    if(LA(1)==SEMICOLON)
+    {
+        consume();
+        returnAST = sql_script_AST;
+        sql_stmt();
+        return;
+    }
+    consume();
+    while (LA(1) != Token.EOF_TYPE &amp;&amp; (LA(1)!=SEMICOLON)) {
+        consume();
+    }
+    if(LA(1)==SEMICOLON){
+        consume();
+    }
+    returnAST = sql_script_AST;
+    sql_stmt();
+    return;
+}
+
+I have a similar exception handling block around the sql_stmt rule. (The 
+stuff I am doing to the returnAST is also sub-optimal.)
+sql_stmt
+:<i>
+</I>      sql_data_stmt 
+{statements.put(currentStatement.getStatementNumber(), 
+currentStatement);}// this statement had correct syntax.
+    | sql_schema_stmt 
+{statements.put(currentStatement.getStatementNumber(), currentStatement);}
+    | sql_transaction_stmt
+    |
+    ( options {generateAmbigWarnings=false;}:
+         // Keeping this order avoids the clash of the &quot;set&quot; statements
+     // due to the linear approximation of the lookahead
+        sql_session_stmt     // LA(1) is surely &quot;set&quot;
+      | sql_connection_stmt
+    )
+    | sql_dyn_stmt
+    | system_descriptor_stmt
+    | get_diag_stmt
+    | declare_cursor
+    | temporary_table_decl
+;
+exception
+catch [MismatchedTokenException mce]
+{
+... see above...
+
+
+So my questions are:
+1) Can antlr offer a list of things it expects next? So if the statement 
+is: SELECT * FROM, can antlr then tell me it expects a table definition. 
+Whether that would be a table, view or subquery depends on the grammar, 
+I think. I would like all three alternatives, and the grammar for 
+completed statements does support all three.
+2) In what order should I catch the exceptions? I want as much info on 
+the error as possible. Do I need one catch [Exception e] and then handle 
+the subtypes in the catch block? Which rule should I call in the 
+exception block: sql_script or sql_stmt?
+3) Am I taking the correct approach here?
+
+
+Any suggestions would be greatly appreciated.
+
+Kind regards,
+
+
+Jan
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="026876.html">[antlr-interest] Retaining comments
+</A></li>
+	<LI>Next message: <A HREF="026857.html">[antlr-interest] Conversion of Antlr v2 grammars to v3: tokens	section for lexers.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#26847">[ date ]</a>
+              <a href="thread.html#26847">[ thread ]</a>
+              <a href="subject.html#26847">[ subject ]</a>
+              <a href="author.html#26847">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

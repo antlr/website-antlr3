@@ -1,0 +1,180 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] antlr python unit testing
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20antlr%20python%20unit%20testing&In-Reply-To=%3Cf1ehml%24ub3%241%40sea.gmane.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="020508.html">
+   <LINK REL="Next"  HREF="020494.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] antlr python unit testing</H1>
+    <B>Laurie Harper</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20antlr%20python%20unit%20testing&In-Reply-To=%3Cf1ehml%24ub3%241%40sea.gmane.org%3E"
+       TITLE="[antlr-interest] antlr python unit testing">laurie at holoweb.net
+       </A><BR>
+    <I>Thu May  3 22:51:43 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="020508.html">[antlr-interest] antlr python unit testing
+</A></li>
+        <LI>Next message: <A HREF="020494.html">[antlr-interest] Token type as string
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#20509">[ date ]</a>
+              <a href="thread.html#20509">[ thread ]</a>
+              <a href="subject.html#20509">[ subject ]</a>
+              <a href="author.html#20509">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hmm, I tried this but it only works if I re-assign stdin before creating 
+the lexer, which makes sense of course, but isn't really what I want.
+
+I'm building an expression parser as part of a page templating system. 
+It will be used to parse an arbitrary number of expressions within the 
+template, each representing a dynamic reference to external data. So, I 
+need to be able to invoke the parser repeatedly on varying inputs.
+
+That's the same behaviour I was looking for in order to unit test the 
+parser/lexer, hence this thread. The solution I came up with looks 
+something like:
+
+class MockReader(object):
+   def setInput(self, text):
+     self.text = text
+     self.index = 0
+
+   def read(count):
+     start = self.index
+     end = self.index + count
+     self.index = end
+
+     return self.text[start, end]
+
+class Test(unittest.TestCase):
+   def setUp(self):
+     self.L = Lexer()
+     self.P = Parser(self.L)
+
+   def test_first(self):
+     src = MockReader()
+
+     src.setInput('test expr 1')
+     self.L.setInput(src)
+     self.P.someRule()
+
+     src.setInput('test expr 2')
+     self.L.setInput(src)
+     self.P.someRule()
+
+     ...
+
+This seemed to be working, until I tried calling different rules in the 
+same test case. It looks like calling setInput() on the lexer leaves the 
+lexer and/or parser in an inconsistent state :-(
+
+So, what is the general solution to re-using a parser instance with 
+different string inputs? Any suggestions would be greatly appreciated.
+
+L.
+
+Kaleb Pederson wrote:
+&gt;<i> Hi Laurie,
+</I>&gt;<i> 
+</I>&gt;<i> In python, stdin is just a file descriptor that you can change.  So, if you 
+</I>&gt;<i> wanted to manipulate it to read from a file, or some other object that had 
+</I>&gt;<i> the same interface as a file descriptor, you could do so.
+</I>&gt;<i> 
+</I>&gt;<i> For example:
+</I>&gt;<i> 
+</I>&gt;<i> import sys
+</I>&gt;<i> sys.stdin = open('myfile','r');
+</I>&gt;<i> 
+</I>&gt;<i> Then, if you needed to get the regular stdin back, sys.stdin = sys.__stdin__
+</I>&gt;<i> 
+</I>&gt;<i> So, take advantage of the StringIO class:
+</I>&gt;<i> 
+</I>&gt;<i> import StringIO
+</I>&gt;<i> import sys
+</I>&gt;<i> 
+</I>&gt;<i> sys.stdin = StringIO.StringIO(&quot;My text to be parsed&quot;)
+</I>&gt;<i> 
+</I>&gt;<i> Now you can run your unit tests using whatever text you want.
+</I>&gt;<i> 
+</I>&gt;<i> Hope that helps.
+</I>&gt;<i> 
+</I>&gt;<i> --Kaleb
+</I>&gt;<i> 
+</I>&gt;<i> On Thursday 03 May 2007, Laurie Harper wrote:
+</I>&gt;&gt;<i> I'm using ANTLR for Python and have my lexer and parser partially
+</I>&gt;&gt;<i> working. I would like to start writing unit tests to identify exactly
+</I>&gt;&gt;<i> what is and isn't right in what I have so far. (Call it test-first
+</I>&gt;&gt;<i> debugging ;-)
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> This is a total newbie question but, how do I pass input into my lexer
+</I>&gt;&gt;<i> or parser from a Python script, rather than having it come from stdin?
+</I>&gt;&gt;<i> Ideally, I'd like to create a lexer instance and a parser instance and
+</I>&gt;&gt;<i> then write unit tests that exercise specific rules with varying input,
+</I>&gt;&gt;<i> al la:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>      import unittest
+</I>&gt;&gt;<i>      class LexerTests(unittest.TestCase):
+</I>&gt;&gt;<i>          def setUp(self):
+</I>&gt;&gt;<i>              self.L = lexer()
+</I>&gt;&gt;<i>              self.P = parser(self.L)
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>          def test_lexer(self):
+</I>&gt;&gt;<i>              input = &quot;specimen input&quot;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>              # *****
+</I>&gt;&gt;<i>              self.L.INJECT_INPUT_CHARACTERS(input)
+</I>&gt;&gt;<i>              # *****
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>              self.failUnlessEqual(some_result, self.L.nextToken())
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>          def test_parser(self):
+</I>&gt;&gt;<i>              input = &quot;specimen input&quot;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>              # *****
+</I>&gt;&gt;<i>              self.L.INJECT_INPUT_CHARACTERS(input)
+</I>&gt;&gt;<i>              # *****
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>              self.failUnlessEqual(some_result, self.P.someRule()
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> How do I achieve the INJECT_INPUT_CHARACTERS(input) part?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> L.
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>
+</PRE>
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="020508.html">[antlr-interest] antlr python unit testing
+</A></li>
+	<LI>Next message: <A HREF="020494.html">[antlr-interest] Token type as string
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#20509">[ date ]</a>
+              <a href="thread.html#20509">[ thread ]</a>
+              <a href="subject.html#20509">[ subject ]</a>
+              <a href="author.html#20509">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

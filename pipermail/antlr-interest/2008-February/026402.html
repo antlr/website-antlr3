@@ -1,0 +1,232 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Syntactic anti-predicates
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Syntactic%20anti-predicates&In-Reply-To=%3C4d596d820802120624u1bd9ab8flced13fac94f829d6%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="026387.html">
+   <LINK REL="Next"  HREF="026392.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Syntactic anti-predicates</H1>
+    <B>Darach Ennis</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Syntactic%20anti-predicates&In-Reply-To=%3C4d596d820802120624u1bd9ab8flced13fac94f829d6%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Syntactic anti-predicates">darach at gmail.com
+       </A><BR>
+    <I>Tue Feb 12 06:24:30 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="026387.html">[antlr-interest] Syntactic anti-predicates
+</A></li>
+        <LI>Next message: <A HREF="026392.html">[antlr-interest] Syntactic anti-predicates
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#26402">[ date ]</a>
+              <a href="thread.html#26402">[ thread ]</a>
+              <a href="subject.html#26402">[ subject ]</a>
+              <a href="author.html#26402">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Mark, all.
+
+I've tried the semantic action approach and it works an absolute charm,
+thank you!
+
+I can see why it scales nicely into complex grammars.
+
+The disambiguating predicate approach introduced considerable cross-cutting
+concerns
+into both the lexer and parser. So semantic actions are a lot like 'aspects'
+in that they
+consolidate crosscutting concerns into a single place.
+
+It is worth trying both approaches once just to go through the learning
+experience... so
+I'm glad I pulled some, but not all, of my hair out!
+
+Here's what I did with my 'real' grammar. I moved my
+'ArbitraryTokenSequence' definition
+higher up the declaration order. I defined conflicting and/or intersecting
+tokens higher
+again. In this way I was able to coerce types accordingly. Also there are a
+hell of a lot
+more arbitrary tokens the preprocessor tokens in my case so this order
+should keep
+the semantic actions nice and small. The semantic action code was very easy
+to test drive
+and to debug in the usual way:
+
+    private final int[] ARBITRARY_TOKENS = {
+            TestParser.ArbitraryCodeSequence,
+            TestParser.Whitespace,
+            TestParser.Variable,
+            TestParser.AtomLiteral
+    };
+
+    public boolean isOneOf(final int[] types, int candidate) {
+        for(int t : types) {
+            if (candidate == t) return true;
+        }
+        return false;
+    }
+
+    public boolean isArbitraryTokenSequence(TokenStream input) {
+        int i = 0;
+        do {
+            final Token token;
+            try {
+                token = input.get(i);
+            } catch(IndexOutOfBoundsException e) {
+                break; // empty or arbitrary tokens until eof (eg: no
+directives)
+            }
+            if (token == null) { break; }
+            final int type = token.getType();
+            if (!isOneOf(ARBITRARY_TOKENS,type)) {
+                // It could be a conflicting token, we can coerce
+accordingly ...
+                if (type == TestParser.LeftParen) {
+                    token.setType(TestParser.Separator); // it is only a
+left paren we care about if it is within a directive rule, ie: we dont care
+in this case
+                } else if (type == TestParser.FullStop) {
+                    token.setType(TestParser.Separator); // ditto, see above
+                } else {
+                    break;
+                }
+            }
+
+            i++;
+        } while(true);
+        return (i &gt; 0); // at least one token matches
+    }
+
+This semantic action above is fairly raw and still a work in progress but in
+only 30 minutes I've been a lot
+more productive than with the dis-ambiguating predicate approach and my
+grammar is simpler and easier
+to maintain as a result.
+
+
+Regards,
+
+Darach.
+
+
+
+On Feb 12, 2008 12:27 AM, Mark Wright &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">markwright at internode.on.net</A>&gt; wrote:
+
+&gt;<i> Hello Darach and Steve,
+</I>&gt;<i>
+</I>&gt;<i> &gt; Is there a convenient way to say &quot;if the upcoming tokens look like X Y
+</I>&gt;<i> &gt; Z&quot; then *don't* match this rule?
+</I>&gt;<i>
+</I>&gt;<i> I find that path leads to madness in a complex grammar.
+</I>&gt;<i>
+</I>&gt;<i> An alternative approach that can be made to work is to
+</I>&gt;<i> place dis-ambiguating semantic predicates on every other alternative.
+</I>&gt;<i>
+</I>&gt;<i> &gt; It seems I always have to resort to a
+</I>&gt;<i> &gt; semantic predicate like this:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; {input.LA(1) != X &amp;&amp; input.LA(2) != Y}? =&gt;  R
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; or some complicated rule that amount to not X Y Z:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; (notXYZ) =&gt; R
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Is there a simple way I'm missing?
+</I>&gt;<i>
+</I>&gt;<i> The left factoring approach you found later looks correct:
+</I>&gt;<i>
+</I>&gt;<i> &gt; By the time the syntactic predicate inside fails the match, it's too
+</I>&gt;<i> &gt; late.
+</I>&gt;<i>
+</I>&gt;<i> So you understand the problem.
+</I>&gt;<i>
+</I>&gt;<i> &gt; I could left factor table_line:
+</I>&gt;<i>
+</I>&gt;<i> &gt; table_line:
+</I>&gt;<i> &gt;   (
+</I>&gt;<i> &gt;   (ws? PIPE PLUS) =&gt; ws? table_caption
+</I>&gt;<i> &gt;   | (ws? PIPE HYPHEN) =&gt; ws? table_row_separator
+</I>&gt;<i> &gt;   | (ws? EXCLAMATION) =&gt; ws? table_header_cells
+</I>&gt;<i> &gt;   | (ws? PIPE) =&gt; ws? table_data_cells
+</I>&gt;<i> &gt;   );
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; But that's inelegant.
+</I>&gt;<i>
+</I>&gt;<i> Looks elagant and like it might work to me.
+</I>&gt;<i>
+</I>&gt;<i> &gt; The only way to get around it at the moment that I can see is to
+</I>&gt;<i> &gt; either left factor as above, or use a semantic predicate - which I'm
+</I>&gt;<i> &gt; not really sure how to use with an arbitrary length rule like ws.
+</I>&gt;<i>
+</I>&gt;<i> If you don't mind writing and debugging thousands of lines of your
+</I>&gt;<i> own code, then dis-ambiguating semantic predicates are very powerful
+</I>&gt;<i> for complex grammars.  Abitrary length rules and rules that call other
+</I>&gt;<i> rules can be handled with iterative loops and little hand coded
+</I>&gt;<i> recursive descent compilers.
+</I>&gt;<i>
+</I>&gt;<i> Darach writes:
+</I>&gt;<i> &gt; The gated predicate ( ... { pc &gt; 0?=&gt; ')'  ... ) and parenthesis
+</I>&gt;<i> &gt;'reference counting'
+</I>&gt;<i> &gt; is what allows this to work but I've had limited/little success with
+</I>&gt;<i> &gt; more complex
+</I>&gt;<i> &gt; contexts such as trying to match more than a single character for
+</I>&gt;<i> &gt; terminating the
+</I>&gt;<i> &gt; arbitrary token sequence block.
+</I>&gt;<i>
+</I>&gt;<i> You can write a dis-ambiguating semantic predicate the scans forward
+</I>&gt;<i> matching parentheses.  Dis-ambiguating semantic predicates are called
+</I>&gt;<i> multiple times, so it easier to debug to log the answers and cache
+</I>&gt;<i> the result. I have attached an example to show how to log and cache
+</I>&gt;<i> the results.
+</I>&gt;<i>
+</I>&gt;<i> &gt; The same grammar fails to produce the same output and/or exhibit the
+</I>&gt;<i> &gt; same behavior when interpreted by ANTLRworks with the same input data.
+</I>&gt;<i>
+</I>&gt;<i> I think someone else noted recently on this list that the ANTLRworks
+</I>&gt;<i> interpreter does not understand the gated predicate, and you would have
+</I>&gt;<i> to use the debugger.
+</I>&gt;<i>
+</I>&gt;<i> &gt; Having the book definitely helps too.
+</I>&gt;<i>
+</I>&gt;<i> The book is great.
+</I>&gt;<i>
+</I>&gt;<i> Regards, Mark
+</I>&gt;<i>
+</I>&gt;<i> --
+</I>&gt;<i>
+</I>-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20080212/9d62f496/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20080212/9d62f496/attachment.html</A> 
+</PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="026387.html">[antlr-interest] Syntactic anti-predicates
+</A></li>
+	<LI>Next message: <A HREF="026392.html">[antlr-interest] Syntactic anti-predicates
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#26402">[ date ]</a>
+              <a href="thread.html#26402">[ thread ]</a>
+              <a href="subject.html#26402">[ subject ]</a>
+              <a href="author.html#26402">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

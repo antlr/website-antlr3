@@ -1,0 +1,203 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] tree pattern matching and list rewriting
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20tree%20pattern%20matching%20and%20list%20rewriting&In-Reply-To=%3Cb9dc5a050911100601ue38e030pb9630cc01f224b6b%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="036713.html">
+   <LINK REL="Next"  HREF="036714.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] tree pattern matching and list rewriting</H1>
+    <B>Chris DiGiano</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20tree%20pattern%20matching%20and%20list%20rewriting&In-Reply-To=%3Cb9dc5a050911100601ue38e030pb9630cc01f224b6b%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] tree pattern matching and list rewriting">digi+antlr-interest at google.com
+       </A><BR>
+    <I>Tue Nov 10 06:01:14 PST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="036713.html">[antlr-interest] Global Dynamic Scope
+</A></li>
+        <LI>Next message: <A HREF="036714.html">[antlr-interest] tree pattern matching and list rewriting
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36711">[ date ]</a>
+              <a href="thread.html#36711">[ thread ]</a>
+              <a href="subject.html#36711">[ subject ]</a>
+              <a href="author.html#36711">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I think I may have uncovered some problems with the new 3.2 Tree
+Pattern Matching and rewriting a matching list of AST nodes. I get
+errors when I try to:
+1. Pair: match against 2 nodes in sequence and return a new parent
+node that has the matching nodes as children (error: Can't set single
+child to a list)
+2. Duplicate: match a node and return a sequence of two nodes
+containing the original node and a duplicate (error: Can't set single
+child to a list)
+3. Delete: match a node and remove it from the AST altogether by
+returning nothing (NullPointerException)
+
+To illustrate these problems I extended the scalar-vector
+multiplication example found in the new Language Implementation
+Patterns book (a wonderful source of ideas, by the way!). I created
+three grammars&#8212;Pair.g, Dup.g, and Del.g&#8212;for each of the above cases.
+Below are the &quot;bottomup&quot; rules in each. (Complete grammars and stack
+traces are at the very end this message.)
+
+pair: ^(ASSIGN id1=ID e1=.) ^(ASSIGN id2=ID e2=.)
+    -&gt; ^(PAIR ^(ASSIGN $id1 $e1) ^(ASSIGN $id2 $e2));
+
+dup: ^(ASSIGN ID e=.) {$ASSIGN.text.equals(&quot;=&quot;)}?
+    -&gt; ^(ASSIGN[&quot;_=&quot;] ID $e) ^(ASSIGN[&quot;_=&quot;] ID[$ID.text + &quot;2&quot;]
+{adaptor.dupTree($e)});
+
+del: ^(ASSIGN ID .) {$ID.text.equals(&quot;x&quot;)}?
+    -&gt; ;
+
+Unless there's something wrong with my grammars, I would claim these 3
+kinds of Tree Pattern Matching operations ought to work, especially if
+Tree Pattern Matching is being promoted as a kind of AWK replacement.
+
+I was able to work around the pairing problem by patching
+TreeVisitor.visit so that the invariant of the for loop continuously
+recomputes the child count:
+for (int i=0; i&lt;adaptor.getChildCount(t); i++)
+But I'm not familiar enough with the source to know how to neatly
+solve all three problems.
+
+Is anyone else having trouble with list rewriting? Any better workaround?
+
+Chris
+
+----
+
+tree grammar Pair;
+options {
+    tokenVocab=VecMath;      // use tokens from VecMath.g
+    ASTLabelType=CommonTree; // we're using CommonTree nodes
+    output=AST;              // build new ASTs from input AST
+    filter=true;             // tree pattern matching mode
+    backtrack=true;          // allow backtracking if it's needed
+}
+
+bottomup
+    :  pair
+    ;
+
+pair: ^(ASSIGN id1=ID e1=.) ^(ASSIGN id2=ID e2=.)
+    -&gt; ^(PAIR ^(ASSIGN $id1 $e1) ^(ASSIGN $id2 $e2));
+
+/*
+Original tree: (= x (* 4 (VEC 0 (* 5 0) 3))) (= y 6)
+(= x (* 4 (VEC 0 (* 5 0) 3))) -&gt; (PAIR (= x (* 4 (VEC 0 (* 5 0) 3))) (= y 6))
+Exception in thread &quot;main&quot; java.lang.IllegalArgumentException: Can't
+set single child to a list
+  at org.antlr.runtime.tree.BaseTree.setChild(BaseTree.java:144)
+  at org.antlr.runtime.tree.BaseTreeAdaptor.setChild(BaseTreeAdaptor.java:225)
+  at org.antlr.runtime.tree.TreeVisitor.visit(TreeVisitor.java:36)
+  at org.antlr.runtime.tree.TreeRewriter.downup(TreeRewriter.java:95)
+  at PairTest.main(PairTest.java:33)
+ */
+
+----
+
+tree grammar Dup;
+options {
+    tokenVocab=VecMath;      // use tokens from VecMath.g
+    ASTLabelType=CommonTree; // we're using CommonTree nodes
+    output=AST;              // build new ASTs from input AST
+    filter=true;             // tree pattern matching mode
+    backtrack=true;          // allow backtracking if it's needed
+}
+
+bottomup
+    :  dup
+    ;
+
+dup: ^(ASSIGN ID e=.) {$ASSIGN.text.equals(&quot;=&quot;)}?
+    -&gt; ^(ASSIGN[&quot;_=&quot;] ID $e) ^(ASSIGN[&quot;_=&quot;] ID[$ID.text + &quot;2&quot;]
+{adaptor.dupTree($e)});
+
+/*
+Original tree: (= x (* 4 (VEC 0 (* 5 0) 3))) (= y 6)
+(= x (* 4 (VEC 0 (* 5 0) 3))) -&gt; (_= x (* 4 (VEC 0 (* 5 0) 3))) (_= x2
+(* 4 (VEC 0 (* 5 0) 3)))
+Exception in thread &quot;main&quot; java.lang.IllegalArgumentException: Can't
+set single child to a list
+  at org.antlr.runtime.tree.BaseTree.setChild(BaseTree.java:144)
+  at org.antlr.runtime.tree.BaseTreeAdaptor.setChild(BaseTreeAdaptor.java:225)
+  at org.antlr.runtime.tree.TreeVisitor.visit(TreeVisitor.java:36)
+  at org.antlr.runtime.tree.TreeRewriter.downup(TreeRewriter.java:95)
+  at DupTest.main(DupTest.java:33)
+ */
+
+----
+
+tree grammar Del;
+options {
+    tokenVocab=VecMath;      // use tokens from VecMath.g
+    ASTLabelType=CommonTree; // we're using CommonTree nodes
+    output=AST;              // build new ASTs from input AST
+    filter=true;             // tree pattern matching mode
+    backtrack=true;          // allow backtracking if it's needed
+}
+
+bottomup
+    :  del
+    ;
+
+del: ^(ASSIGN ID .) {$ID.text.equals(&quot;x&quot;)}?
+    -&gt; ;
+
+/*
+Original tree: (= x (* 4 (VEC 0 (* 5 0) 3))) (= y 6)
+Exception in thread &quot;main&quot; java.lang.NullPointerException
+  at org.antlr.runtime.tree.BaseTree.replaceChildren(BaseTree.java:183)
+  at org.antlr.runtime.tree.CommonTreeAdaptor.replaceChildren(CommonTreeAdaptor.java:165)
+  at org.antlr.runtime.tree.CommonTreeNodeStream.replaceChildren(CommonTreeNodeStream.java:142)
+  at Del.del(Del.java:188)
+  at Del.bottomup(Del.java:83)
+  at Del.bottomup(Del.java:1)
+  at org.antlr.runtime.tree.TreeRewriter$3.rule(TreeRewriter.java:112)
+  at org.antlr.runtime.tree.TreeRewriter.applyOnce(TreeRewriter.java:61)
+  at org.antlr.runtime.tree.TreeRewriter.applyRepeatedly(TreeRewriter.java:79)
+  at org.antlr.runtime.tree.TreeRewriter$1.post(TreeRewriter.java:93)
+  at org.antlr.runtime.tree.TreeVisitor.visit(TreeVisitor.java:39)
+  at org.antlr.runtime.tree.TreeVisitor.visit(TreeVisitor.java:33)
+  at org.antlr.runtime.tree.TreeRewriter.downup(TreeRewriter.java:95)
+  at DelTest.main(DelTest.java:33)
+ */
+</PRE>
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="036713.html">[antlr-interest] Global Dynamic Scope
+</A></li>
+	<LI>Next message: <A HREF="036714.html">[antlr-interest] tree pattern matching and list rewriting
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36711">[ date ]</a>
+              <a href="thread.html#36711">[ thread ]</a>
+              <a href="subject.html#36711">[ subject ]</a>
+              <a href="author.html#36711">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

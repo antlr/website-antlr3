@@ -1,0 +1,157 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Using C++ types in an ANTLR-generated C parser
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Using%20C%2B%2B%20types%20in%20an%20ANTLR-generated%20C%20parser&In-Reply-To=%3C4a051d931002240750q51de3878y4d0e637d9813263f%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="037816.html">
+   <LINK REL="Next"  HREF="037765.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Using C++ types in an ANTLR-generated C parser</H1>
+    <B>Christopher L Conway</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Using%20C%2B%2B%20types%20in%20an%20ANTLR-generated%20C%20parser&In-Reply-To=%3C4a051d931002240750q51de3878y4d0e637d9813263f%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Using C++ types in an ANTLR-generated C parser">cconway at cs.nyu.edu
+       </A><BR>
+    <I>Wed Feb 24 07:50:59 PST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="037816.html">[antlr-interest] Left-Recursion Removal Help
+</A></li>
+        <LI>Next message: <A HREF="037765.html">[antlr-interest] Using C++ types in an ANTLR-generated C parser
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37764">[ date ]</a>
+              <a href="thread.html#37764">[ thread ]</a>
+              <a href="subject.html#37764">[ subject ]</a>
+              <a href="author.html#37764">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I'm trying to use an ANTLR v3.2-generated parser in a C++ project
+using C as the output language, compiling the output as C++. I'm
+having trouble dealing with C++ types inside parser actions. Here's a
+C++ header file defining a few types I'd like to use in the parser:
+
+    /* expr.h */
+    enum Kind {
+      PLUS,
+      MINUS
+    };
+
+    class Expr { // stub
+    };
+
+    class ExprFactory {
+    public:
+      Expr mkExpr(Kind kind, Expr op1, Expr op2);
+      Expr mkInt(std::string n);
+    };
+
+And here's a simple parser definition:
+
+    /* Expr.g */
+    grammar Expr;
+
+    options {
+      language = 'C';
+    }
+
+    @parser::includes {
+      #include &quot;expr.h&quot;
+    }
+
+    @members {
+      ExprFactory *exprFactory;
+    }
+
+    start returns [Expr expr]
+      : e = expression EOF { $expr = e; }
+      ;
+
+    expression returns [Expr e]
+      : TOK_LPAREN k=builtinOp op1=expression op2=expression TOK_RPAREN
+        { e = exprFactory-&gt;mkExpr(k,op1,op2); }
+      | INTEGER { e = exprFactory-&gt;mkInt((char*)$INTEGER.text-&gt;chars); }
+      ;
+
+    builtinOp returns [Kind kind]
+      : TOK_PLUS { kind = PLUS; }
+      | TOK_MINUS { kind = MINUS; }
+      ;
+
+    TOK_PLUS : '+';
+    TOK_MINUS : '-';
+    TOK_LPAREN : '(';
+    TOK_RPAREN : ')';
+    INTEGER : ('0'..'9')+;
+
+The grammar runs through ANTLR just fine. When I try to compile
+ExprParser.c, I get errors like
+
+ 1. `conversion from &#8216;long int&#8217; to non-scalar type &#8216;Expr&#8217; requested`
+ 2. `no match for &#8216;operator=&#8217; in &#8216;e = 0l&#8217;`
+ 3. `invalid conversion from &#8216;long int&#8217; to &#8216;Kind&#8217;`
+
+In each case, the statement is an initialization of an `Expr` or
+`Kind` value to `NULL`.
+
+I can make the problem go away for the `Expr`'s by changing everything
+to `Expr*`. This is workable, though hardly ideal. But passing around
+pointers for a simple enum like `Kind` seems ridiculous. One ugly
+workaround I've found is to create a second return value, which pushes
+the `Kind` value into a struct and suppresses the initialization to
+`NULL`. I.e, `builtinOp` becomes
+
+    builtinOp returns [Kind kind, bool dummy]
+      : TOK_PLUS { $kind = PLUS; }
+      | TOK_MINUS { $kind = MINUS; }
+      ;
+
+and the first `expression` alternative becomes
+
+    TOK_LPAREN k=builtinOp op1=expression op2=expression TOK_RPAREN
+        { e = exprFactory-&gt;mkExpr(k.kind,*op1,*op2); }
+
+There has to be a better way to do things? Am I missing a
+configuration option to the C language backend? Is there another way
+to arrange my grammar to avoid this awkwardness? Is there a pure C++
+backend I can use?
+
+Thanks,
+Chris
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="037816.html">[antlr-interest] Left-Recursion Removal Help
+</A></li>
+	<LI>Next message: <A HREF="037765.html">[antlr-interest] Using C++ types in an ANTLR-generated C parser
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37764">[ date ]</a>
+              <a href="thread.html#37764">[ thread ]</a>
+              <a href="subject.html#37764">[ subject ]</a>
+              <a href="author.html#37764">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

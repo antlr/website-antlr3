@@ -1,0 +1,178 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] ANTLR 3 Lexical States
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20ANTLR%203%20Lexical%20States&In-Reply-To=%3C479A0953.6070300%40organum.hu%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="025976.html">
+   <LINK REL="Next"  HREF="025980.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] ANTLR 3 Lexical States</H1>
+    <B>Bertalan Fodor (LilyPondTool)</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20ANTLR%203%20Lexical%20States&In-Reply-To=%3C479A0953.6070300%40organum.hu%3E"
+       TITLE="[antlr-interest] ANTLR 3 Lexical States">lilypondtool at organum.hu
+       </A><BR>
+    <I>Fri Jan 25 08:07:47 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="025976.html">[antlr-interest] ANTLR 3 Lexical States
+</A></li>
+        <LI>Next message: <A HREF="025980.html">[antlr-interest] ANTLR 3 Lexical States
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25978">[ date ]</a>
+              <a href="thread.html#25978">[ thread ]</a>
+              <a href="subject.html#25978">[ subject ]</a>
+              <a href="author.html#25978">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Yes, that's a good idea, but that doesn't solve the problem that the 
+state change must be done in the parser. So in the switch(state) 
+statement the value of state is always NORMAL, because the lexing will 
+be done first.
+Now I'm thinking of the following possibilities:
+- Harald M&#252;ller's lexing parser - as I see currently it doesn't work 
+with overlapping Lexer rules, like if in the example below STRING is 
+'a'..'z' and SPECIAL_STRING is '&lt;'|'a'
+- David Holroyd's lazy token stream - with which I see the problem that 
+it lazily loads the tokens from the source, but not from the source, so 
+I may not be able to change the token type according to lexical state
+- handling all lexer-state-pushing situations as recursively embedded 
+island-grammars - the problem is that these islands actually can be 
+infinitely embedded in each other.
+- going back to Antlr 2
+- writing the lexer with JFlex
+
+I really don't want the last 2 possibilities, so I'm very curious if 
+there is some good ways for my grammar.
+
+Bert
+
+Jim Idle wrote:
+&gt;<i> It will be a lot more readable, and generate better code if you do this 
+</I>&gt;<i> instead:
+</I>&gt;<i>
+</I>&gt;<i> 1) Create fragment rules for your tokens that have the same pattern. In 
+</I>&gt;<i> fact you can just use the tokens {} section to create the token types, 
+</I>&gt;<i> but then ANTLR will give you warnings that there is no token called XYZ 
+</I>&gt;<i> when you try to use this type in the lexer. As I hate warnings, I use 
+</I>&gt;<i> fragment tokens. You won't use them for matching (usually) so they don't 
+</I>&gt;<i> actually have to match the pattern they represent, but it is probably 
+</I>&gt;<i> good to document this if they don't!!
+</I>&gt;<i>
+</I>&gt;<i> 2) Use one pattern match for all the tokens that clash, then change the 
+</I>&gt;<i> type according to the context:
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> fragment STRING 		: LETTERS 	;
+</I>&gt;<i> fragment SPECIAL_STRING : LETTERS	;
+</I>&gt;<i>
+</I>&gt;<i> STRINGS:
+</I>&gt;<i> 		LETTERS
+</I>&gt;<i>
+</I>&gt;<i> 			{
+</I>&gt;<i> 				switch (state)
+</I>&gt;<i> 				{
+</I>&gt;<i> 					case States.NORMAL:
+</I>&gt;<i>
+</I>&gt;<i> 							$type = STRING;
+</I>&gt;<i> 							Break;
+</I>&gt;<i> 				
+</I>&gt;<i> 					case States.SPECIAL:
+</I>&gt;<i> 							$type = SPECIAL_STRING;
+</I>&gt;<i> ...
+</I>&gt;<i> 				}	
+</I>&gt;<i> 			}
+</I>&gt;<i> ;
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> And so on.
+</I>&gt;<i>
+</I>&gt;<i> Jim
+</I>&gt;<i>
+</I>&gt;<i>   
+</I>&gt;&gt;<i> -----Original Message-----
+</I>&gt;&gt;<i> From: Bertalan Fodor (LilyPondTool) [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">lilypondtool at organum.hu</A>]
+</I>&gt;&gt;<i> Sent: Friday, January 25, 2008 2:21 AM
+</I>&gt;&gt;<i> To: Antlr Interest
+</I>&gt;&gt;<i> Subject: [antlr-interest] ANTLR 3 Lexical States
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> My Antlr grammar I'm migrating to Antlr 3 heavily uses lexical states,
+</I>&gt;&gt;<i> that is, the Lexer has lots of semantic predicates to distinguish
+</I>&gt;&gt;<i> between alternatives like this
+</I>&gt;&gt;<i> STRING: {inState(States.NORMAL)}? LETTER+
+</I>&gt;&gt;<i> SPECIAL_STRING: {inState(States.SPECIAL)}? LETTER+
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> The states are set during the parse process, like this
+</I>&gt;&gt;<i> special_handling: &quot;\special&quot; { setState(States.SPECIAL); }
+</I>&gt;&gt;<i> SPECIAL_STRING;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> It worked perfectly well in Anltr 2. However, now I'm a bit afraid 
+</I>&gt;&gt;<i>     
+</I>&gt;<i> that
+</I>&gt;<i>   
+</I>&gt;&gt;<i> the Antlr 3 style lexing will make this not work.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> What do you think?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Thank you,
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Bertalan Fodor
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> --
+</I>&gt;&gt;<i> LilyPondTool is the editor for LilyPond files.
+</I>&gt;&gt;<i> See <A HREF="http://lilypondtool.organum.hu">http://lilypondtool.organum.hu</A>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>     
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>   
+</I>
+
+-- 
+LilyPondTool is the editor for LilyPond files.
+See <A HREF="http://lilypondtool.organum.hu">http://lilypondtool.organum.hu</A>
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20080125/026030bb/attachment-0001.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20080125/026030bb/attachment-0001.html</A> 
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="025976.html">[antlr-interest] ANTLR 3 Lexical States
+</A></li>
+	<LI>Next message: <A HREF="025980.html">[antlr-interest] ANTLR 3 Lexical States
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25978">[ date ]</a>
+              <a href="thread.html#25978">[ thread ]</a>
+              <a href="subject.html#25978">[ subject ]</a>
+              <a href="author.html#25978">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

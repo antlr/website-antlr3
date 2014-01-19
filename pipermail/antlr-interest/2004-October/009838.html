@@ -1,0 +1,169 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] More on TokenWithIndex
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20More%20on%20TokenWithIndex&In-Reply-To=1E73538A-2847-11D9-8725-000A95891192%40cs.usfca.edu">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="009785.html">
+   <LINK REL="Next"  HREF="009776.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] More on TokenWithIndex</H1>
+    <B>Paul J. Lucas</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20More%20on%20TokenWithIndex&In-Reply-To=1E73538A-2847-11D9-8725-000A95891192%40cs.usfca.edu"
+       TITLE="[antlr-interest] More on TokenWithIndex">pauljlucas at mac.com
+       </A><BR>
+    <I>Sun Oct 31 15:33:36 PST 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="009785.html">[antlr-interest] More on TokenWithIndex
+</A></li>
+        <LI>Next message: <A HREF="009776.html">[antlr-interest] NoViableAltException
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#9838">[ date ]</a>
+              <a href="thread.html#9838">[ thread ]</a>
+              <a href="subject.html#9838">[ subject ]</a>
+              <a href="author.html#9838">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+	I've been playing with this stuff for several days now and have
+	something that works well.
+
+	I modified Terence's ASTMinMax class and added a Visitor
+	interface.
+
+	To solve the left-factored problem, I do:
+
+		declareThing
+		    : d:DECLARE! { markTokenIndex( d ); }
+		      ( functionDecl
+		      | varDecl
+		      | // ...
+		      )
+		    ;
+
+	where markTokenIndex() simply sets a parser class variable that
+	can be obtained later; then:
+
+		varDecl
+		    : v:VARIABLE^ varRefTypeDecl ASSIGN! expr semi:SEMICOLON!
+		    	{
+			    #v.setType( VAR_DECL );
+			    #v.setText( &quot;VAR_DECL&quot; );
+			    setMinMaxIndex( #v, semi );
+			}
+		    ;
+
+	where the two-argument form of setMinMaxIndex() sets the min/max
+	indicies of #v to the previously-marked token and the semicolon.
+	There are many overloaded variations of setMinMaxIndex(): some
+	taken tokens as arguments, some take AST nodes, and combinations
+	of both.
+
+	Most rules don't need any call to setMinMaxIndex() at all.  The
+	only ones that do are for left-factored rules as shown and also
+	for those where the max index is a non-included terminal, e.g.,:
+
+		parenthesizedExpr
+		    : lp:LPAREN! expr rp:RPAREN!
+		    	{
+			    setMinMaxIndex( ##, lp, rp );
+			}
+		    ;
+	or:
+		functionCall
+		    : f:FUNCTION_NAME LPAREN! (exprList)? rp:RPAREN!
+		    	{
+		            #f.setType( FUNCTION_CALL );
+		            #f.setText( &quot;FUNCTION_CALL&quot; );
+		            setMinMaxIndex( #f, f, rp );
+			}
+		    ;
+
+	Note that &quot;#f&quot; refers to the AST node and 'f' refers to the
+	token.
+
+	To set all the min/max indicies for the entire tree once it's
+	completely built, I have a visitor that post-order traverses
+	it.  As part of the initialize() method on my derived AST
+	class, I do:
+
+		m_maxTokenIndex = 0;
+		m_minTokenIndex = Integer.MAX_VALUE;
+
+	then the visitor does:
+
+	        public void visit( XQueryAST node, int visitType, int depth ) {
+	            if ( visitType == PREVISIT )
+	                return;
+	
+	            int mostMin = node.getMinIndex(),
+	                mostMax = node.getMaxIndex();
+	            for ( XQueryAST child = (XQueryAST)node.getFirstChild();
+	                  child != null;
+	                  child = (XQueryAST)child.getNextSibling()
+	            ) {
+	                final int min = child.getMinIndex();
+	                final int max = child.getMaxIndex();
+	                if ( min &lt; mostMin )
+	                    mostMin = min;
+	                if ( max &gt; mostMax )
+	                    mostMax = max;
+	            }
+	            node.setMinMaxIndex( mostMin, mostMax );
+	        }
+
+	Hence, the token index information propagates bottup-up from
+	the terminals to the root of the AST.
+
+	By doing the setting of min/max once during a single-pass
+	traversal, I can avoid the inefficient way it was done in
+	TrackerASTFactory.
+
+	- Paul
+
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+    <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+    <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+    <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="009785.html">[antlr-interest] More on TokenWithIndex
+</A></li>
+	<LI>Next message: <A HREF="009776.html">[antlr-interest] NoViableAltException
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#9838">[ date ]</a>
+              <a href="thread.html#9838">[ thread ]</a>
+              <a href="subject.html#9838">[ subject ]</a>
+              <a href="author.html#9838">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

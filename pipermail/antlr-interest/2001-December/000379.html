@@ -1,0 +1,177 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Returning from a sub-parser with no end token.
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Returning%20from%20a%20sub-parser%20with%20no%20end%20token.&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000378.html">
+   <LINK REL="Next"  HREF="000384.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Returning from a sub-parser with no end token.</H1>
+    <B>Remi Koutcherawy</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Returning%20from%20a%20sub-parser%20with%20no%20end%20token.&In-Reply-To="
+       TITLE="[antlr-interest] Returning from a sub-parser with no end token.">remi.koutcherawy at wanadoo.fr
+       </A><BR>
+    <I>Thu Dec 27 00:41:01 PST 2001</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000378.html">[antlr-interest] matching the longest token in the lexer
+</A></li>
+        <LI>Next message: <A HREF="000384.html">[antlr-interest] Returning from a sub-parser with no end token.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#379">[ date ]</a>
+              <a href="thread.html#379">[ thread ]</a>
+              <a href="subject.html#379">[ subject ]</a>
+              <a href="author.html#379">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I use sub-lexers and sub-parser to decode multiple formats in a single file.
+This a great ANTLR feature as I can parse radically different portions of the input,
+without writing a complicated multi-format parser.
+
+But there is a strange behavior,
+ when I want the sub-parser to match an optionnal end-token :
+
+parse: (B)+ (BBB)?
+
+The rule should return when the token next to B is not BBB, right ?
+So why does it try ALL the tokens until it matches a BBB ???
+
+R&#233;mi
+
+P.S. Here is a complete working example (two files Main_Parser.g and B_Parser.g):
+-----
+Main parser (file Main_Parser.g)
+-----
+Main parser and lexer :
+// Main parser ------
+class Main_Parser extends Parser;
+{
+  static antlr.TokenStreamSelector selector = new antlr.TokenStreamSelector();
+
+  public static void main(String[] args) {
+    try {
+    // This string is simulating the real file
+       java.io.StringReader input = new java.io.StringReader(
+       &quot;AAA aa BBB b bb BBB AAA a a BBB b b BBB\n&quot; // with end BBB
+      + &quot;AAA aa BBB b bb AAA a BBB b b&quot;);     // without end BBB
+
+      Main_Lexer main = new Main_Lexer(input);
+      B_Lexer b_lexer = new B_Lexer(main.getInputState());
+      selector.addInputStream(main, &quot;main&quot;);
+      selector.addInputStream(b_lexer, &quot;BBB&quot;);
+      selector.select(&quot;main&quot;);
+
+      Main_Parser parser = new Main_Parser(selector);
+      parser.parse();
+    }
+    catch(Exception e) {
+      System.err.println(&quot;exception: &quot;+e);
+      e.printStackTrace(System.err);
+    }
+    try {System.in.read();} catch (Exception ex) {}
+  }
+}
+
+// Only one rule in the Parser for simplicity ------
+parse:
+ ( BBB // Matching BBB switch to B_Parser with B_Lexer
+  {
+   selector.push(&quot;BBB&quot;);
+   B_Parser b_parser = new B_Parser(getInputState());
+   b_parser.parse();
+   selector.pop();
+   setInputState(b_parser.getInputState());
+   System.out.println(&quot;BBB parsing complete&quot;);
+  }
+ | ( AAA (A)+ ) // Matching AAA is done within this parser for simplicity
+   {System.out.println(&quot;AAA parsing complete&quot;);}
+ )+ ;
+
+// Main lexer ------
+class Main_Lexer extends Lexer;
+options {  filter = WS;  k =2; }
+AAA: &quot;AAA&quot; ;
+A: 'a' ;
+BBB: &quot;BBB&quot; ;
+protected WS: (' ' | '\t' | ('\n' | '\r' |&quot;\r\n&quot;) {newline();} ) { _ttype = Token.SKIP; } ;
+
+-----
+Subparser and sublexer (file B_Parser.g):
+ -----
+// B parser ------
+class B_Parser extends Parser;
+
+parse: (B)+ (BBB)? // This is ok if there is a terminating token BBB
+   // If there is no token to signify the termination of the subparser.
+   // This fails as the lexer consumes all invalid chars.
+ ;
+
+// B lexer ------
+// How can I tell this lexer to send EOF if the char is not in his vocabulary ?
+// I wish I can push back the char witch rises a NoViableAltForCharException and return
+Token.EOF_TYPE.
+class B_Lexer extends Lexer;
+options {
+ filter = WS;
+ k =2;
+}
+BBB: &quot;BBB&quot; ;
+B: 'b'  ;
+protected WS: (' ' | '\t' | ('\n' | '\r' |&quot;\r\n&quot;) {newline();} ) { _ttype = Token.SKIP; } ;
+-----
+Compiling and running :
+-----
+// Compile :
+java -classpath E:\antlr-2.7.1 antlr.Tool Main_Parser.g
+java -classpath E:\antlr-2.7.1 antlr.Tool B_Parser.g
+javac -classpath E:\antlr-2.7.1\antlr.jar *.java
+// Run :
+java -classpath E:\antlr-2.7.1\antlr.jar;. Main_Parser
+AAA parsing complete // Theses ones are OK
+BBB parsing complete
+AAA parsing complete
+BBB parsing complete
+AAA parsing complete
+line 2: unexpected char: A // There in the sub-parser (BBB)+ tries and consumes unexpected token
+line 2: unexpected char: A
+line 2: unexpected char: A
+line 2: unexpected char: a
+BBB parsing complete  // Until it finds BBB and returns.
+line 2: unexpected char: b // Of course, the Main_Parser doesn't recognize 'b'
+line 2: unexpected char: b
+
+
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000378.html">[antlr-interest] matching the longest token in the lexer
+</A></li>
+	<LI>Next message: <A HREF="000384.html">[antlr-interest] Returning from a sub-parser with no end token.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#379">[ date ]</a>
+              <a href="thread.html#379">[ thread ]</a>
+              <a href="subject.html#379">[ subject ]</a>
+              <a href="author.html#379">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

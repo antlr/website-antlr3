@@ -1,0 +1,157 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [stringtemplate-interest] Understanding template recursion
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20Understanding%20template%20recursion&In-Reply-To=%3C465502CB.4050807%40rcn.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001072.html">
+   <LINK REL="Next"  HREF="001074.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[stringtemplate-interest] Understanding template recursion</H1>
+    <B>John Snyders</B> 
+    <A HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20Understanding%20template%20recursion&In-Reply-To=%3C465502CB.4050807%40rcn.com%3E"
+       TITLE="[stringtemplate-interest] Understanding template recursion">jjsnyders at rcn.com
+       </A><BR>
+    <I>Wed May 23 20:13:15 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001072.html">[stringtemplate-interest] Understanding template recursion
+</A></li>
+        <LI>Next message: <A HREF="001074.html">[stringtemplate-interest] Understanding template recursion
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1073">[ date ]</a>
+              <a href="thread.html#1073">[ thread ]</a>
+              <a href="subject.html#1073">[ subject ]</a>
+              <a href="author.html#1073">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Trevor,
+
+recurse(x) ::= &quot;&lt;x&gt;&lt;rest(x):recurse()&gt;&quot;
+
+In this case on the first call x is the whole list so &quot;abcd&quot; is output. 
+then it loops over the rest of x calling recurse with the x being the 
+current item it. It is the same as recurse(x=it).
+When I try this I get &quot;abcdbcd&quot;
+For me this is behaving as you and I would expect. I don't know why it 
+doesn't work for you. We may have different versions of ST.
+
+recurse2(x) ::= &quot;&lt;x&gt;&lt;recurse2(rest(x))&gt;&quot;
+
+I think what might be happening here is infinite recursion. The typical 
+pattern for recursion is to have a test for the case that is going to 
+stop the recursion. You might intend something like this (I just happen 
+to use $$ rather than &lt;&gt;)
+
+recurse2(x) ::= &quot;$x$ $if(x)$$recurse2(rest(x))$$endif$&quot;
+
+Sadly this does not do what I expect. The first time it should output 
+&quot;abcd&quot; because x is items. Now it calls recurse2 with the rest of x 
+which is [ b, c, d ] and that is what should be output next &quot;bcd&quot; Now it 
+recurses again with [ c, d ] and should output &quot;cd&quot; and again resulting 
+in &quot;d&quot; at which point rest is null and the if would be false. So the 
+total output I expect is &quot;abcd bcd cd d &quot;
+
+What I get is &quot;abcd bcd &quot;
+
+The reason I believe has to do with how ST uses iterators. On the first 
+recursive call to recurse2(rest(x)) rest(x) returns an iterator and not 
+a new list that is a slice of the old list. Now on the recursive call x 
+is an iterator and as soon as you use it once it is used up. The next 
+recursive call rest(x) returns null because x was used up in $x$.
+
+This is a very serious bug and I thought I had reported it before in 
+some way but now I can't find it in the archives.
+A very simple way to see this bug is with the following
+useItTwice(x) ::= &lt;&lt;
+once : $x;separator=&quot;, &quot;$
+twice: $x;separator=&quot;, &quot;$
+ &gt;&gt;
+test() ::= &lt;&lt;
+$useItTwice(items)$
+$useItTwice(rest(items))$
+ &gt;&gt;
+With your definition of items calling
+$useItTwice(items)$
+$useItTwice(rest(items))$
+it should print
+once : a, b, c, d
+twice: a, b, c, d
+once : b, c, d
+twice: b, c, d
+
+but it prints
+once : a, b, c, d
+twice: a, b, c, d
+once : b, c, d
+twice:
+
+Iterators should never be passed to templates. This bug will prevent you 
+from doing anything interesting with recursive templates.
+
+P.S. I went to umass Amherst back in the 80's.
+
+-John
+
+Trevor Strohman wrote:
+&gt;<i> I'm having trouble understanding recursion in templates.
+</I>&gt;<i>
+</I>&gt;<i> Suppose I have a list called &quot;items&quot; that contains Strings: &quot;a&quot;, &quot;b&quot;,  
+</I>&gt;<i> &quot;c&quot;, &quot;d&quot;, and these two templates:
+</I>&gt;<i> recurse(x) ::= &quot;&lt;x&gt;&lt;rest(x):recurse()&gt;&quot;
+</I>&gt;<i> recurse2(x) ::= &quot;&lt;x&gt;&lt;recurse2(rest(x))&gt;&quot;
+</I>&gt;<i>
+</I>&gt;<i> I expect &lt;recurse(items)&gt; to become:
+</I>&gt;<i> 	abcdcdd
+</I>&gt;<i> and &lt;recurse2(items)&gt; to become:
+</I>&gt;<i> 	abcd
+</I>&gt;<i>
+</I>&gt;<i> However, &lt;recurse(items)&gt; becomes &quot;abcd&quot; and &lt;recurse2(items)&gt; throws  
+</I>&gt;<i> an Exception.  What am I misunderstanding?
+</I>&gt;<i>
+</I>&gt;<i> Also, I notice that functions first, last and rest don't seem to be  
+</I>&gt;<i> first-class citizens in the language.  These expressions throw  
+</I>&gt;<i> exceptions:
+</I>&gt;<i> 	&lt;if(first(rest(items))&gt;
+</I>&gt;<i> 	&lt;first(items).isEnabled&gt;
+</I>&gt;<i> This has been a problem for me this afternoon.  I feel like I must be  
+</I>&gt;<i> misunderstanding the right way to approach recursive template  
+</I>&gt;<i> invocation.
+</I>&gt;<i>
+</I>&gt;<i> Trevor
+</I>&gt;<i>
+</I>&gt;<i> _______________________________________________
+</I>&gt;<i> stringtemplate-interest mailing list
+</I>&gt;<i> <A HREF="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">stringtemplate-interest at antlr.org</A>
+</I>&gt;<i> <A HREF="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest</A>
+</I>&gt;<i>
+</I>&gt;<i>   
+</I></PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001072.html">[stringtemplate-interest] Understanding template recursion
+</A></li>
+	<LI>Next message: <A HREF="001074.html">[stringtemplate-interest] Understanding template recursion
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1073">[ date ]</a>
+              <a href="thread.html#1073">[ thread ]</a>
+              <a href="subject.html#1073">[ subject ]</a>
+              <a href="author.html#1073">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">More information about the stringtemplate-interest
+mailing list</a><br>
+</body></html>

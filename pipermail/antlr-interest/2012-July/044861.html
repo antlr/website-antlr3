@@ -1,0 +1,147 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Tree grammar generated for the C runtime reports a syntax error where Java doesn't
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Tree%20grammar%20generated%20for%20the%20C%20runtime%0A%20reports%20a%20syntax%20error%20where%20Java%20doesn%27t&In-Reply-To=%3CCAGEtS-Bi8jhRSXr0xZyHsKNAbU-Zw4T_My%2BhT9L2%3D692neqNVg%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="044826.html">
+   <LINK REL="Next"  HREF="044829.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Tree grammar generated for the C runtime reports a syntax error where Java doesn't</H1>
+    <B>Martin Potthast</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Tree%20grammar%20generated%20for%20the%20C%20runtime%0A%20reports%20a%20syntax%20error%20where%20Java%20doesn%27t&In-Reply-To=%3CCAGEtS-Bi8jhRSXr0xZyHsKNAbU-Zw4T_My%2BhT9L2%3D692neqNVg%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Tree grammar generated for the C runtime reports a syntax error where Java doesn't">martin.potthast at uni-weimar.de
+       </A><BR>
+    <I>Mon Jul  9 14:41:28 PDT 2012</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="044826.html">[antlr-interest] Tree grammar generated for the C runtime reports a syntax error where Java doesn't
+</A></li>
+        <LI>Next message: <A HREF="044829.html">[antlr-interest] Irregular AST construction
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#44861">[ date ]</a>
+              <a href="thread.html#44861">[ thread ]</a>
+              <a href="subject.html#44861">[ subject ]</a>
+              <a href="author.html#44861">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Following up on this issue, I have further narrowed down the problem
+with wildcards not matching entire sub-trees in a tree parser: it
+turns out, the sub-tree is copied alright, but the token stream
+reader/matcher is not advanced correspondingly. This can be easily
+fixed, as I will show below.
+
+Consider the following example rule:
+
+foo : . ;
+
+This rule should match every tree, including all of its sub-trees.
+The C code generated for this rule looks like this:
+
+[...]
+{
+    _last = (pANTLR3_BASE_TREE)LT(1);
+    wildcard1=(pANTLR3_BASE_TREE)LT(1);
+
+    MATCHANYT();
+    if  (HASEXCEPTION())
+    {
+      goto ruleanyforestEx;
+    }
+
+    wildcard1_tree = (pANTLR3_BASE_TREE)ADAPTOR-&gt;dupTree(ADAPTOR, wildcard1);
+    ADAPTOR-&gt;addChild(ADAPTOR, root_0, wildcard1_tree);
+}
+[...]
+
+As you can see, wildcard1_tree is copied to the ADAPTOR using ADAPTOR-&gt;dupTree.
+Observe, however, that MATCHANYT() does not mean &quot;match any tree&quot;, but
+&quot;match any token&quot;. Therefore, the stream reader is not advanced in
+accordance with copying the entire sub-tree to the ADAPTOR. This
+leaves the tree parser in a corrupt state.
+
+Here's a workaround that solves the problem when patching the tree
+parser manually:
+
+[...]
+{
+    _last = (pANTLR3_BASE_TREE)LT(1);
+    wildcard1=(pANTLR3_BASE_TREE)LT(1);
+
+    int depth = 0;
+    for (;;)
+    {
+        MATCHANYT();
+        switch ( LA(1) )
+        {
+            case DOWN:
+                depth += 1;
+                break;
+            case UP:
+                depth -= 1;
+                break;
+        }
+        if (depth == 0) /* sub tree finished */
+        {
+            MATCHT(ANTLR3_TOKEN_UP, NULL);
+            break;
+        }
+        if (depth == -1) /* no sub tree found */
+        {
+            break;
+        }
+    }
+
+    if  (HASEXCEPTION())
+    {
+        goto ruleanyforestEx;
+    }
+
+    wildcard1_tree = (pANTLR3_BASE_TREE)ADAPTOR-&gt;dupTree(ADAPTOR, wildcard1);
+    ADAPTOR-&gt;addChild(ADAPTOR, root_0, wildcard1_tree);
+}
+[...]
+
+Above, the for loop around MATCHANYT() traverses the parse tree,
+matching any token on the way. Traversal stops when no sub-tree is
+found on a given node, and when the number of UP nodes matched is for
+the first time the same as the number of DOWN nodes matched
+beforehand.
+
+Is this a good solution?
+Does it merit being added to the parser generator?
+
+Martin
+
+-- 
+Martin Potthast
+Bauhaus-Universit&#228;t Weimar
+www.webis.de  ---  www.netspeak.org
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="044826.html">[antlr-interest] Tree grammar generated for the C runtime reports a syntax error where Java doesn't
+</A></li>
+	<LI>Next message: <A HREF="044829.html">[antlr-interest] Irregular AST construction
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#44861">[ date ]</a>
+              <a href="thread.html#44861">[ thread ]</a>
+              <a href="subject.html#44861">[ subject ]</a>
+              <a href="author.html#44861">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

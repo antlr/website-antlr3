@@ -1,0 +1,569 @@
+<html>
+
+<head>
+<title>Conversion of a C++ Parser from PCCTS to ANTLR</title>
+</head>
+
+<body bgcolor="#FFFFFF">
+
+<p>
+<font size="+2">
+Conversion of a C++ Parser from PCCTS to ANTLR
+</font>
+
+<p>
+<i><pre>
+Jianguo Zuo, Jianghan University,Wuhan,China
+David Wigg, (wiggjd@bcs.org.uk)
+Dr.S.E.Black, (blackse@sbu.ac.uk)
+Centre for Systems and Software Engineering
+South Bank University
+London, UK
+<a href=http://www.sbu.ac.uk/csse>http://www.sbu.ac.uk/csse</a>
+</pre></i>
+<p>
+August 2002
+
+<blockquote>
+We have recently completed the conversion of cplusplus.g to
+CPP_parser.g to run under ANTLR 2.7.1. (to produce C++ code). A
+relatively inexperienced programmer (in C++ and ANTLR) took
+about a
+year for the conversion and it was rather more difficult than we
+had hoped.
+
+Tom Nurkkala's notes were very useful and to further help others
+I attach some more detailed notes on our experiences to add to
+your library of Articles on your website at antlr.org.
+
+If you notice any errors or omissions please let us know. If you
+would like to add any comments to our text, please do.
+
+When I have tidied up the new C++ parser, taken out our own code
+and retested it I should be able to send you a copy for your
+library of grammar files.
+<br><br>
+David
+</blockquote>
+<p>
+The following notes were produced by Jianguo Zuo who converted an
+original version (1995 1.2) of a C++ parser, cplusplus.g, file which
+ran under PCCTS 1.33 to run under ANTLR 2.7.1. This conversion was
+done as part of a project to produce output for another project. As
+all our embedded code was written in C++ the output from ANTLR was
+required in C++ so that our embedded code could remain in C++.
+<p>
+These notes are supplied as supplementary to a set of notes supplied
+by Tom Nurkkala and now recorded at
+http://www.antlr.org/papers/133to220.html which should also be
+consulted. We would like to record our appreciation of Tom's original
+notes which were a great help for us. We hope that the following
+notes, which repeat most (but not necessarily all) of Tom's notes but
+add some original points of our own, will assist future conversions.
+<p>
+If you have any queries about these notes please address them to David Wigg 
+at wiggjd@bcs.org.uk who supervised this work and who maintains the current 
+versions of the software.
+<p>
+Index of chapters:
+
+<ol>
+<li>Convert the lexer part of StdCparser.g (ANTLR version) to generate C++ code
+
+<li>Modify the lexer part of StdCparser.g to adapt to the parser part of the 
+old grammar file, cplusplus.g
+
+<li>Convert the parser part of the old grammar file, cplusplus.g, from 
+PCCTS-1.33 version to ANTLR-2.7.1 version, CPP_parser.g.
+
+<li>Use the converted lexer part of StdCparser.g and the converted parser part 
+of cplusplus.g to construct a new grammar file, CPP_parser.g.
+
+<li> Make necessary changes to the main.cpp file and support.cpp file.
+
+<li> Create project and compile new parser
+
+<li> Final result
+</ol>
+
+<ol>
+<li>Convert the lexer part of StdCparser.g (ANTLR version) to generate C++ code
+
+<p>
+The input for either PCCTS or ANTLR is a grammar file (*.g file) which 
+consists of two parts, Lexer part and Parser part, in order to generate source 
+code files: Lexer.cpp, Lexer.hpp, Parser.cpp and Parser.hpp respectively. PCCTS 
+and ANTLR use completely different approaches to generate Lexer source code, so 
+the lexer part of the old grammar file, cplusplus.g, must be  replaced with a 
+new one. Fortunately we have a grammar file for Standard C (StdCparser.g) from 
+the ANTLR community. We can build a new lexer part for our new grammar file 
+based on the lexer part of the StdCparser.g file. This StdCparser.g file is a 
+java version, so we have to convert it to produce C++ version first and then 
+make a few modifications to cope with parsing C++.
+<ol>
+<li>Re-write the source code of "Ctoken.java" file to "Ctoken.hpp" and 
+"Ctoken.cpp". Re-write the source code of "LineObject.java" file to 
+"LineObject.hpp" and LineObject.cpp".
+
+ The corresponding .hpp files will be included in the header of the new 
+ CPP_parser.g file (see below).
+
+<li>Change "class StdCLexer extends Lexer;" to 
+"class CPPLexer extends Lexer;"
+
+ The "options" para remains the same.
+
+
+<li>Change from StdCParser,
+<pre>
+{
+LineObject lineObject = new LineObject();
+String originalSource = "";
+PreprocessorInfoChannel preprocessorInfoChannel 
+= new PreprocessorInfoChannel();
+int tokenNumber = 0;
+boolean countingTokens = true;
+int deferredLineCount = 0;
+}
+</pre>
+<br>
+to CPP_parser.g.
+<pre>
+{
+ANTLR_USE_NAMESPACE(antlr)LineObject lineObject;
+ANTLR_USE_NAMESPACE(std)string originalSource;
+int tokenNumber;
+bool countingTokens;
+int deferredLineCount;
+}
+</pre>
+<br>
+and change all other references to "String" to 
+"ANTLR_USE_NAMESPACE(std)string"
+and change all other references to "boolean" to "bool".
+
+<li>Change all actions 
+<pre>
+{ ttype = Token.SKIP; }
+</pre>
+<br>
+to
+<pre>
+{ ttype = ANTLR_USE_NAMESPACE(antlr)Token::SKIP; }
+</pre>
+</ol>
+
+<li>Modifying the lexer part of StdCparser.g to adapt to the parser part of the 
+old grammar file, cplusplus.g
+<p>
+Lexer and Parser are two closely connected parts in a grammar file. The 
+Lexer recognizes the input character stream and convert it to tokens, which are
+then used by Parser. So the names of tokens in both parts must be consistent 
+and the Lexer must supply all the tokens needed by the Parser.
+
+<ol>
+<li>  Change the names of tokens in the StdCparser.g file to the names of the 
+same tokens in cplusplus.g. For example, change the name for "=" from 
+"ASSIGN" to "ASSIGNEQUAL", change the name for "..." from "VARARGS" to 
+"ELLIPSIS", etc.
+
+<li> Add the tokens lacked in StdCparser.g from cplusplus.g file. These tokens 
+were:
+<pre>
+POINTERTOMBR: "->*";
+DOTMBR: ".*";
+SCOPE: "::";
+</pre>
+<li> Change from StdCParser.g.
+<pre>
+Number
+        :( ( Digit )+ ( '.' | 'e' | 'E' ) )=> ( Digit )+
+            ( '.' ( Digit )* ( Exponent )?
+            | Exponent
+            )                       { _ttype = DoubleDoubleConst;   }
+            ( FloatSuffix           { _ttype = FloatDoubleConst;    }
+            | LongSuffix            { _ttype = LongDoubleConst;     }
+            )?
+        |   ( "..." )=> "..."       { _ttype = VARARGS;     }
+        |   '.'                     { _ttype = DOT; }
+            ( ( Digit )+ ( Exponent )?
+                                    { _ttype = DoubleDoubleConst;   }
+              ( FloatSuffix         { _ttype = FloatDoubleConst;    }
+              | LongSuffix          { _ttype = LongDoubleConst;     }
+              )?
+            )?
+        |   '0' ( '0'..'7' )*       { _ttype = IntOctalConst;       }
+            ( LongSuffix            { _ttype = LongOctalConst;      }
+            | UnsignedSuffix        { _ttype = UnsignedOctalConst;  }
+            )?
+        |   '1'..'9' ( Digit )*     { _ttype = IntIntConst;         }
+            ( LongSuffix            { _ttype = LongIntConst;        }
+            | UnsignedSuffix        { _ttype = UnsignedIntConst;    }
+            )?
+        |   '0' ( 'x' | 'X' ) ( 'a'..'f' | 'A'..'F' | Digit )+
+                                    { _ttype = IntHexConst;         }
+            ( LongSuffix            { _ttype = LongHexConst;        }
+            | UnsignedSuffix        { _ttype = UnsignedHexConst;    }
+            )?
+        ;
+</pre>
+<br>
+	to CPP_parser.g,
+<pre>
+	Number
+	:( ( Digit )+ ( '.' | 'e' | 'E' ) )=> ( Digit )+
+	( '.' ( Digit )* ( Exponent )?{_ttype =FLOATONE;} 
+	| Exponent{_ttype =FLOATTWO;} 
+	)
+	( FloatSuffix     
+	| LongSuffix           
+	)?
+	|( "..." )=> "..."{ _ttype = ELLIPSIS;}
+	|'.'{ _ttype = DOT;}
+	( ( Digit )+ ( Exponent )?{_ttype =FLOATONE;} 
+	  ( FloatSuffix      
+	    | LongSuffix
+	      )?
+	      )?
+	      |'0' ( '0'..'7' )*       
+	      ( LongSuffix            
+	      | UnsignedSuffix
+	      )?{_ttype = OCTALINT;}
+	      |'1'..'9' ( Digit )*     
+	      ( LongSuffix            
+	      | UnsignedSuffix
+	      )?{_ttype = DECIMALINT;}  
+	      |'0' ( 'x' | 'X' ) ( 'a'..'f' | 'A'..'F' | Digit )+
+	      ( LongSuffix            
+	      | UnsignedSuffix
+	      )?{_ttype = HEXADECIMALINT;}   
+	      ;
+</pre>
+<li>	       Change from StdCParser.g,
+<pre>
+PREPROC_DIRECTIVE
+options 
+{ paraphrase = "a line directive"; }
+        :
+        '#'
+	( ( "line" || (( ' ' | '\t' | '\014')+ '0'..'9')) => LineDirective      
+	| (~'\n')*           { setPreprocessingDirective(getText()); }
+	)
+	{  
+	_ttype = Token.SKIP;
+	}
+        ;
+
+	protected LineDirective
+	{
+	boolean oldCountingTokens = countingTokens;
+	countingTokens = false;
+	}
+	:
+	 {
+	 lineObject = new LineObject();
+	 deferredLineCount = 0;
+	 }
+	 ("line")?  //in case the directive started "#line", but not for GNU 
+	 (Space)+
+	 n:Number { lineObject.setLine(Integer.parseInt(n.getText())); } 
+	 (Space)+
+	 (fn:StringLiteral 
+	 {  
+	 try{ 
+	 lineObject.setSource(fn.getText().substring
+	 (1,fn.getText().length()-1)); 
+	 } 
+	 catch (StringIndexOutOfBoundsException e) 
+	 { //not possible
+	 } 
+	 }
+	 | fi:ID{ lineObject.setSource(fi.getText()); }
+	 )?
+	 (Space)*
+	 ("1"{ lineObject.setEnteringFile(true); } )?
+	 (Space)*
+	 ("2"{ lineObject.setReturningToFile(true); } )?
+	 (Space)*
+	 ("3"{ lineObject.setSystemHeader(true); } )?
+	 (Space)*
+	 ("4"{ lineObject.setTreatAsC(true); } )?
+	 (~('\r' | '\n'))*
+	 ("\r\n" | "\r" | "\n")
+	 {
+	 preprocessorInfoChannel.addLineForTokenNumber
+	 (new LineObject(lineObject),new Integer(tokenNumber));
+	 countingTokens = oldCountingTokens;
+	 }
+	 ;
+
+	 to CPP_parser.g, 
+
+	 PREPROC_DIRECTIVE
+	 options 
+	 { paraphrase = "a line directive"; }
+        :
+        '#'
+	( "line" || (( ' ' | '\t' | '\014')+ '0'..'9')) => LineDirective
+
+	  {$setType(ANTLR_USE_NAMESPACE(antlr)Token::SKIP); newline();} 
+        ;
+
+	protected LineDirective
+	{
+	char mydirective[200]; // to hold text from line
+	int x;
+	}
+	:
+	{
+	for (x=0;LA(x)!=10;x+=1)  // to copy text from line
+	{
+	mydirective[x] = char(LA(x));
+	}
+	mydirective[x] = 0;
+	}
+	("line")?  //in case the directive started "#line", but not for GNU
+	(Space)+
+	n:Number //{ lineObject.setLine(Integer.parseInt(n.getText())); } 
+	(Space)+
+	        (~('\r' | '\n'))*
+		{
+		process_hash_line (mydirective, _line); // see main()
+		}
+		        ("\r\n" | "\r" | "\n")
+			;
+
+			to deal with line number and file stuff from preprocessor.
+</pre>
+</ol>
+<li>Convert the parser part of the old grammar file from PCCTS version to 
+ANTLR-2.7.1 version.
+
+<ol>
+<li> A header section in grammar file for ANTLR is used to contain the source 
+code which must be placed before any other generated code. For Java, it is 
+used to specify the imported classes. 
+<p>
+And for C++, header section would be used to specify header files required
+in the generated output, So we change it to:
+<pre>
+header 
+{
+#include "CToken.hpp"
+#include "LineObject.hpp"
+#include "antlr/CharScanner.hpp"
+#include "CPPDictionary.h"
+#include "var_types.h"
+
+extern int this_line;
+extern int debug;  // Set to 1 in main for debugging
+extern void process_hash_line(char *, int);
+
+#define MAX_VAR_LENGTH 50
+<pre>
+<li> ANTLR uses a language indication in its options section within the grammar 
+to indicate what language code it should generate. The default language is 
+"Java". To generate C++ code, we added a C++ indication as follows:
+<pre>
+Options { language="Cpp"; }
+</pre>
+<li>  Change"class CPPParser {...}" to "class CPPParser extends Parser;" and add 
+<pre>
+options
+        {
+        k = 2;
+        exportVocab = STDC;
+        buildAST = false;
+	codeGenMakeSwitchThreshold = 2;
+        codeGenBitsetTestThreshold = 3;
+        }
+</pre>
+<li>  Change"#header" to "header".
+
+<li>  Convert syntactic predicates.
+<p>
+     Change"(A)? B" to "(A)=>B",  
+     "(A)?" not followed by anything else, to "(A)=>A".
+
+<li> Convert the optional clauses.
+<p>
+     Change"{....}"  to "(....)?".
+
+<li>  Convert semantic actions and semantic predicates,
+
+ Change"<<....>>" to "{....}" , "<<....>>?" to "{....}?".
+
+<li> Convert context-guarded predicate,
+<p>
+ Change"(context-guard)?=><<semantic-predicate>>" to 
+ "(context-guard)=>{semantic-predicate}?"
+
+<li>Convert argument and return values for rules,
+<p>
+ Change"rulename[arg1,....,argn] > [v]" to 
+ "rulename[arg1,....,argn] returns [v]" in rule name,
+<p>
+  Change"rulename[arg1,....,argn] > [$v]" to
+  "v = rulename[arg1,....,argn]" in rule body.
+<p>
+   Change"{$v=vAUTO;}" to "{v=vAUTO;}" etc. in rule body.
+   
+<li> Change"#pragma approx" to "options {warnWhenFollowAmbig=false;}:"
+
+<li> Change"LT(param)->getText()"  to "(LT(param)->getText()).data()",
+"LT(1)->getText()"  to "(LT(1)->getText()).data()" etc..
+
+<li>Change"beginEnumDefinition(char *);" to 
+"beginEnumDefinition(const char *);" and change
+<pre>
+{beginEnumDefinition($id->getText());} to
+{beginEnumDefinition((id->getText()).data());}.
+</pre>
+</ol>
+
+<li>Use the converted lexer part of StdCparser.g and the converted parser part 
+of cplusplus.g to construct a new grammar file, CPP_parser.g.
+<p>
+Now we have got the Lexer part for C++ and the Parser part for C++, and both 
+are in ANTLR-2.7.1 version. What we do now is just combining the two parts into 
+a new grammar file, CPP_parser.g. This grammar file is to be input to 
+ANTLR-2.7.1 to generate a parser for C++ in C++. According to the  requirement 
+of ANTLR-2.7.1, the Parser part is in front of the Lexer part.
+<p>
+To make the lexer and parser compatible we used the literal form of
+keywords like "auto", "bool", "break" etc. in the parser part instead
+of using the tokens (AUTO, BOOL, BREAK etc.).  This meant we did not
+need to define the keywords as tokens in the lexer part of the grammar
+file.
+<p>
+This new file was processed through ANTLR in a dos window using,
+<pre>
+"java antlr.Tool CPP_parser.g"
+</pre>
+<li>Make necessary changes to the main.cpp file and support.cpp file.
+
+<ol>
+<li>The linkage of the generated files through ANTLR is also different from 
+PCCTS. The old main.cpp file uses the template:
+<pre>
+"ParserBlackBox<DLGLexer, MyParser, ANTLRToken> p(argv[1]);"
+</pre>
+<p>
+to act as the interface. In the new main.cpp file, we replace it with a 
+function,
+<pre>
+"static void parseFile(const string& f)" 
+</pre>
+<br>
+and add, 
+<pre>
+"parser.init();" 
+</pre>
+<br>
+before the "parser.translation_unit();" in the definition of the function.
+<p>
+The file support.cpp is closely associated with all the other files in parser. 
+So some corresponding changes must be made to it. For example, we have changed,
+
+<li> change"#include <iostream.h>" to "#include <iostream>" etc.
+
+<li>  changeall "LT(n)->getText()" to "(LT(n)->getText()).data()"
+
+<li>  change"Eof" to "EOF"
+
+<li>  changeall "ANTLRParser::" references to "LLkParser::"
+
+<li>  change"isTypeName(char *s)" to "isTypeName(const char *s)"
+
+<li>  change"declaratorID(char *id)" to "declaratorID(const char *id)"
+
+<li>  change
+<pre>
+"classForwardDeclaration(TypeSpecifier ts,DeclSpecifier ds,char *tag)" to
+"classForwardDeclaration(TypeSpecifier ts,DeclSpecifier ds,const char *tag)"
+</pre>
+
+<li> change"beginClassDefinition(TypeSpecifier ts,char *tag)" to
+"beginClassDefinition(TypeSpecifier ts,const char *tag)"
+
+<li> change"enumElement(char *e)" to "enumElement(const char *e)"
+
+<li> change"beginEnumDefinition(char *e)" to 
+"beginEnumDefinition(const char *e)"
+
+<li>change"templateTypeParameter(char  *t)" to
+"templateTypeParameter(const char  *t)"
+</ol>
+
+<li>Create project and compile new parser
+<p>
+Using MSVC++6.00 we loaded CPPLexer.cpp, CPPParser.cpp, Dictionary.cpp, 
+LineObject.cpp, main.cpp and support.cpp with required .h and .hpp files.
+<p>
+However, the new parser failed to parse our data correctly. We had to
+modify the new grammar file, CPP_parser.g, manually to make it produce a 
+parser with the same functionality as the old version as follows.
+
+<ol>
+<li>The context-guarded predicate such as,
+<pre>
+"(SCOPE | ID)=>{qualifiedItemIsOneOf(qiType|qiCtor) && 
+!qualifiedItemIsOneOf(qiType|qiCtor,-1)}?"
+</pre>
+<br>
+does not generate right code via ANTLR-2.7.1. So we have changed it to the 
+semantic predicate,
+<pre>
+"{(!((LA(1)==SCOPE||(LA(1)==ID)))||(qualifiedItemIsOneOf(qiType|qiCtor) && 
+!qualifiedItemIsOneOf(qiType|qiCtor,-1)))}? "
+</pre>
+
+<li>In PCCTS, a semantic predicate can be automatically be hoisted into the 
+prediction decision of other rules but ANTLR-2.7.1 does not do this. What 
+we have done to solve such problem is to copy the corresponding prediction 
+decision in the parser.cpp of old version into the corresponding rules in 
+the new grammar file as semantic predicates to force it to generate the same 
+prediction decision in the same rules in the new parser.cpp.
+
+<li>The optional statement,
+<pre>
+class_head
+:    
+(  "struct"  
+|  "union" 
+|  "class" 
+)    
+(ID ( base_clause)? )?   
+;
+</pre>
+<br>
+did not produce a properly optional construction in the generated code. What 
+we have done to solve the problem is to change this to,
+<pre>
+class_head   
+:
+(  "struct"  
+|  "union" 
+|  "class" 
+)    
+(ID ( base_clause)? )? LCURLY 
+; 
+</pre>
+<br>
+and change "class_head LCURLY" in all the other rules to just "class_head".
+</ol>
+
+<li>Final result
+<p>
+The resulting parser has been used successfully on the pre-processed 
+version (.i files) of a number of source files. However, we cannot guarantee 
+that either all changes required to convert from PCCTS to ANTLR have been 
+mentioned nor that the changes mentioned are all correct or the best solutions. 
+Please treat these notes as an aid to conversion only.
+<p>
+If you find any errors or omissions, please let us know.
+
+</ol>
+
+</body>
+</html>

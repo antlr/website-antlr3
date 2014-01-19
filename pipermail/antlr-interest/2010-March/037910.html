@@ -1,0 +1,238 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Stopping parser and lexer at first error
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Stopping%20parser%20and%20lexer%20at%20first%20error&In-Reply-To=%3C20814e5a1003091553w76e3aeedo8e3deac2f09ec563%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="037909.html">
+   <LINK REL="Next"  HREF="037911.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Stopping parser and lexer at first error</H1>
+    <B>Corrado Campisano</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Stopping%20parser%20and%20lexer%20at%20first%20error&In-Reply-To=%3C20814e5a1003091553w76e3aeedo8e3deac2f09ec563%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Stopping parser and lexer at first error">corrado.campisano at gmail.com
+       </A><BR>
+    <I>Tue Mar  9 15:53:29 PST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="037909.html">[antlr-interest] Unicode lexing
+</A></li>
+        <LI>Next message: <A HREF="037911.html">[antlr-interest] Unicode lexing
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37910">[ date ]</a>
+              <a href="thread.html#37910">[ thread ]</a>
+              <a href="subject.html#37910">[ subject ]</a>
+              <a href="author.html#37910">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi all,
+
+I needed to catch any syntax error (letting the lexer insert/delete chars or
+the parser keeping parsing with the sys.err message only could be very
+dangerous to my application), so I took a look on the reference (which
+reports information not valid anymore) and on the internet and I found
+several hints and articles:
+
+Why the generated parser code tolerates illegal
+expression?&lt;<A HREF="http://www.antlr.org/wiki/pages/viewpage.action?pageId=4554943">http://www.antlr.org/wiki/pages/viewpage.action?pageId=4554943</A>&gt;
+How can I make the lexer exit upon first lexical
+error?&lt;<A HREF="http://www.antlr.org/wiki/pages/viewpage.action?pageId=5341217">http://www.antlr.org/wiki/pages/viewpage.action?pageId=5341217</A>&gt;
+<A HREF="http://www.antlr.org/wiki/display/ANTLR3/Custom+Syntax+Error+Recovery">http://www.antlr.org/wiki/display/ANTLR3/Custom+Syntax+Error+Recovery</A>
+[antlr-interest] I want to throw an exception and stop parse, please!
+&lt;<A HREF="http://www.antlr.org/pipermail/antlr-interest/2009-May/034605.html">http://www.antlr.org/pipermail/antlr-interest/2009-May/034605.html</A>&gt;
+
+It looks to me I found a way to do this, maybe it's worth to publish that on
+the wiki, once validated.
+
+
+I just added the following overrides to my grammar (attached):
+
+@parser::members
+{
+    public class ParserException extends RuntimeException {
+            Object objCurrentInputSymbol = null;
+
+            public ParserException(Object oCurrentInputSymbol) {
+                this.objCurrentInputSymbol = oCurrentInputSymbol;
+            }
+        }
+
+        protected Object recoverFromMismatchedToken(IntStream input, int
+ttype, BitSet follow) throws RecognitionException {
+            System.out.println(&quot;PARSER :
+this.getCurrentInputSymbol(input).toString() : &quot; +
+this.getCurrentInputSymbol(input).toString());
+            System.out.println(&quot;PARSER : this.failed() : &quot; + this.failed());
+            System.out.println(&quot;PARSER : this.getNumberOfSyntaxErrors() : &quot;
++ this.getNumberOfSyntaxErrors());
+            throw new ParserException(this.getCurrentInputSymbol(input));
+        }
+}
+
+@lexer::members
+{
+    public class LexerException extends RuntimeException {
+            RecognitionException recognitionException = null;
+            String strErrorHeader = null;
+            String strErrorMessage = null;
+
+            public LexerException(RecognitionException recExc, String sHead,
+String sMsg) {
+                this.recognitionException = recExc;
+                this.strErrorHeader = sHead;
+                this.strErrorMessage = sMsg;
+
+                System.out.println(&quot;LEXER : ErrorHeader : &quot; + sHead);
+                System.out.println(&quot;LEXER : ErrorMessage : &quot; + sMsg);
+                System.out.println(&quot;LEXER : RecognitionException : &quot; +
+this.recognitionException.toString());
+            }
+        }
+
+
+        public void reportError(RecognitionException recExc) {
+        throw new LexerException(recExc, this.getErrorHeader(recExc),
+getErrorMessage(recExc, this.getTokenNames()));
+    }
+}
+
+
+Then I tested it with a simple class:
+    public static void main(String[] args) {
+        testLexerError();
+        testParserError();
+    }
+    private static void testLexerError() {
+        String strDlToParse = &quot;{CORRADO PIPPO ;feee}&quot;;
+        System.out.println(&quot;TESTING LEXER with : &quot; + strDlToParse);
+        testError(strDlToParse);
+    }
+    private static void testParserError() {
+        String strDlToParse = &quot;{CORRADO PIPPO feee} dhert&quot;;
+        System.out.println(&quot;TESTING PARSER with : &quot; + strDlToParse);
+        testError(strDlToParse);
+    }
+    private static void testError(String strDlToParse) {
+        CommonTree tree=null;
+        String strError = null;
+
+        ANTLRStringStream input = new
+org.antlr.runtime.ANTLRStringStream(strDlToParse);
+        Dl2OwlJavaBLexer lexer = new Dl2OwlJavaBLexer(input);
+        TokenStream tokens = new org.antlr.runtime.CommonTokenStream(lexer);
+        Dl2OwlJavaBParser parser = new Dl2OwlJavaBParser(tokens);
+
+        try {
+            // this may rise an exception
+            // TODO : check why NO EXCEPTION is risen with error &quot;line 1:9
+no viable alternative at character ';'&quot; on inputs like &quot;{CORRADO ;}&quot;
+            eu.servicemix.dl2owl.Dl2OwlJavaBParser.axiom_return ret =
+parser.axiom();
+
+            // TODO : check if this will be executed if no exception rises
+            tree = (CommonTree) ret.getTree();
+
+            printTreeHelper(tree);
+
+        } catch (RecognitionException e) {
+
+            System.out.println(e.toString());
+            e.printStackTrace();
+
+        } catch (RuntimeException e) {
+
+            System.out.println(e.toString());
+            e.printStackTrace();
+        }
+    }
+
+
+The output looks ok, I wonder whether the whole 'trick' is too...
+
+TESTING LEXER with : {CORRADO PIPPO *;*feee}
+LEXER : ErrorHeader : line 1:15
+LEXER : ErrorMessage : no viable alternative at character ';'
+LEXER : RecognitionException : NoViableAltException(';'@[1:1: Tokens : (
+T__37 | T__38 | T__39 | T__40 | HAS_VALUE | ALL_VALUES | SOME_VALUES | DOT |
+HAS_CARD | MIN_CARD | MAX_CARD | NOT | AND | OR | URI_REF | INT_VALUE | WS |
+CTRL_CHAR );])
+eu.servicemix.dl2owl.Dl2OwlJavaBLexer$LexerException
+eu.servicemix.dl2owl.Dl2OwlJavaBLexer$LexerException
+    at
+eu.servicemix.dl2owl.Dl2OwlJavaBLexer.reportError(Dl2OwlJavaBLexer.java:69)
+    at org.antlr.runtime.Lexer.nextToken(Lexer.java:94)
+    at
+org.antlr.runtime.CommonTokenStream.fillBuffer(CommonTokenStream.java:119)
+    at org.antlr.runtime.CommonTokenStream.LT&lt;<A HREF="http://org.antlr.runtime.commontokenstream.lt/">http://org.antlr.runtime.commontokenstream.lt/</A>&gt;
+(CommonTokenStream.java:238)
+    at
+eu.servicemix.dl2owl.Dl2OwlJavaBParser.axiom(Dl2OwlJavaBParser.java:110)
+    at
+eu.servicemix.dl2owl.CommonTreeHelper.testError(CommonTreeHelper.java:140)
+    at
+eu.servicemix.dl2owl.CommonTreeHelper.testLexerError(CommonTreeHelper.java:121)
+    at eu.servicemix.dl2owl.CommonTreeHelper.main(CommonTreeHelper.java:113)
+
+TESTING PARSER with : {CORRADO PIPPO feee} *dhert*
+PARSER : this.getCurrentInputSymbol(input).toString() :
+[@8,21:25='dhert',&lt;7&gt;,1:21]
+PARSER : this.failed() : false
+PARSER : this.getNumberOfSyntaxErrors() : 0
+eu.servicemix.dl2owl.Dl2OwlJavaBParser$ParserException
+eu.servicemix.dl2owl.Dl2OwlJavaBParser$ParserException
+    at
+eu.servicemix.dl2owl.Dl2OwlJavaBParser.recoverFromMismatchedToken(Dl2OwlJavaBParser.java:97)
+    at org.antlr.runtime.BaseRecognizer.match(BaseRecognizer.java:115)
+    at
+eu.servicemix.dl2owl.Dl2OwlJavaBParser.axiom(Dl2OwlJavaBParser.java:232)
+    at
+eu.servicemix.dl2owl.CommonTreeHelper.testError(CommonTreeHelper.java:140)
+    at
+eu.servicemix.dl2owl.CommonTreeHelper.testParserError(CommonTreeHelper.java:126)
+    at eu.servicemix.dl2owl.CommonTreeHelper.main(CommonTreeHelper.java:114)
+
+
+Any comment really appreciated!!
+
+Corrado
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: Dl2OwlJavaB.g
+Type: application/octet-stream
+Size: 21621 bytes
+Desc: not available
+Url : <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20100310/6844f724/attachment.obj">http://www.antlr.org/pipermail/antlr-interest/attachments/20100310/6844f724/attachment.obj</A> 
+</PRE>
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="037909.html">[antlr-interest] Unicode lexing
+</A></li>
+	<LI>Next message: <A HREF="037911.html">[antlr-interest] Unicode lexing
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37910">[ date ]</a>
+              <a href="thread.html#37910">[ thread ]</a>
+              <a href="subject.html#37910">[ subject ]</a>
+              <a href="author.html#37910">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

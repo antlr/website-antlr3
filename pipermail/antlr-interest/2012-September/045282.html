@@ -1,0 +1,132 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Follow up to hoisted predicates and local	variables
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Follow%20up%20to%20hoisted%20predicates%20and%20local%0A%09variables&In-Reply-To=%3C499228A5-1575-4925-99E9-628D19F96F68%40lischke-online.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="045262.html">
+   <LINK REL="Next"  HREF="045283.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Follow up to hoisted predicates and local	variables</H1>
+    <B>Mike Lischke</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Follow%20up%20to%20hoisted%20predicates%20and%20local%0A%09variables&In-Reply-To=%3C499228A5-1575-4925-99E9-628D19F96F68%40lischke-online.de%3E"
+       TITLE="[antlr-interest] Follow up to hoisted predicates and local	variables">mike at lischke-online.de
+       </A><BR>
+    <I>Mon Sep 17 05:08:19 PDT 2012</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="045262.html">[antlr-interest] Follow up to hoisted predicates and local	variables
+</A></li>
+        <LI>Next message: <A HREF="045283.html">[antlr-interest] Follow up to hoisted predicates and local	variables
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#45282">[ date ]</a>
+              <a href="thread.html#45282">[ thread ]</a>
+              <a href="subject.html#45282">[ subject ]</a>
+              <a href="author.html#45282">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hey Jim, Jesse, Juancarlo,
+
+thank you all for your valuable input.
+
+&gt;<i> Create a rule that lexes /*
+</I>&gt;<i> Create an input-&gt;mark at the start of this rule
+</I>&gt;<i> Using hand crafted code, walk through the input stream
+</I>&gt;<i> If a normal comment, then you are just finding the matching */ (handle
+</I>&gt;<i> embedded)
+</I>&gt;<i> If a !12345 comment, then
+</I>&gt;<i>   directly change the /*!12345 to spaces in the input stream,
+</I>&gt;<i>   find the matching */ and change those to spaces
+</I>&gt;<i>   input-&gt;rewind to the mark you created
+</I>&gt;<i>   exit the rule
+</I>
+
+Not a bad idea, as it is attacking the problem at a low level. However, I'd like to avoid including target specific code as much as possible (or if included, like in predicates, then in a way that's easy to port).
+
+Additionally, I didn't mention some further facts about those version comments. There's a third form /*! ... */ which is like the one with a version number, but always matches (so the comment decoration is always removed and the content handled as normal text. Additionally, there can be one level of block comment nesting, but then version comments are treated like normal block comments. After letting all this and your input sink in I was able to come up with a solution this morning. For reference if anyone is later searching for a similar solution:
+
+COMMENT_RULE:
+	// Comment introducer intentionally written as two chars, to avoid trouble in generated lexer
+	// when the source line is quoted in a block comment there. Same applies for the other cases below.
+	'/' '*' BLOCK_COMMENT
+	| VERSION_COMMENT_END
+	| POUND_COMMENT
+	| {LA(3) == ' ' || LA(3) == '\t' || LA(3) == '\n' || LA(3) == '\r'}? =&gt; DASHDASH_COMMENT
+;
+
+// There are 3 types of block comments:
+// /* ... */ - The standard multi line comment.
+// /*! ... */ - A comment used to mask code for other clients. In MySQL the content is handled as normal code.
+// /*!12345 ... */ - Same as the previous one except code is only used when the given number is a lower value
+//                   than the current server version (specifying so the minimum server version the code can run with).
+fragment BLOCK_COMMENT options{ greedy = false; }:
+	{!in_version_comment}? VERSION_COMMENT
+	| MULTILINE_COMMENT
+;
+
+fragment VERSION_COMMENT
+@init { matched_version = true; }
+:<i>
+</I>	LOGICAL_NOT_OPERATOR
+		(
+			v = INTEGER { matched_version = check_version($v); } VERSION_COMMENT_TAIL
+			| VERSION_COMMENT_TAIL
+		)
+;
+
+fragment VERSION_COMMENT_TAIL:
+	{ !matched_version }? =&gt;
+		( options { greedy = false; }:
+			('/*' MULTILINE_COMMENT)  // One level of block comment nesting is allowed for versioned comments.
+			| . 
+		)* '*''/' { $type = MULTILINE_COMMENT; $channel = 98; }
+	| { $type = VERSION_COMMENT; $channel = 98; in_version_comment = true; }
+;
+
+fragment MULTILINE_COMMENT:	( options { greedy = false; }: . )* '*''/' { $channel = 98; };
+
+fragment VERSION_COMMENT_END:
+	{in_version_comment}? =&gt; '*''/' { $channel = 98; in_version_comment = false; }
+	| // Intentionally left empty to make the gated semantic predicate work.
+;
+
+fragment POUND_COMMENT:			'#' ~('\n'|'\r')* '\r'? '\n' { $channel = 98; };
+fragment DASHDASH_COMMENT:		'--' (' ' | '\t' | '\n' | '\r') ~('\n'|'\r')* ('\r' | '\n' | EOF) { $channel = 98; };
+
+
+in_version_comment and matched_version are both lexer member vars. This is part of my upcomming complete MySQL grammar.
+
+Mike
+-- 
+www.soft-gems.net
+
+
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="045262.html">[antlr-interest] Follow up to hoisted predicates and local	variables
+</A></li>
+	<LI>Next message: <A HREF="045283.html">[antlr-interest] Follow up to hoisted predicates and local	variables
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#45282">[ date ]</a>
+              <a href="thread.html#45282">[ thread ]</a>
+              <a href="subject.html#45282">[ subject ]</a>
+              <a href="author.html#45282">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,167 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Reading a string of fixed size
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Reading%20a%20string%20of%20fixed%20size&In-Reply-To=%3C924F9C83-1C27-450C-9E2E-43EF11484930%40lip6.fr%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="023489.html">
+   <LINK REL="Next"  HREF="023464.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Reading a string of fixed size</H1>
+    <B>Alexandre Hamez</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Reading%20a%20string%20of%20fixed%20size&In-Reply-To=%3C924F9C83-1C27-450C-9E2E-43EF11484930%40lip6.fr%3E"
+       TITLE="[antlr-interest] Reading a string of fixed size">alexandre.hamez at lip6.fr
+       </A><BR>
+    <I>Mon Aug 27 11:22:23 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="023489.html">[antlr-interest] Reading a string of fixed size
+</A></li>
+        <LI>Next message: <A HREF="023464.html">[antlr-interest]  caseSensitive=false?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#23498">[ date ]</a>
+              <a href="thread.html#23498">[ thread ]</a>
+              <a href="subject.html#23498">[ subject ]</a>
+              <a href="author.html#23498">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Thanks, you help me a lot! I had to change a few things in order to  
+make it run:
+
+First, the value passed to FIXED_LENGTH_STRING must be computed in an  
+action directly after the recognition of NUMBER.
+
+CAMI_STRING
+	@init{int nbToRead = 0;}
+     	:
+	NUMBER {nbToRead = Integer.parseInt($NUMBER.text);}
+	':'
+	fs=FIXED_LENGTH_STRING[nbToRead]
+	{
+		setText($fs.text);
+	}
+	;
+
+The boolean expression in the predicate must not change the value  
+tested because this part is called several time in the generated  
+code, in the same loop. So I've decremented the value of len after  
+each consumption of a character.
+
+fragment
+FIXED_LENGTH_STRING
+	[int len]
+	:
+	( { len &gt; 0 }?=&gt; .{len--;})+
+	;
+
+
+On 27 ao&#251;t 07, at 18:41, Thomas Brandon wrote:
+
+&gt;<i> On 8/28/07, Alexandre Hamez &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">alexandre.hamez at lip6.fr</A>&gt; wrote:
+</I>&gt;&gt;<i> Thanks for your interest. But the fact is that I want to create a
+</I>&gt;&gt;<i> Token with exactly NUMBER characters. The following characters will
+</I>&gt;&gt;<i> match for other token. It's not an error if there are characters
+</I>&gt;&gt;<i> which follow. Its mean that I can have something like that:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>         CAMI_STRING (',' CAMI_STRING)*
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> ( for newcomers: CAMI_STRING : NUMBER ':' STRING where the size of
+</I>&gt;&gt;<i> STRING is given by NUMBER).
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Moreover, as a strange side effect of the following code, newlines
+</I>&gt;&gt;<i> make the parser completely mad:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> CAMI_STRING
+</I>&gt;&gt;&gt;<i>       :
+</I>&gt;&gt;&gt;<i>       NUMBER ':'
+</I>&gt;&gt;&gt;<i>       {
+</I>&gt;&gt;&gt;<i>               // Get the current position in stream
+</I>&gt;&gt;&gt;<i>               int start  = input.getCharPositionInLine();
+</I>&gt;&gt;&gt;<i>               // Computing the position of the last character of  
+</I>&gt;&gt;&gt;<i> the STRING to
+</I>&gt;&gt;&gt;<i> be read
+</I>&gt;&gt;&gt;<i>               int end = start + Integer.parseInt($NUMBER.text) - 1;
+</I>&gt;&gt;&gt;<i>               // Set the value of the returned value to STRING
+</I>&gt;&gt;&gt;<i>               setText(input.substring(start,end));
+</I>&gt;&gt;&gt;<i>               // Update the position in the stream
+</I>&gt;&gt;&gt;<i>               input.seek(end+1);
+</I>&gt;&gt;&gt;<i>       }
+</I>&gt;&gt;&gt;<i>       ;
+</I>&gt;<i> Seek takes an absolute index in the stream so you should get the
+</I>&gt;<i> location from input.index() rather than input.getCharPositionInLine().
+</I>&gt;<i> Also, you are going to get exceptions calling substring if a length is
+</I>&gt;<i> specified that extends past the end of the stream. You could call
+</I>&gt;<i> seek, which won't seek past the end of the stream and then check the
+</I>&gt;<i> resulting input to determine how many characters could actually be
+</I>&gt;<i> found. Or repeatedly call consume and check for EOF.
+</I>&gt;<i> Or a better solution might be to use predicates to handle the
+</I>&gt;<i> matching. Something like:
+</I>&gt;<i> CAMI_STRING
+</I>&gt;<i>     :   NUMBER ':' fs=FIXED_LENGTH_STRING[Integer.parseInt 
+</I>&gt;<i> ($NUMBER.text)]
+</I>&gt;<i>         { setText($fs.text); }
+</I>&gt;<i>     ;
+</I>&gt;<i>
+</I>&gt;<i> fragment
+</I>&gt;<i> FIXED_LENGTH_STRING[int len]
+</I>&gt;<i>     :   ( { len-- &gt; 0 }?=&gt; .)+ { len == 0 }?
+</I>&gt;<i>     ;
+</I>&gt;<i> should work. Or you may want to replace the second predicate in
+</I>&gt;<i> FIXED_LENGTH_STRING with code to record an error if all characters
+</I>&gt;<i> could not be matched, rather than handling the resulting predicate
+</I>&gt;<i> failure exception.
+</I>&gt;<i>
+</I>&gt;<i> Tom.
+</I>&gt;<i>
+</I>
+------------------------------------------------------------------------ 
+---
+Alexandre Hamez   LIP6 - MoVe / EPITA - LRDE
+LIP6: tel: +33 1 44 27 31 92  / Bureau 818
+104 Avenue du Pr&#233;sident Kennedy 75016 Paris
+<A HREF="http://www-src.lip6.fr/~Alexandre.Hamez">http://www-src.lip6.fr/~Alexandre.Hamez</A>
+
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: smime.p7s
+Type: application/pkcs7-signature
+Size: 2429 bytes
+Desc: not available
+Url : <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20070827/d57d25de/attachment.bin">http://www.antlr.org/pipermail/antlr-interest/attachments/20070827/d57d25de/attachment.bin</A> 
+</PRE>
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="023489.html">[antlr-interest] Reading a string of fixed size
+</A></li>
+	<LI>Next message: <A HREF="023464.html">[antlr-interest]  caseSensitive=false?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#23498">[ date ]</a>
+              <a href="thread.html#23498">[ thread ]</a>
+              <a href="subject.html#23498">[ subject ]</a>
+              <a href="author.html#23498">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

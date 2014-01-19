@@ -1,0 +1,514 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Re: Help with Java grammar
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20Help%20with%20Java%20grammar&In-Reply-To=c2kr5e%2Bnife%40eGroups.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="006794.html">
+   <LINK REL="Next"  HREF="006859.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Re: Help with Java grammar</H1>
+    <B>cliftonccraig</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20Help%20with%20Java%20grammar&In-Reply-To=c2kr5e%2Bnife%40eGroups.com"
+       TITLE="[antlr-interest] Re: Help with Java grammar">ccc at icsaward.com
+       </A><BR>
+    <I>Tue Mar  9 11:18:01 PST 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="006794.html">[antlr-interest] Re: Help with Java grammar
+</A></li>
+        <LI>Next message: <A HREF="006859.html">[antlr-interest] Re: Help with Java grammar
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6803">[ date ]</a>
+              <a href="thread.html#6803">[ thread ]</a>
+              <a href="subject.html#6803">[ subject ]</a>
+              <a href="author.html#6803">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I found some issues with my AppendInputStream. I'm including my
+revised code. Once again, can anyone chime in and show me where I'm
+re-inventing the wheel? Is there a simpler way to do what I'm doing?
+
+Cliff
+
+    static class AppendInputStream extends FilterInputStream
+    {
+        InputStream additional;
+        private static final int EOF = -1;
+        private boolean endOfFirst = false, firstMarked = false,
+secondMarked = false;
+        private int markCount = 0, markLimit = 0;
+
+        public AppendInputStream(InputStream in, String additional)
+        {
+            this(in,additional.getBytes());
+        }
+
+        public AppendInputStream(InputStream in, byte[] add)
+        {
+            this(in, new ByteArrayInputStream(add));
+        }
+
+        public AppendInputStream(InputStream in, InputStream add)
+        {
+            super(in);
+            additional = add;
+        }
+
+        public int read() throws IOException
+        {
+            int val = EOF;
+            if (false==endOfFirst)
+            {
+                val = super.read();
+            }
+            if (EOF != val)
+            {
+                trackMarking(1);
+                return val;
+            }
+            else
+            {
+                endOfFirst = true;
+                conditionallyMark();
+                return additional.read();
+            }
+        }
+
+        public int read(byte b[]) throws IOException
+        {
+            return read(b, 0, b.length);
+        }
+
+        public int read(byte b[], int off, int len) throws IOException
+        {
+            if(off + len &gt; b.length)
+                throw new IndexOutOfBoundsException(&quot;Cannot read &quot; +
+len + &quot; bytes from offset &quot; + off + &quot; in array of length &quot; + b.length);
+            int val = EOF;
+            if (false==endOfFirst)
+            {
+                val = super.read(b, off, len);
+            }
+            if (EOF != val)
+            {
+                trackMarking(val);
+                if( len &gt; val )
+                {
+                    endOfFirst = true;
+                    val += readAdditional(b, val + off, len - val);
+                }
+            }
+            else
+            {
+                endOfFirst = true;
+                val = readAdditional(b, off, len);
+            }
+            return val;
+        }
+
+        /**
+         * Keep track of the # of bytes read into our marking.
+         * @param val
+         */
+        private void trackMarking(int val)
+        {
+            if(firstMarked) markCount += val;
+        }
+
+        private int readAdditional(byte[] b, int off, int len) throws
+IOException
+        {
+            conditionallyMark();
+            return additional.read(b, off, len);
+        }
+
+        private void conditionallyMark()
+        {
+            //Just-in-time marking. If the 1st is marked but the 2nd
+hasn't been marked
+            //and have haven't read past our mark limit we mark it
+right before our 1st
+            //attempt to read into it.
+            if(firstMarked &amp;&amp; false==secondMarked &amp;&amp; markLimit -
+markCount &gt; 0)
+            {
+                additional.mark(markLimit - markCount);
+                secondMarked = true;
+            }
+        }
+
+        public int available() throws IOException
+        {
+            if (endOfFirst)
+            {
+                return additional.available();
+            }
+            else
+            {
+                return super.available();
+            }
+        }
+
+        public void close() throws IOException
+        {
+            super.close();
+            additional.close();
+        }
+
+        public synchronized void mark(int readlimit)
+        {
+            markLimit = readlimit;
+            if(endOfFirst &amp;&amp; false==firstMarked &amp;&amp; false==secondMarked)
+            {
+                additional.mark(readlimit);
+                secondMarked = true;
+            }
+            else
+            {
+                super.mark(readlimit);
+                firstMarked = true;
+            }
+        }
+
+        public boolean markSupported()
+        {
+            return super.markSupported() &amp;&amp; additional.markSupported();
+        }
+
+        public synchronized void reset() throws IOException
+        {
+            if(firstMarked)
+            {
+                super.reset();
+                firstMarked = false;
+            }
+            markCount = 0; markLimit = 0;
+
+            if (secondMarked)
+            {
+                additional.reset();
+            }
+        }
+
+        public long skip(long n) throws IOException
+        {
+            if(endOfFirst)
+                return additional.skip(n);
+            else
+                return super.skip(n);
+        }
+    }
+
+--- In <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>, &quot;cliftonccraig&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">ccc at i...</A>&gt; wrote:
+&gt;<i> Thanks Ric,
+</I>&gt;<i> 
+</I>&gt;<i> Still no luck. I tried your suggestion and while it went through the
+</I>&gt;<i> ANTLR generator ok it didnt stop the OutOfMemory error. It appears my
+</I>&gt;<i> parser is still getting hung up on the last line being a single
+</I>&gt;<i> comment. I'm trying another ugly solution to my problem that is not
+</I>&gt;<i> ANTLR related and maybe someone can help me here. I am trying to
+</I>&gt;<i> append a newline character to each stream fed into my parser but I'm
+</I>&gt;<i> not satisfied with what I have. I created an AppendInputStream that
+</I>&gt;<i> extends a filtered stream. I need this to perform as fast as possible
+</I>&gt;<i> and I didn't find anything in the JDK that looked like it would help.
+</I>&gt;<i> Basically what I want to do is wrap the FileInputStream that I give my
+</I>&gt;<i> parser in my custom AppendInputStream and hand it off like so:
+</I>&gt;<i> Reader r = new InputStreamReader( new AppendInputStream( new
+</I>&gt;<i> FileInputStream(javaFile), &quot;\r\n&quot; ) )
+</I>&gt;<i> 
+</I>&gt;<i> It sounds like overkill but I just don't see any easier way to do
+</I>&gt;<i> this. I thought I saw a way to chain or concatenate to InputStreams
+</I>&gt;<i> together as one in some book or article but I can't remember. Please,
+</I>&gt;<i> could someone help me with either solution. I feel so stumped.
+</I>&gt;<i> 
+</I>&gt;<i> Cliff
+</I>&gt;<i> 
+</I>&gt;<i> The source to my AppendInputStream is below:
+</I>&gt;<i>     private static class AppendInputStream extends FilterInputStream
+</I>&gt;<i>     {
+</I>&gt;<i>         InputStream additional;
+</I>&gt;<i>         private static final int EOF = -1;
+</I>&gt;<i>         private boolean endOfFirst = false, firstMarked = false,
+</I>&gt;<i> secondMarked = false;
+</I>&gt;<i>         private int markCount = 0, markLimit = 0;
+</I>&gt;<i> 
+</I>&gt;<i>         public AppendInputStream(InputStream in, String additional)
+</I>&gt;<i>         {
+</I>&gt;<i>             this(in,additional.getBytes());
+</I>&gt;<i>         }
+</I>&gt;<i> 
+</I>&gt;<i>         protected AppendInputStream(InputStream in, byte[] add)
+</I>&gt;<i>         {
+</I>&gt;<i>             this(in, new ByteArrayInputStream(add));
+</I>&gt;<i>         }
+</I>&gt;<i> 
+</I>&gt;<i>         protected AppendInputStream(InputStream in, InputStream add)
+</I>&gt;<i>         {
+</I>&gt;<i>             super(in);
+</I>&gt;<i>             additional = add;
+</I>&gt;<i>         }
+</I>&gt;<i> 
+</I>&gt;<i>         public int read() throws IOException
+</I>&gt;<i>         {
+</I>&gt;<i>             int val = EOF;
+</I>&gt;<i>             if (false==endOfFirst)
+</I>&gt;<i>             {
+</I>&gt;<i>                 val = super.read();
+</I>&gt;<i>             }
+</I>&gt;<i>             if (EOF != val)
+</I>&gt;<i>             {
+</I>&gt;<i>                 trackMarking(1);
+</I>&gt;<i>                 return val;
+</I>&gt;<i>             }
+</I>&gt;<i>             else
+</I>&gt;<i>             {
+</I>&gt;<i>                 endOfFirst = true;
+</I>&gt;<i>                 conditionallyMark();
+</I>&gt;<i>                 return additional.read();
+</I>&gt;<i>             }
+</I>&gt;<i>         }
+</I>&gt;<i> 
+</I>&gt;<i>         public int read(byte b[]) throws IOException
+</I>&gt;<i>         {
+</I>&gt;<i>             return read(b, 0, b.length);
+</I>&gt;<i>         }
+</I>&gt;<i> 
+</I>&gt;<i>         public int read(byte b[], int off, int len) throws IOException
+</I>&gt;<i>         {
+</I>&gt;<i>             if(off + len &gt; b.length)
+</I>&gt;<i>                 throw new IndexOutOfBoundsException(&quot;Cannot read &quot; +
+</I>&gt;<i> len + &quot; bytes from offset &quot; + off + &quot; in array of length &quot; +
+</I>&gt;<i> b.length);
+</I>&gt;<i>             int val = EOF;
+</I>&gt;<i>             if (false==endOfFirst)
+</I>&gt;<i>             {
+</I>&gt;<i>                 val = super.read(b, off, len);
+</I>&gt;<i>                 trackMarking(val);
+</I>&gt;<i>             }
+</I>&gt;<i>             if (EOF != val)
+</I>&gt;<i>             {
+</I>&gt;<i>                 if( len &gt; val )
+</I>&gt;<i>                 {
+</I>&gt;<i>                     endOfFirst = true;
+</I>&gt;<i>                     val += readAdditional(b, val + off, len - val);
+</I>&gt;<i>                 }
+</I>&gt;<i>             }
+</I>&gt;<i>             else
+</I>&gt;<i>             {
+</I>&gt;<i>                 endOfFirst = true;
+</I>&gt;<i>                 val = readAdditional(b, 0, b.length);
+</I>&gt;<i>             }
+</I>&gt;<i>             return val;
+</I>&gt;<i>         }
+</I>&gt;<i> 
+</I>&gt;<i>         /**
+</I>&gt;<i>          * Keep track of the # of bytes read into our marking.
+</I>&gt;<i>          * @param val
+</I>&gt;<i>          */
+</I>&gt;<i>         private void trackMarking(int val)
+</I>&gt;<i>         {
+</I>&gt;<i>             if(firstMarked) markCount += val;
+</I>&gt;<i>         }
+</I>&gt;<i> 
+</I>&gt;<i>         private int readAdditional(byte[] b, int off, int len) throws
+</I>&gt;<i> IOException
+</I>&gt;<i>         {
+</I>&gt;<i>             conditionallyMark();
+</I>&gt;<i>             return additional.read(b, off, len);
+</I>&gt;<i>         }
+</I>&gt;<i> 
+</I>&gt;<i>         private void conditionallyMark()
+</I>&gt;<i>         {
+</I>&gt;<i>             //Just-in-time marking. If the 1st is marked but the 2nd
+</I>&gt;<i> hasn't been marked
+</I>&gt;<i>             //and have haven't read past our mark limit we mark it
+</I>&gt;<i> right before our 1st
+</I>&gt;<i>             //attempt to read into it.
+</I>&gt;<i>             if(firstMarked &amp;&amp; false==secondMarked &amp;&amp; markLimit -
+</I>&gt;<i> markCount &gt; 0)
+</I>&gt;<i>             {
+</I>&gt;<i>                 additional.mark(markLimit - markCount);
+</I>&gt;<i>                 secondMarked = true;
+</I>&gt;<i>             }
+</I>&gt;<i>         }
+</I>&gt;<i> 
+</I>&gt;<i>         public int available() throws IOException
+</I>&gt;<i>         {
+</I>&gt;<i>             if (endOfFirst)
+</I>&gt;<i>             {
+</I>&gt;<i>                 return additional.available();
+</I>&gt;<i>             }
+</I>&gt;<i>             else
+</I>&gt;<i>             {
+</I>&gt;<i>                 return super.available();
+</I>&gt;<i>             }
+</I>&gt;<i>         }
+</I>&gt;<i> 
+</I>&gt;<i>         public void close() throws IOException
+</I>&gt;<i>         {
+</I>&gt;<i>             super.close();
+</I>&gt;<i>             additional.close();
+</I>&gt;<i>         }
+</I>&gt;<i> 
+</I>&gt;<i>         public synchronized void mark(int readlimit)
+</I>&gt;<i>         {
+</I>&gt;<i>             markLimit = readlimit;
+</I>&gt;<i>             if(endOfFirst &amp;&amp; false==firstMarked &amp;&amp;
+</I>&gt;<i> false==secondMarked)
+</I>&gt;<i>             {
+</I>&gt;<i>                 additional.mark(readlimit);
+</I>&gt;<i>                 secondMarked = true;
+</I>&gt;<i>             }
+</I>&gt;<i>             else
+</I>&gt;<i>             {
+</I>&gt;<i>                 super.mark(readlimit);
+</I>&gt;<i>                 firstMarked = true;
+</I>&gt;<i>             }
+</I>&gt;<i>         }
+</I>&gt;<i> 
+</I>&gt;<i>         public boolean markSupported()
+</I>&gt;<i>         {
+</I>&gt;<i>             return super.markSupported() &amp;&amp; additi
+</I>&gt;<i> onal.markSupported();
+</I>&gt;<i>         }
+</I>&gt;<i> 
+</I>&gt;<i>         public synchronized void reset() throws IOException
+</I>&gt;<i>         {
+</I>&gt;<i>             if(firstMarked)
+</I>&gt;<i>             {
+</I>&gt;<i>                 super.reset();
+</I>&gt;<i>                 firstMarked = false;
+</I>&gt;<i>             }
+</I>&gt;<i>             markCount = 0; markLimit = 0;
+</I>&gt;<i> 
+</I>&gt;<i>             if (secondMarked)
+</I>&gt;<i>             {
+</I>&gt;<i>                 additional.reset();
+</I>&gt;<i>             }
+</I>&gt;<i>         }
+</I>&gt;<i> 
+</I>&gt;<i>         public long skip(long n) throws IOException
+</I>&gt;<i>         {
+</I>&gt;<i>             if(endOfFirst)
+</I>&gt;<i>                 return additional.skip(n);
+</I>&gt;<i>             else
+</I>&gt;<i>                 return super.skip(n);
+</I>&gt;<i>         }
+</I>&gt;<i>     }
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> --- In <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>, Ric Klaren &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">klaren at c...</A>&gt; wrote:
+</I>&gt;<i> &gt; On Tue, Mar 09, 2004 at 02:08:09PM -0000, cliftonccraig wrote:
+</I>&gt;<i> &gt; &gt; I just tried this:
+</I>&gt;<i> &gt; &gt; SL_COMMENT
+</I>&gt;<i> &gt; &gt; 	:	&quot;//&quot;
+</I>&gt;<i> &gt; &gt; 		(~('\n'|'\r'))* ('\n'|'\r'('\n')?)
+</I>&gt;<i> &gt; &gt; 		{
+</I>&gt;<i> &gt; &gt; //*CCC- Allow comments to flow through to the rewrite engine
+</I>&gt;<i> &gt; &gt; //		    $setType(Token.SKIP);
+</I>&gt;<i> &gt; &gt; 		    newline();
+</I>&gt;<i> &gt; &gt; 		}
+</I>&gt;<i> &gt; &gt; 		|
+</I>&gt;<i> &gt; &gt; 		&quot;//&quot; (~('\n'|'\r'))*
+</I>&gt;<i> &gt; &gt; 	;
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; How about this? 
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; SL_COMMENT
+</I>&gt;<i> &gt;    :  &quot;//&quot; 
+</I>&gt;<i> &gt;       ( ~('\n'|'\r') )*                         // not a newline
+</I>&gt;<i> part...
+</I>&gt;<i> &gt;       ( ('\n'|'\r'('\n')? { newline(); } ) )?   // optional newline
+</I>&gt;<i> &gt;    ;
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; If this gives trouble generate the lexer with -traceLexer and see
+</I>&gt;<i> where it
+</I>&gt;<i> &gt; gets stuck. (or check with debugger)
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; There's a few dirty tricks you can do with EOF checks that work by
+</I>&gt;<i> checking
+</I>&gt;<i> &gt; LA(i) for EOF in the init action of a closure rule, but I don't
+</I>&gt;<i> think these
+</I>&gt;<i> &gt; should be necessary for this. (unless I'm missing the point
+</I>&gt;<i> somewhere)
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; &gt; And I got an warning saying:
+</I>&gt;<i> &gt; &gt; D:\scm\tools\parsers\grammar\ANTLR\java.g:1235: warning:lexical
+</I>&gt;<i> &gt; &gt; nondeterminism between alts 1 and 2 of block upon
+</I>&gt;<i> &gt; &gt; D:\scm\tools\parsers\grammar\ANTLR\java.g:1235:     k==1:'/'
+</I>&gt;<i> &gt; &gt; D:\scm\tools\parsers\grammar\ANTLR\java.g:1235:     k==2:'/'
+</I>&gt;<i> &gt; &gt; D:\scm\tools\parsers\grammar\ANTLR\java.g:1235:    
+</I>&gt;<i> &gt; &gt; k==3:'\u0003'..'\t','\u000b','\u000c','\u000e'..'\uffff'
+</I>&gt;<i> &gt; &gt; D:\scm\tools\parsers\grammar\ANTLR\java.g:1235:    
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> k==4:&lt;end-of-token&gt;,'\u0003'..'\t','\u000b','\u000
+</I>&gt;<i> c','\u000e'..'\uffff'
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Don't worry too much about warnings like these ;) Read the source
+</I>&gt;<i> for what
+</I>&gt;<i> &gt; antlr generated for the rule and it often becomes obvious if the
+</I>&gt;<i> &gt; parser/lexer will do the right thing. (and it helps in getting a
+</I>&gt;<i> feel for
+</I>&gt;<i> &gt; things)
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Cheers,
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Ric
+</I>&gt;<i> &gt; -- 
+</I>&gt;<i> &gt;
+</I>&gt;<i> -----+++++****************************************
+</I>&gt;<i> *************+++++++++-------
+</I>&gt;<i> &gt;     ---- Ric Klaren ----- <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">j.klaren at u...</A> ----- +31 53 4893722  ----
+</I>&gt;<i> &gt;
+</I>&gt;<i> -----+++++****************************************
+</I>&gt;<i> *************+++++++++-------
+</I>&gt;<i> &gt;  Time what is time - I wish I knew how to tell You why - It hurts to
+</I>&gt;<i> know -
+</I>&gt;<i> &gt;           Aren't we machines - Time what is time - Unlock the door
+</I>&gt;<i> &gt;                - And see the truth - Then time is time again
+</I>&gt;<i> &gt;                 From: 'Time what is Time' by Blind Guardian
+</I>
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+     <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+     <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+     <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="006794.html">[antlr-interest] Re: Help with Java grammar
+</A></li>
+	<LI>Next message: <A HREF="006859.html">[antlr-interest] Re: Help with Java grammar
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6803">[ date ]</a>
+              <a href="thread.html#6803">[ thread ]</a>
+              <a href="subject.html#6803">[ subject ]</a>
+              <a href="author.html#6803">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,237 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Island grammar for reading shell commands
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Island%20grammar%20for%20reading%20shell%20commands&In-Reply-To=%3C19700.26846.836510.537929%40blake.zopyra.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="040151.html">
+   <LINK REL="Next"  HREF="040177.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Island grammar for reading shell commands</H1>
+    <B>Bill Lear</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Island%20grammar%20for%20reading%20shell%20commands&In-Reply-To=%3C19700.26846.836510.537929%40blake.zopyra.com%3E"
+       TITLE="[antlr-interest] Island grammar for reading shell commands">rael at zopyra.com
+       </A><BR>
+    <I>Mon Nov 29 19:00:46 PST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="040151.html">[antlr-interest] Use another rule template's result
+</A></li>
+        <LI>Next message: <A HREF="040177.html">[antlr-interest] Island grammar for reading shell commands
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40161">[ date ]</a>
+              <a href="thread.html#40161">[ thread ]</a>
+              <a href="subject.html#40161">[ subject ]</a>
+              <a href="author.html#40161">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I've followed the sensible advice to create an island grammar to deal
+with parsing an unstructured shell command along with more structured
+input.  Unfortunately, when I follow the examples as given in the
+Antlr examples zip file, I get very close, but then either a NULL
+pointer exception bites, or I can only parse one line of &quot;island&quot;
+input --- I can't figure out how to return control back to the &quot;sea&quot;
+parser and have it read more input.
+
+I've tried to boil it down to very essential form.  If someone could have
+a look, I'd appreciate it (I've been working on it for hours and can't
+quite get it to work).
+
+Below my sig are the details.
+
+Many thanks in advance for any help you can offer.
+
+
+Bill
+
+Here is some sample input:
+
+shell ls /var/log
+cleanup
+cleanlog
+cleanup -timeout 20
+cleanlog -timeout 20
+cleanup -timeout 20 -notify <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">wlear at paypal.com</A>
+cleanlog -timeout 20 -notify <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">wlear at paypal.com</A>
+cleanup -timeout 20 -notify &quot;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">wlear at paypal.com</A> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">foo at bar.com</A>&quot;
+cleanlog -timeout 20 -notify &quot;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">wlear at paypal.com</A> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">foo at bar.com</A>&quot;
+shell find /var/log/qmail -type f -name '@*' | xargs rm -f
+shell -timeout 20 ls /tmp
+
+Here is my driver program:
+
+import org.antlr.runtime.*;
+
+public class Command {
+    public static void main(String[] args) throws Exception {
+        new CommandParser(
+            new CommonTokenStream(
+                new CommandLexer(
+                    new ANTLRInputStream(System.in)))).commands();
+    }
+}
+
+
+Here is the &quot;island&quot; grammar (Shell.g):
+
+grammar Shell;
+
+@parser::members {
+    private String command;
+    public String getCommand() {
+        return command;
+    }
+}
+
+shell: REST_OF_LINE {
+        command = $REST_OF_LINE.text.trim();
+    }
+    ;
+
+REST_OF_LINE: (options {greedy=false;} : . )* '\r'? '\n' {
+        // If this is uncommented, I get a NULL pointer exception.
+        //emit(Token.EOF_TOKEN);
+    }
+    ;
+
+Here is the &quot;sea&quot; grammar (Command.g):
+
+grammar Command;
+
+@lexer::members {
+    public static final int SHELL_CHANNEL = 1;
+}
+
+commands : command+ ;
+
+command
+scope {
+    int timeout;
+    List&lt;String&gt; notifyList;
+}
+@init {
+    $command::timeout = -1;
+    $command::notifyList = new ArrayList&lt;String&gt;();
+}
+    : cleanup | cleanlog {
+    }
+    | SHELL
+    | NEWLINE
+    ;
+
+cleanup
+    : CLEANUP command_options? {
+        System.out.println(&quot;cleanup::timeout=&quot; + $command::timeout
+                           + &quot; email=&quot; + $command::notifyList);
+    }
+    ;
+
+cleanlog
+    : CLEANLOG command_options? {
+        System.out.println(&quot;cleanlog::timeout=&quot; + $command::timeout
+                           + &quot; email=&quot; + $command::notifyList);
+    }
+    ;
+
+SHELL
+    : 'shell' {
+        System.out.println(&quot;Got shell.  Going native.&quot;);
+
+        ShellLexer l = new ShellLexer(input);
+
+        CommonTokenStream tokens = new CommonTokenStream(l);
+
+        ShellParser parser = new ShellParser(tokens);
+        parser.shell();
+
+        String command = parser.getCommand();
+
+        System.out.println(&quot;Got command from ShellParser:[&quot; + command + &quot;]&quot;);
+        $channel = SHELL_CHANNEL;
+    }
+    ;
+
+command_options
+    : timeoutOption
+    | notifyOption
+    | timeoutOption notifyOption
+    | notifyOption timeoutOption
+    ;
+
+timeoutOption
+    : TIMEOUT INT { $command::timeout = Integer.parseInt($INT.text); }
+    ;
+
+notifyOption
+    : NOTIFY EMAIL {
+        $command::notifyList.add($EMAIL.text);
+    }
+    | NOTIFY QUOTED_STRING {
+        String[] l = $QUOTED_STRING.text.split(&quot;\\s+&quot;);
+
+        for (int i = 0; i &lt; l.length; i++) {
+            $command::notifyList.add(l[i]);
+        }
+    }
+    ;
+
+CLEANUP: 'cleanup' ;
+CLEANLOG: 'cleanlog' ;
+TIMEOUT: '-timeout' ;
+NOTIFY: '-notify' ;
+INT: '0'..'9'+ ;
+
+QUOTED_STRING:
+    '&quot;' ( ESCAPE_SEQUENCE | ~('\\'|'&quot;') )* '&quot;' {
+        setText(getText().substring(1, getText().length() - 1));
+    }
+    | '\'' ( ESCAPE_SEQUENCE | ~('\\'|'\'') )* '\'' {
+        setText(getText().substring(1, getText().length() - 1));
+    }
+    ;
+
+WS: (' ' | '\t')+ { skip(); } ;
+
+NEWLINE: '\r'? '\n' { } ;
+
+EMAIL: ~('\n' | '\r' | ' ' | '&quot;')+ {
+    }
+    ;
+
+COMMENT
+    : '//' ~('\n'|'\r')* '\r'? '\n' { skip(); }
+    | '/*' ( options {greedy=false;} : . )* '*/' { skip(); }
+    ;
+
+fragment
+ESCAPE_SEQUENCE : '\\' ('\&quot;'|'\''|'\\') ;
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="040151.html">[antlr-interest] Use another rule template's result
+</A></li>
+	<LI>Next message: <A HREF="040177.html">[antlr-interest] Island grammar for reading shell commands
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40161">[ date ]</a>
+              <a href="thread.html#40161">[ thread ]</a>
+              <a href="subject.html#40161">[ subject ]</a>
+              <a href="author.html#40161">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

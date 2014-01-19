@@ -1,0 +1,190 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] request for comments on language implementation
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20request%20for%20comments%20on%20language%20implementation&In-Reply-To=%3C49A5C00C.1000704%40jazillian.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="033087.html">
+   <LINK REL="Next"  HREF="033091.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] request for comments on language implementation</H1>
+    <B>Andy Tripp</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20request%20for%20comments%20on%20language%20implementation&In-Reply-To=%3C49A5C00C.1000704%40jazillian.com%3E"
+       TITLE="[antlr-interest] request for comments on language implementation">antlr at jazillian.com
+       </A><BR>
+    <I>Wed Feb 25 14:02:52 PST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="033087.html">[antlr-interest] request for comments on language implementation
+</A></li>
+        <LI>Next message: <A HREF="033091.html">[antlr-interest] request for comments on language implementation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#33090">[ date ]</a>
+              <a href="thread.html#33090">[ thread ]</a>
+              <a href="subject.html#33090">[ subject ]</a>
+              <a href="author.html#33090">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Andreas,
+
+Andreas Meyer wrote:
+&gt;<i> Hi!
+</I>&gt;<i> 
+</I>&gt;<i> Your mail was addressed to Michael, but I hope it's ok to answer 
+</I>&gt;<i> nonetheless:
+</I>&gt;<i> 
+</I>&gt;<i> I would consider hand-written code to walk an AST harmful. Maybe there 
+</I>&gt;<i> are cases where it is useful, but walking a dynamically typed tree like 
+</I>&gt;<i> this looks like a maintenance nightmare to me. 
+</I>
+I've found it much easier to do &quot;hand-written&quot; AST transformations.
+For example, to find cases like &quot;x+0&quot; and replace with just &quot;x&quot;, you'd
+have something like:
+
+List&lt;AST&gt; pluses = root.findAncestorsOfType(MyTokenTypes.PLUS);
+for (AST ast: plusses) {
+        if (ast.getChildCount() == 2 
+	    &amp;&amp; ast.getSecondChild().getType() == MyTokenTypes.INTEGER
+            &amp;&amp; ast.getSecondChild().getText().equals(&quot;0&quot;)) {
+		ast.replaceMyself(ast.getFirstChild());  // replace &quot;x+0&quot; with just &quot;x&quot;
+	}
+}
+
+Isn't this simpler than the ANTLR treewalker equivalent?
+Especially since whoever takes over this code when you leave will likely
+already know Java but not know ANTLR?
+
+It's maintainable because later, when you want to also replace &quot;x*1&quot; with just &quot;x&quot;, and a few
+other similar patterns, you can make this into a generic function:
+
+void replaceIdentity(MyTokenType type, String value, AST root) {
+	List&lt;AST&gt; asts = root.findAncestorsOfType(type);
+	for (AST ast: plusses) {
+        	if (ast.getChildCount() == 2 
+		    &amp;&amp; ast.getSecondChild().getType() == MyTokenTypes.INTEGER
+        	    &amp;&amp; ast.getSecondChild().getText().equals(&quot;0&quot;)) {
+			ast.replaceMyself(ast.getFirstChild());  // replace &quot;x OP VALUE&quot; with just &quot;x&quot;
+		}
+	}
+}
+
+And now, you just have:
+replaceIdentity(MyTokenType.PLUS, &quot;0&quot;, root); // replace &quot;x+0&quot; with &quot;x&quot;
+replaceIdentity(MyTokenType.MINUS, &quot;0&quot;, root);// replace &quot;x-0&quot; with &quot;x&quot;
+replaceIdentity(MyTokenType.MULTIPLY, &quot;1&quot;, root);// replace &quot;x*1&quot; with &quot;x&quot;
+replaceIdentity(MyTokenType.DIVIDE, &quot;1&quot;, root);// replace &quot;x/1&quot; with &quot;x&quot;
+
+I don't see how an ANTLR treewalker lets you make things modular (and thus maintainable)
+like this.
+
+
+&gt;<i> Also, you make yourself 
+</I>&gt;<i> highly dependent on the underlying tree-model, which changed a lot from 
+</I>&gt;<i> antlr2 to antlr3.
+</I>
+Assuming by &quot;tree-model&quot;, you mean the shape of the AST you're creating, no,
+that wouldn't (or shouldn't) change with the version of ANTLR that you're
+using. You build the AST to be the shape that you want, regardless of ANTLR version.
+
+I think &quot;hand-written&quot; code to walk an AST is less
+dependent on AST structure than an ANTLR treewalker is.
+For example, suppose I want to find all the ancestor nodes of type
+&quot;INT&quot;. The &quot;hand-written&quot; code is something like:
+
+List&lt;AST&gt; nodes = someNode.findAncestorsOfType(MyLanguageTokenTypes.INT);
+
+...while the ANTLR treewalker that does the same thing consists of the
+*entire* tree shape, with extra code added. The ANTLR treewalker forces
+you to specify much more info than you actually care about.
+
+If by &quot;tree-model&quot; you mean the ANTLR syntax and semantics, then obviously
+the &quot;hand-written&quot; treewalker is not dependent on it at all, while the
+ANLTR treewalker is completely dependent on it. So a working &quot;hand-written&quot;
+treewalker requires no changes at all when going from ANTLR v2 to v3, while
+an ANTLR treewalker will obviously have to be rewritten.
+
+&gt;<i> 
+</I>&gt;<i> I share some of your thoughts on tree-grammars: they are not solving 
+</I>&gt;<i> every problem. But still, they are useful for computing easy properties 
+</I>&gt;<i> like &quot;contains comparison&quot; or &quot;contains assignment to variable of type 
+</I>&gt;<i> xxx&quot;. 
+</I>
+I'm convinced that &quot;hand-written&quot; treewalkers are easier for even these
+trivial cases. &quot;contains comparison&quot; is simply:
+
+boolean contains(MyTokenType type) {
+	if (this.type == type) return true;
+	for (AST child: getChildren()) {
+		if (child.contains(type)) return true;
+	}
+	return false;
+}
+
+I wrote that off the top of my head as fast as I could type it, and I
+think most Java programmers could. Can you say the same for writing
+an ANTLR treewalker?
+
+As for &quot;contains assignment to variable of type xxx&quot;, we'll need a symbol
+table and need to know about variable scoping and syntax
+(e.g. what type do we have here:  a.b.f()[20].c = 1;)
+So that's one of the complicated cases that I talked about.
+
+
+
+
+&gt;<i> I guess what you are looking for is a tool to look for certain 
+</I>&gt;<i> patterns in a source language, and how to map this pattern to another 
+</I>&gt;<i> pattern of the same language? Possibly in concrete syntax, with 
+</I>&gt;<i> placeholders? Yesterday I found a library called MatchO 
+</I>&gt;<i> (<A HREF="http://wiki.di.uminho.pt/twiki/bin/view/Personal/Joost/MatchO">http://wiki.di.uminho.pt/twiki/bin/view/Personal/Joost/MatchO</A>) that 
+</I>&gt;<i> seems to do just that, but I still have to experiment with it. With some 
+</I>&gt;<i> modifications, it might even work for antlr3.
+</I>
+I'm always on the lookout for such tools, but here I'm just trying to
+understand how a treewalker could be better than &quot;hand-written&quot; even for
+the simpler cases. Michael's case seems like a good &quot;middle of the road&quot;
+case: not trivial, but not a nightmare. He's just gone through building
+a few treewalkers, and probably has a good feel for how difficult it was.
+
+I especially wonder...suppose someone else takes over&quot; his code and figures it out.
+I suspect he enjoyed learning something new (ANTLR treewalkers), so it may not
+have seemed difficult, in fact it was probably fun.  But 
+the person who &quot;takes over&quot; will just want to minimize the maintenance effort.
+I would guess that this &quot;next person&quot; would prefer vanilla tree-data-structure
+stuff like &quot;findAncestorsOfType()&quot; rather than having to learn ANTLR.
+But that's just a guess, I'd love to hear from someone who's actually
+been through it.
+
+Andy
+&gt;<i> 
+</I>&gt;<i> Best,
+</I>&gt;<i> Andreas Meyer
+</I></PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="033087.html">[antlr-interest] request for comments on language implementation
+</A></li>
+	<LI>Next message: <A HREF="033091.html">[antlr-interest] request for comments on language implementation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#33090">[ date ]</a>
+              <a href="thread.html#33090">[ thread ]</a>
+              <a href="subject.html#33090">[ subject ]</a>
+              <a href="author.html#33090">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

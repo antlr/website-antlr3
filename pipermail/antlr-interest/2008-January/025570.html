@@ -1,0 +1,722 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Parser generator philosophy
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Parser%20generator%20philosophy&In-Reply-To=%3CPine.LNX.4.64.0801051739150.8143%40localhost.localdomain%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="025548.html">
+   <LINK REL="Next"  HREF="025618.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Parser generator philosophy</H1>
+    <B>Mark Whitis</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Parser%20generator%20philosophy&In-Reply-To=%3CPine.LNX.4.64.0801051739150.8143%40localhost.localdomain%3E"
+       TITLE="[antlr-interest] Parser generator philosophy">whitis at freelabs.com
+       </A><BR>
+    <I>Sun Jan  6 19:44:15 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="025548.html">[antlr-interest] Parser generator philosophy
+</A></li>
+        <LI>Next message: <A HREF="025618.html">[antlr-interest] Parser generator philosophy
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25570">[ date ]</a>
+              <a href="thread.html#25570">[ thread ]</a>
+              <a href="subject.html#25570">[ subject ]</a>
+              <a href="author.html#25570">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+
+On Sat, 5 Jan 2008, Johannes Luber wrote:
+
+&gt;<i> Reading further, I've first thought, you were thinking of something like
+</I>&gt;<i> &lt;<A HREF="http://www.antlr.org/share/1196371900868/yggdrasil.pdf">http://www.antlr.org/share/1196371900868/yggdrasil.pdf</A>&gt;. But you aren't.
+</I>
+Thanks for that link.   The docs look pretty sketchy but there does
+appear to be some overlap with what I am saying.
+
+&gt;<i> A major problem seems to be with your approach, that tree rewriting
+</I>&gt;<i> isn't supported as everything goes into one file.
+</I>
+I never said tree rewriting isn't supported.   Everything for
+the very front end goes into one file or set of files (user's
+choice, not the tools).   In practice, one file would usually be
+used except for modular grammars where a set of grammars
+share modules.
+
+In fact, I am dismayed to read that antlr itself doesn't yet
+support tree rewriting rules for tree grammers, though that
+is planned for future versions.   Odd becuase you would
+think that it would take more to remove it.
+
+You might, as a simplified example,  have many passes in a compiler:
+   - The first pass parses the syntax.
+     it executes the portable &quot;syntax { }&quot; actions.
+     builds a symbol table.
+   - the second pass does the semantic tagging.
+     Can be merged with the first pass on some languages like
+     C that require forward declarations.
+     executes the protable &quot;semantic { } actions.
+     Does the semantic tagging.   AST tree is built here or
+     in pass 1.
+   - The third pass resolves constant subexpressions as these
+     will need to be resolved before you can determine the
+     size of objects &quot;char a[SIZE+1]&quot;.
+     They are either removed from the tree or kept but tagged
+     as dead weight but still available for things like
+     error messages so the compiler can tell you that
+     &quot;a+b+c&quot; which resolves to &quot;15&quot; is not a valid value
+     rather than confusing you with &quot;15&quot;.
+   - The fourth pass, which might be merged with the third,
+     would do source level optimiztion like pruning code where:
+        if(never) {
+        }
+     It might also factor out constant subexpressions, do
+     loop unrolling, etc.
+   - The fifth pass outputs LLVM assembler
+   - subsequent optimization and code generation passes handled by LLVM
+
+The division between first and second pass is a little fuzzy, still.
+The basic issue is that many languages require you to build at least
+a minimal symbol table before you can finish parsing.   In C, is &quot;a*b&quot;
+multiplication (with discarded result) or declaring b to be a
+pointer to type a?   If the language has an ambiguous syntax and
+lets you write things in any order like
+    a*b;
+    typedef int a;
+Then things start to get really ugly.
+
+Only the first two passes use the portable grammar file.  The third and 
+fourth passes do not need to be defined in the portable grammar file. 
+The tagging information left behind by the grammar file provides enough 
+information for these passes to be done with no knowledge of the specific 
+grammar.  Thus, these are language independent parts of the compiler 
+backend.
+
+Most of what happens in pass 3 and later can be language independent 
+provided you have a core that is built around a meta language that supports the 
+common constructs of many languages. One notable exception is function 
+calling conventions which can be target and language specific.  However, 
+because of cross language linkages, a compler for one language needs to 
+support more than one of these anyway. It is easy to graft a C frontend 
+onto a C++ compiler, and not just because C is mostly a subset 
+notationally.  C++ has the constructs and the ambiguity. As C++ is a 
+kitchen sink language, a core which supports C++ is close to supporting 
+many other languages. Yes, the core will need to be extended some as 
+languages are added.
+
+Your typical syntax highlighting editor would perform passes 1 and 2.
+It might punt when it comes to highlighting the truly ambiguous stuff.
+A smarter version, might do something analagous to passes 3 and 4, 
+displaying the contents of if(never) in grey and displaying the results of 
+constant expressions when you mouseover.
+
+A translator normally would skip passes 3 and 4.
+
+&gt;<i> And I can't help to
+</I>&gt;<i> feel that the four categories for code are somewhat arbitrary.
+</I>
+No, not really arbitrary but not final either.  The key point is that 
+there needs to be a division.  The division between the first two 
+categories is still a little fuzzy at this point but they differ in 
+fundamental ways.  Syntax {} contains the stuff without which you could 
+not parse the grammar.  Semantics {} contains only tagging rules. If you 
+don't need tagging, for example, you could simply not apply these rules.
+The distinction between the antlrcode (probably should be renamed
+portableactions) and the language specific implementations is very
+clear.    The language specific stuff is only for the stuff
+that can't be handled by the portable actions.   And both the
+antlrcode and language &quot;*&quot; sections are just there to allow
+traditional (application specific) behavior without the
+existing problems mixing languages.
+
+&gt;<i> I'm really wondering, if one can automatically convert a LR-grammar into
+</I>&gt;<i> LL or the other way around. That may cause additional ambiguities which
+</I>&gt;<i> aren't there in the original version. How can a tool extract enough
+</I>&gt;<i> information to solve these problems? IMO, having something like
+</I>&gt;<i> Yggdrasil is enough, as automatic conversions between different grammar
+</I>&gt;<i> forms are only a nice-to-have feature. Building a target-independent
+</I>&gt;<i> grammar for a particular parsing method seems not to bad for a deal.
+</I>
+Yeah, I am wondering that as well.   There is a good chance that
+there may be some grammars that are not even be expressable in
+certain grammar rule types like LR.    However, there are also
+likely to be a number of grammars that can be converted.  Your
+typical expression syntax can be expressed in LR, GLR, LL(k),
+LL(*), or recursive descent.
+
+This is a problem for the academics to play with.
+
+This is a little different than the problem, of converting from
+a portable grammar syntax to LR(k) or LL(k).   In a portable
+syntax you may have more information:
+   expr: factor (
+      precedence(10) expr &quot;*&quot; expr
+      | precedence(10) expr &quot;/&quot; expr
+      | precedence(20) expr '+' expr
+      | precedence(20) expr '-' expr
+      | atom
+      )
+      ;
+This is much easier to read and write and is sufficiently abstract
+that it could probably be translated into an LL or LR grammar
+fairly easily.   It hasn't been factored into either LL or LR yet
+so information hasn't been lost or convoluted.  It requires factoring
+code to be written.   If I was a professor, like Terrance, 
+I might have a student take a crack at it.
+
+Something similar might be possible to apply to the classic
+shift/reduce conflict:
+    statement:
+      | precedence(10) if '(' expr ')' '{' statement* '}' else '{'
+      precedence(20) if '(' expr ')' '{'  statement* '}'
+statement*'}'
+      ;
+While precedence() might not be as flexible as a predicate, but for
+those operations where it is usable, it is more abstract and
+isn't target language specific.
+
+
+&gt;<i> The major problem with your abstract markup is that it is limited to the
+</I>&gt;<i> things, you have included. YGGDRASIL is probably not limited, but Loring
+</I>&gt;<i> Cramer knows best.
+</I>
+Well, I don't really understand what yggdrasil does and doesn't do.
+But from your statement, I would get the impression that it might
+do too much in the grammar file such that you end up repeating
+the same stuff across a lot of grammars.
+
+Tagging things is pretty easy to do.   Coming up with an initial
+set of tags is the hard part.   If you come up with a set of
+tags that work for C++ you are most of the way there, but you
+need to add some things like &quot;finally&quot;.  And the set of tags
+would be maintained in a CVS central repository with a wiki for
+documenting them.
+
+&gt;<i> I'm not sure what the difference between a compiler compiler and parser
+</I>&gt;<i> generator is supposed to be. For me, they refer to the same thing.
+</I>
+That is because the term &quot;compiler compiler&quot; as commonly used is a 
+misnomer.    A parser generator produces a parser (and maybe a lexer).
+A compiler compiler would produce a compiler or at least a substantial
+prototype.   A compiler compiler would link to a backend or produces
+results that can be directly linked and provides the syntax trees in a
+form that is directly usable by the back end.   With a parser generator
+one grammer might produce a syntax tree with &quot;&lt;&quot; and another &quot;.LT.&quot; for
+the same operation.    You can improve on that by having standard
+conventions such that both produce &quot;LESS_THAN_OPERATOR&quot; for the tree
+node but in doing so, you have probably lost the original text and
+thus would end up with error messages like
+   &quot;LESS_THAN_OPERATOR&quot; not defined for combination of string and int.
+Instead of
+   &quot;&lt;&quot; not defined for combination of string and int.
+
+
+&gt;&gt;<i> This is somewhat similar to existing AST/parse tree behavior.   But it
+</I>&gt;&gt;<i> adds standardized tagging.     The grammar writer can call x a 'function',
+</I>&gt;&gt;<i> 'proceedure', or a &quot;frobnitz&quot; but the tree will still contain the necessary
+</I>&gt;&gt;<i> information.   Notice that there is not a single action in this example.
+</I>&gt;&gt;<i> The actions are implied by the semantics and the application, not hard
+</I>&gt;&gt;<i> coded into the grammar file.    One tool may produce a compiler,
+</I>&gt;&gt;<i> one tool may produce an interpretter, one tool may produce a translator,
+</I>&gt;&gt;<i> another tool produces documentation, another tool analyzes variable
+</I>&gt;&gt;<i> dependencies, another tool does logic synthesis, etc.
+</I>&gt;&gt;<i> All work from the same grammar and the same AST++ tree.   They work
+</I>&gt;&gt;<i> whether you write the expression as &quot;a+b&quot; or &quot;a b +&quot;.   It doesn't matter
+</I>&gt;&gt;<i> what style the grammar is written in (for example antlr style or LR style)
+</I>&gt;&gt;<i> or what style the language expresses them in.
+</I>&gt;<i>
+</I>&gt;<i> That sounds utopian. Not sure if all tools can derive their required
+</I>&gt;<i> information like you describe.
+</I>
+Can all tools derive 100%?  Maybe not.   But getting more than 90% is
+probably reasonable.   A lot of the hard stuff deals with stuff like 
+arbitrary conventions for particular languages on particular platforms.  In
+C++, file name munging isn't even the same for different compilers
+on the same platform.   But that doesn't stop you from using the
+same backend to compile 10 different languages from 10 different
+grammars and linking them together or building a compiler that
+can produce a working executable for your new language with complete
+source.  And, as I said above, linkage conventions for different
+languages are needed for each language so it can link to other
+languages anyway so linkage conventions are a platform issue
+more than a language issue.   So, a backend would accept
+plugins that handle such arbitrary stuff.   The C++ compiler
+might use the platform specific C, C++, ADA, D, and C# plugins.
+The D compiler uses the same set of plugins.
+
+Stuff that should be fairly easy to handle:
+   - expressions
+   - variable declarations
+   - type declarations
+   - scalar types
+   - function definitions
+   - exception handling
+   - class definitions
+   - statements
+   - function arguments
+Sure different languages have different modifiers for types and
+variables.   static, private, public, const, final, near, far,
+__attribute__((section(&quot;bank3E.rodata&quot;))).   Function arguments
+have various permutations indicating how the values may be passed: in, 
+out, inout, copy, reference.  Scalar types usually map to 8, 16, 32, or
+64 bit integers, 32, 40, 48, 64, or 80 bit floating point,  16, 32, or
+64 bit pointers or references, with some additional attributes like
+signed/unsigned.   On some weird platforms, you might have 24 bit
+integers (DSP), 9 bit bytes, 36 bit words (IBM Mainframe), etc.  most 
+complex types combine these basic forms into arrays, structs, classes,
+lists, or hashes.   In C, you have int which may be 16 or 32 bits or
+even 36 bits depending on platform.   So, you need to be able
+to tag something &quot;exactly 32 bits&quot; or &quot;at least 32 bits&quot; and
+&quot;exactly&quot; itself has two modifiers: &quot;exactly 32 bits for calculations&quot;
+(i.e. every calculation on a 36 bit word is followed by &quot;X &amp;= 0xFFFFFFFF&quot;
+and &quot;exactly 32 bits for storage&quot; in case you are reading a 
+binary structure from a normal machine on a 36 bit mainframe (chances
+are you will just stuff it into a 36 bit word and waste 4 bits instead).
+
+You aren't going to take a grammar file, run it through a tool
+and produce a production ready compiler in a day.   But you
+could take the grammar file and in one day be ready to write
+test cases to evaluate the expressive power of the language,
+excluding constructs that don't exist in other common languages.
+
+
+
+&gt;<i>
+</I>&gt;<i> ...
+</I>&gt;&gt;<i> With operand_a and operand_b perhaps prefixed or linked to OPERATOR_PLUS
+</I>&gt;&gt;<i> entry, which might be necessary to unravel more complicated versions.
+</I>&gt;&gt;<i> This wouldn't be limited to proceedural languages.   Abstract tagging
+</I>&gt;&gt;<i> could describe lists, sets, etc. for data files.   Data languages would
+</I>&gt;&gt;<i> add more tags, thus a node would be tagged as a) a list and b) information
+</I>&gt;&gt;<i> about what information it contains (Phone numbers).   Thus there would
+</I>&gt;&gt;<i> be two tags from different domains, one application specific.
+</I>&gt;&gt;<i> Additional tags for protocols.   The tags might indicate that
+</I>&gt;&gt;<i> the data is a variable length list with hash and/or subscript lookup.
+</I>&gt;&gt;<i> Additional tags for 2D/3D graphics modelling.
+</I>&gt;<i>
+</I>&gt;<i> This proves that your approach is indeed one level too low.
+</I>
+Vague assertion.
+
+&gt;<i> If you need more than fifty different things which won't be nonetheless
+</I>&gt;<i> ever enough then you aren't doing things orthogonal.
+</I>
+
+You could say the same meaningless statement about needing 50 different 
+grammars for 50 different languages which will never be enough because
+there will always be a language 51.    There will always be another
+language.    However, the number of basic tags increases at a much
+lower rate than the number of languages.   It is possible for the
+number of tags to be smaller than the number of languages supported.
+A couple hundred tags could support an infinite number of programming
+languages, if not real ones.   If you group the tags into
+sets (TRY, CATCH, FINALLY, RAISE) then the number of tag groups is
+roughly equivalent to the number of constructs supported.
+
+Your criticism seems analogous to criticizing English because
+&quot;noun&quot; and &quot;verb&quot; are defined in a dictionary and new nouns
+and verbs need to be added.    I am sure we could both
+rip into English for a whole lot of reasons but that isn't
+really one of them.   Now, logban, IIRC tries to address
+the vocabularity issue by using compound words such that
+&quot;small-ice-planet&quot; is used for meteor.   And it wouldn't
+hurt to apply a little of that to the TAG naming to make
+the names more consistant (or &quot;orthogonal&quot; if you prefer).
+
+Tags is much better than rewriting compiler code glue for every
+language that supports a construct.    The later is of order N*M where N
+is the number of languages and M is the number of constructs.
+
+For data files, the secondary attributes I refer to like 
+'NAME','PHONE_NUMBER', 'CITY', 'STATE', 'POSTAL CODE', 'COUNTRY', EMAIL, 
+URL, CREDIT_CARD_NUMBER, etc.) are strings.  It costs very little to 
+convey additional information.  These are just taken from a domain 
+specific dictionary with shared subsets.  Thus, if a program sees a tree 
+like:
+   ^('Numero Telephono:':PHONES:LIST:
+       '+1-234-567-8901':PH_ENTRY:LIST_ITEM:'PHONE_NUMBER'
+       '+1-234-567-8902':PH_ENTRY:LIST_ITEM:'PHONE_NUMBER'
+       '+1-234-567-8903':PH_ENTRY:LIST_ITEM:'PHONE_NUMBER'
+    )
+without understanding the grammar rule names (which may be derived from
+one of many standards and thus different for each grammar that contains
+contact info) or the language (spanish) the data file was written in , it 
+immediately undestands that it has a list of three
+phone numbers and can dial a number if you click on it, can search
+based on phone number, etc.   This won't convey everything there
+is to know about the data to every tool.   It isn't enough
+to perform automatic translations from one language to another
+though common subsets may be translated or searched.  You can answer
+questions like, what is Mark's email whether that information
+was given to you in a vcard or a docbook manuscript, even
+if you don't know which file the information is in.   These
+could be organized in a hierarchy.   Thus, PHONE_NUMBER becomes
+entity.contact.phone.   There is nothing ANTLR specific about
+these secondary keywords, they deal with the general problem
+of tagging descriptive information.   They could be used to derive XML tags,
+used by search engines such as google, in database field descriptions, and 
+a variety of other applications.
+
+If we are going to use 'orthogonal' sloppily, I can also say that
+hand coding parsers in C is more 'orthogonal' than writing parsers
+in ANTLR because there will always be another language that
+ANTLR can't parse.
+
+So, yes, creating a compiler for a new language in some cases requires
+defining a new tag and thus we have to add a tag definition NEWTAG to
+the central repository.  In the mean time, we can use X_NEWTAG
+during the discusion period.   There may not even be a need
+to add the tag, in some cases.   If you are writing an C-INTERCAL
+compiler, you just use X_COMEFROM_STATEMENT and be done with it as there
+are few, if any, other programming languages that support COMEFROM.
+Or you tag it INTERCAL_NONSTANDARD and the backend loads your
+intercal_nonstandard.so plugin if it isn't, calls the nonstandard() 
+method, passes a pointer to the tree node, the root of the tree, 
+and options struct, and you code it the way you would have coded
+it if you weren't using tags by just looking at the text of the
+node.   The compiler backend itself doesn't need updating
+because you can implement a comefrom by rewriting the tree and
+converting it into a standard goto.
+
+A lot of languages could be implemented without changing ANTLR+=2
+or the compiler core just by doing tree rewrites.   If it is code
+that is usable by other languages, then define a standard tag.
+
+The process of defining a new tag could be to:
+   - Post a new tag feature request on bugzilla, wiki, and/or a mailing
+     list
+   - wait 14 days for discussion, using X_NEWTAG in the interim.
+   - submit your new tag definition to CVS/SVN/etc.
+   - submit modifications to existing plugins, if any, to CVS
+   - submit your plugin, if open source, to CVS.
+I.E. it would be an internet mediated standards process with low
+overhead.    You post a suggestion to add tags for &quot;try/catch/raise&quot;,
+someone writes back that try/catch/finally/raise would be better
+and you code your plugin so it handles at least try/catch with
+in a way that allows easy addition of finally if you don't
+implement finally.
+
+&gt;<i> The use of '+' as string concatenation operator is indeed bad, but not
+</I>&gt;<i> all languages have that use truly inbuilt. OO-Languages like C# employ
+</I>&gt;<i> operator overloading. In these cases I don't see your approach working.
+</I>
+Yep.   That could be coded as OPERATOR_ADD or OPERATOR_ADD_OR_CONCATENATE
+or OPERATOR_ADD + AMBIGUOUS.
+The first works as it goes through the normal operator overloading
+mechanism.   The second or third sets would tip off tools that
+are not compilers that something fishy might be going on.
+
+You may need special handling if you allow constant initializers
+with plugins:
+    string foo=&quot;hello&quot; + &quot;, world&quot;;
+A language that allows this, however, is likely to use the same
+semantics as this in C:
+    char foo[]=&quot;hello&quot; &quot;, world&quot;
+Thus the constant subexpression plugin can be expected to have a method
+that implements this and you just need to TAG it or rewrite it in
+your grammar file.
+
+
+&gt;&gt;<i> Users would define their own, nonstandard tags using the common &quot;X_NAME()&quot;
+</I>&gt;&gt;<i> convention until the tags were standardized.
+</I>&gt;<i>
+</I>&gt;<i> This approach makes me shudder...
+</I>
+Why?   It works fine in many other areas.   Any language which can't
+be extended is limited in its expressive power.
+
+&gt;<i> I thought you could prevent while rewriting the loss of any information.
+</I>&gt;<i> In my view, you can save everything needed somewhere.
+</I>
+That may be but as far as I can see that isn't normal practice or
+necessarily easy to do.
+&gt;<i>
+</I>&gt;<i> I have to disagree there. Runtimes have always some specific ways to
+</I>&gt;<i> deal with problems - and those specifics don't only very in how they
+</I>&gt;<i> differ, but also where they differ. So I consider it far more work to
+</I>&gt;<i> make runtime translations automatically - without any human intervention
+</I>&gt;<i> afterwards - than to do it yourself by hand (except basic syntax
+</I>&gt;<i> translation).
+</I>
+So what?  Just because you use translation doesn't mean you can't
+optimize or make changes.  You could substitute individual methods
+in the generated code.  Even if it is harder at first, in the
+long run it isn't and the solution may address other problems as well.
+Maintaining five different implementations of the same code
+is asking for trouble.   Maintaining 10 is worse.
+
+Now, how well code translates depends on how you write the code.
+If you write code that looks like C with classes, it can be fairly
+easy.   If you use exceptions, it is harder to port to some
+languages.   ANTLR code seems to use exceptions like crazy,
+so much so that exceptions are the normal case, not the exceptions.
+Without exceptions, the code might be say 20% larger.   With exceptions,
+however, the code is 400% larger when you factor in the different 
+languages.   While the source code is a bit larger if you don't
+use exceptions, the object code isn't necessarily smaller or
+faster - exception implementation can have a lot of overhead.
+And exceptions have various semantic quirks.
+    if(rc=match(...)==EXCEPTION) {
+       // blah
+    } else if(rc==SUCCESS) {
+      // blah
+    }
+Optionally (if you care about sort order)
+    else {if(rc==LESS_THAN) {
+      // blah
+    } else {if(rc==GREATER_THAN) {
+      // blah
+   }
+Or:
+    else {
+      // blah
+    }
+
+Porting exception handling code to C looks kinda ugly and there
+are a few surprises (like some local variables allocated to registers 
+being returned to their previous state if not declared volatile.
+    <A HREF="http://www.on-time.com/ddj0011.htm">http://www.on-time.com/ddj0011.htm</A>
+    <A HREF="http://www.nicemice.net/cexcept/">http://www.nicemice.net/cexcept/</A>
+But C isn't the only language porting exceptions can be an
+issue as different languages have different quirks.
+
+
+&gt;<i> Unicode handling makes case insensitivity more complicated. In Turkey
+</I>&gt;<i> the uppercase y isn't Y, but Y accented with ... whatever that accent
+</I>&gt;<i> is. In any case, you have to add locales. I know that .NET supports
+</I>&gt;<i> locales so at least there it may be easy to compare the input. But I
+</I>&gt;<i> don't know if the templates to generate the parser can be easily updated.
+</I>
+I deal with this at length in my case sensitivity post which I mentioned 
+was forthcoming.  Short version is there is really much excuse for not 
+creating the basic infrastruction and providing an ASCII implementation 
+and you can substitute unicode methods that will work for a lot of unicode 
+using existing libraries.  But if you want proper handling, you will have 
+to abandon the notion of a string as an array of 8/16/32 bit characters 
+and instead treat it as a string of variable length objects that you use 
+standard library functions to sequence through, compare, etc.  For ASCII 
+you can optimize by making your string methods inline and suffer very 
+little performance penalty.  Full unicode support would be a gradual 
+transition.  Would have been pretty easy to do in the ANTLR3 rewrite, 
+probably much harder now.   Spend a couple hours skimming the unicode
+standard and you have a pretty good idea what your string class should
+look like.
+
+&gt;&gt;<i>   - selectively disallowing whitespace between tokens
+</I>&gt;<i>
+</I>&gt;<i> Something I did with checking the indices of the supposedly neighboring
+</I>&gt;<i> tokens (difference may be only one).
+</I>
+Target language and runtime specific but I might borrow that as a 
+workaround until ANTLR is fixed.
+
+&gt;&gt;<i>   - choosing between multiple token rules that match the same input
+</I>&gt;&gt;<i>     based on parser context.
+</I>&gt;<i>
+</I>&gt;<i> Can be done already. Just use for scanning a normal name (like &quot;TILDE&quot;)
+</I>&gt;<i> and via rewriting and imaginary tokens you can get to
+</I>&gt;<i> &quot;CONCATENATION[TILDE]&quot;.
+</I>
+Not sure exactly what you are saying but it sounds target language and
+runtime specific.
+
+&gt;&gt;<i>   - communicating between parser rules/actions and lexer rules/actions
+</I>&gt;&gt;<i>     - shared variables
+</I>&gt;&gt;<i>     - arguments
+</I>&gt;<i>
+</I>&gt;<i> The situation right now: The Lexer is entirely separate from the parser.
+</I>&gt;<i> In fact the default implementation lexes everything before the parser
+</I>&gt;<i> sees the first token. Unfortunately, there are enough situations, where
+</I>&gt;<i> the parser HAS to tell the lexer something. Using globals isn't enough
+</I>&gt;<i> (scopes don't work because lexer and parser are in separate files and
+</I>&gt;<i> classes).
+</I>
+Yeah, I think we agree here.
+
+&gt;<i>
+</I>&gt;<i> Which reminds me: Lexer tokens can't have arguments, unless they are
+</I>&gt;<i> fragment rules. I forgot the reason for this, but orthogonality-wise
+</I>&gt;<i> it's not a good decision, even so implementation-wise the reason may be
+</I>&gt;<i> sound.
+</I>
+Yes, this could be a pain to implement.  I can suggest a number of
+reasons:
+   - general absence of comunication between parser/lexer.
+   - parser doesn't call lexer functions directly, but through
+     a stream class that isn't yet flexible enough to communicate.
+   - precomputed state machines
+   - the need to purge lookahead token cache, etc. when changing
+     values
+   - a lot of optimizations may assume that the breakdown of text
+     into tokens is constant regardless of context.
+   - possible use of code that resembles
+      if(get_token()==FOO)
+    rather than
+      if(match_token(FOO)
+    You can add arguments to the second version and modify the meddling
+    classes in between to pass the data through.
+
+There are ways around this.    They aren't necessarily easy.  But I
+have mentioned some of them.
+
+&gt;&gt;<i>   - selecting tree format, where more than one is supported.  AST vs Parse
+</I>&gt;&gt;<i>     trees in this case.
+</I>&gt;<i>
+</I>&gt;<i> Not sure, what you mean here.
+</I>
+Actually, neither am I.  Must have been interrupted when I wrote that.
+
+&gt;&gt;<i>   - keyword abreviation
+</I>&gt;&gt;<i>     (very common in command languages, a really bad idea to use in scripts
+</I>&gt;&gt;<i>     written in those languages)
+</I>&gt;<i>
+</I>&gt;<i> In combination with case insensitivity? In any case, these feature has
+</I>&gt;<i> been requested already.
+</I>
+And they will keep being requested.  wheels don't get greased unless they 
+squeak.  Not something I care that much about, myself, since I usually 
+don't allow abreviation but it was an obvious case.
+
+
+&gt;&gt;<i>   - grammar include files
+</I>&gt;<i> That feature is supposed to be included in 3.1.
+</I>
+Thanks.   Glad to hear that.
+
+&gt;<i>
+</I>&gt;&gt;<i>   - operator precedence.
+</I>&gt;<i> I'm not sure, if that is a good idea or not...
+</I>
+No, it isn't a good idea, it is a great one.  :-)   It turns out
+that there is a way of doing this that solves, or improves,  about
+half a dozen problems at once.   Readabiity, writability, target
+language independence, using multiple backends (LR/LL/GLR/recusive
+descent/etc), portability between tools, ability to use grammar
+files for non-parser purposes, information abstraction, etc.   See above.
+
+&gt;&gt;<i>   - access to parser class members from lexer actions, access
+</I>&gt;&gt;<i>     to lexer class members from parser actions, and access to other
+</I>&gt;&gt;<i>     utility classes from either.
+</I>&gt;<i>
+</I>&gt;<i> See a few comments above.
+</I>
+Here, I am not talking about passing arguments to rules but
+rather communicating between lexer and parser actions.  If you
+change the value of a predicate as a result, though you better
+warn antlr so it can flush the cache and backtrack.
+
+&gt;&gt;<i>   - Non-finite input streams, streams larger than memory, and
+</I>&gt;&gt;<i>     streams where not all data is immediately available
+</I>&gt;&gt;<i>     (such as protocols).
+</I>&gt;<i>
+</I>&gt;<i> Definitively missing.
+</I>
+May not be that hard to add.   Although ANTLR's concept is
+that if you give it a file it sucks the whole thing into a string
+and works on the string and rather than copying characters from the
+stream it uses pointers/indexes to reference them, it does
+have the ability to rewrite token values.   Thus, token values
+are not limited to coming from the content of the stream.
+So, the implementation is probably functionally similar to:
+    struct {
+       char *source_string;
+       int start_char;
+       int num_chars;
+       boolean_t free_it;
+    }
+Thus, copying the source instead of referencing it may be fairly easy to 
+add.   However, you probably have to deal with with a tendancy to
+read the same source more than once and thus may need a ring buffer
+on the input which means you need to handle wrapping.
+
+&gt;&gt;<i>   - operator tokens defined by the user
+</I>&gt;&gt;<i>     of a grammar, not the grammer itself.   Requires a runtime
+</I>&gt;&gt;<i>     table lookup.   Multiple character operators &quot;++&quot; would be harder to
+</I>&gt;&gt;<i>     implement, though possible.   This gets around, for example, the
+</I>&gt;&gt;<i>     c++ limitation on defining new operators.
+</I>&gt;&gt;<i>      U+2200 .. U+22FF (mathematical symbols) are prime candidates.
+</I>&gt;&gt;<i>     as are U+0391..U+03A9 and U+03B1..U+03C9 (greek letters).
+</I>&gt;<i>
+</I>&gt;<i> Huh? At which step of a usual compiler development are the user supposed
+</I>&gt;<i> to add their new operators?
+</I>
+At no stage of compiler development.   The end-user declares their tokens
+in the file being compiled.    This should not be as hard as it sounds
+at first.   It means that each state of a state machine where this
+token may be relevent consults a lookup table.  This will typically
+affect a few special rules:
+     NEW_OPERATOR_PRECEDENCE_1:  :new-token[1]: ;
+     NEW_OPERATOR_PRECEDENCE_2:  :new-token[2]: ;
+     NEW_OPERATOR_PRECEDENCE_3:  :new-token[3]: ;
+     NEW_OPERATOR_PRECEDENCE_4:  :new-token[4]: ;
+     ...
+This gets tagged NEW_OPERATOR and the compiler back end takes advantage of 
+the fact that it gets both tags and the original text.  Lexer states
+just call is_new_operator(precedence, char_reference);  you arange 
+things so these rules are called last.   Just a tad more and you
+can define unary vs binary operators.  Presto, you
+have the ability to use a whole bunch of new operators and define
+their precedence.    <A HREF="http://www.unicode.org/charts/PDF/U2200.pdf">http://www.unicode.org/charts/PDF/U2200.pdf</A>
+
+Making the changes to ANTLR grammar and lexer would be done at the
+same time unicode property matching is added, so the marginal cost
+is small.
+
+&gt;&gt;<i>   - layered parsing
+</I>&gt;&gt;<i>     For example, You might layer an SVG parser on top of an XML parser.
+</I>&gt;&gt;<i>     @include might be enough, then again it might not be.
+</I>&gt;<i>
+</I>&gt;<i> That could be done via another tree grammar after XML.
+</I>
+One problem here is that ANTLR currently doesn't let treeparsers
+output trees.
+
+&gt;<i> Unicode support isn't that good. I'd like to declare the use of
+</I>&gt;<i> character classes and to being capable to deal with characters beyond
+</I>&gt;<i> \uFFFF. It would make a lexer for C# very easy.
+</I>
+I will move comments to the case insensitivity/unicode post.
+
+Thanks for your input.
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="025548.html">[antlr-interest] Parser generator philosophy
+</A></li>
+	<LI>Next message: <A HREF="025618.html">[antlr-interest] Parser generator philosophy
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25570">[ date ]</a>
+              <a href="thread.html#25570">[ thread ]</a>
+              <a href="subject.html#25570">[ subject ]</a>
+              <a href="author.html#25570">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

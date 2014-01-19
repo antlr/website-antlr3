@@ -1,0 +1,159 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Optional keyword causes ambiguity 	in	parser
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Optional%20keyword%20causes%20ambiguity%20%09in%09parser&In-Reply-To=%3C4808E081.BB97.0087.0%40quintiq.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="027915.html">
+   <LINK REL="Next"  HREF="027930.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Optional keyword causes ambiguity 	in	parser</H1>
+    <B>Ramon Verbruggen</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Optional%20keyword%20causes%20ambiguity%20%09in%09parser&In-Reply-To=%3C4808E081.BB97.0087.0%40quintiq.com%3E"
+       TITLE="[antlr-interest] Optional keyword causes ambiguity 	in	parser">Ramon.Verbruggen at quintiq.com
+       </A><BR>
+    <I>Fri Apr 18 08:55:14 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="027915.html">[antlr-interest] Problems with semantic predicates
+</A></li>
+        <LI>Next message: <A HREF="027930.html">[antlr-interest] Optional keyword causes ambiguity   in	parser
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#27924">[ date ]</a>
+              <a href="thread.html#27924">[ thread ]</a>
+              <a href="subject.html#27924">[ subject ]</a>
+              <a href="author.html#27924">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Gavin,
+
+Thanks for your clear explanation!
+
+&gt;<i> Think of what decisions ANTLR has to make (assuming you've made it 
+</I>&gt;<i> optional), and you'll see why it thinks it's ambiguous.
+</I>[...]
+&gt;<i> But how is it to know whether the 
+</I>&gt;<i> Identifier it just saw is a statement or a 
+</I>&gt;<i> returnStatement?  Answer: it can't.
+</I>&gt;<i>
+</I>I did realise there was no way for ANTLR to determine whether an
+Identifier was part of a (normal) statement or part of a return
+statement, your explanation confirms my line of thought. 
+I never meant to question the validity of the warning that was given.
+
+&gt;<i> Now, you've said that you want the &quot;return&quot; keyword to be 
+</I>&gt;<i> optional.  One way you could do that would be to permit an 
+</I>&gt;<i> expression as a valid statement:
+</I>&gt;<i>    statementBody:	statementList returnStatement? EOF;
+</I>&gt;<i>    returnStatement: 'return' expression;
+</I>&gt;<i>    statementList:	(statement ';'*)*;
+</I>&gt;<i>    statement:	expression;
+</I>&gt;<i>    expression:	addressable( '*' addressable)*;
+</I>&gt;<i>    addressable:	Identifier ( '.' Identifier '()' )*;
+</I>&gt;<i>    Identifier:	('a'..'z')+;
+</I>&gt;<i> 
+</I>&gt;<i> There are two downsides to this, of course; the first is that 
+</I>&gt;<i> you've widened the possible inputs (which may not be acceptable), 
+</I>&gt;<i> and the second is that it isn't very easy to pick off the final 
+</I>&gt;<i> expression statement to give it special handling, if you want to.
+</I>&gt;<i>
+</I>Unfortunately, both downsides you mention are indeed going to cause
+grief...the actual grammar in question is much bigger and we have a
+rather big installed base.
+ 
+&gt;<i> Another thing you could do is to remove 'addressable' from the 
+</I>&gt;<i> list of possible statements.  So long as anything that can match 
+</I>&gt;<i> 'expression' cannot also match 'statement', the ambiguity is gone.
+</I>&gt;<i> 
+</I>This would also break all our existing code, so unfortunately that one
+is out too!
+
+&gt;<i> Yet another thing is to re-examine the parentheses in 
+</I>&gt;<i> 'addressable'.  Is 'Identifier' really supposed to be an 
+</I>&gt;<i> addressable by itself?  Should the parentheses be outside the loop 
+</I>&gt;<i> instead (so that 'foo' isn't an addressable, but 'foo()' is)?
+</I>&gt;<i> 
+</I>You really looked at the grammar in depth! I agree that it looks silly,
+but the point of the 'addressable' is that you can start with a variable
+or argument, and use methods and attributes of this variable or argument
+to chain them together (e.g.
+myarg.SomeGetMethod().AnotherMethod().GetAttribute()) so yes, an
+Identifier by itself is a valid addressable.
+
+&gt;<i> If you can't change the input language in this way, then you'll 
+</I>&gt;<i> have to resolve the ambiguity with sempreds.  The main one (since 
+</I>&gt;<i> it's in a loop) is the 'addressable' in 'statement' -- you have to 
+</I>&gt;<i> add a sempred telling it to fail any addressables that should be 
+</I>&gt;<i> interpreted as return statements instead.  Presumably they're 
+</I>&gt;<i> distinct enough that you can tell the difference.  
+</I>&gt;<i> 
+</I>Unfortunately they are not distinct at all, the only distinction is
+that the last statement in the method must be an expression, optionally
+preceded by the 'return' keyword.
+
+&gt;<i> (If you can't tell the difference, then you probably shouldn't be
+</I>trying to 
+&gt;<i> remove that keyword.)
+</I>&gt;<i>
+</I>Point taken, I guess I just didn't realise that this relatively small
+change to the language actually makes it very hard to parse.
+
+&gt;<i> Beyond these suggestions, I'm not really sure.  I've usually been 
+</I>&gt;<i> working with DSLs that I'm in full control of, so I've tended to 
+</I>&gt;<i> designed languages that are easy to parse :)
+</I>&gt;<i>
+</I>Good point! This whole exercise would wreak havoc on a very workable
+grammar for a (reasonably) well-defined language.
+
+It may seem as though I've blown off all your suggestions, but you've
+actually helped me a lot: I now feel comfortable saying that making the
+'return' keyword optional requires some significant changes to the
+grammar and (therefore) to our language, which is not at all what I had
+in mind when I set out to make the 'return' keyword optional.
+
+Thanks again for your useful input.
+
+Ramon Verbruggen
+
+
+This message contains information that may be privileged or confidential
+and is the property of Quintiq. It is only intended for the person to
+whom it is addressed. If you are not the intended recipient, you are not
+authorized to read, print, retain, copy, disseminate, distribute or use
+this message or any part thereof. If you have received this message in
+error, please notify the sender immediately and delete all copies of
+this message. Please note that e-mails are susceptible to change,
+therefore they are not binding.
+</PRE>
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="027915.html">[antlr-interest] Problems with semantic predicates
+</A></li>
+	<LI>Next message: <A HREF="027930.html">[antlr-interest] Optional keyword causes ambiguity   in	parser
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#27924">[ date ]</a>
+              <a href="thread.html#27924">[ thread ]</a>
+              <a href="subject.html#27924">[ subject ]</a>
+              <a href="author.html#27924">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

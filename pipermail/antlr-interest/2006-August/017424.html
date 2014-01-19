@@ -1,0 +1,322 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Re: v3: semantic predicates in parser
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20v3%3A%20semantic%20predicates%20in%20parser&In-Reply-To=5759E7EB-D8DA-4E6B-84D1-29117F093F04%40cs.usfca.edu">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="017422.html">
+   <LINK REL="Next"  HREF="017423.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Re: v3: semantic predicates in parser</H1>
+    <B>Richard Musiol</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20v3%3A%20semantic%20predicates%20in%20parser&In-Reply-To=5759E7EB-D8DA-4E6B-84D1-29117F093F04%40cs.usfca.edu"
+       TITLE="[antlr-interest] Re: v3: semantic predicates in parser">mail at richard-musiol.de
+       </A><BR>
+    <I>Sat Aug 19 15:36:42 PDT 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="017422.html">Fwd: [antlr-interest] v3: semantic predicates in parser
+</A></li>
+        <LI>Next message: <A HREF="017423.html">[antlr-interest] [v3] Tree building code generation bug?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#17424">[ date ]</a>
+              <a href="thread.html#17424">[ thread ]</a>
+              <a href="subject.html#17424">[ subject ]</a>
+              <a href="author.html#17424">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Thanks!
+
+The k=1 solution works and in my case there is no need for a greater 
+lookahead in this rule.
+
+But now I've got an even more difficult case. I want to change the AST 
+creation based on a condition:
+
+subrule1
+subrule2
+( { condition }?=&gt;
+	-&gt; ^(subrule1 subrule2)
+|<i>
+</I>	-&gt; subrule1 subrule2
+)
+
+In ANTLR 2 I had done this with much plain Java code, but I thought that 
+the new AST syntax could do this in ANTLR 3. Normally it seems to work, 
+but in my special case it doesn't. It took me some time to create a test 
+grammar - the following is needed to reproduce the error (nothing more, 
+but also nothing less - every condition is needed!):
+
+grammar Test;
+
+options { output =AST; }
+
+@members
+{
+	boolean someCondition;
+	boolean anotherCondition;
+	boolean thirdCondition;
+}
+document : (element)* EOF ;
+element  : theA | B | C    ;
+
+theA
+	:
+		A
+		( options { k=1; } :
+			{ someCondition }?=&gt;
+			subrule
+			(
+				{ thirdCondition }?=&gt;
+					-&gt; ^(A subrule)
+				|
+					-&gt; A subrule
+				)
+			|
+			// quit the rule
+		)
+	;
+
+subrule
+	:
+		( options { k=1; } :
+			{ anotherCondition }?=&gt;
+			element subrule
+		|
+			// quit the rule
+		)
+	;
+
+A : 'a' ;
+B : 'b' ;
+C : 'c' ;
+
+Currently the result is a StackOverflowError with the loop in 
+org.antlr.analysis.NFAToDFAConverter.closure
+(the comment &quot;// Avoid infinite recursion&quot; doesn't seem to work :-) )
+This seems to be a bug, so please fix it. Maybe the grammar looks crazy, 
+but I promise you that it makes sense.
+
+Bye,
+Richard
+
+
+
+Terence Parr schrieb:
+&gt;<i>  From Jim Idle.
+</I>&gt;<i> 
+</I>&gt;<i> Begin forwarded message:
+</I>&gt;<i> 
+</I>&gt;&gt;<i> From: &quot;Jim Idle&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">Jim.Idle at intersystems.com</A>&gt;
+</I>&gt;&gt;<i> Date: August 18, 2006 11:26:08 AM PDT
+</I>&gt;&gt;<i> To: &quot;Terence Parr&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">parrt at cs.usfca.edu</A>&gt;, &quot;Antlr-Interest&quot; 
+</I>&gt;&gt;<i> &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>&gt;
+</I>&gt;&gt;<i> Subject: RE: [antlr-interest] v3: semantic predicates in parser
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Ter,
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Faced with a similar issue, that I sent you a few weeks back, but with 
+</I>&gt;&gt;<i> gated semantic predicates covering both alts, I discovered that just 
+</I>&gt;&gt;<i> telling antlr that this was k=1 allowed it to do the right thing:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> options {k=1;}
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Makes this go away. I had not had occasion to try this with non gated 
+</I>&gt;&gt;<i> semantic predicates, so I tried it using the example below and it 
+</I>&gt;&gt;<i> seems to work fine. Whether you would want to unravel this to k=1
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Also, in the example provided, theElement=element will not work unless 
+</I>&gt;&gt;<i> using option output=AST, as it is assigning the value of a rule and 
+</I>&gt;&gt;<i> this results in declaring theElement as void, which obviously fails. 
+</I>&gt;&gt;<i> If this is not an AST output, then the rule element needs to return 
+</I>&gt;&gt;<i> something as would theA.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> For simplicity, I have turned on output=AST here so it compiles. The 
+</I>&gt;&gt;<i> following example will work correctly then I think:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> grammar Test;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> options { output =AST; }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> @members
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i>     boolean someCondition;
+</I>&gt;&gt;<i> }
+</I>&gt;&gt;<i> document : (element)* EOF ;
+</I>&gt;&gt;<i> element  : theA | B | C    ;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> theA
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>      :
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>          A
+</I>&gt;&gt;<i>          (
+</I>&gt;&gt;<i>             options {
+</I>&gt;&gt;<i>             k=1;     // Allows ANTLR to derive the DFA for
+</I>&gt;&gt;<i>                    // the following, despite recursion
+</I>&gt;&gt;<i>             }
+</I>&gt;&gt;<i>             :
+</I>&gt;&gt;<i>                 { someCondition }?=&gt;    theElement=element
+</I>&gt;&gt;<i>                 {
+</I>&gt;&gt;<i>                     // do something with theElement
+</I>&gt;&gt;<i>                 }
+</I>&gt;&gt;<i>             |
+</I>&gt;&gt;<i>                 // quit the rule
+</I>&gt;&gt;<i>          )
+</I>&gt;&gt;<i>      ;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> A : 'a' ;
+</I>&gt;&gt;<i> B : 'b' ;
+</I>&gt;&gt;<i> C : 'c' ;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Please note that I haven&#8217;t really looked at the code output for the 
+</I>&gt;&gt;<i> example above, so please verify.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Jim
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> -----Original Message-----
+</I>&gt;&gt;<i> From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> 
+</I>&gt;&gt;<i> [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Terence Parr
+</I>&gt;&gt;<i> Sent: Friday, August 18, 2006 10:58 AM
+</I>&gt;&gt;<i> To: Antlr-Interest
+</I>&gt;&gt;<i> Subject: Re: [antlr-interest] v3: semantic predicates in parser
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> interesting...this in fact has 2 alts that lead to the same recursive
+</I>&gt;&gt;<i> rule invocation.  I need to modify this message so it shuts up with
+</I>&gt;&gt;<i> predicates, but it will have to unravel back to k=1.  When you get
+</I>&gt;&gt;<i> that message, it means ANTLR will never be able to build the DFA.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Ter
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> On Aug 18, 2006, at 5:25 AM, Richard Musiol wrote:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> Hi,
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> semantic predicates in the parser don't seem to work in beta 3 as
+</I>&gt;&gt;&gt;<i> they did in ANTLR 2. Will they be supported in the final?
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> For example the following grammar:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> grammar Test;
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> document : (element)* EOF ;
+</I>&gt;&gt;&gt;<i> element : theA | B | C    ;
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> theA
+</I>&gt;&gt;&gt;<i>     :
+</I>&gt;&gt;&gt;<i>         A
+</I>&gt;&gt;&gt;<i>         (
+</I>&gt;&gt;&gt;<i>             { someCondition }?=&gt;
+</I>&gt;&gt;&gt;<i>             theElement=element
+</I>&gt;&gt;&gt;<i>             {
+</I>&gt;&gt;&gt;<i>                 // do something with theElement
+</I>&gt;&gt;&gt;<i>             }
+</I>&gt;&gt;&gt;<i>         |
+</I>&gt;&gt;&gt;<i>             // quit the rule
+</I>&gt;&gt;&gt;<i>         )
+</I>&gt;&gt;&gt;<i>     ;
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> A : 'a' ;
+</I>&gt;&gt;&gt;<i> B : 'b' ;
+</I>&gt;&gt;&gt;<i> C : 'c' ;
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> ANTLR can't handle it:
+</I>&gt;&gt;&gt;<i> &quot;[fatal] rule theA has non-LL(*) decision due to recursive rule
+</I>&gt;&gt;&gt;<i> invocations in alts 1,2. Resolve by left-factoring or using
+</I>&gt;&gt;&gt;<i> syntactic predicates with fixed k lookahead or using backtrack=true
+</I>&gt;&gt;&gt;<i> option.&quot;
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> At my opinion, ANTLR should use the first alternative if
+</I>&gt;&gt;&gt;<i> someCondition is true and the second one if not.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> My second approach was to swap the alternatives:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> theA
+</I>&gt;&gt;&gt;<i>     :
+</I>&gt;&gt;&gt;<i>         A
+</I>&gt;&gt;&gt;<i>         (
+</I>&gt;&gt;&gt;<i>             { !someCondition }?=&gt;
+</I>&gt;&gt;&gt;<i>             // quit the rule
+</I>&gt;&gt;&gt;<i>         |
+</I>&gt;&gt;&gt;<i>             theElement=element
+</I>&gt;&gt;&gt;<i>             {
+</I>&gt;&gt;&gt;<i>                 // do something with the element
+</I>&gt;&gt;&gt;<i>             }
+</I>&gt;&gt;&gt;<i>         )
+</I>&gt;&gt;&gt;<i>     ;
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> ANTLR compiles this without any errors, but the resulting code is
+</I>&gt;&gt;&gt;<i> really stange:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> [...]
+</I>&gt;&gt;&gt;<i> else if ( (LA3_0==A) ) {
+</I>&gt;&gt;&gt;<i>     else {
+</I>&gt;&gt;&gt;<i>         NoViableAltException nvae = [...];
+</I>&gt;&gt;&gt;<i>         throw nvae;
+</I>&gt;&gt;&gt;<i>     }
+</I>&gt;&gt;&gt;<i> }
+</I>&gt;&gt;&gt;<i> [...]
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> It seems that there is a bug in the code generation. But also the
+</I>&gt;&gt;&gt;<i> decisions are wrong:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> [...]
+</I>&gt;&gt;&gt;<i> int alt3=2;
+</I>&gt;&gt;&gt;<i> int LA3_0 = input.LA(1);
+</I>&gt;&gt;&gt;<i>     if ( (LA3_0==EOF) &amp;&amp; ( !someCondition )) {
+</I>&gt;&gt;&gt;<i>         alt3=1;
+</I>&gt;&gt;&gt;<i>     }
+</I>&gt;&gt;&gt;<i> [...]
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> Why should it only quit the rule if an EOF is following? There may
+</I>&gt;&gt;&gt;<i> be an A, B or C too.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> I hope this will get fixed until the final, because semantic
+</I>&gt;&gt;&gt;<i> predicates are a really powerful feature.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> Regards,
+</I>&gt;&gt;&gt;<i> Richard
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> --No virus found in this incoming message.
+</I>&gt;&gt;<i> Checked by AVG Free Edition.
+</I>&gt;&gt;<i> Version: 7.1.405 / Virus Database: 268.11.3/423 - Release Date: 8/18/2006
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> --No virus found in this outgoing message.
+</I>&gt;&gt;<i> Checked by AVG Free Edition.
+</I>&gt;&gt;<i> Version: 7.1.405 / Virus Database: 268.11.3/423 - Release Date: 8/18/2006
+</I>&gt;&gt;<i>
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I></PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="017422.html">Fwd: [antlr-interest] v3: semantic predicates in parser
+</A></li>
+	<LI>Next message: <A HREF="017423.html">[antlr-interest] [v3] Tree building code generation bug?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#17424">[ date ]</a>
+              <a href="thread.html#17424">[ thread ]</a>
+              <a href="subject.html#17424">[ subject ]</a>
+              <a href="author.html#17424">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

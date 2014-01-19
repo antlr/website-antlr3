@@ -1,0 +1,186 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] ANTLR in C++
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20ANTLR%20in%20C%2B%2B&In-Reply-To=%3C384433.19919.qm%40web52109.mail.re2.yahoo.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="020087.html">
+   <LINK REL="Next"  HREF="020094.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] ANTLR in C++</H1>
+    <B>Eugen Cazacu</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20ANTLR%20in%20C%2B%2B&In-Reply-To=%3C384433.19919.qm%40web52109.mail.re2.yahoo.com%3E"
+       TITLE="[antlr-interest] ANTLR in C++">the_e57 at yahoo.com
+       </A><BR>
+    <I>Thu Apr  5 05:24:33 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="020087.html">[antlr-interest] Antlr and Erlang
+</A></li>
+        <LI>Next message: <A HREF="020094.html">[antlr-interest] 1.5 vs 1.4
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#20091">[ date ]</a>
+              <a href="thread.html#20091">[ thread ]</a>
+              <a href="subject.html#20091">[ subject ]</a>
+              <a href="author.html#20091">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello,
+I hope you don't mind cc the group, because I am also
+giving this answer to the community, and for anyone
+who needs explanation about how antlr C++ memory
+management works.
+
+Thank you for the appreciation. I haven't done any
+antlr working recently so I am a bit rusty, so my
+answers might not be very exact. Here are some point
+you need to understand in order to understand my
+problem and its solution, if you don't know any of
+them, you should look it up:
+1) Any tree can be represented as a binary tree with
+first child and next sibling children, and this is how
+antlr implements the AST.
+2) C++ antlr has a reference counting mechanism which
+is managing the memory. A newly created pointer in the
+create (not sure about the function name) is wrapped
+in the RefCount template class and it will
+automatically delete the pointer when the counter
+comes to 0. The RefCount&lt;AST&gt; can be used just like
+any pointer, but because there are no actual pointers
+in the code, there are also no deletes. The delete
+operation is executed by the RefCount. You can look
+through it if you are good with templates in C++,
+otherwise it will be quite difficult to understand.
+Basically it is a template class that takes the type
+of the pointer it is managing as its parameter, just
+like auto_ptr in C++, only smarter. Each time the
+refcount is moved around, replicated, or deleted an
+operator/constructor/function in refcount is invoked
+and modifies the counter of the pointer. This is done
+behind the scene and you just use it just as a regular
+reference (just like in Java. Note: RefCount is not a
+garbage collector, the gc in Java is much more complex
+and handles some cases where the RefCount fails. the
+occurrence of circular references).
+3) The problem: because of the two above the following
+happens: When a tree root exits a scope an has to be
+destroyed, the destructor of the refcount is invoked,
+this causes the destructor of the node to be invoked,
+which in order to exit succesfully invokes all of its
+children destructors, one of which is the nextSibling
+member. This is also a refcount and does the same for
+all of its members, and also has a next sibling, and
+so on. When the number of siblings is close to 30.000
+or more this generates a stack overflow because of the
+function recursions (destructor of refcount and
+destructor of the AST node). The same thing happens
+also with a big depth, but usually this is not a
+problem because the first child is much less used than
+next sibling. A good example would be for a C++
+parser:
+{ int a1;
+  {int a2;
+  .....
+    { int a30000;
+    }
+  }
+}
+The above is has a little probability to happen.
+However the following structure is very much real:
+{ int a1; int a2; .... int a30000; }
+Some languages might have a very big linear trees like
+this with a lot of siblings. An as you can see the
+space complexity of the destruction of such a
+structure is O(n).
+
+4) The solution: use my own destruct function for the
+tree node which will hold the temporary data in the
+heap memory, not the stack memory. In my function I do
+this by holding the temporary data in a queue
+structure, but it might as well be a stack or
+something else. By holding the nextsibling and the
+firstchild of each node in such a structure, I force
+the refcount not to invoke the destructor for them
+because I am creating a +1 for each of them in the
+counter, and when the root node is destroyed, it
+doesn't recurse in destroying its children, the next
+step is to destroy each child by hand using the same
+method.
+
+PS: There are no destructors because there are no
+actual pointers in the code. RefCount does that job
+
+I hope this answers your question, or at least help
+you understand were to find the answer.
+
+--- me 262 &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">me262c at gmail.com</A>&gt; wrote:
+
+&gt;<i> Hi Eugen,
+</I>&gt;<i> 
+</I>&gt;<i>   I saw your posting last year on ANTLR's memory
+</I>&gt;<i> management. Did the
+</I>&gt;<i> problem get resolved in 2.7.7?
+</I>&gt;<i> 
+</I>&gt;<i>   We develop in MSVC7. I am new to parsing. In the
+</I>&gt;<i> past week I looked
+</I>&gt;<i> at ANTLR, Spirit, Lex/Yacc and others in the zoo.
+</I>&gt;<i> ANTLR is nice for
+</I>&gt;<i> Java but I can't understand how memories are
+</I>&gt;<i> managed. For example,
+</I>&gt;<i> none of the generated classes have destructors.
+</I>&gt;<i> 
+</I>&gt;<i> A appreciate your comments on the suitability of
+</I>&gt;<i> ANTLR for C++ projects.
+</I>&gt;<i> 
+</I>&gt;<i> Thanks in advance,
+</I>&gt;<i> 
+</I>&gt;<i> M. E.
+</I>&gt;<i> 
+</I>&gt;<i> Santa Clara, CA
+</I>&gt;<i> 
+</I>
+
+
+ 
+____________________________________________________________________________________
+It's here! Your new message!  
+Get new email alerts with the free Yahoo! Toolbar.
+<A HREF="http://tools.search.yahoo.com/toolbar/features/mail/">http://tools.search.yahoo.com/toolbar/features/mail/</A>
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="020087.html">[antlr-interest] Antlr and Erlang
+</A></li>
+	<LI>Next message: <A HREF="020094.html">[antlr-interest] 1.5 vs 1.4
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#20091">[ date ]</a>
+              <a href="thread.html#20091">[ thread ]</a>
+              <a href="subject.html#20091">[ subject ]</a>
+              <a href="author.html#20091">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,171 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] parsing operators with priorities via attribute	grammar??
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20parsing%20operators%20with%20priorities%20via%20attribute%0A%09grammar%3F%3F&In-Reply-To=%3C4762557A.5010101%40tudelft.nl%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="025243.html">
+   <LINK REL="Next"  HREF="025250.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] parsing operators with priorities via attribute	grammar??</H1>
+    <B>W.Pasman@tudelft.nl</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20parsing%20operators%20with%20priorities%20via%20attribute%0A%09grammar%3F%3F&In-Reply-To=%3C4762557A.5010101%40tudelft.nl%3E"
+       TITLE="[antlr-interest] parsing operators with priorities via attribute	grammar??">w.pasman at tudelft.nl
+       </A><BR>
+    <I>Fri Dec 14 02:05:46 PST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="025243.html">[antlr-interest] simple query language EBNF
+</A></li>
+        <LI>Next message: <A HREF="025250.html">[antlr-interest] Local backtracking
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25244">[ date ]</a>
+              <a href="thread.html#25244">[ thread ]</a>
+              <a href="subject.html#25244">[ subject ]</a>
+              <a href="author.html#25244">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+I am trying to write a parser for prolog.
+Now in prolog there are operators with assigned priorities. There are 
+dozens of operators, and writing a grammar rule for each operator would 
+greately clutter the (already large) prolog grammar.
+The prolog reference implementation (&quot;Prolog: The Standard&quot; by Deransart 
+et al) uses an attribute grammar and we want to copy this as close as 
+possible into the antlr grammar describing prolog.
+
+Is there a way to do this operators-with-priority parsing using attributes?
+
+
+
+
+
+Below a description of the tries I already did. I ran into lots of 
+problems using semantic predicates, attributes, etc. I'm not sure which 
+issues are the same underlying problem, and whether I run do maybe 
+misunderstand parts or whether there are antlr bugs involved. So let me 
+just discuss what I tried.
+A very basic example illustrating the problems is this grammar
+
+term::=NUMBER extraterms
+extraterms::=(OP NUMBER)* (leaving out the priorities for a moment)
+NUMBER::=1|2|3
+OP::=a|b|c
+
+To incorporate the priority handling in ANTLR you would want to write 
+something like
+
+extraterms[P]:
+        (nextop=OP { prio(nextop)&gt;P }?) =&gt;
+        OP NUMBER extraterms[prio(nextop)]
+    |
+    ;
+
+so basically, we use the attribute P to limit the priority of the term 
+that is being parsed
+and, what we want is the parser to try read next OP, and if it is right 
+priority continue parsing.
+    if it is not right priority, then take the epsilon production rule 
+instead.
+
+note: I tested the parsers with antlrworks 1.1.5.
+In some cases my grammar seemed to work as intended from the 
+antlrworks-debugger, but it failed when running in the interpreter.
+
+
+
+
+
+
+I noticed a number of problems with this and similar attempts
+
+1. grammar fragments like {Token op=input.LA(1); 
+getprio(op.getText())&gt;0}? compiles to java code
+            if ( !(Token op=input.LA(1); getprio(op.getText())&gt;0) ) { .... }
+which fails to compile (in java you can't declare variables inside a 
+boolean test I think)
+
+2. splitting out the initializer and the real test as in
+    extraterms[int P]:
+    {Token op=input.LT(1);} { getprio(op.getText())&gt;0}? OP
+    |
+    ;
+    does compile but the resulting parser just checks for OP in the 
+input stream
+    in fact it seems my grammar is now interpreted as
+
+    writing extraterms[int P]:
+    OP {Token op=input.LT(1);} { getprio(op.getText())&gt;0}?
+    |
+    ;
+
+which will parse the terms incorrectly: if an operator comes with the 
+wrong priority the parse fails wth a FailedPredicateException, instead 
+of succeeding using the epsilon production rule in that case.
+
+After more attempts in this directoin  I got the impression that I might 
+need the semantic predicates to get what I want. So next attempt
+
+4. extraterms[...]: .... (p=OP {getprio(p.getText())&gt;P}?)=&gt; OP | ...
+the semantic test (the term left of =&gt;) calls a separate function 
+testsynpred(). Problems now are:
+a. the code does not pass the attribute P to testsynpred(),  so the &quot;&gt;&quot; 
+can not be evaluated in testsynpred
+    (hence the generated java code does not even compile)
+b. similarly the variable p (smaller p) is declared in the extraterms 
+code section,
+    not in testsynpred where the parser now wants to use it
+    (another reason why generated java code again does not compile)
+
+5. as an attempted workaround to get the attribute P to the testsynpred 
+we define a global currentP and write
+{ currentP=P; }
+        ( {input.LA(1)==OP &amp;&amp; getprio(input.LT(1).getText())&lt;currentP }?)
+But results in a code block
+    if (backtracking==0) { currentP =P; }
+so currentP is probably not set at all defeating the workaround.
+
+
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="025243.html">[antlr-interest] simple query language EBNF
+</A></li>
+	<LI>Next message: <A HREF="025250.html">[antlr-interest] Local backtracking
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25244">[ date ]</a>
+              <a href="thread.html#25244">[ thread ]</a>
+              <a href="subject.html#25244">[ subject ]</a>
+              <a href="author.html#25244">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,188 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] the nihilistic circle hoist
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20the%20nihilistic%20circle%20hoist&In-Reply-To=%3C018e01cbacf0%2452389700%24f6a9c500%24%40pixelminegames.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="040470.html">
+   <LINK REL="Next"  HREF="040472.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] the nihilistic circle hoist</H1>
+    <B>Sam Harwell</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20the%20nihilistic%20circle%20hoist&In-Reply-To=%3C018e01cbacf0%2452389700%24f6a9c500%24%40pixelminegames.com%3E"
+       TITLE="[antlr-interest] the nihilistic circle hoist">sharwell at pixelminegames.com
+       </A><BR>
+    <I>Wed Jan  5 07:50:46 PST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="040470.html">[antlr-interest] the nihilistic circle hoist
+</A></li>
+        <LI>Next message: <A HREF="040472.html">[antlr-interest] the nihilistic circle hoist
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40471">[ date ]</a>
+              <a href="thread.html#40471">[ thread ]</a>
+              <a href="subject.html#40471">[ subject ]</a>
+              <a href="author.html#40471">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Here's my analysis of the problem. First and foremost, I'm treating the rule
+&quot;args&quot; as though it were written &quot;args : ID+;&quot;
+
+Problem 1: The rule &quot;args&quot; is not always executed behind the same predicate.
+This is easily corrected by adding a second rule &quot;args2&quot; and modifying the
+&quot;element&quot; rule as follows:
+
+element : {true}? =&gt; args2;
+args2 : ID+;
+
+Problem 2: If we take a detailed look at the decision making for &quot;optional&quot;,
+we see a major problem. Removing predicates and inlining, we see the
+following syntactic structure:
+
+optional : ':' ID+ ID+;
+
+After matching one ID element for the first instance of &quot;ID+&quot;, if the next
+input element is &quot;ID&quot;, the grammar must decide whether to match that with
+the first instance of &quot;ID+&quot; or to move on to the second. Without predicates,
+this is a grammatical error. However, the predicates you provided clearly
+indicate that on the condition &quot;true&quot;, the loop should be terminated and
+move on to the next instance of &quot;ID+&quot; (contained in the second &quot;element&quot;).
+This condition *must* be checked as part of the loop condition in the rule
+&quot;args&quot;.
+
+Solution: Ignoring the only truly acceptable solution of not using syntactic
+predicates, you should add the following to my list of rules about semantic
+predicates.
+
+1. A semantic predicate which unconditionally evaluates to &quot;true&quot; during
+*any single execution of the grammar* behaves almost as though it weren't
+included in the grammar. By removing the predicate from the rule &quot;element&quot;,
+the grammar compiler reports a warning for the rule &quot;args&quot; which clearly
+indicates the rule &quot;args&quot; will not behave as you expect. This is the
+specific rule where the decision error was observed - the semantic predicate
+suppressed a critical warning.
+
+Thanks,
+Sam
+
+-----Original Message-----
+From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>
+[mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Ron Burk
+Sent: Wednesday, January 05, 2011 7:43 AM
+To: ANTLR Interest
+Subject: Re: [antlr-interest] the nihilistic circle hoist
+
+&gt;<i> That's not a bug but a limitation of Java and most other targets; I think
+</I>the book has a good description.
+
+If we're talking about bug#2 (skip ahead if not! :-), then...
+
+After (re)reading the book, the only thing I could figure out you might be
+referring to is the final paragraphs of Chapter 13. But those are about the
+issues pretty well covered by Sam's prior post of limitations.
+The predicate &quot;true&quot; does not &quot;reference anything not visible to all rules&quot;
+or violate any other constraint I've heard of :-).
+
+Maybe a more extreme example can make the problem clear:
+
+----------------------------------------------------------
+// this grammar is for this simple language:
+// '(' ID+ ')' ( ':' ID+ )?
+grammar hoist1;
+
+WS  : (' '|'\t'|'\n'|'\r')+ {skip();};
+ID  : ('a'..'z')+;
+
+start : mainprog optional? EOF;
+
+mainprog : '(' args ')';
+args : ID ID* ;
+
+// I've decided to &quot;disable&quot; this optional construct
+optional: {false}?=&gt; ':' element element; element : {true}?=&gt; args ;
+----------------------------------------------------------
+
+* predicates completely safe (only true/false)
+* compiles (target language has no complaints)
+* works sometimes! (accepts string &quot;( x )&quot;)
+* fails other times.
+
+(the {false} predicate is there just to make the resulting output as
+disturbingly incorrect as possible; you can remove it and still get the same
+wrong output).
+
+When given an input string of &quot;( x x )&quot; the generated parser says:
+   line 1:4 extraneous input 'x' expecting ')'
+The reason is that the predicate is being executed far outside its correct
+context. Predicate hoisting is significantly harder than the current ANTLR
+algorithm thinks it is. :-)  I really don't see any way to implement it
+correctly without either nontrivial grammar transformations or a runtime
+stack of active predicates.
+
+But all that's about bug#2.
+
+Back to bug#1, where hopefully it should be much simpler for me to see if
+I'm confused.
+
+&gt;<i> I get these results with 3.3.  Hmm... it looks like the decision for FOO
+</I>FOO* and FOO+ also gets the same thing. which version are you using?
+
+The header line of my ANTLR output says:
+   // $ANTLR 3.3 Nov 30, 2010 12:50:56 Simple.g 2011-01-04 12:20:14
+
+Maybe you're saying the DFA is the same so &quot;no problem&quot;, while I'm saying
+the two parsers accept different languages, so &quot;problem&quot;?
+
+Here's the exact file I just tested:
+
+grammar hoist1;
+
+WS  : (' '|'\t'|'\n'|'\r')+ {skip();};
+ID  : ('a'..'z')+;
+
+start : element* EOF ;
+element : {true}?=&gt; pre ;
+pre : ID+ ;
+
+
+When I give this grammar an input string of &quot;x&quot;, I get:
+
+line 1:0 required (...)+ loop did not match anything at input 'x'
+
+When I change change the &quot;ID+&quot; to &quot;ID ID*&quot;, the resulting parser happily
+accepts any number of space-separated x's.
+Is that not the same result you get?
+
+List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+Unsubscribe:
+<A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="040470.html">[antlr-interest] the nihilistic circle hoist
+</A></li>
+	<LI>Next message: <A HREF="040472.html">[antlr-interest] the nihilistic circle hoist
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40471">[ date ]</a>
+              <a href="thread.html#40471">[ thread ]</a>
+              <a href="subject.html#40471">[ subject ]</a>
+              <a href="author.html#40471">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

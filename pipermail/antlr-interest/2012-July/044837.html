@@ -1,0 +1,132 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Irregular AST construction
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Irregular%20AST%20construction&In-Reply-To=%3CCAN51Nt7cgnpg0t7DZsmF7dg1JaGspcN%3DKzw8iT1B8ZQWAPMs-Q%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="044829.html">
+   <LINK REL="Next"  HREF="044845.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Irregular AST construction</H1>
+    <B>Benjamin S Wolf</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Irregular%20AST%20construction&In-Reply-To=%3CCAN51Nt7cgnpg0t7DZsmF7dg1JaGspcN%3DKzw8iT1B8ZQWAPMs-Q%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Irregular AST construction">jokeserver at gmail.com
+       </A><BR>
+    <I>Wed Jul  4 18:11:58 PDT 2012</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="044829.html">[antlr-interest] Irregular AST construction
+</A></li>
+        <LI>Next message: <A HREF="044845.html">[antlr-interest] Irregular AST construction
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#44837">[ date ]</a>
+              <a href="thread.html#44837">[ thread ]</a>
+              <a href="subject.html#44837">[ subject ]</a>
+              <a href="author.html#44837">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Mike,
+
+If I had to guess, I'd say Antlr is not actually looking at the end of
+that rule when it generates the code for the subrule (so it uses
+streams in case you have more of the same tokens or rules); you'll get
+similar code if you leave out the ( COLLATE_SYM identifier )* but
+leave the parens around the alternatives.
+
+Personally, I've always had problems with rewrite rules appearing in
+alternatives, particular when I try to reference labels that appear
+later in the rule (in e.g. your example, you can't reference
+&quot;identifier&quot; in a rewrite rule in the subrule above it). My strategy
+such cases is to use semantic predicates instead of embedding rewrite
+rules in subrules:
+
+primary:
+        (
+               ...
+                | PLUS_SYM p1=primary
+                | MINUS_SYM p2=primary
+        )
+        (options {greedy = true;}: COLLATE_SYM identifier)*
+        -&gt; {$function_call}? ^(FUNCTION_CALL function_call)
+        -&gt; literal? field_name? ... PLUS_SYM? $p1? MINUS_SYM? $p2? ...
+interval_expression? ( COLLATE_SYM identifier )*
+;
+
+Your case is a little longer than mine have been, so that kind of
+rewrite rule may be a little heavyweight. You could also try moving
+the long list of alternatives into its own rule -- if you don't have
+parentheses around the whole thing it'll generate the right code (and
+if you only want a list of tokens instead of a tree it'll work just
+fine with the COLLATE subrule (though the COLLATE subtree will also be
+returned in the function_call case, which it's not doing in the case
+you gave)).
+
+On Wed, Jul 4, 2012 at 12:05 AM, Mike Lischke &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">mike at lischke-online.de</A>&gt; wrote:
+&gt;<i> Hi,
+</I>&gt;<i>
+</I>&gt;<i> this might be related to the C target only, but I'm not sure.
+</I>&gt;<i>
+</I>&gt;<i> Given this rule:
+</I>&gt;<i>
+</I>&gt;<i> primary:
+</I>&gt;<i>         (
+</I>&gt;<i>                 literal
+</I>&gt;<i>                 | field_name
+</I>&gt;<i>                 | function_call// -&gt; ^(FUNCTION_CALL function_call)
+</I>&gt;<i>                 | PARAM_MARKER
+</I>&gt;<i>                 | variable
+</I>&gt;<i>                 | PLUS_SYM primary
+</I>&gt;<i>                 | MINUS_SYM primary
+</I>&gt;<i>                 | BITWISE_NOT primary
+</I>&gt;<i>                 | LOGICAL_NOT primary
+</I>&gt;<i>                 | BINARY_SYM primary
+</I>&gt;<i>                 | ROW_SYM expression_list
+</I>&gt;<i>                 | EXISTS_SYM subquery
+</I>&gt;<i>                 | match_expression
+</I>&gt;<i>                 | case_expression
+</I>&gt;<i>                 | interval_expression
+</I>&gt;<i>         )
+</I>&gt;<i>         (options {greedy = true;}: COLLATE_SYM identifier)*
+</I>&gt;<i> ;
+</I>&gt;<i>
+</I>&gt;<i> I see a completely different tree construction in the generated parser depending on whether I enable the single (out-commented) rewrite rule or not. If I leave it out then everything is ok. With it, though, the generated code switches to using local streams for each alternative, but does not create the root_0 node (except for the function_call alternative). As a consequence the primary() function returns an empty tree for most of the alternatives.
+</I>&gt;<i>
+</I>&gt;<i> So far I had not the impression that I have to add a rewrite rule to every alternative if I have one that has a rule. Is this a bug in code generation or should I now think to add a rule to all alternatives in such scenarios?
+</I>&gt;<i>
+</I>&gt;<i> Mike
+</I>&gt;<i> --
+</I>&gt;<i> www.soft-gems.net
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I></PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="044829.html">[antlr-interest] Irregular AST construction
+</A></li>
+	<LI>Next message: <A HREF="044845.html">[antlr-interest] Irregular AST construction
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#44837">[ date ]</a>
+              <a href="thread.html#44837">[ thread ]</a>
+              <a href="subject.html#44837">[ subject ]</a>
+              <a href="author.html#44837">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

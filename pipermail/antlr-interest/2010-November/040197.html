@@ -1,0 +1,143 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Island grammar for reading shell commands
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Island%20grammar%20for%20reading%20shell%20commands&In-Reply-To=%3C25a6add6-6d3c-4914-b71f-17ac90f7b929%40VA3EHSMHS006.ehs.local%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="040195.html">
+   <LINK REL="Next"  HREF="040162.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Island grammar for reading shell commands</H1>
+    <B>Mike Matera</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Island%20grammar%20for%20reading%20shell%20commands&In-Reply-To=%3C25a6add6-6d3c-4914-b71f-17ac90f7b929%40VA3EHSMHS006.ehs.local%3E"
+       TITLE="[antlr-interest] Island grammar for reading shell commands">mike.matera at xilinx.com
+       </A><BR>
+    <I>Tue Nov 30 21:32:09 PST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="040195.html">[antlr-interest] Island grammar for reading shell commands
+</A></li>
+        <LI>Next message: <A HREF="040162.html">[antlr-interest] ANTLR v3.3 released!
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40197">[ date ]</a>
+              <a href="thread.html#40197">[ thread ]</a>
+              <a href="subject.html#40197">[ subject ]</a>
+              <a href="author.html#40197">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Bill,
+
+I think you're doing something weird here:
+
+ShellLexer l = new ShellLexer(input);
+
+You are reusing the CharStream that your parser is using.  I don't know
+if this is really supposed to work or not.  Try this instead:
+
+ShellLexer l = new ShellLexer(new ANTLRStringStream($SHELL.getText()))
+
+This copies the characters into a new buffer with no ambiguous impacts
+on your top-level parser.  I use this exact pattern to parse strings in
+my language. 
+
+One other thing you might consider is not parsing the shell command at
+all.  If all you intend to do is run the command you can simply split
+the command on whitespace then use java.lang.ProcessBuilder.  Here's
+what I mean:
+
+String[] cmd = $SHELL.getText().split(&quot;\\s+&quot;);
+ProcessBuilder bld = new ProcessBuilder(cmd);
+Process p = bld.start();
+
+In order to make this trick work you want to stuff all of the shell
+characters into a single token.  Here's how you could do that:
+
+SHELL: 'shell' ~('\n' | '\r')+ ('\r')? '\n' ;
+
+This token definition is like the ones you would use to implement a
+mechanism similar to a '#define'.  The token blindly snarfs everything
+after 'shell' until the end of line.  This is good because the
+non-syntax elements won't bother your parser and because it preserves
+whitespace which you will use later to tokenize your shell command. 
+
+Hope this helps!
+
+Cheers
+./m
+
+
+
+On 11/30/2010 06:05 PM, Bill Lear wrote:
+&gt;<i> On Tuesday, November 30, 2010 at 15:49:39 (-0800) Jim Idle writes:
+</I>&gt;&gt;<i> REST_OF_LINE allows an empty token which will immediately match nothing and
+</I>&gt;&gt;<i> continue to do so forever. You want +  not *. I think you might be doing
+</I>&gt;&gt;<i> this wrong to be honest. I would probably not use ANTLR for this.
+</I>&gt;<i> Maybe, but Antlr is so cool ...
+</I>&gt;<i>
+</I>&gt;<i> I did try replacing * with + and I got the same error.  Blech.  I really
+</I>&gt;<i> didn't want to write a parser by hand for all of this.  I've got
+</I>&gt;<i> significantly more to do than what I've got here, the rest of which
+</I>&gt;<i> should be easy to handle for antlr.
+</I>&gt;<i>
+</I>&gt;<i> So, there is really no viable way to have Antlr read the rest of the
+</I>&gt;<i> line of input?  I would be happy to just write the Java code for that
+</I>&gt;<i> one line:
+</I>&gt;<i>
+</I>&gt;<i> shell -timeout 30 find /var/log -name ....
+</I>&gt;<i>
+</I>&gt;<i> If I could just get hold of the input stream, read to end of line,
+</I>&gt;<i> I could hand-parse the '-timeout N' part, etc., and then let the
+</I>&gt;<i> lexer continue reading on the next line.  Is there no way to &quot;cut out&quot;
+</I>&gt;<i> a part of the input like this to process separately?
+</I>&gt;<i>
+</I>&gt;<i> Actually, I think I have a sick idea: Since this is line-based stuff,
+</I>&gt;<i> and small files, I can read this all in to memory.  I can hand-parse
+</I>&gt;<i> the shell command lines, and replace them with an empty line (to
+</I>&gt;<i> preserve line numbers in case of error) in the input, noting which
+</I>&gt;<i> lines I modified.  Then, I can give the massaged input to Antlr.  The
+</I>&gt;<i> parser is going to produce one instance of a Command class for each
+</I>&gt;<i> line, and return a list of them, in order.  I can just put the shell
+</I>&gt;<i> Command instances back in the list where they belong and be on my
+</I>&gt;<i> merry way..
+</I>&gt;<i>
+</I>&gt;<i> As I said though, it would be really cool if I could just do this all
+</I>&gt;<i> in Antlr.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Bill
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i>
+</I>
+This email and any attachments are intended for the sole use of the named recipient(s) and contain(s) confidential information that may be proprietary, privileged or copyrighted under applicable law. If you are not the intended recipient, do not read, copy, or forward this email message or any attachments. Delete this email message and any attachments immediately.
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="040195.html">[antlr-interest] Island grammar for reading shell commands
+</A></li>
+	<LI>Next message: <A HREF="040162.html">[antlr-interest] ANTLR v3.3 released!
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40197">[ date ]</a>
+              <a href="thread.html#40197">[ thread ]</a>
+              <a href="subject.html#40197">[ subject ]</a>
+              <a href="author.html#40197">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,245 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Re: trees with payloads??
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20trees%20with%20payloads%3F%3F&In-Reply-To=16786.37412.372996.418720%40despot.non.net">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="010024.html">
+   <LINK REL="Next"  HREF="010028.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Re: trees with payloads??</H1>
+    <B>lgcraymer</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20trees%20with%20payloads%3F%3F&In-Reply-To=16786.37412.372996.418720%40despot.non.net"
+       TITLE="[antlr-interest] Re: trees with payloads??">lgc at mail1.jpl.nasa.gov
+       </A><BR>
+    <I>Wed Nov 10 15:23:06 PST 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="010024.html">[antlr-interest] trees with payloads??
+</A></li>
+        <LI>Next message: <A HREF="010028.html">[antlr-interest] Re: trees with payloads??
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#10025">[ date ]</a>
+              <a href="thread.html#10025">[ thread ]</a>
+              <a href="subject.html#10025">[ subject ]</a>
+              <a href="author.html#10025">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+
+[If I'm lucky, John will appreciate the content of this enough to keep
+him from making a &quot;Netiquette nanny&quot; statement--this is a bit long.]
+
+Actually, performance is part of the reason for payloads--payloads can
+be carried from pass to pass without object creation, and--even in
+Java--it may be possible to optimize memory management of the
+&quot;carrier&quot; objects.  However, I also have strong objections to adding
+direct support for either doubly-linked AST nodes or using arrays for
+building syntax trees.  Doubly-linked ASTs are a red herring, and
+arrays are memory hogs.
+
+If you really need doubly-linked nodes in an ANTLR application, then
+the following is almost all of the machinery needed:
+
+Class LinkedAST extends CommonAST {
+     LinkedAST back = null;
+
+     public void link(LinkedAST ast) {
+         back = ast;
+     }
+
+     public LinkedAST prev() {
+         return back;
+     }
+
+     public boolean hasParent() {
+         return back.getFirstChild() == this;
+     }
+
+     public boolean hasSibling() {
+         return back.getNextSibling() == this;
+     }
+}
+
+
+Class ASTLinker {
+     LinkedAST current = null;
+
+     public void visit(LinkedAST ast) {
+         current = ast;
+
+         if (ast.getFirstChild() != null)
+               visitChild();
+
+         if (ast.getNextSibling() != null)
+               visitSibling();
+      }
+
+     public void visitChild() {
+          LinkedAST child = current.getFirstChild();
+          LinkedAST context = current;
+          child.link(context);
+          current = child;
+          if (current.getFirstChild() != null)
+                visitChild();
+
+          if (current.getNextSibling() != null)
+                visitSibling();
+
+          current = context;
+      }
+
+      public void visitSibling() {
+      // similar to visitChild()
+      }
+}
+
+ASTLinker is a Visitor which does the double linking; basically, you
+would create an ASTLinker and then invoke visit() on the root of the
+tree you wanted to doubly-link.
+
+Arrays, besides being memory hogs, do not address the root cause of
+the cyclic reference problem.  The cyclic reference problem is due to
+the current brute force tree construction algorithm; a better approach
+is to build a stream of instruction/payload pairs and then construct
+the tree after all instructions have been gathered.  This approach
+allows optimized tree construction with no unnecessary object creation
+and deletion.
+
+Getting back to payloads:  one of the big advantages is that payloads
+can be used throughout the processing passes, starting with tokens. 
+By separating navigation information (sibling/child references and
+type) from attribute information (text descriptor, line/column
+information, and whatever else might be desired), there is no a priori
+need to copy attribute information from one processing phase to the
+next.  Instead, a creation cost is only incurred when new attributes
+need to be added.  [And maybe not then, if one of the attributes is a
+Hashmap to support Micheal's suggestion.  Hashmap usage isn't free,
+however:  custom payloads would be preferable for both speed and
+minimized memory usage.]
+
+One other note:  with payloads, there is no reason for Tokens to
+differ from ASTs, except that an AST may have down and right fields
+set.  That is:
+
+Class Carrier {
+    Payload attr;
+    int type = 0;
+    Carrier down = null;
+    Carrier right = null;
+
+    public Carrier(int type0, Payload att) {
+        type = type0;
+        attr = att;
+    }
+
+    ... // all of the usual AST ops, plus get/set attr
+}
+
+Both ASTs and Tokens are then replaced by Carriers (probably with a
+better name).  This would have a performance advantage for tree
+construction in the Parser since the token Carriers can be linked to
+form a syntax tree in the parser.
+
+--Loring
+
+--- In <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>, &quot;John D. Mitchell&quot;
+&lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">johnm-antlr at n...</A>&gt; wrote:
+&gt;<i> &gt;&gt;&gt;&gt;&gt; &quot;Terence&quot; == Terence Parr &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">parrt at c...</A>&gt; writes:
+</I>&gt;<i> [...]
+</I>&gt;<i> 
+</I>&gt;<i> &gt; After Loring bitched at me on the phone yesterday &lt;snicker&gt;, I'm
+</I>&gt;<i> &gt; beginning to think he's right: if separating the node data from the
+</I>&gt;<i> &gt; navigation is the right concept, then trees should be a single
+</I>&gt;<i> &gt; implementation that simply carry a &quot;payload&quot; object defined by the
+</I>user.
+&gt;<i> &gt; This is like Sun's MutableTreeNode.
+</I>&gt;<i> 
+</I>&gt;<i> Go Loring!  :-? :-)
+</I>&gt;<i> 
+</I>&gt;<i> I strongly concur.
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> [...]
+</I>&gt;<i> 
+</I>&gt;<i> &gt; As a bonus to the payload strategy, we can enhance the tree
+</I>functionality
+&gt;<i> &gt; later w/o forcing alterations in people's application; their payload
+</I>&gt;<i> &gt; objects still fit in our nodes.
+</I>&gt;<i> 
+</I>&gt;<i> Yea!
+</I>&gt;<i> 
+</I>&gt;<i> &gt; This all comes at the cost of an additional object creation (payload
+</I>&gt;<i> &gt; creation + node creation).
+</I>&gt;<i> 
+</I>&gt;<i> In Java, who cares.
+</I>&gt;<i> 
+</I>&gt;<i> For people who care (embedded C), the code gen could be made smart
+</I>enough
+&gt;<i> to do just one single allocation for both &quot;objects&quot;.
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> &gt; Side note: Mitchell suggested Tokens and Tree nodes should have
+</I>not only
+&gt;<i> &gt; fixed fields like this, but the ability to dynamically acquire
+</I>&gt;<i> &gt; &quot;attributes&quot;; this would basically be a hashmap.  It cuts down on a
+</I>&gt;<i> &gt; bazillion subclasses.  It would be useful when parsing xml for
+</I>example.
+&gt;<i> &gt; The TAG token could have a list of tag attributes w/o creating
+</I>subclasses
+&gt;<i> &gt; etc...
+</I>&gt;<i> 
+</I>&gt;<i> Yeah, that's a damn good idea!  :-?
+</I>&gt;<i> 
+</I>&gt;<i> LinkedHashSet is your friend.
+</I>&gt;<i> 
+</I>&gt;<i> Have fun,
+</I>&gt;<i> 	John
+</I>
+
+
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+    <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+    <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+    <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="010024.html">[antlr-interest] trees with payloads??
+</A></li>
+	<LI>Next message: <A HREF="010028.html">[antlr-interest] Re: trees with payloads??
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#10025">[ date ]</a>
+              <a href="thread.html#10025">[ thread ]</a>
+              <a href="subject.html#10025">[ subject ]</a>
+              <a href="author.html#10025">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

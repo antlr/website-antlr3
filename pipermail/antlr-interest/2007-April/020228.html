@@ -1,0 +1,195 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Embedding one language within another
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Embedding%20one%20language%20within%20another&In-Reply-To=%3CB36CCC332A32904F8FA3DE134A23533625234F%40wavemachine.temporal-wave.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="020225.html">
+   <LINK REL="Next"  HREF="020226.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Embedding one language within another</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Embedding%20one%20language%20within%20another&In-Reply-To=%3CB36CCC332A32904F8FA3DE134A23533625234F%40wavemachine.temporal-wave.com%3E"
+       TITLE="[antlr-interest] Embedding one language within another">jimi at temporal-wave.com
+       </A><BR>
+    <I>Mon Apr 16 12:03:07 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="020225.html">[antlr-interest] Embedding one language within another
+</A></li>
+        <LI>Next message: <A HREF="020226.html">[antlr-interest] Lexer Problem - ANTLR bug or my stupidity?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#20228">[ date ]</a>
+              <a href="thread.html#20228">[ thread ]</a>
+              <a href="subject.html#20228">[ subject ]</a>
+              <a href="author.html#20228">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Take a look at the example of island grammars in the downloadable
+examples. I have yet to convert these to C, but it isn't difficult, just
+time (and probably some bug fixes ;-).
+
+It sounds like you can use this as a template for your work. The key is
+that you have to trigger this from the lexer as ANTLR will not let you
+do syntax directed lexing (have the parser tell the lexer what to do
+next). 
+
+But say your directive is:
+
+Nyscriptlang
+Myscriptland
+#doruby ruby-expression-that does-something
+Myscriptlang
+Etc
+
+Then your lexer should see #doruby and call another lexer/parser
+combination. It can then skip the line, or return it as a special token
+like DIRECTIVE or something. Here is an example (using C target of doing
+this, for a language I had to paresr where there was a pattern matching
+operator, which was too stupid for words and basically needed a second
+grammar to deal with it (which was then a trivial grammar):
+
+In the first parser/lexer grammar I have (in the lexer spec):
+
+OPMATCH		: '?' 
+		{
+		    /* To make parsing of COS pattern matching simpler
+and so that the COS
+		     * parser can also validate the patterns, we call an
+island grammar that
+		     * feeds off the current input stream.
+		     */
+		    cosPatternLexer	cl	    = new
+cosPatternLexer(input);
+		    CommonTokenStream	patTok    = new
+CommonTokenStream(cl);
+		    cosPatternParser	cp	    = new
+cosPatternParser(patTok);
+		    cp.pattern();
+                    
+                    /* Whatever character (1 + recover consume) caused
+the end of the pattern parse, we can guarantee
+                     * that it was meant for this parser, so we seek
+back to it.
+                     */
+                    input.seek(input.index()-2);
+
+		    ... destroy parser we made on the fly, skip this
+token in this lexer, etc...
+
+
+Note that I just reuse the current input stream (input is predefined for
+you) in the lexer rule, then create a new parser on the fly (which you
+might be able to cache rather than create and destroy each time). The
+parser I called will actually return an AST for the pattern, but you can
+do whatever you want of course. The grammar that was called is
+completely separate grammar and nows nothing of the caller. It just
+stops parsing at some point (in your case, probably EOL of some sort).
+
+Jim
+
+
+		
+
+
+
+
+
+-----Original Message-----
+From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>
+[mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Wincent Colaiuta
+Sent: Monday, April 16, 2007 11:21 AM
+To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: [antlr-interest] Embedding one language within another
+
+Hi all,
+
+I'm trying to write a recognizer for a Cheetah-like[1] templating  
+language which effectively allows one language to be &quot;embedded&quot;  
+within another. Templates are mostly plain text and only a few tokens  
+have special meaning (directives starting with &quot;#&quot;, placeholders  
+starting with &quot;$&quot;, and escape sequences starting with &quot;\&quot;). So that  
+much is easy to lex/parse. The tricky bit is that many directives  
+take Ruby expressions as parameters, and that means I have to parse  
+at least a subset of Ruby as well.
+
+I have a working prototype which is itself written in Ruby[2] but it  
+is both slow and memory hungry (due to memoization) so I am now  
+looking to re-implement the parser in compiled language, specifically  
+using ANTLR targeting C so that I can incorporate the generated  
+parser into a Ruby extension.
+
+I'm new to ANTLR and have only been working on this for the last 24  
+hours; I've read as much of the new ANTLR book as I can but I'm not  
+really sure what the best approach is... My original pre-ANTLR  
+implementation uses an integrated lexer/parser (not separate phases)  
+and so can easily switch between Ruby and not-Ruby modes. But given  
+that ANTLR uses two separate phases I am not aware of how to proceed:  
+what constitutes a token is context-dependent depending on what the  
+preceding tokens are; for example in the main body of the template  
+&quot;foo.bar&quot; has no special meaning at all, but inside a Ruby section it  
+is a message send (message &quot;bar&quot; sent to object &quot;foo&quot;).
+
+My lexer rules are starting to look nastily complicated and parser- 
+like; in the end there'll be nothing left in the parser! Can I write  
+two lexers and switch to the right one depending on what tokens  
+arrive on the input stream? Is it likely that I'll be able to do this  
+with a single lexer if I very carefully prioritize my rules (rule  
+precendence is determined by order of appearance in the grammar file,  
+right?). Is there some other way around this issue that I haven't  
+thought of yet? I've seen some posts in the archives about parsing  
+&quot;here documents&quot;, which is a similar issue, but the posts in the  
+archives are very old and I'm not sure how things stand in ANTLR v3.
+
+Cheers,
+Wincent
+
+[1] <A HREF="http://cheetahtemplate.org/">http://cheetahtemplate.org/</A>
+[2] <A HREF="http://walrus.wincent.com/">http://walrus.wincent.com/</A>
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="020225.html">[antlr-interest] Embedding one language within another
+</A></li>
+	<LI>Next message: <A HREF="020226.html">[antlr-interest] Lexer Problem - ANTLR bug or my stupidity?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#20228">[ date ]</a>
+              <a href="thread.html#20228">[ thread ]</a>
+              <a href="subject.html#20228">[ subject ]</a>
+              <a href="author.html#20228">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

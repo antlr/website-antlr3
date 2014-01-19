@@ -1,0 +1,206 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Starting two parser rules with the same token
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Starting%20two%20parser%20rules%20with%20the%20same%20token&In-Reply-To=%3CCAMas4U-k-j_41rMyYX14kwf9sQN9YnX3vLyyRivMJFZdMsL1Jw%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="044166.html">
+   <LINK REL="Next"  HREF="044171.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Starting two parser rules with the same token</H1>
+    <B>Kunal Naik</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Starting%20two%20parser%20rules%20with%20the%20same%20token&In-Reply-To=%3CCAMas4U-k-j_41rMyYX14kwf9sQN9YnX3vLyyRivMJFZdMsL1Jw%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Starting two parser rules with the same token">kunal.a.naik at gmail.com
+       </A><BR>
+    <I>Tue Feb 28 19:06:54 PST 2012</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="044166.html">[antlr-interest] All say that literal strings in parser rules are doing harm. Why?
+</A></li>
+        <LI>Next message: <A HREF="044171.html">[antlr-interest] Starting two parser rules with the same token
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#44170">[ date ]</a>
+              <a href="thread.html#44170">[ thread ]</a>
+              <a href="subject.html#44170">[ subject ]</a>
+              <a href="author.html#44170">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello,
+
+So the subject text is probably already getting most of you ready to yell
+&quot;wrong!&quot; but hear me out.  I'm trying to write a grammar that supports
+something like the following:
+(1*2/(3-variableOne) &gt;= variableTwo OR variableThree != 4) AND variableFour
+&gt;<i> 5
+</I>
+Basically I want to be able to use parentheses to group the mathematical
+operations [(1*2/(3-variableOne) above] as well as use parentheses to group
+the boolean operations [binding the two operations around OR above].  The
+way the grammar is laid out, we can have an infinite amount of opening
+parenthesis so ANTLR can't immediately tell if it's at the start of a
+grouped mathematical statement or boolean statement.  If I could limit the
+number of nested parenthesis, I think I could probably set k in the options
+to that same limit and that might help but I haven't come up with an
+elegant solution of enforcing a limit.
+
+I feel like this has to be possible because the Java grammar allows me to
+do something like:
+if((1*2/(3-variableOne) &gt;= variableTwo || variableThree != 4) &amp;&amp;
+variableFour &gt; 5) { //do something}
+and there is apparently an example Java.g for ANTLR so perhaps it has been
+implemented?  (although I haven't actually compiled and tested against it,
+just read Java.g and couldn't figure out how they accomplished it)
+
+ANTLR is throwing the following error: &quot;rule simpleFilterExpression has
+non-LL(*) decision due to recursive rule invocations reachable from alts
+1,2.  Resolve by left-factoring or using syntactic predicates or using
+backtrack=true option.&quot; which makes sense now that I've wrapped my head
+around the problem.  After much Googling, I even tried setting the
+backtrack setting to true but that didn't seem to help.
+I'm pasting the grammar below if anyone would like to take a stab at it.
+
+Thanks,
+Kunal
+
+Grammar:
+
+options
+{
+    output=AST;
+    ASTLabelType=CommonTree;
+}
+
+tokens {
+    ADD  = '+' ;
+    SUB  = '-' ;
+    MULT = '*' ;
+    DIV  = '/' ;
+    EQ   = '=';
+    DEQ  = '==';
+    NEQ  = '!=';
+    GT   = '&gt;';
+    GTE  = '&gt;=';
+    LT   = '&lt;';
+    LTE  = '&lt;=';
+    LEFT_PARENTHESIS  = '(';
+    RIGHT_PARENTHESIS = ')';
+}
+
+//////////////
+// Parser rules
+//////////////
+// entry point
+compoundFilterExpression : orFilterExpression EOF;
+
+// AND takes precedence over OR
+orFilterExpression : andFilterExpression (OR^ andFilterExpression)*;
+
+andFilterExpression : simpleFilterExpression (AND^ simpleFilterExpression)*;
+
+simpleFilterExpression
+    : additiveExpression (EQ|DEQ|NEQ|GT|GTE|LT|LTE)^ additiveExpression
+    | LEFT_PARENTHESIS! orFilterExpression RIGHT_PARENTHESIS!
+    ;
+
+// * and / take precedence over + and -
+additiveExpression : multiplicativeExpression ((ADD|SUB)^
+multiplicativeExpression)*;
+
+multiplicativeExpression : atom ((MULT|DIV)^ atom)*;
+
+// There is no way to differentiate between a numeric and string column
+// in the grammar so we have to group them together for now and do an
+// explicit check while walking the AST
+atom
+    : COLUMN_NAME
+    | FLOAT
+    | STRING
+    | LEFT_PARENTHESIS! additiveExpression RIGHT_PARENTHESIS!
+    ;
+
+//////////////
+// Lexer rules (plus the tokens at the top)
+//////////////
+OR
+    : 'or'
+    | 'OR'
+    | '||'
+    | '|'
+    ;
+
+AND
+    : 'and'
+    | 'AND'
+    | '&amp;&amp;'
+    | '&amp;'
+    ;
+
+COLUMN_NAME : ('a'..'z'|'A'..'Z')+ ; // anything from a-z and A-Z
+
+FLOAT
+    : ('0'..'9')+ '.' ('0'..'9')+    // 123.456
+    | '.' ('0'..'9')+ //.456
+    | ('0'..'9')+  // 123
+    ;
+
+STRING
+    :  '&quot;' ( ESC_SEQ | ~('\\'|'&quot;') )+ '&quot;'
+    ;
+
+fragment
+HEX_DIGIT : ('0'..'9'|'a'..'f'|'A'..'F') ;
+
+fragment
+ESC_SEQ
+    :   '\\' ('b'|'t'|'n'|'f'|'r'|'\&quot;'|'\''|'\\')
+    |   UNICODE_ESC
+    |   OCTAL_ESC
+    ;
+
+fragment
+OCTAL_ESC
+    :   '\\' ('0'..'3') ('0'..'7') ('0'..'7')
+    |   '\\' ('0'..'7') ('0'..'7')
+    |   '\\' ('0'..'7')
+    ;
+
+fragment
+UNICODE_ESC
+    :   '\\' 'u' HEX_DIGIT HEX_DIGIT HEX_DIGIT HEX_DIGIT
+    ;
+
+WS : ( ' ' | '\t' | '\r' | '\n') {$channel=HIDDEN;} ;
+</PRE>
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="044166.html">[antlr-interest] All say that literal strings in parser rules are doing harm. Why?
+</A></li>
+	<LI>Next message: <A HREF="044171.html">[antlr-interest] Starting two parser rules with the same token
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#44170">[ date ]</a>
+              <a href="thread.html#44170">[ thread ]</a>
+              <a href="subject.html#44170">[ subject ]</a>
+              <a href="author.html#44170">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

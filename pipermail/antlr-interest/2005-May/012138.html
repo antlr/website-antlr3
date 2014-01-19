@@ -1,0 +1,169 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Using a Parser as a TokenFilter
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Using%20a%20Parser%20as%20a%20TokenFilter&In-Reply-To=428249BA.8020702%40lotuscat.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="012124.html">
+   <LINK REL="Next"  HREF="012142.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Using a Parser as a TokenFilter</H1>
+    <B>Ric Klaren</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Using%20a%20Parser%20as%20a%20TokenFilter&In-Reply-To=428249BA.8020702%40lotuscat.com"
+       TITLE="[antlr-interest] Using a Parser as a TokenFilter">ric.klaren at gmail.com
+       </A><BR>
+    <I>Thu May 12 01:17:34 PDT 2005</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="012124.html">[antlr-interest] Using a Parser as a TokenFilter
+</A></li>
+        <LI>Next message: <A HREF="012142.html">[antlr-interest] Using a Parser as a TokenFilter
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#12138">[ date ]</a>
+              <a href="thread.html#12138">[ thread ]</a>
+              <a href="subject.html#12138">[ subject ]</a>
+              <a href="author.html#12138">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+On 5/11/05, Chris Black &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">chris at lotuscat.com</A>&gt; wrote:
+&gt;<i> To start I'm just trying to do the killing of extra commas at the end of
+</I>&gt;<i> the line thing, I have something like what is at the end of this
+</I>&gt;<i> message. Not only does this give me a stack overflow error when it
+</I>&gt;<i> actually does encounter extra commas, but it also seems to cause an
+</I>&gt;<i> &quot;unexpected token: null&quot; error in the downline parser in other cases,
+</I>&gt;<i> even after adding an EOF at the end of the main rule. After
+</I>&gt;<i> building/running with -trace, I think this may have something to do with
+</I>&gt;<i> the lookahead being filled with nulls.
+</I>
+&gt;<i> // filter to change lines like &quot;foo,bar,baz,,,,,,,,&quot; into &quot;foo,bar,baz,&quot;
+</I>&gt;<i>     public void consume() {
+</I>&gt;<i>         try {
+</I>&gt;<i>           if(LA(1) == DELIM &amp;&amp; LA(2) == DELIM &amp;&amp; LA(3) == DELIM) {
+</I>&gt;<i>               //System.out.println(&quot;skipping extra commas&quot;);
+</I>&gt;<i>               //System.out.flush();
+</I>&gt;<i>               queue.append(LT(1)); consumeUntil(NEWLINE);
+</I>&gt;<i>           } else {
+</I>&gt;<i>               queue.append(LT(1));
+</I>&gt;<i>           }
+</I>&gt;<i>           super.consume();
+</I>&gt;<i>         } catch(TokenStreamException e) {
+</I>&gt;<i>             System.err.println(&quot;error in consume&quot;);
+</I>&gt;<i>             System.err.println(e);
+</I>&gt;<i>             e.printStackTrace();
+</I>&gt;<i>         }
+</I>&gt;<i>     }
+</I>
+&gt;<i>     public Token nextToken() throws TokenStreamException {
+</I>&gt;<i>         Token ret;
+</I>&gt;<i>         if(queue.length() &lt;= 0) {
+</I>&gt;<i>             try {
+</I>&gt;<i>                 line();
+</I>&gt;<i>             } catch(RecognitionException e) { ; }
+</I>&gt;<i>             catch(TokenStreamException e) { ; }
+</I>&gt;<i>         }
+</I>&gt;<i>         if(queue.length() &gt; 0) {
+</I>&gt;<i>             ret = queue.elementAt(0);
+</I>&gt;<i>             queue.removeFirst();
+</I>&gt;<i>             return ret;
+</I>&gt;<i>         }
+</I>&gt;<i>         System.out.println(&quot;no more queue, returning EOF&quot;);
+</I>&gt;<i>         return new Token(Token.EOF_TYPE,&quot;&quot;);
+</I>&gt;<i>     }
+</I>&gt;<i> }
+</I>
+Make sure that you get some input or a definite EOF situation when you
+call line. You might have to put a while on the queue.lenght() &lt;= 0 in
+stead of an if. (depends on the implementation of the line rule)
+
+&gt;<i> line:
+</I>&gt;<i>     (NEWLINE) =&gt; emptyLine
+</I>&gt;<i>     | ((FIELD | DELIM)+ NEWLINE) =&gt; contentLine
+</I>&gt;<i>     ;
+</I>
+I'd get rid of these predicates. They serve no purpose. My rule of
+thumb: when you got a rule with every alternative guarded with a
+syntactic predicate then you're probably doing something wrong (you
+get rules that might not consume input and that's usually good for
+strange stuff).
+
+The lookahead you're looking at is not ambiguous and in the case of
+erroneous input the rule might not consume anything. Also you're not
+handling EOF... e.g. in case of EOF you'll get an RecognitionException
+that gets eaten by nextToken (silently as well) (try adding a few
+println's to the bits that eat exceptions, for a filter I wrote a
+while back some of them needed extra handling).
+
+The following rule is a lot simpler. Try to differentiate between the
+things you want with some attributes in this filter (e.g. when you
+call the line rule from nextToken set an attribute that you started a
+line and reset a counter for the fields then update the counter in the
+closure below. You might also want to set a flag in the (NEWLINE|EOF)
+bit. So you can detect better how the line rule ended (and when the
+next line will start!). I also miss the code that inserts the marker
+at the start of the line.
+
+line:
+    (FIELD | DELIM)* ( NEWLINE | EOF )
+    ;
+
+Or something like:
+
+line:
+|<i>  FIELD (DELIM FIELD)* (DELIM)* eol
+</I>|<i>  (DELIM)* eol
+</I>;
+
+eol:( NEWLINE | EOF );
+
+Also first get things to work with the marking of the stanza's then
+add the comma eating. When a filter starts eating input it might eat
+all the input and that takes some extra handling if I recall right.
+It's probably a good idea to let the line rule finish in nextToken
+then check the tail of the queue for trailing comma's and nuke them
+from the queue.
+
+Tip: Read the code generated for the line rule and get a feel for how
+it interacts with your consume &amp; nextToken method. In this case it is
+also feasible to handcode the filter since it's not that complex
+parsing wise.
+
+I'm afraid I might not be too coherent/clear in this post but there
+should be some tips in it that might get you going again. I'll look
+again at it when I'm at home again.
+
+Cheers,
+
+Ric
+</PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="012124.html">[antlr-interest] Using a Parser as a TokenFilter
+</A></li>
+	<LI>Next message: <A HREF="012142.html">[antlr-interest] Using a Parser as a TokenFilter
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#12138">[ date ]</a>
+              <a href="thread.html#12138">[ thread ]</a>
+              <a href="subject.html#12138">[ subject ]</a>
+              <a href="author.html#12138">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

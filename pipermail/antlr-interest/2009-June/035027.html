@@ -1,0 +1,211 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Look-ahead problem parsing phrase?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Look-ahead%20problem%20parsing%20phrase%3F&In-Reply-To=%3C1246239346.28368.69.camel%40gecko.home.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="035026.html">
+   <LINK REL="Next"  HREF="035029.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Look-ahead problem parsing phrase?</H1>
+    <B>John B. Brodie</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Look-ahead%20problem%20parsing%20phrase%3F&In-Reply-To=%3C1246239346.28368.69.camel%40gecko.home.org%3E"
+       TITLE="[antlr-interest] Look-ahead problem parsing phrase?">jbb at acm.org
+       </A><BR>
+    <I>Sun Jun 28 18:35:46 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="035026.html">[antlr-interest] Look-ahead problem parsing phrase?
+</A></li>
+        <LI>Next message: <A HREF="035029.html">[antlr-interest] Look-ahead problem parsing phrase?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#35027">[ date ]</a>
+              <a href="thread.html#35027">[ thread ]</a>
+              <a href="subject.html#35027">[ subject ]</a>
+              <a href="author.html#35027">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Greetings!
+
+On Sun, 2009-06-28 at 16:04 -0700, Sean O'Dell wrote:
+&gt;<i> Thanks for the help Gavin.
+</I>&gt;<i> 
+</I>&gt;<i> Let me see if I understand this correctly; I'm trying to get my head
+</I>&gt;<i> down into this.
+</I>&gt;<i> 
+</I>&gt;<i> On &quot;top-level lexer rules should not refer to other top-level lexer
+</I>&gt;<i> rules&quot;:  What constitutes a &quot;top-level lexer rule?&quot; Is that fragment
+</I>&gt;<i> vs. non-fragment (non-fragments are top-level)? 
+</I>
+Yes.
+
+&gt;<i>  Also, if one top-level lexer rule refers to another, but adds
+</I>&gt;<i> additional rules, doesn't that remove the ambiguity?
+</I>
+No. Because Antlr lexers do not backtrack.
+
+Harkening back your original question --- and this is from memory
+because i deleted your original mail already, sorry.
+
+you had some rules that did not correctly recognize trailing whitespace
+(e.g. &quot; foo bar baz \n&quot; is supposed to be okay but isn't):
+
+line : PHRASE WS? EOL? ;
+
+PHRASE : WORD (WS WORD)* ; 
+
+maybe the above is not your situation, sorry....
+
+anyway hopefully the above is close enuf so that the following applies:
+
+so we see the &quot;foo&quot; as a WORD and realize it is the first part of a
+PHRASE, all is good. Next we see a WS so we start the loop for
+recognizing the remaining, optional, WORDs in the PHRASE, and so all is
+good for recognizing &quot;bar&quot; as the second WORD of the PHRASE. Next we see
+a WS and we are in a loop recognizing the remaining WORDs of the PHRASE
+and so all is good for recognizing &quot;baz&quot; as the third word of the
+phrase. Next we see a WS and we are in a loop for recognizing the
+remaining WORDs of the PHRASE but there is no WORD after that WS but our
+rule for PHRASE demands that there be a WORD after the WS in the loop;
+so we have a lexing error.
+
+the lexer will not see that maybe the trailing WS in this PHRASE isn't
+really part of the PHRASE but should part of whatever token occurs after
+this PHRASE.
+
+e.g. Antlr lexers do not backtrack.
+
+this differs from my experience with regular expressions, which i think
+is where you said you were coming from... anyway...
+
+Antlr parsers are much better at dealing with this situation. Antlr
+parsers support an arbitrary, say k, symbol lookahead for determining
+which path through the parse is required (and the Tool will figure out
+for itself how far to look ahead e.g. what k should be for each decision
+point).
+
+Which is why people will tell you to make your complicated lexer rules
+into parser rules.  I think that if you had given the above rules for
+your line and phrase as:
+
+line : phrase WS? EOL? ;
+phrase : WORD (WS WORD)* ;
+
+then Antlr would have just go ahead and create a parser without any
+problem (UNTESTED).
+
+
+
+Please allow me to re-emphasize some excellent advise that Gavin Lambert
+gave:
+
+&gt;<i>         &gt;On Sun, Jun 28, 2009 at 2:41 PM, Gavin Lambert wrote:
+</I>&gt;<i>                 &gt;It's important that given any particular input in
+</I>&gt;<i>                 isolation, &gt;there should be one and only one possible
+</I>&gt;<i>                 token that can be &gt;produced for it.  Doing anything
+</I>&gt;<i>                 else is just letting &gt;yourself in for a world of pain.
+</I>        
+
+
+
+Regarding your query re: empty lexer rules:
+        
+&gt;<i> On &quot;&quot;EOL should be a parser rule&quot;:  Can you help me understand how a
+</I>&gt;<i> rule which can match zero characters creates an infinite loop?  
+</I>
+Empty top-level lexer rules are evil.
+
+The lexer selects a rule for the next Token based upon the very first
+next character in the input stream.
+
+If there is no lexer rule that can recognize that next character as its
+first, then a lexing error is announced.
+
+But if there is a lexer rule that can match zero characters. Then, when
+seeing an invalid initial character, the lexer will (correctly) emit an
+instance of that empty token, since clearly an empty token is valid in
+front of any error. And now we are back to the top level loop which sees
+no valid token for our first character yet sees that an empty token is
+valid, emits that empty token and loops to see an invalid character but
+we can emit an empty token so we emit that empty token and then we are
+back to the top level loop that sees an invalid character but we can
+emit and empty token we emit that empty token and then we are back to
+the top level loop.....
+
+&gt;<i> Does making it a parser rule avoid that? 
+</I>
+maybe.
+
+&gt;<i>  If so, how?
+</I>
+only because the parser is generally smarter about lookahead (and by
+user option, backtracking under infinite lookahead).
+
+Hope this helps....
+   -jbb
+
+
+&gt;<i> On Sun, Jun 28, 2009 at 2:41 PM, Gavin Lambert &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr at mirality.co.nz</A>&gt;
+</I>&gt;<i> wrote:
+</I>&gt;<i>         At 09:21 29/06/2009, Sean O'Dell wrote:
+</I>&gt;<i>                 Why should lexer rules not refer to other lexer rules
+</I>&gt;<i>                 without being fragments?  I've read that doing so only
+</I>&gt;<i>                 prevented token creation.  It affects logic, as well?
+</I>&gt;<i>         
+</I>&gt;<i>         
+</I>&gt;<i>         The moment you have one top-level lexer rule referring to
+</I>&gt;<i>         another top-level rule, you introduce ambiguity -- you're
+</I>&gt;<i>         basically telling the lexer &quot;given this input, produce one of
+</I>&gt;<i>         these two tokens but I don't care which&quot;, and then in the
+</I>&gt;<i>         parser you're expecting exactly one of those tokens.
+</I>&gt;<i>          Sometimes you'll happen to pick the right one and it'll
+</I>&gt;<i>         parse.  Sometimes you won't.  Sometimes the rules are
+</I>&gt;<i>         sufficiently different that given certain input it produces
+</I>&gt;<i>         one token and given other input it produces the other.  Then
+</I>&gt;<i>         you're basically screwed.
+</I>&gt;<i>         
+</I>&gt;<i>         It's important that given any particular input in isolation,
+</I>&gt;<i>         there should be one and only one possible token that can be
+</I>&gt;<i>         produced for it.  Doing anything else is just letting yourself
+</I>&gt;<i>         in for a world of pain.
+</I>&gt;<i>         
+</I>&gt;<i>         
+</I>&gt;<i>         Also, your EOL rule was a top-level lexer rule that can
+</I>&gt;<i>         successfully match zero characters.  Doing that creates
+</I>&gt;<i>         infinite loops, and is something else that must be avoided.
+</I>&gt;<i>          (Which is another reason why it should be a parser rule.)
+</I>&gt;<i>         
+</I>
+
+</PRE>
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="035026.html">[antlr-interest] Look-ahead problem parsing phrase?
+</A></li>
+	<LI>Next message: <A HREF="035029.html">[antlr-interest] Look-ahead problem parsing phrase?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#35027">[ date ]</a>
+              <a href="thread.html#35027">[ thread ]</a>
+              <a href="subject.html#35027">[ subject ]</a>
+              <a href="author.html#35027">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

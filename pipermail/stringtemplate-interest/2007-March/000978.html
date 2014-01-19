@@ -1,0 +1,155 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [stringtemplate-interest] Two-Character-Bracket.templateLexer
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20Two-Character-Bracket.templateLexer&In-Reply-To=%3C19D19E1AA3C5154D85A43D38808E48AB01641C1B%40fe-mail29.de.bosch.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000977.html">
+   <LINK REL="Next"  HREF="000979.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[stringtemplate-interest] Two-Character-Bracket.templateLexer</H1>
+    <B>Dreyer Ulf (CR/APA3)</B> 
+    <A HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20Two-Character-Bracket.templateLexer&In-Reply-To=%3C19D19E1AA3C5154D85A43D38808E48AB01641C1B%40fe-mail29.de.bosch.com%3E"
+       TITLE="[stringtemplate-interest] Two-Character-Bracket.templateLexer">Ulf.Dreyer at de.bosch.com
+       </A><BR>
+    <I>Tue Mar 13 08:22:29 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000977.html">[stringtemplate-interest] Two-Character-Bracket.templateLexer
+</A></li>
+        <LI>Next message: <A HREF="000979.html">[stringtemplate-interest] Two-Character-Bracket.templateLexer
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#978">[ date ]</a>
+              <a href="thread.html#978">[ thread ]</a>
+              <a href="subject.html#978">[ subject ]</a>
+              <a href="author.html#978">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE> Hi Terence,
+
+   thanks for looking into this. 
+   I've made some progress changing the AngleBracketLexer
+   and today I'm going to write some tests.
+
+   Contents:
+	-) some Comments to Terence's answer
+	-) [What I did] ... to create said lexer
+	-) [Testresults] / encountered problems
+
+
+&gt;<i> -----Original Message-----
+</I>&gt;<i> Howdy.  Note I just submitted the ANTLR book to publisher...I'm now  
+</I>&gt;<i> going to try to catch up with ANTLR and ST bug reports etc...
+</I>
+  I think, I'll get me one of those even if I am currently only using ST.
+
+&gt;<i> &gt;  I'd like to try for &lt;$ ...$&gt;  as it is not used in my target  
+</I>&gt;<i> &gt; language AND it is possible to
+</I>&gt;<i> &gt;  differentiate begin- and end-delimiters.
+</I>&gt;<i> Hmm...two char, eh?  well, a syntactic predicate ought to work..hang  
+</I>&gt;<i> on...hmm...grammar doesn't look too hard to change.  Try using  
+</I>&gt;<i> literals not a rule ref.
+</I>
+[What I did]:  (sorry Terence but I find this easier on the eyes ;)
+
+  change all '&lt;' Occurrences to ACTIONBEGIN
+  change all '&gt;' Occurrences to ACTIONEND
+
+and define 
+ACTIONBEGIN
+	: &quot;&lt;$&quot;
+	;
+ACTIONEND
+	: &quot;$&gt;&quot;
+	;
+This its mostly fine for the ACTIONBEGIN-part.
+In the grammar ACTIONEND (formally '&gt;') is often inverted ( ~('&gt;') )
+and this does NOT work with Rules or even two character combinations.
+
+So I wrote two predicates  upcomingACTIONBEGIN(int i &lt;lookahead&gt;) 
+and upcomingACTIONEND(int i &lt;lookahead&gt;) (checking LA(i) and LA(i+1)).
+
+Now most occurrences of ~(ACTIONEND,'&lt;somechar&gt;', '&lt;someOtherChar') can be
+changed to
+(!upcomingACTIONEND(1))? ~('&lt;somechar&gt;', '&lt;someOtherChar') 
+which ought to be equivalent.
+
+The only part I am really unsure about is the escape-character thing.
+The easy way would be to disallow escaping of &quot;&lt;$&quot; and &quot;$&gt;&quot; (as those are the choices
+BECAUSE the don't occur in the target language) but I feel this is
+somewhat sloppy.
+
+If my tests are successful I may post the entire new grammar (or a diff)
+if anyone is interested.
+
+
+[Testresults]
+	These modifications failed at an early test:
+
+group test;
+top(foo,bar) ::= &lt;&lt;&lt;$foo$&gt;___&lt;$bar$&gt;&gt;&gt;
+                                 ^
+	This input yields a TokenStreamRecognitionException
+	  Message=&quot;expecting '$', found 'r'&quot;		 
+
+ 	It took me quite a while to figure out, that this Error results
+	not from the template lexer but from the group lexer.
+	The BIGSTRING-rule swallows  the first &quot;&gt;&gt;&quot; and discards the third &quot;&gt;&quot;
+      giving only &quot;&lt;&lt;&lt;$foo$&gt;___&lt;$bar$&quot; to the template lexer.
+
+   @Terence: 1) I don't think this is easily fixed (especially for arbitrary delimiters) or is there?
+             We would need a predicate testing for the current template-delimiter and only match &quot;&lt;&lt;&quot;
+		 if it's not part of that.
+             2) Template lexers are very easily plugged in but is there a mechanism to change
+		    the group-lexer?
+
+  [Testresults] continued:
+	Some quick tests (VERY simple cases) for escaping (LITERAL) and if-else-endif
+      seem to work as expected.
+
+That's all for today - ... to be continued  ;)
+
+-Ulf
+
+--
+Dipl. Inf. Ulf Dreyer
+Robert Bosch GmbH
+Zentralbereich Forschung und Vorausentwicklung
+Software und Systemengineering in der Fertigungsautomatisierung CR/APA3
+Postfach 30 02 40 D-70442 Stuttgart
+Tel.: 0711/811- 34365
+Fax: 0711/811-518 34365
+eMail: ulf . dreyer at de . bosch . com 
+
+Robert Bosch GmbH, Sitz: Stuttgart, Registergericht: Amtsgericht Stuttgart HRB 14000 Aufsichtsratsvorsitzender: Hermann Scholl; Gesch&#228;ftsf&#252;hrung: Franz Fehrenbach, Siegfried Dais; Bernd Bohr, Wolfgang Chur, Rudolf Colm, Gerhard K&#252;mmel, Wolfgang Malchow, Peter Marks; Volkmar Denner, Peter Tyroller.
+
+
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000977.html">[stringtemplate-interest] Two-Character-Bracket.templateLexer
+</A></li>
+	<LI>Next message: <A HREF="000979.html">[stringtemplate-interest] Two-Character-Bracket.templateLexer
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#978">[ date ]</a>
+              <a href="thread.html#978">[ thread ]</a>
+              <a href="subject.html#978">[ subject ]</a>
+              <a href="author.html#978">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">More information about the stringtemplate-interest
+mailing list</a><br>
+</body></html>

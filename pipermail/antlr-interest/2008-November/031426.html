@@ -1,0 +1,247 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Antlr3 C runtime woes.
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Antlr3%20C%20runtime%20woes.&In-Reply-To=%3Cc12e29d0811060948x14002656xcbd184744938072c%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="031427.html">
+   <LINK REL="Next"  HREF="031430.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Antlr3 C runtime woes.</H1>
+    <B>Vamsi Juvvi</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Antlr3%20C%20runtime%20woes.&In-Reply-To=%3Cc12e29d0811060948x14002656xcbd184744938072c%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Antlr3 C runtime woes.">juvvij at gmail.com
+       </A><BR>
+    <I>Thu Nov  6 09:48:32 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="031427.html">[antlr-interest] ANTLR not reporting error for malformed program
+</A></li>
+        <LI>Next message: <A HREF="031430.html">[antlr-interest] Antlr3 C runtime woes.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#31426">[ date ]</a>
+              <a href="thread.html#31426">[ thread ]</a>
+              <a href="subject.html#31426">[ subject ]</a>
+              <a href="author.html#31426">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi all.
+
+   I hope this gets scanned by jim or any other C runtime expert and I get
+some advice.
+
+   I had sent out an email containing a whole lot of text (in retrospect)
+and probably created an overload for whoever read it. I am simplifying it
+and adding some other problems I am facing.
+
+  I am trying to write a replacement for the MSIDL compiler with a custom
+simplified and customized syntax for my company's needs. I am using Antlr
+3.1.1 with the C runtime. The problems started when I decided to carry some
+comments over from the IDL file to the generated files. Thats when I lost a
+few days tracking the following issues and figuring out workarounds.
+
+  //-- Problem 1 -----------------
+  In a rule (import_decl say), I want to have a validating predicate to
+ensure that the rule starts on a line all by itself. The antlr book gave me
+the impression that it can expressed thus.
+
+      import_decl : IMPORT_DECL { $start.pos == 0 } ?
+
+     This in the C code translates to
+
+     if ( !(( ((pANTLR3_COMMON_TOKEN)retval).start.pos == 0 )) )
+
+     Which fails as retval is the return type of the rule itself and cannot
+be cast to a token. There is a minor bug with parens here and another one
+with an untranslated pos token attribute. it should have been
+
+     if ( !(( ((pANTLR3_COMMON_TOKEN)retval.start).charPosition == 0 )) )
+
+     or
+
+     if ( !((
+((pANTLR3_COMMON_TOKEN)retval.start).getCharPositionInLine((pANTLR3_COMMON_TOKEN)retval.start)
+== 0 )) )
+
+
+  There is a workaround though. I can hack it to use the actual members in
+the C runtime. I can replace the predicate with
+   { retval.start-&gt;charPosition == 0 }?
+
+  Is this what I am expected to be doing in the C runtime ? This looks more
+like a bug to me (judging from the compile error) and not an unsupported
+feature of antlr3 C runtime.
+
+  //-- Problem 2---------------------
+  Similar problems exist when I want to generate an imaginary token in my
+parser initialized with a real token.
+
+  tokens
+   {
+      INTERFACE_BLOCK; // imaginary token.
+   }
+
+  // The book indicates that the following should work.
+  interface
+    :^(INTERFACE_BLOCK[$interface.start] interface_decl
+interface_body_line*)
+    ;
+
+ The C code generated however has two issues.
+   It has the same problem as above where it tries to cast the rule retvalue
+to pANTLR3_COMMON_TOKEN instead of casting the retval.start item.
+   It uses ADAPTER-&gt;createTypeTokenText or ADAPTER-&gt;createTypeText instead
+of ADAPTER-&gt;createTypeToken which is what I expect
+
+ I am doing all of this just so I can encode the start or a rule (
+INTERFACE_BLOCK[$start] is expected to copy the start token's data into the
+INTERFACE_BLOCK token) so I can later start searching for comments on a
+hidden channel.
+
+  I worked around this by adding even more suspect C code and ended up
+making the antlr grammar file lose some of it's declarative beauty. In my
+parser I did this to work around.
+
+interface
+@after
+{
+    // Save the line-num/charPos of the first token to match in this
+interface
+    // rule to the members of our imaginary token.
+    pANTLR3_COMMON_TOKEN pTok = retval.tree-&gt;getToken(retval.tree);
+    if(pTok != 0)
+    {
+      pTok-&gt;line = retval.start-&gt;line;
+      pTok-&gt;charPosition = retval.start-&gt;charPosition;
+    }
+}
+    : interface_decl
+        OPEN_BRACE
+            interface_body_line*
+        CLOSE_BRACE SEMI_COLON
+    -&gt; ^(INTERFACE_BLOCK interface_decl interface_body_line*)
+    ;
+
+  Is this related to the unsupported tokenReWrite feature documented in the
+C runtime or a bug ?
+
+  This makes me feel vaguely dirty. I will have an interresting time
+explaining why these workarounds are neccesary. I have hyped antlr to the
+point where any mention of bugs will make my boss cringe. I will just gloss
+over all the C code telling him that its just the way it has to be done.
+
+  //-- Problem 3 -----
+  Finally armed with these workaround, I expected searching the token stream
+for comments before/after would be straighforward. Frustration strikes
+again. After several days of pulling my hair out, I realize that there is
+yet another bug (which was reported on the antlr mailing lists last year)
+which needs to be fixed for it to work.
+
+  First thing I did was allow hidden channel tokens to be retained. I wasn't
+aware that this needed to be done till I started tracing through the run
+time (Extra documentation maybe)
+
+ pTokenStream = antlr3CommonTokenStreamSourceNew(ANTLR3_SIZE_HINT,
+TOKENSOURCE(pLexerCtx));
+ pTokenStream-&gt;discardOffChannel     = ANTLR3_FALSE;
+
+ After this was done, there seems to be a very subtle bug with cache
+coherency (occacional issue when using caching for performance) which was
+reported on the mainling list. This was causing a token that was supposed to
+be hidden to be sent to parser failing the parse. The first token in my file
+was a hidden token and luckily exposed the problem right away. The fix (as
+reported by the original reporter of the problem) was to make sure that in
+the last few lines of the *fillBuffer* methods in antlr3tokenstream.c.
+
+replace
+
+     /* Set the consume pointer to the first token that is on our channel */
+    tokenStream-&gt;p  = 0;
+    tokenStream-&gt;p  = skipOffTokenChannels(tokenStream, tokenStream-&gt;p);
+
+    /* Cache the size so we don't keep doing indirect method calls*/
+    tokenStream-&gt;tstream-&gt;istream-&gt;cachedSize = tokenStream-&gt;tokens-&gt;count;
+
+  With
+
+     /* Cache the size so we don't keep doing indirect method calls
+     * Relocated to above the following two lines following bug report
+     * at
+<A HREF="http://markmail.org/search/list:antlr?q=token+stream+comments#query:list%3Aantlr%20token%20stream%20comments+page:6+mid:5olqv5itjde27uhi+state:results">http://markmail.org/search/list:antlr?q=token+stream+comments#query:list%3Aantlr%20token%20stream%20comments+page:6+mid:5olqv5itjde27uhi+state:results</A>
+     */
+    tokenStream-&gt;tstream-&gt;istream-&gt;cachedSize = tokenStream-&gt;tokens-&gt;count;
+
+    /* Set the consume pointer to the first token that is on our channel
+     */
+    tokenStream-&gt;p  = 0;
+    tokenStream-&gt;p  = skipOffTokenChannels(tokenStream, tokenStream-&gt;p);
+
+
+//----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+ These are minor problems on the whole, but made the experience of
+developing non trivial Antlr3 stuff surprinsgly tricky and not nearly as
+much fun as it was with Antlr2. I understand the fact that this is a
+volunteer effort and that much like in a commercial setting, bugs can slip
+through in a volunteer driven runtime and it is amazing that there are so
+few bugs.
+
+  I can volunteer to start adding test cases if someone can point me to the
+resources to do so. If there is an effort to start with a CPP runtime, I
+will be more than glad to assist in whatever way is needed as reading the
+current C code makes me want to cry! I feel more manly just for digging
+through it and getting it to work for me :-).
+
+ I hope someone can tell me where I am doing idiotic things or put these
+bugs in for eventual fixes. I can help with this but I will probably have to
+learn stringtemplate stuff and get an overview document or some such. I am
+willing however.
+
+thanks much,
+
+-vamsi
+
+PS: Somehow this mail also got long. Hope it doesn't get dismissed as too
+much stuff.
+
+-- 
+Between impulse and reaction lies man's greatest strength: The freedom to
+create a choice, to create his universe, to choose - Victor Frankl (adapted)
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20081106/fb075a7c/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20081106/fb075a7c/attachment.html</A> 
+</PRE>
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="031427.html">[antlr-interest] ANTLR not reporting error for malformed program
+</A></li>
+	<LI>Next message: <A HREF="031430.html">[antlr-interest] Antlr3 C runtime woes.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#31426">[ date ]</a>
+              <a href="thread.html#31426">[ thread ]</a>
+              <a href="subject.html#31426">[ subject ]</a>
+              <a href="author.html#31426">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

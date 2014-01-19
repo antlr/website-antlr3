@@ -1,0 +1,230 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Honey Badger Theory
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Honey%20Badger%20Theory&In-Reply-To=%3C03da01ccd9d9%244f6484a0%24ee2d8de0%24%40tunnelvisionlabs.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="043914.html">
+   <LINK REL="Next"  HREF="043931.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Honey Badger Theory</H1>
+    <B>Sam Harwell</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Honey%20Badger%20Theory&In-Reply-To=%3C03da01ccd9d9%244f6484a0%24ee2d8de0%24%40tunnelvisionlabs.com%3E"
+       TITLE="[antlr-interest] Honey Badger Theory">sam at tunnelvisionlabs.com
+       </A><BR>
+    <I>Mon Jan 23 06:14:23 PST 2012</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="043914.html">[antlr-interest] Honey Badger Theory
+</A></li>
+        <LI>Next message: <A HREF="043931.html">[antlr-interest] Honey Badger Theory
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#43917">[ date ]</a>
+              <a href="thread.html#43917">[ thread ]</a>
+              <a href="subject.html#43917">[ subject ]</a>
+              <a href="author.html#43917">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Jan,
+
+Placing all locals in the context objects resolves problems endlessly
+showing up with predicates during grammar development with v3. The goal with
+v4 is getting closer to language-agnostic grammar files with the actual
+action code written in listeners. In v4, inline actions are still supported
+but they are generally unnecessary and not recommended anymore for most
+purposes.
+
+How large is a &quot;large input&quot; you are considering? After optimization of the
+v4 runtime, my tests show it can handle 70MB of input with ease (less than
+5sec on a single thread, where I could easily parallelize it across multiple
+processors on a per-file basis). V4 will also support unbuffered token
+streams for lexers, so even if you're outside the range of what ANTLR was
+meant to handle it may work fine.
+
+I'm working on some ideas to reduce the number of fields in a context object
+when the rule uses labeled alts like the following (I'm not familiar with R
+so I just made up names for the alts):
+
+expr    :       '{' l=exprlist '}' -&gt; blockExpr
+         |       '(' subExpr=expr ')' -&gt; parenExpr
+         |       e=expr '[[' params=sublist ']' ']' -&gt; indexExpr
+         |       scope=expr ('::'|':::') member=expr -&gt; selectorExpr
+         |       lexpr=expr ('$'|'@') rexpr=expr -&gt; concatExpr
+...
+
+--
+Sam Harwell
+Owner, Lead Developer
+<A HREF="http://tunnelvisionlabs.com">http://tunnelvisionlabs.com</A>
+
+
+-----Original Message-----
+From: Jan Finis [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">finis at in.tum.de</A>] 
+Sent: Monday, January 23, 2012 1:16 AM
+To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: Re: [antlr-interest] Honey Badger Theory
+
+Thanks Terence,
+
+that gave me a little clue. I have already read your papers but there is
+none about honey badger, yet. A paper would be really interesting.
+
+Another thing I noticed concerning speed:
+(Maybe there already is an option to bypass this. If so, just tell me and
+ignore my suggestion :)
+
+You create a field in the rule context class for each token which is
+explicitly named using the a=b synax. For large rules, this might result in
+a very large context object. Since we can do left recursion now, there might
+be VERY large rules like the expr rule of the R grammar you posted. Now
+imagine I name each sub-expression in the rule differently:
+
+expr    :       '{' l=exprlist '}'
+         |       '(' subExpr=expr ')'
+         |       e=expr '[[' params=sublist ']' ']'
+         |       scope=expr ('::'|':::') member=expr
+         |       lexpr=expr ('$'|'@') rexpr=expr
+...
+
+For the full expr rule, this would result in a context with around 50 fields
+to hold the named tokens which would result in a very large memory footprint
+and unnecessary loss of performance due to increased allocation overhead. I
+see that it is partly my fault, because I named the exprs differently.
+However, people often want meaningful names and if rules contain tokens of
+different types, then you even NEED different fields for them.
+
+Suggestion:
+Add an option which makes the named tokens only local variables in the
+parsing function of the rule (each scoped locally in a block for the
+alternative). You can't use them in listeners then, but for people which
+write their code directly into the parser this would be a very welcomed
+improvement. People which use listeners just don't use the option. Btw there
+should be an option to disable listeners all together. Is there one?
+
+I want to use ANTLR to parse really large inputs and the left recursive
+rules are really really awsome but I think the large context objects might
+ruin my performance.
+
+Regards,
+Jan
+
+
+
+
+Am 22.01.2012 20:58, schrieb Terence Parr:
+&gt;<i> Hi Jan, honey badger's parsing strategy is and adaptive or incremental
+</I>version of LL(*). The reason that v3 ANTLR needed to backtrack was that
+LL(*) grammar analysis is undecidable statically.  When it failed at static
+analysis, it failed over to backtracking at runtime. However, at runtime, I
+have an actual input stream that I can work with. This renders the algorithm
+deterministic and so I don't need to backtrack. In a nutshell, like GLR I
+pursue all possible paths from the decision point in a breadth first manner,
+almost as if I had forked multiple threads to pursue the possibilities.
+Because we pursue all possibilities at once, there is no backtracking. We
+move one token at a time seeing where it takes us in all possible
+alternatives. When only a single alternative is left, we know to predict
+that Alternative. We rewind the input and then take the appropriate path.
+&gt;<i>
+</I>&gt;<i> LL(*) is O(n) for a given decision because in the worst case it might look
+</I>scan until the end of the input. If we must make a decision at every token,
+that is an O(n^2) parsing strategy for n tokens.  That actually hides
+another complexity that generally does not appear. We are doing what amounts
+to a more complicated NFA to DFA conversion, which we know is exponential in
+complexity (in theory but not in practice). That means that a particular
+decision could hit a landmine at some point. I have seen one example of
+this. I have some interesting ideas for altering the algorithm so this does
+not occur.  I'll get to it.
+&gt;<i>
+</I>&gt;<i> To learn more about the static analysis, you can go here:
+</I>&gt;<i>
+</I>&gt;<i> <A HREF="http://www.antlr.org/papers/LL-star-PLDI11.pdf">http://www.antlr.org/papers/LL-star-PLDI11.pdf</A>
+</I>&gt;<i>
+</I>&gt;<i> I hope to do a paper on this adaptive LL(*) at some point.
+</I>&gt;<i>
+</I>&gt;<i> &quot;It's pretty bad ass. It just doesn't give a shit.&quot; --honey badger
+</I>&gt;<i>
+</I>&gt;<i> Ter
+</I>&gt;<i> On Jan 22, 2012, at 2:34 AM, Jan Finis wrote:
+</I>&gt;<i>
+</I>&gt;&gt;<i> Hi Terence,
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I am into parser generator theory, so I am wondering which concepts 
+</I>&gt;&gt;<i> you use to let Honey Badger &quot;eat everything&quot; (even left recursion) 
+</I>&gt;&gt;<i> and never backtrack. Could you tell me which concepts you use? I know 
+</I>&gt;&gt;<i> I could just check the code but I think it will be 1000 times faster 
+</I>&gt;&gt;<i> if you explain it to me and I think it will also be interesting for many
+</I>others here.
+&gt;&gt;<i>
+</I>&gt;&gt;<i> And does never backtrack mean that the parser will always stay linear 
+</I>&gt;&gt;<i> like a packrat parser?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Best regards,
+</I>&gt;&gt;<i> Jan Finis
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;&gt;<i> Unsubscribe: 
+</I>&gt;&gt;<i> <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-addres">http://www.antlr.org/mailman/options/antlr-interest/your-email-addres</A>
+</I>&gt;&gt;<i> s
+</I>
+
+List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+Unsubscribe:
+<A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="043914.html">[antlr-interest] Honey Badger Theory
+</A></li>
+	<LI>Next message: <A HREF="043931.html">[antlr-interest] Honey Badger Theory
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#43917">[ date ]</a>
+              <a href="thread.html#43917">[ thread ]</a>
+              <a href="subject.html#43917">[ subject ]</a>
+              <a href="author.html#43917">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

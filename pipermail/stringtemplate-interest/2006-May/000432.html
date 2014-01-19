@@ -1,0 +1,218 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [stringtemplate-interest] unit tests for line wrapping
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:stringtemplate-interest%40antlr.org?Subject=%5Bstringtemplate-interest%5D%20unit%20tests%20for%20line%20wrapping&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000431.html">
+   <LINK REL="Next"  HREF="000433.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[stringtemplate-interest] unit tests for line wrapping</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:stringtemplate-interest%40antlr.org?Subject=%5Bstringtemplate-interest%5D%20unit%20tests%20for%20line%20wrapping&In-Reply-To="
+       TITLE="[stringtemplate-interest] unit tests for line wrapping">parrt at cs.usfca.edu
+       </A><BR>
+    <I>Sun May 28 14:15:37 PDT 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000431.html">[stringtemplate-interest] wrapping long lines in ST expressions
+</A></li>
+        <LI>Next message: <A HREF="000433.html">[stringtemplate-interest] unit tests for line wrapping
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#432">[ date ]</a>
+              <a href="thread.html#432">[ thread ]</a>
+              <a href="subject.html#432">[ subject ]</a>
+              <a href="author.html#432">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Howdy, the following line wrap unit tests &quot;work&quot;.  Can all interested  
+parties, please examine them to see if the functionality matches your  
+expectations?
+
+I line up wrapped lines derived from expressions to the start of the  
+expression. For template literal chunks, they just wrap back to char  
+position 0.
+
+The last testLineWrapInNestedExpr test is hard to think about, but is  
+pretty groovy.  It treats each array as a single attribute value so  
+that the outer template doesn't do the indent.  This is proper I  
+believe.  Once the first array is dumped, the column is 0 and so the  
+second array has more elements per line.  Far out.
+
+This implementation complicated StringTemplateWriter interface and  
+auto-indent writer, but most people will never see this stuff.   
+Should be no speed hit.  I also switched from a stack to an arraylist  
+for the stack of indentation given my experience with Stack  
+recently.  Might even go faster!
+
+Ok, where was I?  Oh, right.  ANTLR v3 DFA state machine table  
+generation for which I need auto-indent.  Gotta love parallel, demand- 
+driven development.  Off to the pool to exercise...
+
+I will wait to hear feedback before pushing all of this...
+
+Thanks!
+Ter
+----------------
+public void testLineWrap() throws Exception {
+     String templates =
+             &quot;group test;&quot; +newline+
+             &quot;array(values) ::= &lt;&lt;int[] a = { &lt;values; separator=\&quot;, 
+\&quot;&gt; };&gt;&gt;&quot;+new
+     StringTemplateGroup group =
+             new StringTemplateGroup(new StringReader(templates));
+
+     StringTemplate a = group.getInstanceOf(&quot;array&quot;);
+     a.setAttribute(&quot;values&quot;,
+                    new int[]  
+{3,9,20,2,1,4,6,32,5,6,77,888,2,1,6,32,5,6,77,
+                     4,9,20,2,1,4,63,9,20,2,1,4,6,32,5,6,77,6,32,5,6,77,
+                     3,9,20,2,1,4,6,32,5,6,77,888,1,6,32,5});
+     String expecting =
+         &quot;int[] a = { 3,9,20,2,1,4,6,32,5,6,77,888,\n&quot; +
+         &quot;            2,1,6,32,5,6,77,4,9,20,2,1,4,\n&quot; +
+         &quot;            63,9,20,2,1,4,6,32,5,6,77,6,\n&quot; +
+         &quot;            32,5,6,77,3,9,20,2,1,4,6,32,\n&quot; +
+         &quot;            5,6,77,888,1,6,32,5 };&quot;;
+     assertEqual(a.toString(40), expecting);
+}
+
+public void testLineWrapEdgeCase() throws Exception {
+     String templates =
+             &quot;group test;&quot; +newline+
+             &quot;duh(chars) ::= \&quot;&lt;chars&gt;\&quot;&quot;+newline;
+     StringTemplateGroup group =
+             new StringTemplateGroup(new StringReader(templates));
+
+     StringTemplate a = group.getInstanceOf(&quot;duh&quot;);
+     a.setAttribute(&quot;chars&quot;, new String[] {&quot;a&quot;,&quot;b&quot;,&quot;c&quot;,&quot;d&quot;,&quot;e&quot;});
+     // lineWidth==3 implies that we can have 3 characters at most
+     String expecting =
+         &quot;abc\n&quot;+
+         &quot;de&quot;;
+     assertEqual(a.toString(3), expecting);
+}
+
+public void testLineWrapLastCharIsNewline() throws Exception {
+     String templates =
+             &quot;group test;&quot; +newline+
+             &quot;duh(chars) ::= \&quot;&lt;chars&gt;\&quot;&quot;+newline;
+     StringTemplateGroup group =
+             new StringTemplateGroup(new StringReader(templates));
+
+     StringTemplate a = group.getInstanceOf(&quot;duh&quot;);
+     a.setAttribute(&quot;chars&quot;, new String[] {&quot;a&quot;,&quot;b&quot;,&quot;\n&quot;,&quot;d&quot;,&quot;e&quot;});
+     // don't do \n if it's last element anyway
+     String expecting =
+         &quot;ab\n&quot;+
+         &quot;de&quot;;
+     assertEqual(a.toString(3), expecting);
+}
+
+public void testLineWrapCharAfterWrapIsNewline() throws Exception {
+     String templates =
+             &quot;group test;&quot; +newline+
+             &quot;duh(chars) ::= \&quot;&lt;chars&gt;\&quot;&quot;+newline;
+     StringTemplateGroup group =
+             new StringTemplateGroup(new StringReader(templates));
+
+     StringTemplate a = group.getInstanceOf(&quot;duh&quot;);
+     a.setAttribute(&quot;chars&quot;, new String[] {&quot;a&quot;,&quot;b&quot;,&quot;c&quot;,&quot;\n&quot;,&quot;d&quot;,&quot;e&quot;});
+     // Once we wrap, we must dump chars as we see them.  A newline  
+right
+     // after a wrap is just an &quot;unfortunate&quot; event.  People will expect
+     // a newline if it's in the data.
+     String expecting =
+         &quot;abc\n&quot; +
+         &quot;\n&quot; +
+         &quot;de&quot;;
+     assertEqual(a.toString(3), expecting);
+}
+
+public void testLineWrapDueToLiteral() throws Exception {
+     String templates =
+             &quot;group test;&quot; +newline+
+             &quot;m(args,body) ::= &lt;&lt;public void foo(&lt;args; separator=\&quot;,  
+\&quot;&gt;) throws
+     StringTemplateGroup group =
+             new StringTemplateGroup(new StringReader(templates));
+
+     StringTemplate a = group.getInstanceOf(&quot;m&quot;);
+     a.setAttribute(&quot;args&quot;,
+                    new String[] {&quot;a&quot;, &quot;b&quot;, &quot;c&quot;});
+     a.setAttribute(&quot;body&quot;, &quot;i=3;&quot;);
+     // make it wrap because of &quot;) throws Ick { &quot; literal
+     int n = &quot;public void foo(a, b, c&quot;.length();
+     String expecting =
+         &quot;public void foo(a, b, c\n&quot; +
+         &quot;) throws Ick { i=3; }&quot;;
+     assertEqual(a.toString(n), expecting);
+}
+
+public void testLineWrapInNestedExpr() throws Exception {
+     String templates =
+             &quot;group test;&quot; +newline+
+             &quot;top(arrays) ::= &lt;&lt;Arrays: &lt;arrays&gt;done&gt;&gt;&quot;+newline+
+             &quot;array(values) ::= &lt;&lt;int[] a = { &lt;values; separator=\&quot;, 
+\&quot;&gt; };&lt;\\n\\&gt;
+     StringTemplateGroup group =
+             new StringTemplateGroup(new StringReader(templates));
+
+     StringTemplate top = group.getInstanceOf(&quot;top&quot;);
+     StringTemplate a = group.getInstanceOf(&quot;array&quot;);
+     a.setAttribute(&quot;values&quot;,
+                    new int[]  
+{3,9,20,2,1,4,6,32,5,6,77,888,2,1,6,32,5,6,77,
+                     4,9,20,2,1,4,63,9,20,2,1,4,6,32,5,6,77,6,32,5,6,77,
+                     3,9,20,2,1,4,6,32,5,6,77,888,1,6,32,5});
+     top.setAttribute(&quot;arrays&quot;, a);
+     top.setAttribute(&quot;arrays&quot;, a); // add twice
+     String expecting =
+         &quot;Arrays: int[] a = { 3,9,20,2,1,4,6,32,5,\n&quot; +
+         &quot;                    6,77,888,2,1,6,32,5,\n&quot; +
+         &quot;                    6,77,4,9,20,2,1,4,63,\n&quot; +
+         &quot;                    9,20,2,1,4,6,32,5,6,\n&quot; +
+         &quot;                    77,6,32,5,6,77,3,9,20,\n&quot; +
+         &quot;                    2,1,4,6,32,5,6,77,888,\n&quot; +
+         &quot;                    1,6,32,5 };\n&quot; +
+         &quot;int[] a = { 3,9,20,2,1,4,6,32,5,6,77,888,\n&quot; +
+         &quot;            2,1,6,32,5,6,77,4,9,20,2,1,4,\n&quot; +
+         &quot;            63,9,20,2,1,4,6,32,5,6,77,6,\n&quot; +
+         &quot;            32,5,6,77,3,9,20,2,1,4,6,32,\n&quot; +
+         &quot;            5,6,77,888,1,6,32,5 };\n&quot; +
+         &quot;done&quot;;
+     assertEqual(top.toString(40), expecting);
+}
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20060528/aaf5558b/attachment-0001.html">http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20060528/aaf5558b/attachment-0001.html</A>
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000431.html">[stringtemplate-interest] wrapping long lines in ST expressions
+</A></li>
+	<LI>Next message: <A HREF="000433.html">[stringtemplate-interest] unit tests for line wrapping
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#432">[ date ]</a>
+              <a href="thread.html#432">[ thread ]</a>
+              <a href="subject.html#432">[ subject ]</a>
+              <a href="author.html#432">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">More information about the stringtemplate-interest
+mailing list</a><br>
+</body></html>

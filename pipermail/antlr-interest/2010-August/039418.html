@@ -1,0 +1,318 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] How do I preserve comments in a	language	to	language translator
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20How%20do%20I%20preserve%20comments%20in%20a%0A%09language%09to%09language%20translator&In-Reply-To=%3C022301cb399f%2440b702b0%24c2250810%24%40temporal-wave.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="039417.html">
+   <LINK REL="Next"  HREF="039419.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] How do I preserve comments in a	language	to	language translator</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20How%20do%20I%20preserve%20comments%20in%20a%0A%09language%09to%09language%20translator&In-Reply-To=%3C022301cb399f%2440b702b0%24c2250810%24%40temporal-wave.com%3E"
+       TITLE="[antlr-interest] How do I preserve comments in a	language	to	language translator">jimi at temporal-wave.com
+       </A><BR>
+    <I>Wed Aug 11 14:50:45 PDT 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="039417.html">[antlr-interest] How do I preserve comments in a language	to	language translator
+</A></li>
+        <LI>Next message: <A HREF="039419.html">[antlr-interest] Diference bettew Tokens and Lexical Rules
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#39418">[ date ]</a>
+              <a href="thread.html#39418">[ thread ]</a>
+              <a href="subject.html#39418">[ subject ]</a>
+              <a href="author.html#39418">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I would try and track the comments as early on in the translation as
+possible, as the further you get away from the initial input, the more
+difficult it will be to associate the original tokens with the transformed
+structure. 
+
+So, when you produce your initial tree, choose the set of tokens (which may
+include imaginary nodes) that makes sense to associate comments with. When
+you hit the parsing start of these constructs (or end) then call an external
+method to track back and find the token index of the first and last comment
+token. Do the rewrite, then in action code, adorn the AST node with the
+token index information. Again, you want to do such things in external
+methods that say accept the token index to search from and the token pointer
+etc:
+
+func
+@declarations
+{
+ ANTLR3_MARKER firstTok;
+}
+@init
+{
+  firstTok = INDEX();
+}
+:<i> ( type ID LPAREN list RPAREN
+</I>      -&gt;^(CFUNC ID type list)
+  )
+  { findComments($tree, firstTok); /* Uses the node token in the current
+tree, looks back from firstTok, stores in user1, user2 */ }
+;
+
+Some time later in your code generating tree walk, you will hit the CFUNC
+node, you may have done all sorts of manipulations of the child nodes, but
+now the user1 and user2 fields of the CFUNC token in the tree will contain
+the start and end indexes of the comments you wanted. Call an external
+function with a pointer to the tree node and have that function copy the
+text from all the tokens in the range.
+
+func :
+  ^(c=CFUNC ID type list)
+   { copyComments($c); 
+      genFunc(.....
+  }
+;
+
+The mechanisms in the tree parser are that $c will come in as a
+pANTLR3_BASE_TREE, which has a member called super, which is a void * that
+you cast to pANTLR3_COMMON_TREE. pANTLR3_BASE_TREE has a method getToken(),
+which will return the payload token for the node, which is
+pANTLR3_COMMON_TOKEN, this has user1, user2 and user3 ints, ANTLR3_MARKER
+start and stop positions that point to the first and last character of the
+text and it has a channel and index. Using the original input stream you can
+use get(n) to get the token at position n and use the text pointers.
+
+If the comment follow the structure, then the same things apply but now you
+find comments at the end and in code gen, spit the out at the end. 
+
+You can see that there will be ambiguous situations where it is difficult to
+know if the comment is for the end of some statement or the start of the
+next, so you will decide consistently and have to live with it ;-)
+
+// Call stat
+stat(); // We call stat to fubar
+// now stat is called, x will = 99 and b points to bananas
+
+// Call flick() to do cyz
+//
+flick();
+
+Anyway, those are the main structures you need and it is pretty easy once
+you get your head around the method calling. Use the runtime source code as
+your guide for finding things out about structres and the API doxygen linke
+from the home page.
+
+Jim
+
+
+&gt;<i> -----Original Message-----
+</I>&gt;<i> From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:antlr-interest-
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">bounces at antlr.org</A>] On Behalf Of Howard Nasgaard
+</I>&gt;<i> Sent: Wednesday, August 11, 2010 2:04 PM
+</I>&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> Subject: Re: [antlr-interest] How do I preserve comments in a language to
+</I>&gt;<i> language translator
+</I>&gt;<i> 
+</I>&gt;<i> Jim,  It sounds like you understand what I need to do.  I will be happy
+</I>with a
+&gt;<i> 'best guess' approach.  What you describe is basically what I understood
+</I>from
+&gt;<i> the reading I've done.  What I think I am still missing is an example of
+</I>the
+&gt;<i> mechanics of doing this in the tree grammar.  Is it a matter of inserting
+</I>code
+&gt;<i> in each rule to examine each token, looking for comment nodes (assume a
+</I>&gt;<i> unique channel for those).  Would you track the index of the last node
+</I>&gt;<i> checked so that you can get the range of tokens to examine?  It sounds
+</I>like
+&gt;<i> this could get a bit messy.
+</I>&gt;<i> 
+</I>&gt;<i> Howard W. Nasgaard
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> wrote on 11/08/2010 04:46:12 PM:
+</I>&gt;<i> 
+</I>&gt;<i> &gt; [image removed]
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Re: [antlr-interest] How do I preserve comments in a language to
+</I>&gt;<i> &gt; language translator
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Jim Idle
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; to:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; antlr-interest
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; 11/08/2010 04:48 PM
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Sent by:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; This is a very tricky thing to perfectly, but not so difficult to do
+</I>&gt;<i> &gt; as
+</I>&gt;<i> a
+</I>&gt;<i> &gt; 'best guess' type of algorithm. For instance if the comments are found
+</I>&gt;<i> &gt; before certain tokens and can be just pushed to the output before the
+</I>&gt;<i> &gt; translated version (like doxygen comments or javadoc etc), or if
+</I>&gt;<i> 'comments
+</I>&gt;<i> &gt; close by' is a reasonable guess. It is difficult to speak to you
+</I>&gt;<i> &gt; problem generically, but some translations make this easy enough and
+</I>&gt;<i> &gt; some very difficult.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; However, what you will need to do is locate the token that 'starts'
+</I>&gt;<i> &gt; your construct output, then find its equivalent token position in the
+</I>&gt;<i> original
+</I>&gt;<i> &gt; tokenized input stream. If the token in the tree is from the original
+</I>&gt;<i> input
+</I>&gt;<i> &gt; stream then it is easy, otherwise you can use the user1, user2, user3
+</I>&gt;<i> fields
+</I>&gt;<i> &gt; of a token to record the token that 'starts' the code you have
+</I>&gt;<i> translated or
+</I>&gt;<i> &gt; perhaps the start and end tokens that are the comment block.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Now, knowing the input token position, you can traverse backwards in
+</I>&gt;<i> &gt; the token stream (use get and not LT as LT skips off channel tokens)
+</I>&gt;<i> &gt; and
+</I>&gt;<i> find
+</I>&gt;<i> &gt; the first of the comment tokens that precedes it (by checking the
+</I>&gt;<i> token's
+</I>&gt;<i> &gt; channel). This will be easier if you set the comments to a particular
+</I>&gt;<i> &gt; channel and not just HIDDEN (which is channel 99). When you know the
+</I>&gt;<i> token
+</I>&gt;<i> &gt; position of the comment token, then you can traverse forwards and copy
+</I>&gt;<i> the
+</I>&gt;<i> &gt; token text to the output (changing the comment lead-in characters
+</I>&gt;<i> &gt; should
+</I>&gt;<i> you
+</I>&gt;<i> &gt; need to) using the pointers available in the token (which point to the
+</I>&gt;<i> &gt; original text).
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; So, you just need to get familiar with asking the tree nodes for their
+</I>&gt;<i> &gt; tokens and then asking the tokens what index they are and using the
+</I>&gt;<i> &gt; get methods to access the tokens in the input stream.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; So:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; // A comment
+</I>&gt;<i> &gt; // Another
+</I>&gt;<i> &gt; // yet another
+</I>&gt;<i> &gt; int Cfunc( ....
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; So, if the comments are going on channel 2 then you will have:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; 0 COMMENT
+</I>&gt;<i> &gt; 1 COMMENT
+</I>&gt;<i> &gt; 2 COMMENT
+</I>&gt;<i> &gt; 3 ID
+</I>&gt;<i> &gt; 4 ID
+</I>&gt;<i> &gt; 5 LPAREN
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Now, your first parser is probably going to generate ^(FUNCDECL ID ID
+</I>&gt;<i> .....)
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; You can now attach the index of the first comment (0) to user1 and
+</I>&gt;<i> &gt; then index of the last comment to user2 of say FUNCDECL, or the first
+</I>ID.
+&gt;<i> &gt; Assuming that the token is preserved through all the rewrites, then
+</I>&gt;<i> &gt; this information will propagate to your final AST.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Of course this is just illustrating what you need to do generally as I
+</I>&gt;<i> do
+</I>&gt;<i> &gt; not know exactly what you are trying to do.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Jim
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; &gt; -----Original Message-----
+</I>&gt;<i> &gt; &gt; From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:antlr-interest-
+</I>&gt;<i> &gt; &gt; <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">bounces at antlr.org</A>] On Behalf Of Howard Nasgaard
+</I>&gt;<i> &gt; &gt; Sent: Wednesday, August 11, 2010 1:13 PM
+</I>&gt;<i> &gt; &gt; To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> &gt; &gt; Subject: [antlr-interest] How do I preserve comments in a language
+</I>&gt;<i> &gt; &gt; to language translator
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; I am writing a translator that will convert from one version of a
+</I>&gt;<i> language
+</I>&gt;<i> &gt; to a
+</I>&gt;<i> &gt; &gt; newer version of that language.  The versions are syntactically
+</I>&gt;<i> similar so
+</I>&gt;<i> &gt; their
+</I>&gt;<i> &gt; &gt; underlying ASTs are similar.  I am using parsers for the grammar and
+</I>&gt;<i> tree
+</I>&gt;<i> &gt; &gt; grammars generated as C++.  The old language is parsed and an AST is
+</I>&gt;<i> &gt; built.
+</I>&gt;<i> &gt; &gt; Then numerous walks of the AST are done using generated tree
+</I>&gt;<i> grammars.
+</I>&gt;<i> &gt; &gt; One of the walks creates a new AST, the translation, which conforms
+</I>&gt;<i> &gt; &gt; to
+</I>&gt;<i> the
+</I>&gt;<i> &gt; &gt; tree hierarchy that describes the new language elements.  A final
+</I>&gt;<i> &gt; &gt; walk
+</I>&gt;<i> of
+</I>&gt;<i> &gt; the
+</I>&gt;<i> &gt; &gt; new AST &quot;pretty prints&quot; the translation.
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; As part of the translation walk, or whatever works, I would like to
+</I>&gt;<i> copy
+</I>&gt;<i> &gt; as
+</I>&gt;<i> &gt; &gt; many of the comment tokens across to the new AST as possible.  Based
+</I>&gt;<i> on
+</I>&gt;<i> &gt; &gt; my reading, the comments are there as they are being directed to the
+</I>&gt;<i> &gt; &gt; HIDDEN channel.  It is just not clear how, in my tree grammar, I
+</I>&gt;<i> &gt; &gt; would
+</I>&gt;<i> &gt; access
+</I>&gt;<i> &gt; &gt; them.  I have been unable to find any descriptions  of how to do
+</I>&gt;<i> &gt; &gt; this
+</I>&gt;<i> that
+</I>&gt;<i> &gt; &gt; apply to antlr3 and C++.
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; Howard W. Nasgaard
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> &gt; &gt; Unsubscribe:
+</I>&gt;<i> &gt; &gt; <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-">http://www.antlr.org/mailman/options/antlr-interest/your-</A>
+</I>&gt;<i> &gt; &gt; email-address
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> &gt; Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/">http://www.antlr.org/mailman/options/antlr-interest/</A>
+</I>&gt;<i> &gt; your-email-address
+</I>&gt;<i> 
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-">http://www.antlr.org/mailman/options/antlr-interest/your-</A>
+</I>&gt;<i> email-address
+</I>
+</PRE>
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="039417.html">[antlr-interest] How do I preserve comments in a language	to	language translator
+</A></li>
+	<LI>Next message: <A HREF="039419.html">[antlr-interest] Diference bettew Tokens and Lexical Rules
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#39418">[ date ]</a>
+              <a href="thread.html#39418">[ thread ]</a>
+              <a href="subject.html#39418">[ subject ]</a>
+              <a href="author.html#39418">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,151 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] String size limit and how to free memory	real-time?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20String%20size%20limit%20and%20how%20to%20free%20memory%0A%09real-time%3F&In-Reply-To=002001c704e6%2450ef07a0%24c28522a6%40mcilink.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="018295.html">
+   <LINK REL="Next"  HREF="018301.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] String size limit and how to free memory	real-time?</H1>
+    <B>Ric Klaren</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20String%20size%20limit%20and%20how%20to%20free%20memory%0A%09real-time%3F&In-Reply-To=002001c704e6%2450ef07a0%24c28522a6%40mcilink.com"
+       TITLE="[antlr-interest] String size limit and how to free memory	real-time?">ric.klaren at gmail.com
+       </A><BR>
+    <I>Fri Nov 10 13:50:14 PST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="018295.html">[antlr-interest] String size limit and how to free memory	real-time?
+</A></li>
+        <LI>Next message: <A HREF="018301.html">[antlr-interest] String size limit and how to free memory real-time?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#18300">[ date ]</a>
+              <a href="thread.html#18300">[ thread ]</a>
+              <a href="subject.html#18300">[ subject ]</a>
+              <a href="author.html#18300">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+On 11/10/06, Rick Morgan &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">r.morgan at verizonbusiness.com</A>&gt; wrote:
+&gt;<i> Delving further into my problem I found that the stack overflow occurs when
+</I>&gt;<i> the parser destructor is called.  It attempts to free the AST which in my
+</I>&gt;<i> case is a degenerate list of some sort, containing 25800 nodes.
+</I>
+This is a known gotcha. It seems that more and more people are running into it.
+
+See also this link:
+
+<A HREF="http://www.antlr.org/pipermail/antlr-interest/2006-July/016967.html">http://www.antlr.org/pipermail/antlr-interest/2006-July/016967.html</A>
+
+&gt;<i> so haven't got back to this.  Any suggestions on how to free up the AST
+</I>&gt;<i> real-time would be helpful, as well as warnings about corrupting it all.
+</I>
+Some quick copy paste &amp; modify from the above link and the exprAST
+example in the distro:
+
+-----snip-----
+options {
+        language=&quot;Cpp&quot;;
+}
+
+{
+#include &lt;iostream&gt;
+#include &lt;queue&gt;
+
+ExprParser::~ExprParser()
+{
+        destroy(returnAST);
+}
+
+using antlr::RefAST;
+using antlr::nullAST;
+
+void ExprParser::destroy( RefAST ast )
+{
+        if( ! ast )
+                return;
+
+        // std::cerr &lt;&lt; &quot;before destroy&quot; &lt;&lt; std::endl;
+
+        std::queue&lt;RefAST&gt; stack;
+
+        stack.push(ast);
+        ast = nullAST;
+        RefAST current;
+        // while stuff left..
+        while(!stack.empty()) {
+                current = stack.front();
+                stack.pop();
+
+                RefAST child = current-&gt;getFirstChild();
+                current-&gt;setFirstChild(nullAST);
+
+                if( child )
+                        stack.push(child);
+
+                child = current-&gt;getNextSibling();
+                current-&gt;setNextSibling(nullAST);
+
+                if( child )
+                        stack.push(child);
+
+                current = nullAST;
+                // std::cout &lt;&lt; &quot;size = &quot; &lt;&lt; stack.size() &lt;&lt; std::endl;
+        }
+}
+}
+
+class ExprParser extends Parser;
+options {  buildAST=true; }
+{
+public:
+   // destroy function...
+   void destroy(antlr::RefAST ast);
+   // custom destructor...
+   virtual ~ExprParser();
+}
+
+// rest of exprAST.g from example
+----snip----
+
+Usual disclaimers apply, I did not really test this very well, so I
+might have introduced an error in the original code from Eugen.
+
+You would have to apply the above pattern to all Parsers/TreeParsers
+in your project that build trees.
+
+Cheers,
+
+Ric
+</PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="018295.html">[antlr-interest] String size limit and how to free memory	real-time?
+</A></li>
+	<LI>Next message: <A HREF="018301.html">[antlr-interest] String size limit and how to free memory real-time?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#18300">[ date ]</a>
+              <a href="thread.html#18300">[ thread ]</a>
+              <a href="subject.html#18300">[ subject ]</a>
+              <a href="author.html#18300">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

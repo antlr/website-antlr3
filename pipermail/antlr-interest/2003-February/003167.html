@@ -1,0 +1,182 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] [BUG] Java generator produces useless conditionals
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20%5BBUG%5D%20Java%20generator%20produces%20useless%20conditionals&In-Reply-To=14397333077.20030221161431%40hunsicker.de">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003162.html">
+   <LINK REL="Next"  HREF="003168.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] [BUG] Java generator produces useless conditionals</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20%5BBUG%5D%20Java%20generator%20produces%20useless%20conditionals&In-Reply-To=14397333077.20030221161431%40hunsicker.de"
+       TITLE="[antlr-interest] [BUG] Java generator produces useless conditionals">parrt at jguru.com
+       </A><BR>
+    <I>Fri Feb 21 10:22:06 PST 2003</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003162.html">[antlr-interest] [BUG] Java generator produces useless conditionals
+</A></li>
+        <LI>Next message: <A HREF="003168.html">[antlr-interest] [BUG] Java generator produces useless conditionals
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3167">[ date ]</a>
+              <a href="thread.html#3167">[ thread ]</a>
+              <a href="subject.html#3167">[ subject ]</a>
+              <a href="author.html#3167">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Marco,
+
+THanks for the fix.  I didn't bother optimizing as I knew that the 
+compiler would remove these &quot;if true&quot; tests :)  I'm also frightened by 
+consequences of changing code generator ;)
+
+Ter
+
+On Friday, February 21, 2003, at 07:14 AM, Marco Hunsicker wrote:
+
+&gt;<i> Hello Dr. Parr,
+</I>&gt;<i>
+</I>&gt;<i> I found a, well, maybe not really a bug, more of a cosmetic issue, but
+</I>&gt;<i> anyway.
+</I>&gt;<i>
+</I>&gt;<i> The following lexer rule (taken from the Java grammar)
+</I>&gt;<i>
+</I>&gt;<i> &lt;pre&gt;
+</I>&gt;<i> WS      :       (       ' '
+</I>&gt;<i>                 |       '\t'
+</I>&gt;<i>                 |       '\f'
+</I>&gt;<i>                         // handle newlines
+</I>&gt;<i>                 |       (       options {generateAmbigWarnings=false;}
+</I>&gt;<i>                         :       &quot;\r\n&quot;  // Evil DOS
+</I>&gt;<i>                         |       '\n'    // Unix (the right way)
+</I>&gt;<i>                         |       '\r'    // Macintosh
+</I>&gt;<i>                         )
+</I>&gt;<i>                         { newline(); }
+</I>&gt;<i>                 )+
+</I>&gt;<i>         ;
+</I>&gt;<i>
+</I>&gt;<i> &lt;/pre&gt;
+</I>&gt;<i>
+</I>&gt;<i> produces (ANTLR 2.7.2) Java code such as (only the relevant part
+</I>&gt;<i> shown)
+</I>&gt;<i>
+</I>&gt;<i> &lt;pre&gt;
+</I>&gt;<i>     case '\n':
+</I>&gt;<i>     case '\r': {
+</I>&gt;<i>         if (
+</I>&gt;<i>             (LA(1) == '\r') &amp;&amp; (LA(2) == '\n')
+</I>&gt;<i>                 &amp;&amp; (true) &amp;&amp; (true)) {          // &lt;== USELESS
+</I>&gt;<i>             match(&quot;\r\n&quot;);
+</I>&gt;<i>         } else if ((LA(1) == '\n')) {
+</I>&gt;<i>             match('\n');
+</I>&gt;<i>         } else if (
+</I>&gt;<i>             (LA(1) == '\r') &amp;&amp; (true) &amp;&amp; (true) // &lt;== USELESS
+</I>&gt;<i>                 &amp;&amp; (true)) {                    // &lt;== USELESS
+</I>&gt;<i>             match('\r');
+</I>&gt;<i>         } else {
+</I>&gt;<i>             throw new NoViableAltForCharException(
+</I>&gt;<i>                 (char) LA(1), getFilename(),
+</I>&gt;<i>                 getLine(), getColumn());
+</I>&gt;<i>         }
+</I>&gt;<i>
+</I>&gt;<i>         newline();
+</I>&gt;<i>
+</I>&gt;<i>         break;
+</I>&gt;<i> &lt;/pre&gt;
+</I>&gt;<i>
+</I>&gt;<i> which contains several useless conditionals. It's a really minor
+</I>&gt;<i> issue, but as it's easy to fix, I thought I post the code here.
+</I>&gt;<i>
+</I>&gt;<i> The problem is the method getLookaheadTestExpression(Lookahead[], int)
+</I>&gt;<i> in the Java CodeGenerator. I changed it to
+</I>&gt;<i>
+</I>&gt;<i> &lt;pre&gt;
+</I>&gt;<i> protected String getLookaheadTestExpression(Lookahead[] look, int k) {
+</I>&gt;<i>     StringBuffer e = new StringBuffer(100);
+</I>&gt;<i>     boolean first = true;
+</I>&gt;<i>
+</I>&gt;<i>     e.append(&quot;(&quot;);
+</I>&gt;<i>
+</I>&gt;<i>     for (int i = 1; i &lt;= k; i++) {
+</I>&gt;<i>         BitSet p = look[i].fset;
+</I>&gt;<i>
+</I>&gt;<i>         // Syn preds can yield &lt;end-of-syn-pred&gt; (epsilon) lookahead.
+</I>&gt;<i>         // There is no way to predict what that token would be.  Just
+</I>&gt;<i>         // allow anything instead.
+</I>&gt;<i>         if (look[i].containsEpsilon()) {
+</I>&gt;<i>             if (first) {
+</I>&gt;<i>                 e.append(true);
+</I>&gt;<i>             }
+</I>&gt;<i>         }
+</I>&gt;<i>         else {
+</I>&gt;<i>             if (!first) {
+</I>&gt;<i>                 e.append(&quot;) &amp;&amp; (&quot;);
+</I>&gt;<i>             }
+</I>&gt;<i>
+</I>&gt;<i>             e.append(getLookaheadTestTerm(i, p));
+</I>&gt;<i>         }
+</I>&gt;<i>
+</I>&gt;<i>         first = false;
+</I>&gt;<i>     }
+</I>&gt;<i>
+</I>&gt;<i>     e.append(&quot;)&quot;);
+</I>&gt;<i>
+</I>&gt;<i>     return e.toString();
+</I>&gt;<i> }
+</I>&gt;<i> &lt;/pre&gt;
+</I>&gt;<i>
+</I>&gt;<i> to get rid of the obsolete tests.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> And BTW, wow ;)
+</I>&gt;<i>
+</I>&gt;<i> -- 
+</I>&gt;<i> Best regards,
+</I>&gt;<i>  Marco
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Your use of Yahoo! Groups is subject to 
+</I>&gt;<i> <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>--
+Co-founder, <A HREF="http://www.jguru.com">http://www.jguru.com</A>
+Creator, ANTLR Parser Generator: <A HREF="http://www.antlr.org">http://www.antlr.org</A>
+Lecturer in Comp. Sci., University of San Francisco
+
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003162.html">[antlr-interest] [BUG] Java generator produces useless conditionals
+</A></li>
+	<LI>Next message: <A HREF="003168.html">[antlr-interest] [BUG] Java generator produces useless conditionals
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3167">[ date ]</a>
+              <a href="thread.html#3167">[ thread ]</a>
+              <a href="subject.html#3167">[ subject ]</a>
+              <a href="author.html#3167">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

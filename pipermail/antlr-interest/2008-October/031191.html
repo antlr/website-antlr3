@@ -1,0 +1,172 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] add new support methods in BaseTree?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20add%20new%20support%20methods%20in%20BaseTree%3F&In-Reply-To=%3C7787F5A6-96A2-4A48-9603-62D46DB59721%40cs.usfca.edu%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="031190.html">
+   <LINK REL="Next"  HREF="031192.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] add new support methods in BaseTree?</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20add%20new%20support%20methods%20in%20BaseTree%3F&In-Reply-To=%3C7787F5A6-96A2-4A48-9603-62D46DB59721%40cs.usfca.edu%3E"
+       TITLE="[antlr-interest] add new support methods in BaseTree?">parrt at cs.usfca.edu
+       </A><BR>
+    <I>Wed Oct 22 17:17:48 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="031190.html">[antlr-interest] add new support methods in BaseTree?
+</A></li>
+        <LI>Next message: <A HREF="031192.html">[antlr-interest] added new tree functions
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#31191">[ date ]</a>
+              <a href="thread.html#31191">[ thread ]</a>
+              <a href="subject.html#31191">[ subject ]</a>
+              <a href="author.html#31191">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Ok, to TreeParser, I have added the methods below...want to try it  
+out?  I tried this:
+
+CREATE TREE FROM SOME INPUT
+
+         String input =
+             &quot;x = 3+4\n&quot; +
+             &quot;print x * [2, 3, 4]&quot;;
+
+         VecMathLexer lex = new VecMathLexer(new  
+ANTLRStringStream(input));
+         CommonTokenStream tokens = new CommonTokenStream(lex);
+         VecMathParser g = new VecMathParser(tokens);
+         g.setTreeAdaptor(myadaptor);
+	    VecMathParser.prog_return result = g.prog();
+	    CommonTree tree = (CommonTree)result.tree;
+         System.out.println(tree.toStringTree());
+
+PRINTS
+
+(= x (+ 3 4)) (print (* x (VEC 2 3 4)))
+
+USE TREEWIZARD TO GRAB THE 3 NODE DOWN DEEP
+
+         TreeAdaptor adaptor = new CommonTreeAdaptor();
+         String[] tokenNames = g.getTokenNames();
+         TreeWizard wiz = new TreeWizard(adaptor, tokenNames);
+         Map labels = new HashMap();
+         boolean valid = wiz.parse(tree.getChild(1), &quot;(PRINT (MULT ID  
+(VEC INT %x:INT INT)))&quot;, labels);
+         System.out.println(&quot;labels: &quot;+labels);
+
+PRINTS
+
+labels: {x=3}
+
+CREATE DUMMY WALKER SO WE CAN USE inContext METHOD
+
+         CommonTreeNodeStream nodes = new CommonTreeNodeStream(tree);
+         MyWalker p = new MyWalker(nodes);
+         boolean ctx = p.inContext(labels.get(&quot;x&quot;), &quot;PRINT ...  
+VEC ...&quot;);
+         System.out.println(&quot;inContext: &quot;+ctx);
+
+PRINTS
+
+inContext: true
+
+So, in a grammar, you can say:
+
+	{inContext(&quot;METHOD ... VARDECL&quot;)}? ID
+
+which means &quot;only match an ID if it's parent is VARDECL and there is a  
+METHOD ancestor&quot;.  Cool, eh?
+
+Ter
+
+-------------------
+
+     /** &quot;METHOD ... VARDEF&quot; &quot;CLASS VARDEF&quot;  */
+     public boolean inContext(String context) {
+         return inContext(input.LT(1), context);
+     }
+
+     public boolean inContext(Object t, String context) {
+         String[] tokenNames = getTokenNames();
+         String[] nodes = context.split(&quot;\\s&quot;);
+         int ni = nodes.length-1;
+         TreeAdaptor adaptor = input.getTreeAdaptor();
+         t = adaptor.getParent(t);
+         while ( ni&gt;=0 &amp;&amp; t!=null ) {
+             if ( nodes[ni].equals(&quot;...&quot;) ) {
+                 // walk upwards until we see nodes[ni-1] then  
+continue walking
+                 if ( ni==0 ) return true; // ... at start is no-op
+                 String goal = nodes[ni-1];
+                 Object ancestor = getAncestor(t, goal);
+                 if ( ancestor==null ) return false;
+                 t = ancestor;
+                 ni--;
+             }
+             String name = tokenNames[adaptor.getType(t)];
+             if ( !name.equals(nodes[ni]) ) {
+                 //System.err.println(&quot;not matched: &quot;+nodes[ni]+&quot; at  
+&quot;+t);
+                 return false;
+             }
+             // advance to parent and to previous element in context  
+node list
+             ni--;
+             t = adaptor.getParent(t);
+         }
+
+         return true;
+     }
+
+     public Object getAncestor(Object t, String goal) {
+         String[] tokenNames = getTokenNames();
+         TreeAdaptor adaptor = input.getTreeAdaptor();
+         while ( t!=null ) {
+             String name = tokenNames[adaptor.getType(t)];
+             if ( name.equals(goal) ) return t;
+             // advance to parent and to previous element in context  
+node list
+             t = adaptor.getParent(t);
+         }
+         return null;
+     }
+
+
+</PRE>
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="031190.html">[antlr-interest] add new support methods in BaseTree?
+</A></li>
+	<LI>Next message: <A HREF="031192.html">[antlr-interest] added new tree functions
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#31191">[ date ]</a>
+              <a href="thread.html#31191">[ thread ]</a>
+              <a href="subject.html#31191">[ subject ]</a>
+              <a href="author.html#31191">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

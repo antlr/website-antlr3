@@ -1,0 +1,283 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] NPE in Tree Grammar
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20NPE%20in%20Tree%20Grammar&In-Reply-To=%3CBANLkTikuZF9vOMfccvEnD6he8%3D1tkMnsNQ%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="041349.html">
+   <LINK REL="Next"  HREF="041350.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] NPE in Tree Grammar</H1>
+    <B>J. Talafous</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20NPE%20in%20Tree%20Grammar&In-Reply-To=%3CBANLkTikuZF9vOMfccvEnD6he8%3D1tkMnsNQ%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] NPE in Tree Grammar">jtalafous at gmail.com
+       </A><BR>
+    <I>Sat Apr  9 16:04:08 PDT 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="041349.html">[antlr-interest] Problem with MismatchedTokenException
+</A></li>
+        <LI>Next message: <A HREF="041350.html">[antlr-interest] MATLAB grammar for antlr v3
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#41346">[ date ]</a>
+              <a href="thread.html#41346">[ thread ]</a>
+              <a href="subject.html#41346">[ subject ]</a>
+              <a href="author.html#41346">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>What am I doing wrong... or have I found a new bug in ANTLR Parser
+Generator  Version 3.3 Nov 30, 2010 12:45:30?  My grammars debug OK in
+ANTLRWorks IDE, but I am still a novice at ANTLR grammars.
+
+My goal is to parse in a series of (key,value) pairs such as in the
+following input:
+
+login where username='MyName'\n
+
+Pretty straightforward.  Stacktrace below.
+
+Here is my grammar:
+--------------------------------------------------------------------
+
+grammar Test1;
+
+options {
+	language=Java;
+	output=AST;
+}
+
+tokens {
+    LOGIN='login';
+    USERNAME='username';
+    PASSWORD='password';
+	WHERE='where';
+}
+
+@header {
+package test;
+}
+
+@lexer::header{
+package test;
+}
+
+command
+	: sentence (NEWLINE! sentence)* NEWLINE!? EOF!
+	{
+		System.out.println($command.text);
+	};
+
+sentence
+	: WS!? verb^ WS! whereClause* WS!?
+	{
+		System.out.println($sentence.text);
+	}
+	;
+
+whereClause
+	: WHERE^ (WS! whereSubClause)+
+	;
+	
+whereSubClause returns [String value1, String value2]
+	: noun^ WS!? '='! WS!? (VALUE) {$value1 = $noun.text; $value2 = $VALUE.text;}
+	;
+
+verb
+	: LOGIN
+	;
+
+noun
+	:
+	| USERNAME
+	| PASSWORD
+	;
+
+NEWLINE
+	: '\r'? '\n'
+	;
+
+WS
+	: (' '|'\t'|'\n'|'\r')+
+	;
+
+VALUE:
+	( '&quot;' (~'&quot;')* '&quot;'
+		| '\'' (~'\'')* '\''
+	)
+	;
+
+Here is my Tree grammar
+------------------------------------------------------------
+
+tree grammar Test1Walker;
+options {
+	tokenVocab=Test1; // use tokens in Test1
+	ASTLabelType=CommonTree; // use CommonTree nodes
+}
+
+@header {
+package test;
+}
+
+command
+	: ^(LOGIN whereOne)
+	{
+		System.out.println(&quot;MATCH: &quot;+$whereOne.key + &quot; &quot; +$whereOne.value + &quot; &quot;);
+	}
+	;
+
+whereOne returns [String key, String value]
+	: ^(WHERE keyValue)
+	{
+		$key=$keyValue.key;
+		$value=$keyValue.value;
+	}
+	;
+
+keyValue returns [String key, String value]
+	: ^(noun VALUE)
+	{
+		$key = $noun.text;
+		$value = $VALUE.text;
+	}
+	;
+
+noun
+	:
+	| USERNAME
+	| PASSWORD
+	;
+
+Here is the Java method to run it
+--------------------------------------------------------------
+
+    public static void main(String[] args) throws
+RecognitionException, IOException
+    {
+        test1();
+    }
+
+    private static void test1() throws RecognitionException, IOException
+    {
+        String s = &quot;login where username='MyName'\n&quot; ;
+        byte[] testCases = s.getBytes();
+        ANTLRInputStream input = new ANTLRInputStream(new
+ByteArrayInputStream(testCases));
+        Test1Lexer lexer = new Test1Lexer(input);
+        CommonTokenStream tokens = new CommonTokenStream(lexer);
+        Test1Parser parser = new Test1Parser(tokens);
+        Test1Parser.command_return result = parser.command();
+        CommonTree tree = (CommonTree) result.getTree();
+        System.out.println(&quot;WALK RESULTING TREE&quot;);
+        System.out.println(tree.toStringTree());
+        CommonTreeNodeStream nodes = new CommonTreeNodeStream(tree);
+        Test1Walker walker = new Test1Walker(nodes);
+        walker.command();
+    }
+
+Here is the console output complete with NPE
+------------------------------------------
+
+login where username='MyName'
+
+WALK RESULTING TREE
+(login (where (username 'MyName')))
+Exception in thread &quot;main&quot; java.lang.NullPointerException
+	at test.Test1Walker.keyValue(Test1Walker.java:156)
+	at test.Test1Walker.whereOne(Test1Walker.java:102)
+	at test.Test1Walker.command(Test1Walker.java:57)
+	at test.Onyx.test1(Onyx.java:200)
+	at test.Onyx.main(Onyx.java:183)
+
+
+Here is the generated Test1Walker.java
+------------------------------------------------
+look for LINE 156 below
+    // $ANTLR start &quot;keyValue&quot;
+    // Test1Walker.g:26:1: keyValue returns [String key, String value]
+:<i> ^( noun VALUE ) ;
+</I>    public final Test1Walker.keyValue_return keyValue() throws
+RecognitionException {
+        Test1Walker.keyValue_return retval = new Test1Walker.keyValue_return();
+        retval.start = input.LT(1);
+
+        CommonTree VALUE4=null;
+        Test1Walker.noun_return noun3 = null;
+
+
+        try {
+            // Test1Walker.g:27:2: ( ^( noun VALUE ) )
+            // Test1Walker.g:27:4: ^( noun VALUE )
+            {
+            pushFollow(FOLLOW_noun_in_keyValue84);
+            noun3=noun();
+
+            state._fsp--;
+
+
+            match(input, Token.DOWN, null);
+            VALUE4=(CommonTree)match(input,VALUE,FOLLOW_VALUE_in_keyValue86);
+
+            match(input, Token.UP, null);
+
+ /*LINE 156: */	retval.key = (noun3!=null?(input.getTokenStream().toString(
+              input.getTreeAdaptor().getTokenStartIndex(noun3.start),
+              input.getTreeAdaptor().getTokenStopIndex(noun3.start))):null);
+            		retval.value = (VALUE4!=null?VALUE4.getText():null);
+            	
+
+            }
+
+        }
+        catch (RecognitionException re) {
+            reportError(re);
+            recover(input,re);
+        }
+        finally {
+        }
+        return retval;
+    }
+    // $ANTLR end &quot;keyValue&quot;
+
+The NPE comes from the input.getTokenStream().  The variable
+input.toString() is giving me this message:
+&quot;com.sun.jdi.InvocationException occurred invoking method.&quot;
+
+After many hours, I am still baffled.  Any help appreciated and thanks
+for your time.
+
+Joe
+</PRE>
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="041349.html">[antlr-interest] Problem with MismatchedTokenException
+</A></li>
+	<LI>Next message: <A HREF="041350.html">[antlr-interest] MATLAB grammar for antlr v3
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#41346">[ date ]</a>
+              <a href="thread.html#41346">[ thread ]</a>
+              <a href="subject.html#41346">[ subject ]</a>
+              <a href="author.html#41346">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

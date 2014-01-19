@@ -1,0 +1,198 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Compiling generated C Code from ANTLR
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Compiling%20generated%20C%20Code%20from%20ANTLR&In-Reply-To=%3C93FCBF72DCE7634481C5DF1654D8FF130301107B%40DC2%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="035562.html">
+   <LINK REL="Next"  HREF="035567.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Compiling generated C Code from ANTLR</H1>
+    <B>Heiko Folkerts</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Compiling%20generated%20C%20Code%20from%20ANTLR&In-Reply-To=%3C93FCBF72DCE7634481C5DF1654D8FF130301107B%40DC2%3E"
+       TITLE="[antlr-interest] Compiling generated C Code from ANTLR">Heiko.Folkerts at david-bs.de
+       </A><BR>
+    <I>Thu Aug 13 01:44:25 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="035562.html">[antlr-interest] tree rewrite ambiguous enclosing rule/referenced in production
+</A></li>
+        <LI>Next message: <A HREF="035567.html">[antlr-interest] Compiling generated C Code from ANTLR
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#35559">[ date ]</a>
+              <a href="thread.html#35559">[ thread ]</a>
+              <a href="subject.html#35559">[ subject ]</a>
+              <a href="author.html#35559">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello,
+I have trouble compiling the generated C code from ANTLR with Visual Studio 2008. I get the following errors:
+1&gt;c:\Projekte\modelisar\trunk\vendorsrc\antlr-3.1.3\runtime\C\include\antlr3lexer.h(130) : error C2059: syntax error : '&lt;L_TYPE_raw&gt;'
+1&gt;c:\Projekte\modelisar\trunk\vendorsrc\antlr-3.1.3\runtime\C\include\antlr3lexer.h(130) : error C2238: unexpected token(s) preceding ';'
+
+I try to link against the static libraries - but this is before linking so it shouldn't matter. 
+
+The strange thing is, that I can't find any occurence of L_TYPE_RAW in my code or in the antlr headers.
+
+I tried searching the docs and the web but nothing gave me a hint.
+
+Here is the grammar causing the trouble.
+
+/**
+\file TFSS.g
+\brief Grammatik der Testfallspezifikationssprache (TFSS) */ grammar TFSS; options
+    {
+    output = AST; // Dieser Parser erstellt einen abstrakten Syntaxbaum (AST)
+    language = C;
+    ASTLabelType=pANTLR3_BASE_TREE;
+    backtrack = true;
+    memoize = true;
+    }
+tokens
+    {
+    TFSROOT; // Hauptknoten des gesamten AST
+    ACTIONEXPRESSION; // Eine Aktion mit Objekte und Option
+    STATECHECK; // eine Zustandspr&#252;fung mit Objekt und Option
+    PARAMETERLIST; // Eine durch Klammern eingefasste Parameterliste
+    PARAM; // Ein einzelner Parameter
+    STEP; // ein einzelner Testschritt
+    IFEXPRESSION; // Ein Wenn-Dann-Ausdruck
+    LOOPEXPRESSION; // eine Schleife
+    WHILEEXPRESSION; // Ein Ausdruck f&#252;r gleichzeitige Zustandspr&#252;fungen und Aktionen } @header {
+    #include &quot;../../TFSSController/TFSSElements.h&quot; // Wir verwenden die Enumeration der TFSSElementsklasse f&#252;r die Objektklassen zur Unterscheidung der Schl&#252;sselw&#246;rter
+    #include &quot;../../TFSSController/TFSSController.h&quot;
+}
+@members
+{
+    LanguageID m_LanguageID;
+}
+
+// Eine TFS besteht aus einer Liste von Schritten (steps). Daraus erstellen wir einen AST mit dem imagin&#228;ren Token TFSROOT als Wurzel.
+tfs: steps -&gt; ^(TFSROOT steps);
+// Ein Schritt endet immer mit einem Semikolon.
+// Eine Liste von Schritten ist somit durch das terminierende Simikolon getrennt.
+// Dabei kann auch nur ein Schritt alleine in der Liste stehen.
+steps: step ';'+ -&gt; step+;
+// Ein Schritt besteht aus der Anweisung und einem Semikolon am Ende (s.o.) // Innerhalb eines Testschritts kann zun&#228;chst die Testphase und anschlie&#223;end der anweisungsblock stehen.
+// Phasetag und Anweisung sind durch einen Doppelpunkt getrennt.
+// STEP ist dabei der Hauptknoten f&#252;r die Teile des Testschritts.
+step: phasetag ':' statement -&gt; ^(STEP phasetag statement);
+
+// Die Testphase ist entweder leer oder kann in der Symboltabelle nachgeschlagen werden:
+// Wir verwenden hierf&#252;r eine sog. validating semantic predicate (Siehe The definitive Antlr Reference Chapter 13f)
+phasetag:   
+    | p = ALPHASTRING {TFSSController::Instance().lookup(TFSSKeyword(QString((char*)$p.text-&gt;chars),m_LanguageID)) == TFSSElements::Phase}?
+    ;
+
+statement: actionexpression
+    | statecheck
+    | ifexpression
+    | loopexpression
+    | whileexpression;
+// Eine Zustandspr&#252;fung (statecheck) beinhaltet ein Zustandsobjekt, eine Zustandsoption und den Zustand. Die Option ist wie der Name sagt optional.
+// Rechts vom Gleichheitszeichen steht der Zustand.
+statecheck: stateobject stateoption '=' selectedstate -&gt; ^(STATECHECK stateobject stateoption selectedstate)
+    | stateobject '=' selectedstate -&gt; ^(STATECHECK stateobject selectedstate); // Eine Aktion beinhaltet ein Aktionsobjekt , eine Aktionsoption und die Aktion selbst.
+actionexpression: actionobject actionoption action -&gt; ^(ACTIONEXPRESSION actionobject actionoption action)
+    | actionobject action -&gt; ^(ACTIONEXPRESSION actionobject action);
+
+// Ein Wenn-Dann-Ausdruck hat optional einen Sonst-Zweig:
+ifexpression: ifkeyword condition thenkeyword actionchain elsekeyword actionchain
+    -&gt; ^(IFEXPRESSION condition actionchain actionchain)
+    | ifkeyword condition thenkeyword actionchain 
+    -&gt; ^(IFEXPRESSION condition actionchain);
+
+loopexpression: loopkeyword condition ':' actionchain -&gt; ^(LOOPEXPRESSION condition actionchain);
+
+whileexpression: whilekeyword whilecondition ':' actionchain -&gt; ^(WHILEEXPRESSION whilecondition actionchain);
+
+// eine Bedingung f&#252;r gleichzeitige Aktionen und Zustandspr&#252;fungen kann sowohl eine Aktionskette als auch Parameter als auch eine Zustandspr&#252;fungskette sein.
+whilecondition: condition| actionchain;
+
+condition: parameters | statecheckchain;
+
+actionchain: actionexpression (andkeyword | orkeyword actionchain)*;
+statecheckchain: statecheck (andkeyword | orkeyword statecheckchain); // letztlich sind alles einzelne W&#246;rter die sog. keywords
+stateobject: keyword;
+stateoption: keyword;
+selectedstate: keyword;
+actionobject: keyword;
+actionoption: keyword;
+action: keyword;
+// die Schl&#252;sselw&#246;rter f&#252;r die Kontrollstrukturen sind jeweils auch nur Schl&#252;sselw&#246;rter, m&#252;ssen aber im System nachgeschlagen werden:
+ifkeyword: k=ALPHASTRING {TFSSController::Instance().lookup(TFSSKeyword(QString((char*)$k.text-&gt;chars),m_LanguageID)) == TFSSElements::IfKeyword}?;
+loopkeyword: k=ALPHASTRING {TFSSController::Instance().lookup(TFSSKeyword(QString((char*)$k.text-&gt;chars),m_LanguageID)) == TFSSElements::LoopKeyword}?;
+whilekeyword: k=ALPHASTRING {TFSSController::Instance().lookup(TFSSKeyword(QString((char*)$k.text-&gt;chars),m_LanguageID)) == TFSSElements::WhileKeyword}?;
+thenkeyword: k=ALPHASTRING {TFSSController::Instance().lookup(TFSSKeyword(QString((char*)$k.text-&gt;chars),m_LanguageID)) == TFSSElements::ThenKeyword}?;
+elsekeyword: k=ALPHASTRING {TFSSController::Instance().lookup(TFSSKeyword(QString((char*)$k.text-&gt;chars),m_LanguageID)) == TFSSElements::ElseKeyword}?;
+andkeyword: k=ALPHASTRING {TFSSController::Instance().lookup(TFSSKeyword(QString((char*)$k.text-&gt;chars),m_LanguageID)) == TFSSElements::AndKeyword}?;
+orkeyword: k=ALPHASTRING {TFSSController::Instance().lookup(TFSSKeyword(QString((char*)$k.text-&gt;chars),m_LanguageID)) == TFSSElements::OrKeyword}?;
+
+keyword: ALPHASTRING WS+ -&gt; ^(ALPHASTRING) | 
+    '&quot;' text '&quot;' -&gt;^(text);
+text: ALPHASTRING (WS+ ALPHASTRING)*;
+ALPHASTRING: ('a'..'z' | 'A'..'Z')+;
+WS: (' ' | '\t' | '\r' | '\n')+;
+parameters: '(' parameterdata ')' -&gt; ^(PARAMETERLIST parameterdata)
+    |
+    ;
+parameterdata: param (',' parameterdata)* -&gt; ^(param parameterdata);
+
+param: paramname paramoperator paramvalue (paramunit)? -&gt; ^(PARAM paramname paramoperator paramvalue paramunit);
+paramname: ALPHASTRING;
+paramoperator: '=' | '&lt;=' | '&gt;=' '?=';
+paramvalue: ALPHASTRING | '0'..'9' | '*';
+paramunit: ALPHASTRING; // muss sp&#228;ter um slashes erweitert werden z.B. f&#252;r KM/H.
+
+Thanks in advance
+
+Mit freundlichem Gru&#223;
+Heiko Folkerts
+Systementwicklung und -design
+--
+______________________________________________
+DAVID GmbH &#183; Wendenring 1 &#183; 38114 Braunschweig
+Tel.: +49 531 24379-14
+Fax.: +49 531 24379-79
+E-Mail: mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">Heiko.Folkerts at david-bs.de</A>
+WWW:   <A HREF="http://www.david-bs.de&#160;">http://www.david-bs.de&#160;</A>
+Eintragung: Amtsgericht Braunschweig, HRB 3167
+Gesch&#228;ftsf&#252;hrer: Frank Ptok
+______________________________________________
+
+ 
+</PRE>
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="035562.html">[antlr-interest] tree rewrite ambiguous enclosing rule/referenced in production
+</A></li>
+	<LI>Next message: <A HREF="035567.html">[antlr-interest] Compiling generated C Code from ANTLR
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#35559">[ date ]</a>
+              <a href="thread.html#35559">[ thread ]</a>
+              <a href="subject.html#35559">[ subject ]</a>
+              <a href="author.html#35559">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

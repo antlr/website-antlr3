@@ -1,0 +1,186 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Help with error in C code generation (3.1)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Help%20with%20error%20in%20C%20code%20generation%20%283.1%29&In-Reply-To=%3C1219374530.15169.25.camel%40jimi%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="030255.html">
+   <LINK REL="Next"  HREF="030257.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Help with error in C code generation (3.1)</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Help%20with%20error%20in%20C%20code%20generation%20%283.1%29&In-Reply-To=%3C1219374530.15169.25.camel%40jimi%3E"
+       TITLE="[antlr-interest] Help with error in C code generation (3.1)">jimi at temporal-wave.com
+       </A><BR>
+    <I>Thu Aug 21 20:08:50 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="030255.html">[antlr-interest] Help with error in C code generation (3.1)
+</A></li>
+        <LI>Next message: <A HREF="030257.html">[antlr-interest] n00b Question
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30258">[ date ]</a>
+              <a href="thread.html#30258">[ thread ]</a>
+              <a href="subject.html#30258">[ subject ]</a>
+              <a href="author.html#30258">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Thu, 2008-08-21 at 17:30 -0600, Patrick McCormick wrote:
+
+&gt;<i> Hi,
+</I>&gt;<i> 
+</I>
+Yes - someone else spotted that two - I have checked in a fix so you can
+pick it up from the next snapshot build as ANTLR 3.1.1. 
+
+Here is a hack script that I use to build on Linux:
+
+#! /bin/bash
+
+# Local custom tool that builds ANTLR 3.x and rejars it etc. 
+#
+
+# Your local copy of ANTLR src
+#
+pushd ~/antlrsrc/code/antlr/main/src/org/antlr/tool
+
+# Compile the grammar files
+#
+java antlr.Tool antlr.g 
+java antlr.Tool antlr.print.g 
+java antlr.Tool assign.types.g 
+java antlr.Tool define.g 
+java antlr.Tool buildnfa.g 
+cp ANTLRTokenTypes.txt ../codegen
+cd ../codegen
+java antlr.Tool codegen.g 
+
+cd ~/antlrsrc/code/antlr/main/runtime/Java/src
+
+# Build all the java shit &lt;that's this email canned by stupid filters&gt;
+#
+javac -cp &quot;$CLASSPATH&quot; -d .  org/antlr/runtime/*.java
+org/antlr/runtime/*/*.java
+
+# Build the runtime only jar, again, we don't worry about the extra
+stuff for now
+#
+rm /var/tw/jars/ANTLRRuntime.jar
+jar cf /var/tw/jars/ANTLRRuntime.jar org/antlr/runtime
+
+cd ~/antlrsrc/code/antlr/main/src
+javac -cp &quot;$CLASSPATH&quot; -d . org/antlr/Tool.java org/antlr/*/*.java
+
+# Build the tool jar, not worrying about all the extra stuff that does
+not go in the jar
+# as this is just for my own testing.
+#
+rm /var/tw/jars/ANTLRTool.jar
+jar cf /var/tw/jars/ANTLRTool.jar \
+        org/antlr/Tool.class \
+        org/antlr/analysis \
+        org/antlr/codegen \
+        org/antlr/misc \
+        org/antlr/tool
+
+# Go back to whereever we were
+
+popd
+
+Jim
+
+
+
+&gt;<i> I've run into some issues with generating C code under the 3.1 release  
+</I>&gt;<i> (that is being compiled as part of a C++
+</I>&gt;<i> project).  The errors I'm seeing are in the generated C code that is  
+</I>&gt;<i> being compiled as C++ source:
+</I>&gt;<i> 
+</I>&gt;<i> 	antlr/SParser.cpp:14982: error: invalid conversion from &#8216;void*&#8217; to  
+</I>&gt;<i> &#8216;ANTLR3_BASE_TREE_struct*&#8217;
+</I>&gt;<i> 
+</I>&gt;<i> This corresponds to this line in the generated parser:
+</I>&gt;<i> 
+</I>&gt;<i> 	 string_literal17_tree = ADAPTOR-&gt;create(ADAPTOR, string_literal17);
+</I>&gt;<i> 
+</I>&gt;<i> In looking over the code generation templates it appears that there is  
+</I>&gt;<i> really only on possibility as to where
+</I>&gt;<i> this is being generated from.  Here are the possible spots (the first  
+</I>&gt;<i> one clearly missing a cast like the others):
+</I>&gt;<i> 
+</I>&gt;<i> 	ASTParser.stg:&lt;label&gt;_tree = ADAPTOR-&gt;create(ADAPTOR, &lt;label&gt;);
+</I>&gt;<i> 	ASTParser.stg:&lt;label&gt;_tree = (&lt;ASTLabelType&gt;)(ADAPTOR- 
+</I>&gt;<i>  &gt;create(ADAPTOR, &lt;label&gt;));
+</I>&gt;<i> 	ASTParser.stg:&lt;label&gt;_tree = (&lt;ASTLabelType&gt;)(ADAPTOR- 
+</I>&gt;<i>  &gt;create(ADAPTOR, &lt;label&gt;));
+</I>&gt;<i> 
+</I>&gt;<i> I'm assuming adding the cast would fix this but I haven't been able to  
+</I>&gt;<i> rebuild ANTLR successfully
+</I>&gt;<i> from the source distribution to test it out.  I'm running under MacOS  
+</I>&gt;<i> X 10.5.4 with XCode 3.1 installed.
+</I>&gt;<i> I'm a newbie to both Java and ANTLR so any help would be  
+</I>&gt;<i> appreciated.   In particular, I'd like to know how
+</I>&gt;<i> I go about rebuilding the source distribution -- I'm using ant but get  
+</I>&gt;<i> hundreds of errors during the build.
+</I>&gt;<i> 
+</I>&gt;<i> Thanks for any help you can provide,
+</I>&gt;<i> 
+</I>&gt;<i> --Patrick
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i> 
+</I>-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20080821/e7bae2ba/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20080821/e7bae2ba/attachment.html</A> 
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="030255.html">[antlr-interest] Help with error in C code generation (3.1)
+</A></li>
+	<LI>Next message: <A HREF="030257.html">[antlr-interest] n00b Question
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30258">[ date ]</a>
+              <a href="thread.html#30258">[ thread ]</a>
+              <a href="subject.html#30258">[ subject ]</a>
+              <a href="author.html#30258">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

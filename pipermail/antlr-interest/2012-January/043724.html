@@ -1,0 +1,200 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Why does antlr not know alternative?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Why%20does%20antlr%20not%20know%20alternative%3F&In-Reply-To=%3CBAY149-W94358156316FDE7EF4E57ED980%40phx.gbl%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="043750.html">
+   <LINK REL="Next"  HREF="043726.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Why does antlr not know alternative?</H1>
+    <B>James Ladd</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Why%20does%20antlr%20not%20know%20alternative%3F&In-Reply-To=%3CBAY149-W94358156316FDE7EF4E57ED980%40phx.gbl%3E"
+       TITLE="[antlr-interest] Why does antlr not know alternative?">james_ladd at hotmail.com
+       </A><BR>
+    <I>Mon Jan  9 14:46:07 PST 2012</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="043750.html">[antlr-interest] [stringtemplate-interest] anybody care to	comment on bitbucket.org?
+</A></li>
+        <LI>Next message: <A HREF="043726.html">[antlr-interest] Why does antlr not know alternative?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#43724">[ date ]</a>
+              <a href="thread.html#43724">[ thread ]</a>
+              <a href="subject.html#43724">[ subject ]</a>
+              <a href="author.html#43724">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+I have a grammar I am working on (below) and when in ANTLRWorks I try
+to interpret the following against the rule &quot;statements&quot; I get a NoViableAlternativeException.
+
+^ 12.
+
+I can see that NUMBER has a component of it that can be a '.' hence the grammar issue.
+Is it the start of the decimal part of a number or the end of a statement.
+
+Note: ^ 12.5. works as I would expect.
+
+What I don't know is how to overcome this situation?
+I would have thought that if there is no digit after the '.' that things would be ok.
+
+Please can you suggest a fix / approach?
+
+Rgs, James.
+
+grammar Temp;
+
+options {
+  language = Java;
+}
+@header {
+  package st.redline.compiler;
+}
+@lexer::header {
+  package st.redline.compiler;
+}
+@lexer::members {
+  List&lt;RecognitionException&gt; exceptions = new ArrayList&lt;RecognitionException&gt;();
+  public List&lt;RecognitionException&gt; getExceptions() { return exceptions; }
+  public void reportError(RecognitionException e) { super.reportError(e); exceptions.add(e); }
+}
+
+program
+  : primary* EOF
+  ;    
+
+primary returns [Primary primary]
+  : WHITESPACE? 
+    ( IDENTIFIER {primary = new Identifier($IDENTIFIER.text, $IDENTIFIER.line);}
+    | NUMBER {primary = new Number($NUMBER.text, $NUMBER.line);} 
+    | symbol_constant {primary = $symbol_constant.symbolConstant;}
+    | CHARACTER_CONSTANT {primary = new CharacterConstant($CHARACTER_CONSTANT.text.substring(1), $CHARACTER_CONSTANT.line);} 
+    | STRING {primary = new StringConstant($STRING.text, $STRING.line);}
+    | array_constant {primary = $array_constant.arrayConstant; }
+    | block {primary = $block.block;}
+    | '(' expression WHITESPACE? ')'
+    ) 
+  ;
+
+statements returns [Statements statements]
+  : non_empty_statements? { statements = $non_empty_statements.nonEmptyStatements; }
+  ;
+
+non_empty_statements returns [Statements statements]
+  : WHITESPACE? a='^'  expression '.' {statements = new AnswerStatements($a.line, $expression.expression);}
+  ;
+
+expression returns [Expression expression]
+  :  WHITESPACE? IDENTIFIER WHITESPACE? ':=' e=expression {expression = new AssignmentExpression($IDENTIFIER.text, $IDENTIFIER.line, $e.expression);}
+  | simple_expression {expression = $simple_expression.simpleExpression;}
+  ;
+
+simple_expression returns [SimpleExpression simpleExpression]
+  @init { simpleExpression = new SimpleExpression(); }
+  : primary {simpleExpression.add($primary.primary);}
+  ;
+
+block returns [Block block]
+  : o= '[' WHITESPACE? block_arguments? WHITESPACE? temporaries? ']' {block = new Block($o.line, $block_arguments.blockArguments, $temporaries.temporaries);}
+  ;
+
+temporaries returns [List&lt;Identifier&gt; temporaries]
+  @init { temporaries = new ArrayList&lt;Identifier&gt;(); }
+  : ('|' | '||' | '|' WHITESPACE? '|')  WHITESPACE? (IDENTIFIER WHITESPACE? {temporaries.add(new Identifier($IDENTIFIER.text, $IDENTIFIER.line));})+ '|' WHITESPACE?
+  ;
+
+block_arguments returns [List&lt;BlockArgument&gt; blockArguments]
+  @init { blockArguments = new ArrayList&lt;BlockArgument&gt;(); }
+  : (BLOCK_ARGUMENT WHITESPACE? {blockArguments.add(new BlockArgument($BLOCK_ARGUMENT.text.substring(1), $BLOCK_ARGUMENT.line));})+ '|'? WHITESPACE?
+  ;
+    
+array_constant returns [ArrayConstant arrayConstant]
+  : h='#' array {arrayConstant = new ArrayConstant($array.array, $h.line);}
+  ;
+
+array returns [Array array]
+  @init { array = new Array(); }
+  : '(' (array_element {array.add($array_element.arrayElement);})* ')'
+  ;
+
+array_element returns [ArrayElement arrayElement]
+  : WHITESPACE
+  | NUMBER{arrayElement = new Number($NUMBER.text, $NUMBER.line);}
+  | symbol {arrayElement = $symbol.symbol;}
+  | STRING {arrayElement = new StringConstant($STRING.text, $STRING.line);}
+  | CHARACTER_CONSTANT {arrayElement = new CharacterConstant($CHARACTER_CONSTANT.text.substring(1), $CHARACTER_CONSTANT.line);} 
+  | array {arrayElement = $array.array;}
+  ;
+
+symbol_constant returns [SymbolConstant symbolConstant]
+  : '#' symbol {symbolConstant = new SymbolConstant($symbol.symbol.value(), $symbol.symbol.line());}
+  ;
+
+symbol returns [Symbol symbol]
+  @init { symbol = new Symbol(); }
+  :  IDENTIFIER {symbol.valueAndLine($IDENTIFIER.text, $IDENTIFIER.line); }
+  | BINARY_SELECTOR {symbol.valueAndLine($BINARY_SELECTOR.text, $BINARY_SELECTOR.line);}
+  | (KEYWORD {symbol.addValueAndLine($KEYWORD.text, $KEYWORD.line);} )+    // Decision can match input such as &quot;KEYWORD&quot; using multiple alternatives: 1, 2
+  ;
+
+WHITESPACE:        (' '|'\t'|'\r'|'\n')+;
+COMMENT:        '&quot;' .* '&quot;' {$channel = HIDDEN;};
+BINARY_SELECTOR:    ('-' (SPECIAL_CHAR)?) | (SPECIAL_CHAR)+;
+KEYWORD:        IDENTIFIER ':';
+BLOCK_ARGUMENT:    ':' IDENTIFIER;
+IDENTIFIER:        LETTER (LETTER | DIGIT)*;
+NUMBER:        ((NUMBER_LEFT)? ('-')? DIGITS (NUMBER_RIGHT_P1)? (NUMBER_RIGHT_P2)?);
+CHARACTER_CONSTANT:    '$' ('\'' | '&quot;' | SPECIAL_CHAR | NORMAL_CHAR | DIGIT | LETTER);
+STRING:        '\'' (~'\''|'\'\'')* '\'';
+
+fragment NUMBER_LEFT:        DIGITS 'r';
+fragment NUMBER_RIGHT_P1:    '.' DIGITS;
+fragment NUMBER_RIGHT_P2:    'e' ('-')? DIGITS; 
+fragment LETTER:        ('a'..'z' | 'A'..'Z');
+fragment DIGIT:        '0'..'9';
+fragment DIGITS:        DIGIT+;
+fragment SPECIAL_CHAR:        '+'|'/'|'\\'|'*'|'~'|'&lt;'|'&gt;'|'='|'@'|'%'|'|'|'&amp;'|'?'|'!'|',';
+fragment NORMAL_CHAR:        '['|']'|'{'|'}'|'('|')'|'^'|'_'|';'|'$'|'#'|':'|'.'|'\'';
+
+
+
+
+
+
+ 		 	   		  
+</PRE>
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="043750.html">[antlr-interest] [stringtemplate-interest] anybody care to	comment on bitbucket.org?
+</A></li>
+	<LI>Next message: <A HREF="043726.html">[antlr-interest] Why does antlr not know alternative?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#43724">[ date ]</a>
+              <a href="thread.html#43724">[ thread ]</a>
+              <a href="subject.html#43724">[ subject ]</a>
+              <a href="author.html#43724">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

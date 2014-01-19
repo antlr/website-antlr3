@@ -1,0 +1,195 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Stupid languages, and parsing them
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Stupid%20languages%2C%20and%20parsing%20them&In-Reply-To=%3Cebc876d70904112039s56ec110am17fe3ab204a029f1%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="034004.html">
+   <LINK REL="Next"  HREF="034013.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Stupid languages, and parsing them</H1>
+    <B>Thomas Brandon</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Stupid%20languages%2C%20and%20parsing%20them&In-Reply-To=%3Cebc876d70904112039s56ec110am17fe3ab204a029f1%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Stupid languages, and parsing them">tbrandonau at gmail.com
+       </A><BR>
+    <I>Sat Apr 11 20:39:33 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="034004.html">[antlr-interest] Stupid languages, and parsing them
+</A></li>
+        <LI>Next message: <A HREF="034013.html">[antlr-interest] Stupid languages, and parsing them
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#34009">[ date ]</a>
+              <a href="thread.html#34009">[ thread ]</a>
+              <a href="subject.html#34009">[ subject ]</a>
+              <a href="author.html#34009">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Sun, Apr 12, 2009 at 6:01 AM, Sam Barnett-Cormack
+&lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">s.barnett-cormack at lancaster.ac.uk</A>&gt; wrote:
+&gt;<i> I'm not sure an island grammar would work, as I need the eventual AST of the
+</I>&gt;<i> &quot;WITH SYNTAX&quot; block to be included in the final AST of the master grammar.
+</I>&gt;<i>
+</I>&gt;<i> Unless, that is, I can invoke a full lexer/parser combination, get the tree
+</I>&gt;<i> out of it, and somehow have the lexer pass that tree into the token stream
+</I>&gt;<i> (which sounds wacky) and have the parser pull in the whole tree. That would
+</I>&gt;<i> be, perhaps, painful. Or, I suppose, with a custom token type it might be
+</I>&gt;<i> possible to wrap up the whole token stream from the inner lexer in a single
+</I>&gt;<i> token, and use a parse-only island grammar from the parser to handle that
+</I>&gt;<i> and accept the resulting AST and integrate it. I've just no idea how to
+</I>&gt;<i> start doing either of those things. I'll do some reading and prodding, but
+</I>&gt;<i> if anyone can give pointers I'd be greatful - being able to do at least the
+</I>&gt;<i> lexing separately (parsing isn't a bother to do in the main parser) would be
+</I>&gt;<i> good, and the code to emit multiple tokens looks scary. That said, I guess I
+</I>&gt;<i> could use an island lexer, and use multiple token emit to emit all of the
+</I>&gt;<i> tokens from the island in order. I just have to make sure that the two share
+</I>&gt;<i> token definitions, so I'd probably have to do something odd... and I have no
+</I>&gt;<i> idea how to make two lexers share a portion of token vocabulary without
+</I>&gt;<i> sharing the rules for those tokens.
+</I>&gt;<i>
+</I>&gt;<i> Wow, that was rambling... if anyone manages to fight through that and then
+</I>&gt;<i> come up with some useful advice (kudos to you if you can), it'd be
+</I>&gt;<i> appreciated.
+</I>&gt;<i>
+</I>Ah yes, the island-grammar example doesn't show integration of the
+ASTs. Options would be:
+1) Use two lexers and a single parser. If you have your main lexer
+import the tokenVocab of your sub-lexer and the parser import the
+tokenVocab of the main lexer then you should be able to have a
+combined token vocabulary. You could have the WITH_SYNTAX block emit
+all the tokens of the sub-block using multiple emits, but it's
+probably better to override next token and have it handle the
+sub-lexer.
+So you would have something like (untested):
+@members {
+  WithSyntaxLexer withSyntaxLexer = null;
+  boolean inWithSyntaxBlock = false;
+  void enterWithSyntaxBlock() {
+      if ( withSyntaxLexer == null )
+        withSyntaxLexer = new WithSyntaxLexer(input, state);
+      inWithSyntaxBlock = true;
+  }
+
+  public Token nextToken() {
+    while (true) {
+      state.token = null;
+      state.channel = Token.DEFAULT_CHANNEL;
+      state.tokenStartCharIndex = input.index();
+      state.tokenStartCharPositionInLine = input.getCharPositionInLine();
+      state.tokenStartLine = input.getLine();
+      state.text = null;
+      if ( input.LA(1)==CharStream.EOF ) {
+        return Token.EOF_TOKEN;
+      }
+      try {
+        // CHANGES HERE
+        if ( inWithSyntaxBlock ) {
+          // Lex from withSyntaxLexer instead
+          withSyntaxLexer.mTokens();
+          if ( state.type == WITH_SYNTAX_END )
+            inWithSyntaxBlock = false; // Switch back to main lexer
+for next token
+        } else
+          mTokens();
+        // END CHANGES
+        if ( state.token==null ) {
+          emit();
+        }
+        else if ( state.token==Token.SKIP_TOKEN ) {
+          continue;
+        }
+        return state.token;
+      }
+      catch (NoViableAltException nva) {
+        reportError(nva);
+        recover(nva); // throw out current char and try again
+      }
+      catch (RecognitionException re) {
+        reportError(re);
+        // match() routine has already called recover()
+      }
+    }
+  }
+}
+Where WITH_SYNTAX_END is the token for the final '}' in the with
+syntax block. By sharing the input stream and state object the two
+lexers should keep in step and it's just a matter of calling mTokens
+from whichever lexer should be in control.
+
+2) Have two lexers and two parsers. Here the main lexer would returns
+a single token for the whole &quot;WITH SYNTAX { ... }&quot; block and then have
+the parser invoke a new lexer\parser on the text of that token and
+insert the resulting tree into the main tree. Assuming the end marker
+of the block is easy enough to detect this shouldn't get too messy.
+You will probably need to handle nested &quot;{...}&quot; blocks (if these are
+allowed in the block) and the presence of '}' in strings and comments.
+See the handling of action code blocks in the ANTLR grammar for an
+example of this. The main rules are:
+ACTION
+	:	NESTED_ACTION ( '?' {$type = SEMPRED;} )?
+	;
+
+fragment
+NESTED_ACTION :
+	'{'
+	(	options {greedy=false; k=3;}
+	:	NESTED_ACTION
+	|	SL_COMMENT
+	|	ML_COMMENT
+	|	ACTION_STRING_LITERAL
+	|	ACTION_CHAR_LITERAL
+	|	.
+	)*
+	'}'
+   ;
+
+Tom.
+
+&gt;<i> Sam (BC)
+</I>&gt;<i>
+</I>&gt;<i>
+</I></PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="034004.html">[antlr-interest] Stupid languages, and parsing them
+</A></li>
+	<LI>Next message: <A HREF="034013.html">[antlr-interest] Stupid languages, and parsing them
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#34009">[ date ]</a>
+              <a href="thread.html#34009">[ thread ]</a>
+              <a href="subject.html#34009">[ subject ]</a>
+              <a href="author.html#34009">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

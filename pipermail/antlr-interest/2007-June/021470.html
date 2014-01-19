@@ -1,0 +1,208 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Island Parsing - a different way, seems to work
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Island%20Parsing%20-%20a%20different%20way%2C%20seems%20to%20work&In-Reply-To=%3C4153ee230706180027w3f4423j409df9b1d2489850%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="021469.html">
+   <LINK REL="Next"  HREF="021477.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Island Parsing - a different way, seems to work</H1>
+    <B>Mark Mandel</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Island%20Parsing%20-%20a%20different%20way%2C%20seems%20to%20work&In-Reply-To=%3C4153ee230706180027w3f4423j409df9b1d2489850%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Island Parsing - a different way, seems to work">mark.mandel at gmail.com
+       </A><BR>
+    <I>Mon Jun 18 00:27:35 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="021469.html">[antlr-interest] Island Parsing - a different way, seems to work
+</A></li>
+        <LI>Next message: <A HREF="021477.html">[antlr-interest] Island Parsing - a different way, seems to work
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#21470">[ date ]</a>
+              <a href="thread.html#21470">[ thread ]</a>
+              <a href="subject.html#21470">[ subject ]</a>
+              <a href="author.html#21470">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Oooops!  I hit enter before I was ready to send this.. .let me clarify
+a bit more.
+
+protected Tree parseCFScript(Token start, ParserRuleReturnScope stop)
+       {
+
+//-- this is just to get the tokens I need to get the String, once I
+have my String, it doesn't really matter.
+org.antlr.runtime.BitSet bit = new org.antlr.runtime.BitSet();
+               bit.add(OTHER);
+               List otherTokens =
+((CommonTokenStream)input).getTokens(start.getTokenIndex(),
+stop.stop.getTokenIndex(), bit);
+
+               StringBuffer buffer = new StringBuffer();
+
+               for(Object t : otherTokens)
+               {
+                       buffer.append(((Token)t).getText());
+               }
+
+//now I have my string, I simply pass it off to my StringStream, here
+I have a custom one that doesn't check case.
+               CharStream input = new
+ANTLRNoCaseStringStream(buffer.toString());
+       CFScriptLexer lexer = new CFScriptLexer(input);
+
+       CommonTokenStream tokens = new CommonTokenStream(lexer);
+       CFScriptParser parser = new CFScriptParser(tokens);
+
+       try
+       {
+               CFScriptParser.script_return root = parser.script();
+               Tree ast = (Tree)root.getTree();
+               return ast;
+       }
+       catch(RecognitionException exc)
+       {
+               //this is just my custom error reporting.
+               ErrorEvent event = new ErrorEvent(exc, &quot;CFScript Error&quot;);
+               getObservable().notifyObservers(event);
+       }
+
+               //and failing all else, return null, which does nothing
+               return null;
+       }
+
+I honestly, expected that this would create the right AST, but with
+Tokens on the wrong lines, however, the island tokens seems to
+automagically know what line they are on in the grand context of the
+grammar.
+
+This seems like a *much* simpler way to do island parsing, but have I
+missed somethng crucial somewhere, that I'm not aware of?
+
+Thanks,
+
+Mark
+
+
+On 6/18/07, Mark Mandel &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">mark.mandel at gmail.com</A>&gt; wrote:
+&gt;<i> Hey all,
+</I>&gt;<i>
+</I>&gt;<i> I've been playing around with Island Parsing, and I think I've come up
+</I>&gt;<i> with a much simpler way of doing it other than the one that is in the
+</I>&gt;<i> wiki
+</I>&gt;<i> (<A HREF="http://www.antlr.org/wiki/display/ANTLR3/Island+Grammars+Under+Parser+Control">http://www.antlr.org/wiki/display/ANTLR3/Island+Grammars+Under+Parser+Control</A>)
+</I>&gt;<i>
+</I>&gt;<i> I wanted to run it past you, in case there is something that I have missed.
+</I>&gt;<i>
+</I>&gt;<i> I'll chop out a lot of the extraneous code around what I'm doing, so
+</I>&gt;<i> hopefully I don't break it in the process.
+</I>&gt;<i>
+</I>&gt;<i> I needed to be able to do some island parsing, simply where I just had
+</I>&gt;<i> a string to parse, and  wanted to be able to insert the island grammar
+</I>&gt;<i> tree into my current AST.
+</I>&gt;<i>
+</I>&gt;<i> The code ended up looking pretty much like this:
+</I>&gt;<i>
+</I>&gt;<i> startTag
+</I>&gt;<i>         :
+</I>&gt;<i>         (
+</I>&gt;<i>         sto=START_TAG_OPEN stc=START_TAG_CLOSE  tc=tagContent
+</I>&gt;<i>                 (
+</I>&gt;<i>                 -&gt; ^(CFTAG[$sto] START_TAG_CLOSE
+</I>&gt;<i>                                                 {
+</I>&gt;<i>                                                         parseScript(stc, tc)
+</I>&gt;<i>                                                 }
+</I>&gt;<i>                                                   tagContent)
+</I>&gt;<i>                 )
+</I>&gt;<i>         )
+</I>&gt;<i>         ;
+</I>&gt;<i>
+</I>&gt;<i> The only issue I had here, was that I couldn't use $tc, because for
+</I>&gt;<i> some reason ANTLR couldn't recognise it - so I just set it explicitly,
+</I>&gt;<i> and everything seemed happy.
+</I>&gt;<i>
+</I>&gt;<i> From there, I was able to write my own parseScript function that
+</I>&gt;<i> returns a CommonTree,
+</I>&gt;<i>
+</I>&gt;<i> protected Tree parseCFScript(Token start, ParserRuleReturnScope stop)
+</I>&gt;<i>         {
+</I>&gt;<i>
+</I>&gt;<i> org.antlr.runtime.BitSet bit = new org.antlr.runtime.BitSet();
+</I>&gt;<i>                 bit.add(OTHER);
+</I>&gt;<i>                 List otherTokens =
+</I>&gt;<i> ((CommonTokenStream)input).getTokens(start.getTokenIndex(),
+</I>&gt;<i> stop.stop.getTokenIndex(), bit);
+</I>&gt;<i>
+</I>&gt;<i>                 StringBuffer buffer = new StringBuffer();
+</I>&gt;<i>
+</I>&gt;<i>                 for(Object t : otherTokens)
+</I>&gt;<i>                 {
+</I>&gt;<i>                         buffer.append(((Token)t).getText());
+</I>&gt;<i>                 }
+</I>&gt;<i>
+</I>&gt;<i>                 CharStream input = new ANTLRNoCaseStringStream(buffer.toString());
+</I>&gt;<i>         CFScriptLexer lexer = new CFScriptLexer(input);
+</I>&gt;<i>
+</I>&gt;<i>         CommonTokenStream tokens = new CommonTokenStream(lexer);
+</I>&gt;<i>         CFScriptParser parser = new CFScriptParser(tokens);
+</I>&gt;<i>
+</I>&gt;<i>         try
+</I>&gt;<i>         {
+</I>&gt;<i>                 CFScriptParser.script_return root = parser.script();
+</I>&gt;<i>                 Tree ast = (Tree)root.getTree();
+</I>&gt;<i>                 return ast;
+</I>&gt;<i>         }
+</I>&gt;<i>         catch(RecognitionException exc)
+</I>&gt;<i>         {
+</I>&gt;<i>                 ErrorEvent event = new ErrorEvent(exc, &quot;CFScript Error&quot;);
+</I>&gt;<i>                 getObservable().notifyObservers(event);
+</I>&gt;<i>         }
+</I>&gt;<i>
+</I>&gt;<i>                 return null;
+</I>&gt;<i>         }
+</I>&gt;<i>
+</I>
+
+-- 
+E: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">mark.mandel at gmail.com</A>
+W: www.compoundtheory.com
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="021469.html">[antlr-interest] Island Parsing - a different way, seems to work
+</A></li>
+	<LI>Next message: <A HREF="021477.html">[antlr-interest] Island Parsing - a different way, seems to work
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#21470">[ date ]</a>
+              <a href="thread.html#21470">[ thread ]</a>
+              <a href="subject.html#21470">[ subject ]</a>
+              <a href="author.html#21470">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

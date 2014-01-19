@@ -1,0 +1,219 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Stack Overflow for Tree grammar CSharp target
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Stack%20Overflow%20for%20Tree%20grammar%20CSharp%20target&In-Reply-To=%3CE23B4C59-6CBB-483F-A6DA-0AE7A7BDFBE6%40smolyn.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="030481.html">
+   <LINK REL="Next"  HREF="030486.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Stack Overflow for Tree grammar CSharp target</H1>
+    <B>Greg Smolyn</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Stack%20Overflow%20for%20Tree%20grammar%20CSharp%20target&In-Reply-To=%3CE23B4C59-6CBB-483F-A6DA-0AE7A7BDFBE6%40smolyn.org%3E"
+       TITLE="[antlr-interest] Stack Overflow for Tree grammar CSharp target">greg at smolyn.org
+       </A><BR>
+    <I>Tue Sep  2 21:38:29 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="030481.html">[antlr-interest] Stack Overflow for Tree grammar CSharp target
+</A></li>
+        <LI>Next message: <A HREF="030486.html">[antlr-interest] Stack Overflow for Tree grammar CSharp target
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30483">[ date ]</a>
+              <a href="thread.html#30483">[ thread ]</a>
+              <a href="subject.html#30483">[ subject ]</a>
+              <a href="author.html#30483">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hrm, so I'm not sure if the precedence parser will help me that much  
+since, indeed, the problem is actually in a tree grammar.
+
+I managed to reduce the recursive load a bit by factoring it out into  
+more simple productions, so I know have:
+
+expr
+   :  ^( singleArgTypes expr)
+   |  ^( doubleArgTypes expr expr)
+   | ^( tripeArgTypes expr expr expr)
+  ;
+
+singleArgTypes
+   : TYPEOF | NOT | ... etc etc ...
+   ;
+
+doubleArgTypes
+   : ASSIGN | MULT | AND | ... etc etc ...
+   ;
+
+this reduced the number of local pointers quite significantly (3 per  
+case in expr, plus some extras, so like 12 or 15).  So now instead of  
+blowing up at about 190 nestings, it blows up at about 700.  This is  
+enough to get me past my current blockage, but I might plug away at it  
+a bit more and see if I can improve that.
+
+-greg
+
+
+On 2-Sep-08, at 3:59 PM, Sam Harwell wrote:
+
+&gt;<i> Yikes, you just found a way to crash our product. I must say though,  
+</I>&gt;<i> the
+</I>&gt;<i> input required to do so was absurd! It took some 20 full lines of
+</I>&gt;<i> 3*3*3*3*3*...! LOL
+</I>&gt;<i>
+</I>&gt;<i> My operator precedence parser is also vulnerable to this, but the tree
+</I>&gt;<i> grammar will fail much earlier. By replacing the tail recursion in the
+</I>&gt;<i> precedence tree builder with a hybrid stack/recurse routine, it could
+</I>&gt;<i> handle very large input expressions. The main problem remains in the
+</I>&gt;<i> tree grammar. I'll be working on this, but no real answer yet. For  
+</I>&gt;<i> now,
+</I>&gt;<i> I'm modified my expression rule to throw an OperationCanceledException
+</I>&gt;<i> if the expression stack gets too deep. I catch that exception at a top
+</I>&gt;<i> level, issue an error/warning, and toss the parse results. The
+</I>&gt;<i> definition of _expressionDepth is in my separate partial class file.
+</I>&gt;<i>
+</I>&gt;<i> expression
+</I>&gt;<i> @init
+</I>&gt;<i> {
+</I>&gt;<i> 	_expressionDepth++;
+</I>&gt;<i> 	if ( _expressionDepth &gt; 50 )
+</I>&gt;<i> 		throw new OperationCanceledException( &quot;Expression nested
+</I>&gt;<i> too deeply.&quot; );
+</I>&gt;<i> }
+</I>&gt;<i> 	:	assignExpr // &lt;-- this is actually a giant switch now,
+</I>&gt;<i> like yours is
+</I>&gt;<i> 	;
+</I>&gt;<i> finally
+</I>&gt;<i> {
+</I>&gt;<i> 	_expressionDepth--;
+</I>&gt;<i> }
+</I>&gt;<i>
+</I>&gt;<i> Sam
+</I>&gt;<i>
+</I>&gt;<i> -----Original Message-----
+</I>&gt;<i> From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>
+</I>&gt;<i> [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Johannes Luber
+</I>&gt;<i> Sent: Tuesday, September 02, 2008 4:58 PM
+</I>&gt;<i> To: Greg Smolyn
+</I>&gt;<i> Cc: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> Subject: Re: [antlr-interest] Stack Overflow for Tree grammar CSharp
+</I>&gt;<i> target
+</I>&gt;<i>
+</I>&gt;<i> Greg Smolyn schrieb:
+</I>&gt;&gt;<i> Hi,
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I've got a rather large rule in a tree grammar (using the CSharp2
+</I>&gt;&gt;<i> target, ANTLR 3.1), that when faced with a large input tree tends to
+</I>&gt;&gt;<i> blow up with a StackOverflowException.
+</I>&gt;&gt;<i> This happens only with some pretty crazy (but unfortunately required)
+</I>&gt;&gt;<i> input that forces a very deep recursion.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> The rule looks like
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> expr
+</I>&gt;&gt;<i>  : ^( ASSIGN expr expr )
+</I>&gt;&gt;<i>  | ^(MULT expr expr)
+</I>&gt;&gt;<i>  | ^(AND expr expr)
+</I>&gt;&gt;<i>  | ^(TYPEOF expr)
+</I>&gt;&gt;<i> ... &lt;snipped about 50 others&gt;...
+</I>&gt;&gt;<i>  ;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> This generates an expr() method with quite a few local variables, and
+</I>&gt;&gt;<i> which can only handle about ~200 recursions  (ie. given a tree like
+</I>&gt;<i> &quot;(*
+</I>&gt;&gt;<i> (* (* (* (* (* .... (* 2 3) ... 4) 5) 6) 7) 8) 9)&quot;).
+</I>&gt;&gt;<i> There seem to be about 3 local variable references for every case,
+</I>&gt;<i> which
+</I>&gt;&gt;<i> means the thing is putting at least 150 pointers onto the stack at
+</I>&gt;<i> every
+</I>&gt;&gt;<i> recursive step.
+</I>&gt;&gt;<i> For example:
+</I>&gt;&gt;<i>
+</I>&gt;<i> &lt;<A HREF="http://www.julielist.com/x.xxx?p=54.000.I32p2.1018147.107-102&amp;url=http">http://www.julielist.com/x.xxx?p=54.000.I32p2.1018147.107-102&amp;url=http</A> 
+</I>&gt;<i> :
+</I>&gt;<i> //www.4realcash.com/affiliates/gallhit/1130677/163/7/2/0&gt;CommonTree
+</I>&gt;&gt;<i> ASSIGN76 = null;
+</I>&gt;&gt;<i> CommonTree MULT79 = null;
+</I>&gt;&gt;<i> ...
+</I>&gt;&gt;<i> expr_return expr77 = default(expr_return);
+</I>&gt;&gt;<i> expr_return expr78 = default(expr_return);
+</I>&gt;&gt;<i> ...
+</I>&gt;&gt;<i> CommonTree ASSIGN76_tree=null;
+</I>&gt;&gt;<i> CommonTree MULT79_tree=null;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Would this be a bug or future optimization?  Am I going to have to go
+</I>&gt;&gt;<i> down the path of changing my parser to emit some imaginary AST nodes
+</I>&gt;&gt;<i> that can group these into smaller categories (ie. additiveExprs,  
+</I>&gt;&gt;<i> etc).
+</I>&gt;&gt;<i> I'd rather not do the latter as it would mean changing a whole pile
+</I>&gt;<i> of
+</I>&gt;&gt;<i> other tree grammars using the generated ASTs.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Interestingly I see that really none of those variables are actually
+</I>&gt;&gt;<i> used outside of their respective case statements.  Could not these
+</I>&gt;&gt;<i> variables be moved there, reducing the load for recursive calls?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Would mucking around in the StringTemplates for the csharp2 target be
+</I>&gt;&gt;<i> something worth trying?  Or is this something even higher up in the
+</I>&gt;&gt;<i> antlr AST generation?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Thanks for any insights!
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> -greg
+</I>&gt;<i>
+</I>&gt;<i> Maybe &lt;<A HREF="http://antlr.org/wiki/display/ANTLR3/Operator+precedence">http://antlr.org/wiki/display/ANTLR3/Operator+precedence</A> 
+</I>&gt;<i> +parser&gt;
+</I>&gt;<i> works here?
+</I>&gt;<i>
+</I>&gt;<i> Johannes
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;<i> ------------------------------------------------------------------------
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;&gt;<i> Unsubscribe:
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-addr">http://www.antlr.org/mailman/options/antlr-interest/your-email-addr</A>
+</I>&gt;<i> ess
+</I>&gt;&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe:
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-addr">http://www.antlr.org/mailman/options/antlr-interest/your-email-addr</A>
+</I>&gt;<i> ess
+</I>&gt;<i>
+</I>
+</PRE>
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="030481.html">[antlr-interest] Stack Overflow for Tree grammar CSharp target
+</A></li>
+	<LI>Next message: <A HREF="030486.html">[antlr-interest] Stack Overflow for Tree grammar CSharp target
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30483">[ date ]</a>
+              <a href="thread.html#30483">[ thread ]</a>
+              <a href="subject.html#30483">[ subject ]</a>
+              <a href="author.html#30483">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,219 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Actions in predicates
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Actions%20in%20predicates&In-Reply-To=%3Cbc2239412f662d429cd485c30ef032cd%40temporal-wave.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="037721.html">
+   <LINK REL="Next"  HREF="037713.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Actions in predicates</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Actions%20in%20predicates&In-Reply-To=%3Cbc2239412f662d429cd485c30ef032cd%40temporal-wave.com%3E"
+       TITLE="[antlr-interest] Actions in predicates">jimi at temporal-wave.com
+       </A><BR>
+    <I>Mon Feb 22 09:16:32 PST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="037721.html">[antlr-interest] Actions in predicates
+</A></li>
+        <LI>Next message: <A HREF="037713.html">[antlr-interest] Actions in predicates
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37711">[ date ]</a>
+              <a href="thread.html#37711">[ thread ]</a>
+              <a href="subject.html#37711">[ subject ]</a>
+              <a href="author.html#37711">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>You might deal with this the way I do for the JavaFX parser:
+
+// -----------------------
+// Process a SEMI colon that is always required, regardless of
+// where the construct is in the script. There are not too many
+// of these.
+//
+requiredSemi 
+	: { input.LA(1) != SEMI}?=&gt;
+	
+	  // If there was no semi colon here, then we need to issue an error
+	  // though we don't worry about it syntactically.
+	  //
+	  {
+		  log.error(semiPos(), MsgSym.MESSAGE_JAVAFX_SEMI_REQUIRED);
+	  }
+	
+	| (SEMI)=&gt;SEMI		// This is what we want	
+	;
+
+// -------------------------
+// Decides whether a SEMI is required at this point in the parse (and issues
+// an error if it is and is not present), or is optional (in which case it eats it) or
+// we have just consumed one, which means we can not worry about it as the
+// previous rule obviously decided that it wasn't optional and consumed it.
+// This rule could result in doubly reporting the absent semi colon if there
+// is a construct that consumes one, but does not find one, then a higher
+// rule calls this rule, which also decides one is necessary as it did not see one.
+// However, the grammar is carefully constructed such that this does not happen
+//
+possiblyOptSemi
+	: 	
+			{
+				// Call super class function to decide whether to look for
+				// the SEMI or not and whether to log an error if one is 
+				// missing.
+				//
+				checkForSemi();
+			}
+	;
+
+Then do not put your ';' in a different channel. The checkForSemi() method encapsulates the code for deciding if the semi colon is allowed to be missing or not - languages really should not make such things optional, it makes it very difficult to generate decent error messages - and issues an error message if it is required, otherwise just returns silently.
+
+You can get the JavaFX compiler source code from Kenai: <A HREF="http://kenai.com/projects/openjfx-compiler">http://kenai.com/projects/openjfx-compiler</A> 
+
+Actions that are specified as:
+
+{{ }}
+
+Will be executed within predicate lookahead as well as normal mode and you can then check the backtracking flag to see if you are in predicate mode. However, I suggest that you will find that difficult to maintain.
+
+Jim
+
+
+&gt;<i> -----Original Message-----
+</I>&gt;<i> From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:antlr-interest-
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">bounces at antlr.org</A>] On Behalf Of Marcin Rzeznicki
+</I>&gt;<i> Sent: Monday, February 22, 2010 8:56 AM
+</I>&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> Subject: [antlr-interest] Actions in predicates
+</I>&gt;<i> 
+</I>&gt;<i> Hi all
+</I>&gt;<i> Yet another question from me ( if someone could reply to the old one,
+</I>&gt;<i> then
+</I>&gt;<i> I'd be grateful:
+</I>&gt;<i> <A HREF="http://www.antlr.org/pipermail/antlr-interest/2010-February/037693.html">http://www.antlr.org/pipermail/antlr-interest/2010-February/037693.html</A>
+</I>&gt;<i> -
+</I>&gt;<i> sorry for spamming):
+</I>&gt;<i> Is there a way to fire an action during syntactic predicate and only
+</I>&gt;<i> then? I
+</I>&gt;<i> am trying to parse language in which semicolons as delimiters are
+</I>&gt;<i> optional.
+</I>&gt;<i> So my lexer puts them by default in different channel. But there are
+</I>&gt;<i> cases
+</I>&gt;<i> when I need to resolve ambiguities using syntactic predicates and I'd
+</I>&gt;<i> really
+</I>&gt;<i> need to switch to emitting semicolons during predicates because parser
+</I>&gt;<i> can
+</I>&gt;<i> use this information to resolve an ambiguity. A short excerpt from the
+</I>&gt;<i> grammar I am working on:
+</I>&gt;<i> 
+</I>&gt;<i> basic_expression
+</I>&gt;<i>   :
+</I>&gt;<i>   (
+</I>&gt;<i>     (
+</I>&gt;<i>       target
+</I>&gt;<i>       | manifest_type
+</I>&gt;<i>     )
+</I>&gt;<i>     DOT
+</I>&gt;<i>   )
+</I>&gt;<i>     =&gt; call
+</I>&gt;<i>   | target
+</I>&gt;<i> 
+</I>&gt;<i> During predicate used to disambiguate call subrule I'd need to fire
+</I>&gt;<i> action
+</I>&gt;<i> which sets appropriate flag in my lexer ordering it to emit semicolons
+</I>&gt;<i> to
+</I>&gt;<i> the main channel. Furthermore, I'd have to switch this mode off when
+</I>&gt;<i> exiting
+</I>&gt;<i> a predicate. Following version of my grammar was produced as an attempt
+</I>&gt;<i> at
+</I>&gt;<i> this:
+</I>&gt;<i> 
+</I>&gt;<i> basic_expression
+</I>&gt;<i>   :
+</I>&gt;<i>   ( { &lt;&lt;set_flag_here&gt;&gt; }
+</I>&gt;<i>     (
+</I>&gt;<i>       target
+</I>&gt;<i>       | manifest_type
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i>     DOT { &lt;&lt;unset_flag_here&gt;&gt; }
+</I>&gt;<i>   )
+</I>&gt;<i>     =&gt; call
+</I>&gt;<i>   | target
+</I>&gt;<i> 
+</I>&gt;<i> Unfortunately it won't work because of two things. First of all, my
+</I>&gt;<i> actions
+</I>&gt;<i> are within (state.backtracking == 0) which is obviously not true during
+</I>&gt;<i> predicate evaluation, and, final action won't be executed if
+</I>&gt;<i> backtracking
+</I>&gt;<i> fails. Any ideas?
+</I>&gt;<i> 
+</I>&gt;<i>  Thanks for your answers
+</I>&gt;<i> 
+</I>&gt;<i> --
+</I>&gt;<i> Greetings
+</I>&gt;<i> Marcin Rze&#378;nicki
+</I>&gt;<i> 
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-">http://www.antlr.org/mailman/options/antlr-interest/your-</A>
+</I>&gt;<i> email-address
+</I>
+
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="037721.html">[antlr-interest] Actions in predicates
+</A></li>
+	<LI>Next message: <A HREF="037713.html">[antlr-interest] Actions in predicates
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37711">[ date ]</a>
+              <a href="thread.html#37711">[ thread ]</a>
+              <a href="subject.html#37711">[ subject ]</a>
+              <a href="author.html#37711">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

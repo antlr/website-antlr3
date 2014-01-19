@@ -1,0 +1,174 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] conditional tree rewrite
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20conditional%20tree%20rewrite&In-Reply-To=%3C72DC5775-83F7-40D6-93DD-4E69B99EC656%40temporal-wave.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="035987.html">
+   <LINK REL="Next"  HREF="036005.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] conditional tree rewrite</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20conditional%20tree%20rewrite&In-Reply-To=%3C72DC5775-83F7-40D6-93DD-4E69B99EC656%40temporal-wave.com%3E"
+       TITLE="[antlr-interest] conditional tree rewrite">jimi at temporal-wave.com
+       </A><BR>
+    <I>Thu Sep 17 07:57:35 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="035987.html">[antlr-interest] conditional tree rewrite
+</A></li>
+        <LI>Next message: <A HREF="036005.html">[antlr-interest] conditional tree rewrite
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#35989">[ date ]</a>
+              <a href="thread.html#35989">[ thread ]</a>
+              <a href="subject.html#35989">[ subject ]</a>
+              <a href="author.html#35989">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Marco,
+
+You can rewrite inside any alt so only rewrite as conditional if you  
+take that alt. Also, avoid imaginary token bloat- you don't need the  
+imaginaries in expression trees (generally) and can just use the ^  
+operator. The AST is more about being unambiguous and easilly walkable  
+than how it looks to you when you print the tree. You probably want to  
+lose the 'literals' and make these lexer defined tokens. It will be  
+easier when you build the tree walker.
+
+Jim
+
+On Sep 17, 2009, at 6:32 AM, Marco Trudel &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">marco at mtsystems.ch</A>&gt; wrote:
+
+&gt;<i> Dear all
+</I>&gt;<i>
+</I>&gt;<i> I'm trying to adapt the &quot;ANSI C grammar for ANTLR v3&quot; so that it
+</I>&gt;<i> generates an AST. So my first step was to change all rules like:
+</I>&gt;<i>
+</I>&gt;<i> lvalue
+</I>&gt;<i>    :    unary_expression
+</I>&gt;<i>    ;
+</I>&gt;<i>
+</I>&gt;<i> to
+</I>&gt;<i>
+</I>&gt;<i> lvalue : lvalue2 -&gt; ^(ART_LVALUE lvalue2);
+</I>&gt;<i> lvalue2
+</I>&gt;<i>    :    unary_expression
+</I>&gt;<i>    ;
+</I>&gt;<i>
+</I>&gt;<i> This already gives me a nice AST, except for expressions. For instance
+</I>&gt;<i> &quot;0&quot; will be represented as:
+</I>&gt;<i> ART_EXPRESSION
+</I>&gt;<i> '-ART_ASSIGNMENT_EXPRESSION
+</I>&gt;<i>   '- ART_CONDITIONAL_EXPRESSION
+</I>&gt;<i>      '- ART_LOGICAL_AND_EXPRESSION
+</I>&gt;<i>             .
+</I>&gt;<i>             .
+</I>&gt;<i>             .
+</I>&gt;<i>                '- ART_PRIMARY_EXPRESSION
+</I>&gt;<i>                   '- ART_CONSTANT
+</I>&gt;<i>                      '- 0
+</I>&gt;<i>
+</I>&gt;<i> I assume that the grammar has been build this way for performance
+</I>&gt;<i> reasons. The rule for conditional_expression for instance looks like:
+</I>&gt;<i>
+</I>&gt;<i> conditional_expression
+</I>&gt;<i>    : logical_or_expression ('?' expression ':'  
+</I>&gt;<i> conditional_expression)?
+</I>&gt;<i>    ;
+</I>&gt;<i>
+</I>&gt;<i> So it's actually not a conditional_expression if the part in  
+</I>&gt;<i> parentheses
+</I>&gt;<i> isn't there. So my initial rewrite:
+</I>&gt;<i>
+</I>&gt;<i> conditional_expression : conditional_expression2 -&gt;
+</I>&gt;<i> ^(ART_CONDITIONAL_EXPRESSION conditional_expression2);
+</I>&gt;<i> conditional_expression2
+</I>&gt;<i>    : logical_or_expression ('?' expression ':'  
+</I>&gt;<i> conditional_expression)?
+</I>&gt;<i>    ;
+</I>&gt;<i>
+</I>&gt;<i> creates a &quot;wrong&quot; AST if it's actually not a conditional expression  
+</I>&gt;<i> and
+</I>&gt;<i> I'm now trying to create the tree conditionally. My first approach was
+</I>&gt;<i> to change the rules this way:
+</I>&gt;<i>
+</I>&gt;<i> conditional_expression
+</I>&gt;<i>    : conditional_expression2 -&gt; ^(ART_CONDITIONAL_EXPRESSION
+</I>&gt;<i> conditional_expression2);
+</I>&gt;<i>    | logical_or_expression
+</I>&gt;<i>    ;
+</I>&gt;<i> conditional_expression2
+</I>&gt;<i>    : logical_or_expression '?' expression ':' conditional_expression
+</I>&gt;<i>    ;
+</I>&gt;<i>
+</I>&gt;<i> But, since there are 16 rules to adapt, after about 6 I run into
+</I>&gt;<i> &quot;internal error: ...: could not even do k=1 for decision 49; reason:
+</I>&gt;<i> timed out (&gt;1000ms)&quot;. So this creates too much ambiguity and  
+</I>&gt;<i> therefore I
+</I>&gt;<i> went for syntactic predicates:
+</I>&gt;<i>
+</I>&gt;<i> conditional_expression
+</I>&gt;<i>    : ( logical_or_expression '?' expression ':'  
+</I>&gt;<i> conditional_expression )
+</I>&gt;<i>        =&gt; logical_or_expression '?' expression ':'  
+</I>&gt;<i> conditional_expression -&gt;
+</I>&gt;<i> ^(ART_CONDITIONAL_EXPRESSION logical_or_expression '?' expression ':'
+</I>&gt;<i> conditional_expression)
+</I>&gt;<i>        |  logical_or_expression
+</I>&gt;<i>    ;
+</I>&gt;<i>
+</I>&gt;<i> But the same problem (too ambiguous to compile). So I'm really stuck  
+</I>&gt;<i> now
+</I>&gt;<i> since I don't know how to do this correct (meaning efficient). I could
+</I>&gt;<i> imagine that this can be done with semantic predicates (I don't know
+</I>&gt;<i> how) but I'm not sure about the runtime overhead when parsing a C  
+</I>&gt;<i> file.
+</I>&gt;<i> Or I can go over the created tree myself and clean up the expressions.
+</I>&gt;<i> But the tree is already substantial bigger than it should be because  
+</I>&gt;<i> of
+</I>&gt;<i> the intermediate wrong &quot;foo_expression&quot;, so I guess solving the  
+</I>&gt;<i> problem
+</I>&gt;<i> at the grammar level is better.
+</I>&gt;<i>
+</I>&gt;<i> Any opinions? Maybe I miss the completely obvious solution...
+</I>&gt;<i> I think I should add that I'm a complete ANTLR beginner; so  
+</I>&gt;<i> everything I
+</I>&gt;<i> wrote might make no sense at all.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Thanks and have a nice day
+</I>&gt;<i> Marco
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I></PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="035987.html">[antlr-interest] conditional tree rewrite
+</A></li>
+	<LI>Next message: <A HREF="036005.html">[antlr-interest] conditional tree rewrite
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#35989">[ date ]</a>
+              <a href="thread.html#35989">[ thread ]</a>
+              <a href="subject.html#35989">[ subject ]</a>
+              <a href="author.html#35989">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

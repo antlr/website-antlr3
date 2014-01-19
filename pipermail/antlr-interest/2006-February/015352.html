@@ -1,0 +1,202 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Languages where keywords can be used as
+	identifiers
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Languages%20where%20keywords%20can%20be%20used%20as%0A%09identifiers&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="015351.html">
+   <LINK REL="Next"  HREF="015353.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Languages where keywords can be used as
+	identifiers</H1>
+    <B>Adam Bishop (DSLWN)</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Languages%20where%20keywords%20can%20be%20used%20as%0A%09identifiers&In-Reply-To="
+       TITLE="[antlr-interest] Languages where keywords can be used as
+	identifiers">AdamB at datacom.co.nz
+       </A><BR>
+    <I>Tue Feb  7 15:37:08 PST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="015351.html">[antlr-interest] Languages where keywords can be used as
+	identifiers
+</A></li>
+        <LI>Next message: <A HREF="015353.html">[antlr-interest] Languages where keywords can be used as
+	identifiers
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#15352">[ date ]</a>
+              <a href="thread.html#15352">[ thread ]</a>
+              <a href="subject.html#15352">[ subject ]</a>
+              <a href="author.html#15352">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Thanks.
+The problem with this is that the list of (unreserved) keywords is
+expanding, so I would need to maintain the unreservedKeyword rule.  I
+need some way of guaranteeing that all of the keywords are in the rule,
+so I could use the literals txt file generated to generate the
+unreservedKeyword rule and import that rule into the grammar...
+
+I have been trying a different approach, and have made a method that
+(greedily) fetches and matches the next token
+
+	/**
+	  * Returns the string of the identifier.
+	  * &lt;p&gt;Should be used instead of the ID token, since the ID
+token will only be returned
+	  * by the lexer if the identifier is not a keyword
+	  * &lt;p&gt;Show caution in the use of this method, particularly if
+ID is only one of many options.  
+	  * If it is then getID should be the last option, as it will
+physically force the parser to chew up the next token regardless (i.e.
+always matches)
+	  * @throws TokenStreamException 
+	  * @throws MismatchedTokenException 
+	  **/
+	private Token getID() throws MismatchedTokenException,
+TokenStreamException{
+		Token result = LT(1);
+		match(result.getType());
+		return result;
+	}
+
+It works in the case that the rule actually can be greedy, but the
+obvious downsides of this are that the getID needs to be the last option
+within any selection, and if it is part of an optional clause it will
+fail.  I could modify it to stop it calling match 100% of the time
+(possibly by passing in an exception set of tokens)
+
+But both of these approaches seem to be... less than elegant.
+
+Are there any hooks (from the parser) into the lexer, to tell it to
+switch off testLiterals, or (due to lookahead) is it already too late
+once the parser is parsing a rule?
+
+P.S. I'm leaning towards your solution.
+
+
+-----Original Message-----
+From: John Green [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">greenj at ix.netcom.com</A>] 
+Sent: Wednesday, 8 February 2006 12:13 p.m.
+To: Adam Bishop (DSLWN)
+Cc: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: Re: [antlr-interest] Languages where keywords can be used as
+identifiers
+
+I went through the same thing a long time ago. To do it similar to what
+I did:
+
+The lexer would always recognize &quot;loop&quot; as a keyword token LOOP.
+
+The grammar would have a rule like:
+  unreservedkeyword: loop | etc | etc ;
+
+The grammar would use a rule named &quot;id&quot;:
+  id: ID | unreservedkeyword ;
+
+But enhance that last rule a bit, so that when you add it to the tree,
+you change the type from LOOP (or whatever keyword) to ID:
+  id: ID | urk:unreservedkeyword { #urk.setType(ID); }
+I probably have the syntax wrong for setType, sorry, this is off the top
+of my head.
+
+Now your grammar can use:
+  &quot;goto&quot; id
+and
+  datatype id
+
+
+HTH,
+John
+john at joanju dot com
+
+
+Adam Bishop (DSLWN) wrote:
+&gt;<i> I am parsing a language where &quot;loop&quot; is a keyword, however a label can
+</I>
+&gt;<i> be named loop.  The rule for label expects an identifier token, but
+</I>the 
+&gt;<i> lexer will return a loop token.  Is there any way to switch
+</I>testLiterals 
+&gt;<i> for a particular rule?
+</I>&gt;<i> 
+</I>&gt;<i>  
+</I>&gt;<i> 
+</I>&gt;<i> Ideally the Lexer shouldn't be doing testLiterals for any usage of the
+</I>
+&gt;<i> token ID in the parser.
+</I>&gt;<i> 
+</I>&gt;<i>  
+</I>&gt;<i> 
+</I>&gt;<i> NOTE:  To make things worse, I am having this problem wherever I have
+</I>a 
+&gt;<i> rule in the parser that expects an identifier
+</I>&gt;<i> 
+</I>&gt;<i> e.g.
+</I>&gt;<i> 
+</I>&gt;<i>  
+</I>&gt;<i> 
+</I>&gt;<i> &quot;goto&quot; ID
+</I>&gt;<i> 
+</I>&gt;<i>  
+</I>&gt;<i> 
+</I>&gt;<i> Will fail for input &quot;goto loop&quot;
+</I>&gt;<i> 
+</I>&gt;<i>  
+</I>&gt;<i> 
+</I>&gt;<i> And
+</I>&gt;<i> 
+</I>&gt;<i>  
+</I>&gt;<i> 
+</I>&gt;<i> datatype ID
+</I>&gt;<i> 
+</I>&gt;<i>  
+</I>&gt;<i> 
+</I>&gt;<i> will fail for &quot;Number length&quot; (since length is a keyword in another
+</I>rule)
+&gt;<i> 
+</I>&gt;<i>  
+</I>&gt;<i> 
+</I>
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="015351.html">[antlr-interest] Languages where keywords can be used as
+	identifiers
+</A></li>
+	<LI>Next message: <A HREF="015353.html">[antlr-interest] Languages where keywords can be used as
+	identifiers
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#15352">[ date ]</a>
+              <a href="thread.html#15352">[ thread ]</a>
+              <a href="subject.html#15352">[ subject ]</a>
+              <a href="author.html#15352">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

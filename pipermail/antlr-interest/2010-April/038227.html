@@ -1,0 +1,171 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Ambiguity caused by recursion (I think)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Ambiguity%20caused%20by%20recursion%20%28I%20think%29&In-Reply-To=%3C1270777775.6987.25.camel%40gecko.home.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="038224.html">
+   <LINK REL="Next"  HREF="038228.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Ambiguity caused by recursion (I think)</H1>
+    <B>John B. Brodie</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Ambiguity%20caused%20by%20recursion%20%28I%20think%29&In-Reply-To=%3C1270777775.6987.25.camel%40gecko.home.org%3E"
+       TITLE="[antlr-interest] Ambiguity caused by recursion (I think)">jbb at acm.org
+       </A><BR>
+    <I>Thu Apr  8 18:49:35 PDT 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="038224.html">[antlr-interest] Ambiguity caused by recursion (I think)
+</A></li>
+        <LI>Next message: <A HREF="038228.html">[antlr-interest] need some advice
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#38227">[ date ]</a>
+              <a href="thread.html#38227">[ thread ]</a>
+              <a href="subject.html#38227">[ subject ]</a>
+              <a href="author.html#38227">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Greetings!
+
+On Thu, 2010-04-08 at 20:29 -0400, Cameron Ross wrote:
+&gt;<i> Hi,
+</I>&gt;<i> 
+</I>&gt;<i> I have a grammar that calls a rule from two different &quot;levels&quot;.  This leads
+</I>&gt;<i> to an ambiguity being reported from the two different calls to the rule.
+</I>&gt;<i>  Oddly, the ambiguity points to the same place, so I'm not sure why its
+</I>&gt;<i> &quot;ambiguous&quot;.  The pertinent parts of the grammar are shown below and I've
+</I>&gt;<i> attached a screen grab of the syntax diagram from AntlrWorks.
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> start_rule
+</I>&gt;<i> : clif_file
+</I>&gt;<i> ;
+</I>&gt;<i> 
+</I>&gt;<i> clif_file
+</I>&gt;<i> : cltext+
+</I>&gt;<i> ;
+</I>&gt;<i> 
+</I>&gt;<i> cltext
+</I>&gt;<i> : (OPEN CL_MODULE) =&gt; module -&gt; ^(CLTEXT module)
+</I>&gt;<i> | text -&gt; ^(CLTEXT text)
+</I>&gt;<i> ;
+</I>&gt;<i> module
+</I>&gt;<i> : OPEN CL_MODULE interpretablename exclusion_set? cltext CLOSE -&gt; ^(MODULE
+</I>&gt;<i> ^(MODULE_IDENTIFIER interpretablename) exclusion_set? cltext)
+</I>&gt;<i> ;
+</I>&gt;<i> text
+</I>&gt;<i> : phrase+ -&gt; ^(TEXT phrase+)
+</I>&gt;<i> ;
+</I>&gt;<i> 
+</I>&gt;<i> phrase
+</I>&gt;<i> : (OPEN CL_MODULE) =&gt; module -&gt; ^(PHRASE module)
+</I>&gt;<i> | (OPEN CL_IMPORTS) =&gt; importation -&gt; ^(PHRASE importation)
+</I>&gt;<i> | (OPEN CL_COMMENT) =&gt; commented_text -&gt; ^(PHRASE commented_text)
+</I>&gt;<i> | sentence -&gt; ^(PHRASE sentence)
+</I>&gt;<i> ;
+</I>&gt;<i> ...
+</I>
+Well I found 4 issues with the above (the first 2 may be trivial, but
+they really bug me.... sorry)
+
+1) the above is INCOMPLETE! e.g. what is `importation`, what is
+`exclusion_set` and so on... (i will try to blunder forward anyway)
+
+2) the syntactic predicates are useless! AFAIK ANTLR's LL(*) algorithm
+can deal with disambiguating left prefixes that consist of a finite set
+of tokens (like what we have here in your example). ANTLR has issues
+when a left prefix is infinite (either via left-recursion or via a
+looping construct *,+).
+
+and now to the &quot;meat&quot; of your problem (i hope)
+
+3) a `cltext` is permitted to be either a `module` or a `text`. further
+a `text` may be a list of `phrase`s and a `phrase` may be a `module` or
+other things. so `cltext` is ambiguous. given an input consisting of the
+token sequence OPEN CL_MODULE, we do know how to parse. it is either
+
+cltext -&gt; module
+
+or it is 
+
+cltext -&gt; text -&gt; phrase -&gt; module
+
+you need to make a choice here. probably just remove `module` from the
+`cltext` rule.
+
+4) and now a deeper ambiguity: a `clfile` is a list of `cltext` and
+`cltext` is just a `text` (since, i assume, we have removed the `module`
+alternative) and `text` is a list of `phrase`.
+
+now suppose our input consists of three `sentence`s --- let me refer to
+a sentence as the string &quot;s_i&quot;. so we have the input (3 sentences):
+
+&quot;s_1&quot; &quot;s_2&quot; &quot;s_3&quot; 
+
+now how is this to be parsed?
+
+is it as
+
+clfile -&gt; cltext -&gt; text -&gt; (phrase[s_1], 
+                             phrase[s_2], 
+                             phrase[s_3])
+
+or is it
+
+clfile -&gt; (cltext -&gt; text -&gt; phrase[s_1]), 
+          (cltext -&gt; text -&gt; phrase[s_2]), 
+          (cltext -&gt; text -&gt; phrase[s_3])
+
+or is it
+
+clfile -&gt; (cltext -&gt; text -&gt; phrase[s_1]), 
+          (cltext -&gt; text -&gt; (phrase[s_2],phrase[s_3]))
+
+or what is it supposed to be?
+
+
+
+
+
+hope this helps...
+   -jbb
+
+
+
+
+ 
+
+</PRE>
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="038224.html">[antlr-interest] Ambiguity caused by recursion (I think)
+</A></li>
+	<LI>Next message: <A HREF="038228.html">[antlr-interest] need some advice
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#38227">[ date ]</a>
+              <a href="thread.html#38227">[ thread ]</a>
+              <a href="subject.html#38227">[ subject ]</a>
+              <a href="author.html#38227">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

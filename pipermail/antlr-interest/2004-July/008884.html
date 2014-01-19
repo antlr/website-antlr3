@@ -1,0 +1,238 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Re: another way to preserve token order in ASTs
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20another%20way%20to%20preserve%20token%20order%20in%20ASTs&In-Reply-To=2FAFA5C9-E346-11D8-A2DD-000A95891192%40cs.usfca.edu">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="008882.html">
+   <LINK REL="Next"  HREF="008883.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Re: another way to preserve token order in ASTs</H1>
+    <B>thrutchy</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20another%20way%20to%20preserve%20token%20order%20in%20ASTs&In-Reply-To=2FAFA5C9-E346-11D8-A2DD-000A95891192%40cs.usfca.edu"
+       TITLE="[antlr-interest] Re: another way to preserve token order in ASTs">eric_mahurin at yahoo.com
+       </A><BR>
+    <I>Sat Jul 31 18:42:54 PDT 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="008882.html">[antlr-interest] another way to preserve token order in ASTs
+</A></li>
+        <LI>Next message: <A HREF="008883.html">[antlr-interest] ANTLR 3.0 status: got nongreedy loops going
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#8884">[ date ]</a>
+              <a href="thread.html#8884">[ thread ]</a>
+              <a href="subject.html#8884">[ subject ]</a>
+              <a href="author.html#8884">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Yep, already read that.  I like the method I have below because:
+
+- changes were minimal (override one method in an AST)
+- AST nodes need no additional data (but I need one extra node per
+root - you could argue which is best)
+- I knew how to also preserve whitespace
+- it made more sense to me
+
+I think the way I really would like to have done this would be to have
+a &quot;left&quot; children pointer in addition to current children pointer and
+sibling pointer.  With AST nodes like that, these rules:
+
+x : M y N ;
+y : A B C^ D E ;
+
+would come out like this:
+
+M -&gt; C -&gt; N
+   /   \
+  A-&gt;B  D-&gt;E
+
+I didn't do the above because one line would need to be changed in
+ASTFactory.java (no functional change for normal AST nodes).  I could
+have subclassed and found a way to use the new class, but didn't want
+to bother.  Instead, in the solution below, I'm settling with:
+
+M -&gt; C -&gt; N
+     |
+     A-&gt;B-&gt;invalid-&gt;D-&gt;E
+
+The invalid token type node is used to tell where the root node would
+go if it wasn't rooted.  I guess I could optimize this out in the case
+when the root node is the first token in the rule.
+
+I'm beginning to get concerned with memory usage in the AST's and will
+be developing my own AST classes that have only what I need in the
+smallest footprint (i.e. maybe use bytes instead of chars, no
+line/column, collapse hidden tokens, etc).
+
+Eric
+
+--- In <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>, Terence Parr &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">parrt at c...</A>&gt; wrote:
+&gt;<i> Have you seen the article:
+</I>&gt;<i> 
+</I>&gt;<i> <A HREF="http://www.antlr.org/article/preserving.token.order/">http://www.antlr.org/article/preserving.token.order/</A> 
+</I>&gt;<i> preserving.token.order.tml
+</I>&gt;<i> 
+</I>&gt;<i> called &quot;Preserving Original Token Sequence In ASTs&quot;?
+</I>&gt;<i> 
+</I>&gt;<i> It has a pretty slick way of dealing with this issue :)
+</I>&gt;<i> 
+</I>&gt;<i> Ter
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> On Jul 31, 2004, at 3:50 PM, thrutchy wrote:
+</I>&gt;<i> 
+</I>&gt;<i> &gt; I just coded up a very simple way to preserve token order in the AST's
+</I>&gt;<i> &gt; - put in a dummy node where the root would have gone.  What you do is
+</I>&gt;<i> &gt; override the AST addChild method (used while making a root) to put the
+</I>&gt;<i> &gt; child at the front with a null node behind it, instead of just adding
+</I>&gt;<i> &gt; it in at the end (roots don't have any children initially).  You can
+</I>&gt;<i> &gt; do this to any of the BaseAST classes, but I did it to
+</I>&gt;<i> &gt; CommonASTWithHiddenTokens:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; import antlr.collections.AST;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; public class CommonAST2WithHiddenTokens extends
+</I>&gt;<i> &gt; CommonASTWithHiddenTokens {
+</I>&gt;<i> &gt;     protected AST left = null;
+</I>&gt;<i> &gt;     public void addChild(AST node) {
+</I>&gt;<i> &gt;         AST rootMarker = new CommonAST(); // Token.INVALID_TYPE
+</I>&gt;<i> &gt;         rootMarker.setNextSibling(this.down);
+</I>&gt;<i> &gt;         if (node != null) {
+</I>&gt;<i> &gt;             this.down = (BaseAST)node;
+</I>&gt;<i> &gt;             while (node.getNextSibling() != null) {
+</I>&gt;<i> &gt;                 node = node.getNextSibling();
+</I>&gt;<i> &gt;             }
+</I>&gt;<i> &gt;             node.setNextSibling((BaseAST)rootMarker);
+</I>&gt;<i> &gt;         } else {
+</I>&gt;<i> &gt;             this.down = (BaseAST)rootMarker;
+</I>&gt;<i> &gt;         }
+</I>&gt;<i> &gt;     }
+</I>&gt;<i> &gt; }
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Then my AST print routines looked like this:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;     public static void printHiddenBefore(AST a) {
+</I>&gt;<i> &gt;         if (a==null) return;
+</I>&gt;<i> &gt;         AST leftChild = a.getFirstChild();
+</I>&gt;<i> &gt;         if (leftChild!=null &amp;&amp;  
+</I>&gt;<i> &gt; leftChild.getType()!=Token.INVALID_TYPE) {
+</I>&gt;<i> &gt;             a = leftChild;
+</I>&gt;<i> &gt;         }
+</I>&gt;<i> &gt;         java.util.List before = new ArrayList();
+</I>&gt;<i> &gt;         for (
+</I>&gt;<i> &gt;             CommonHiddenStreamToken t =
+</I>&gt;<i> &gt; ((CommonAST2WithHiddenTokens)a).getHiddenBefore() ;
+</I>&gt;<i> &gt;             t!=null ;
+</I>&gt;<i> &gt;             t = t.getHiddenBefore() )
+</I>&gt;<i> &gt;         {
+</I>&gt;<i> &gt;             before.add(t.getText());
+</I>&gt;<i> &gt;         }
+</I>&gt;<i> &gt;         for (int i=before.size()-1;i&gt;=0;--i) {
+</I>&gt;<i> &gt;             System.out.print(before.get(i));
+</I>&gt;<i> &gt;         }
+</I>&gt;<i> &gt;     }
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;     public static AST printAST(AST a) {
+</I>&gt;<i> &gt;         while (a!=null) {
+</I>&gt;<i> &gt;             if (a.getType()==Token.INVALID_TYPE) {
+</I>&gt;<i> &gt;                 a = a.getNextSibling();
+</I>&gt;<i> &gt;                 return a;
+</I>&gt;<i> &gt;             }
+</I>&gt;<i> &gt;             AST leftChild = a.getFirstChild();
+</I>&gt;<i> &gt;             AST rightChild = printAST(leftChild);
+</I>&gt;<i> &gt;             String s = a.toString();
+</I>&gt;<i> &gt;             if (s!=null) System.out.print(s);
+</I>&gt;<i> &gt;             for (
+</I>&gt;<i> &gt;                 CommonHiddenStreamToken t =
+</I>&gt;<i> &gt; ((CommonAST2WithHiddenTokens)a).getHiddenAfter() ;
+</I>&gt;<i> &gt;                 t!=null ;
+</I>&gt;<i> &gt;                 t = t.getHiddenAfter() )
+</I>&gt;<i> &gt;             {
+</I>&gt;<i> &gt;                 System.out.print(t.getText());
+</I>&gt;<i> &gt;             }
+</I>&gt;<i> &gt;             printAST(rightChild);
+</I>&gt;<i> &gt;             a = a.getNextSibling();
+</I>&gt;<i> &gt;         }
+</I>&gt;<i> &gt;         return null;
+</I>&gt;<i> &gt;     }
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; I toyed around with a few other ideas (add a &quot;left&quot; AST pointer, add a
+</I>&gt;<i> &gt; dummy root node for the children to the left of the root), but those
+</I>&gt;<i> &gt; required changing one line the ASTFactory class (or extending it and
+</I>&gt;<i> &gt; overriding stuff).  For those interested, it was line 361 in the
+</I>&gt;<i> &gt; makeASTRoot method.  It would have been nice to have this:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;             currentAST.child = root.getFirstChild();
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; instead of:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;             currentAST.child = currentAST.root;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; I don't believe this would have broken compatability, but it would
+</I>&gt;<i> &gt; have allowed something very different to be done in AST addChild  
+</I>&gt;<i> &gt; method.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Eric
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Yahoo! Groups Links
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> --
+</I>&gt;<i> CS Professor &amp; Grad Director, University of San Francisco
+</I>&gt;<i> Creator, ANTLR Parser Generator, <A HREF="http://www.antlr.org">http://www.antlr.org</A>
+</I>&gt;<i> Cofounder, <A HREF="http://www.jguru.com">http://www.jguru.com</A>
+</I>&gt;<i> Cofounder, <A HREF="http://www.knowspam.net">http://www.knowspam.net</A> enjoy email again!
+</I>&gt;<i> Cofounder, <A HREF="http://www.peerscope.com">http://www.peerscope.com</A> pure link sharing
+</I>
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+    <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+    <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+    <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="008882.html">[antlr-interest] another way to preserve token order in ASTs
+</A></li>
+	<LI>Next message: <A HREF="008883.html">[antlr-interest] ANTLR 3.0 status: got nongreedy loops going
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#8884">[ date ]</a>
+              <a href="thread.html#8884">[ thread ]</a>
+              <a href="subject.html#8884">[ subject ]</a>
+              <a href="author.html#8884">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,221 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Able to emulate java.text.ChoiceFormat ?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Able%20to%20emulate%20java.text.ChoiceFormat%20%3F&In-Reply-To=%3C20071126110907.49140%40gmx.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="024913.html">
+   <LINK REL="Next"  HREF="024915.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Able to emulate java.text.ChoiceFormat ?</H1>
+    <B>Harald Mueller</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Able%20to%20emulate%20java.text.ChoiceFormat%20%3F&In-Reply-To=%3C20071126110907.49140%40gmx.net%3E"
+       TITLE="[antlr-interest] Able to emulate java.text.ChoiceFormat ?">harald_m_mueller at gmx.de
+       </A><BR>
+    <I>Mon Nov 26 03:09:07 PST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="024913.html">[antlr-interest] Able to emulate java.text.ChoiceFormat ?
+</A></li>
+        <LI>Next message: <A HREF="024915.html">[antlr-interest] Able to emulate java.text.ChoiceFormat ?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24914">[ date ]</a>
+              <a href="thread.html#24914">[ thread ]</a>
+              <a href="subject.html#24914">[ subject ]</a>
+              <a href="author.html#24914">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi -
+
+well, I didn't invent this thing ;-) ...
+
+... but n = 0, n = 1, n &gt; 0 are all *computations* (you need to know about numbers and comparison to evaluate these). So none of these things should be done in the view (the template). 
+
+Also (I overlooked this in your original posting), passing of simple values (like fileSize) is not a good idea - you must always pass objects with properties (that's StringTemplates &quot;type&quot; system at work here ...).
+
+So, provide properties in your class to find out what to do:
+
+public class FileInfo {
+    public string getFileName() { ... }
+    public int getFileSize() { ... }
+    public boolean isZeroByteFile() { ... } // not necessary below - but would be in your three-way text creation example
+    public boolean isOneByteFile() { ... }
+}
+
+Now, your template could be:
+
+fileInfo(fi) ::= &lt;&lt;
+File $fi.fileName$, $fi.fileSize$ $if(fi.oneByteFile)$byte$else$bytes$endif$.
+&gt;&gt;<i>
+</I>
+(I am not sure I did this perfectly - I have not used Java+StringTemplate for a year or so, only C#, so maybe I did something wrong with the implicit get/is truncation ... But the concept is ok).
+
+However, an even better (? - at least more interesting) way is template indirection:
+
+enum FileSizeType { ZeroByteFile, OneByteFile, LargerFile }
+
+public class FileInfo {
+    public string getFileName() { ... }
+    public int getFileSize() { ... }
+    public FileSizeType getFileSizeType() { ... }
+}
+
+fileInfo(fi) ::= &lt;&lt;
+File $fi.fileName$, $fi.fileSize$ $(fi.fileSizeType)()$
+&gt;&gt;<i>
+</I>// note the parentheses around fi.fileSizeType! - 
+// this means to evaluate the property and THEN call 
+// the template whose name you COMPUTED! Here they are:
+
+ZeroByteFile() ::= &lt;&lt;bytes&gt;&gt;
+OneByteFile() ::= &lt;&lt;byte&gt;&gt;
+LargerFile() ::= &lt;&lt;bytes&gt;&gt;
+
+Now, there is no $if...$ any longer! OTOH, there is coupling of the template names to the enum constants; still, as there is always coupling from the view to the model (at least the properties must conform to each other!), this is not a principal problem ...
+
+If you need to do *different* things based on the fileSizeType, it becomes a little more complicated; what we do is to have various &quot;template name returning properties&quot; in the model classes which follow strict rules. If someone wants to know about this, email me ...
+
+I hope this helps!
+
+Regards
+Harald
+
+P.S. Once again: DO NOT pass simple values around in StringTemplate - even if it works (I dont know whether it does), it's not what is intended.
+
+-------- Original-Nachricht --------
+&gt;<i> Datum: Mon, 26 Nov 2007 11:29:32 +0100
+</I>&gt;<i> Von: &quot;Christopher Brown&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">chris77550 at gmail.com</A>&gt;
+</I>&gt;<i> An: &quot;Harald Mueller&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">harald_m_mueller at gmx.de</A>&gt;
+</I>&gt;<i> Betreff: Re: [antlr-interest] Able to emulate java.text.ChoiceFormat ?
+</I>
+&gt;<i> Hi Harald,
+</I>&gt;<i> 
+</I>&gt;<i> I can understand that the template engine shouldn't do computation,
+</I>&gt;<i> but I'm not trying to do computation here.  And I'm not a GUI-builder
+</I>&gt;<i> type person anyway, which is why StringTemplate.NET attracts me, now
+</I>&gt;<i> that I'm doing a lot of C# work ;-)
+</I>&gt;<i> 
+</I>&gt;<i> For me, I'd like to be able to have one template per language.  A lot
+</I>&gt;<i> of that targets user interfaces.  With ChoiceFormat, the templating
+</I>&gt;<i> isn't computational (and I'd prefer something like ChoiceFormat's
+</I>&gt;<i> syntax over if/else/endif), so it's easy to produce the three
+</I>&gt;<i> following variations for &quot;n&quot; (the content of the square brackets is to
+</I>&gt;<i> show the value, not part of any syntax):
+</I>&gt;<i> 
+</I>&gt;<i> [n=0] No records updated.
+</I>&gt;<i> [n=1] One record updated.
+</I>&gt;<i> [n&gt;1] $n$ records updated.
+</I>&gt;<i> 
+</I>&gt;<i> [n=0] Aucune ligne n'a &#233;t&#233; modifi&#233;e.
+</I>&gt;<i> [n=1] Une ligne a &#233;t&#233; modifi&#233;e.
+</I>&gt;<i> [n&gt;1] $n$ lignes modifi&#233;es.
+</I>&gt;<i> 
+</I>&gt;<i> That's not computation, that's just linguistically-correct output.
+</I>&gt;<i> It'd be a shame to limit myself to phrases like &quot;1 record(s) updated&quot;
+</I>&gt;<i> and &quot;1 ligne(s) modifi&#233;e(s)&quot;, and it's certainly NOT model or
+</I>&gt;<i> controller logic to start spitting out translated content (that's one
+</I>&gt;<i> of the main aims of using a template engine).
+</I>&gt;<i> 
+</I>&gt;<i> That's the problem I'm trying to solve, not in any way about adding
+</I>&gt;<i> more complex expressions and types to $if()$ !!!
+</I>&gt;<i> 
+</I>&gt;<i> So, is there anyway StringTemplate can help in providing
+</I>&gt;<i> reader-friendly translations?
+</I>&gt;<i> 
+</I>&gt;<i> Thanks,
+</I>&gt;<i> Christopher
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> On 26/11/2007, Harald Mueller &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">harald_m_mueller at gmx.de</A>&gt; wrote:
+</I>&gt;<i> &gt; Hi -
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; The whole idea of StringTemplate is to separate &quot;computation&quot; from
+</I>&gt;<i> &quot;string building&quot;. Even the $if$ is in a way a concession - one could do
+</I>&gt;<i> everything with lazily evaluated template names (things like $(abc)()$).
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; The favored way is the definition of a clean interface which provides
+</I>&gt;<i> all the attributes for the template; and do all the computation there.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Stringtemplate is, as I see it, NOT an abstraction layer on a FIXED
+</I>&gt;<i> value-providing machine (as are e.g. most report generators); rather, it is
+</I>&gt;<i> intended that the templates evolve together with the accessed interfaces.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; In a way, Stringtemplate tries to do &quot;MV(C)&quot;: It provides ONLY the VIEW
+</I>&gt;<i> for a model; and like in MVC, the view itself is not supposed to compute
+</I>&gt;<i> anything (even if some people with GUI builders in their hands prefer it
+</I>&gt;<i> otherwise ...).
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Regards
+</I>&gt;<i> &gt; Harald M.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; -------- Original-Nachricht --------
+</I>&gt;<i> &gt; &gt; Datum: Mon, 26 Nov 2007 10:35:23 +0100
+</I>&gt;<i> &gt; &gt; Von: &quot;Christopher Brown&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">chris77550 at gmail.com</A>&gt;
+</I>&gt;<i> &gt; &gt; An: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> &gt; &gt; Betreff: [antlr-interest] Able to emulate java.text.ChoiceFormat ?
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; &gt; Hi,
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; Is it possible to create templates that have the capabilities of
+</I>&gt;<i> &gt; &gt; ChoiceFormat with StringTemplate (I'm using ST#3)?
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; <A HREF="http://java.sun.com/javase/6/docs/api/java/text/ChoiceFormat.html">http://java.sun.com/javase/6/docs/api/java/text/ChoiceFormat.html</A>
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; For example, the following template doesn't work:
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; fileInfo(fileName,fileSize) ::= &lt;&lt;
+</I>&gt;<i> &gt; &gt; File $fileName$, $fileSize$ $if(fileSize&gt;1)$bytes$else$byte$endif$.
+</I>&gt;<i> &gt; &gt; &gt;&gt;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; (I'm using a group template file with the default lexer, not the angle
+</I>&gt;<i> &gt; &gt; bracket one, as my target is HTML...).
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; There only seems to be support for conditions based on string equality
+</I>&gt;<i> &gt; &gt; or just non-nullity, not numeric comparisons.  I'm not wanting to add
+</I>&gt;<i> &gt; &gt; computation into the view, but it's important in many (human)
+</I>&gt;<i> &gt; &gt; languages to be able to vary the text along with a quantity, and I
+</I>&gt;<i> &gt; &gt; don't want to hard-code parts of the template into the code that calls
+</I>&gt;<i> &gt; &gt; it.
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; Thanks,
+</I>&gt;<i> &gt; &gt; Christopher
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; --
+</I>&gt;<i> &gt; Psssst! Schon vom neuen GMX MultiMessenger geh&#246;rt?
+</I>&gt;<i> &gt; Der kann`s mit allen: <A HREF="http://www.gmx.net/de/go/multimessenger">http://www.gmx.net/de/go/multimessenger</A>
+</I>&gt;<i> &gt;
+</I>
+-- 
+GMX FreeMail: 1 GB Postfach, 5 E-Mail-Adressen, 10 Free SMS.
+Alle Infos und kostenlose Anmeldung: <A HREF="http://www.gmx.net/de/go/freemail">http://www.gmx.net/de/go/freemail</A>
+</PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="024913.html">[antlr-interest] Able to emulate java.text.ChoiceFormat ?
+</A></li>
+	<LI>Next message: <A HREF="024915.html">[antlr-interest] Able to emulate java.text.ChoiceFormat ?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24914">[ date ]</a>
+              <a href="thread.html#24914">[ thread ]</a>
+              <a href="subject.html#24914">[ subject ]</a>
+              <a href="author.html#24914">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

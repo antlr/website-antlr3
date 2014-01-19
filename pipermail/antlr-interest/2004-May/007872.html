@@ -1,0 +1,200 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] simple parser lookahead problem
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20simple%20parser%20lookahead%20problem&In-Reply-To=C7FE35004D40FD45AA342991B88CE40409AED3%40lnml1.eca-international.local">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="007869.html">
+   <LINK REL="Next"  HREF="007885.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] simple parser lookahead problem</H1>
+    <B>Monty Zukowski</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20simple%20parser%20lookahead%20problem&In-Reply-To=C7FE35004D40FD45AA342991B88CE40409AED3%40lnml1.eca-international.local"
+       TITLE="[antlr-interest] simple parser lookahead problem">monty at codetransform.com
+       </A><BR>
+    <I>Wed May 12 08:40:58 PDT 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="007869.html">[antlr-interest] simple parser lookahead problem
+</A></li>
+        <LI>Next message: <A HREF="007885.html">[antlr-interest] simple parser lookahead problem
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#7872">[ date ]</a>
+              <a href="thread.html#7872">[ thread ]</a>
+              <a href="subject.html#7872">[ subject ]</a>
+              <a href="author.html#7872">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On May 12, 2004, at 7:46 AM, Anthony Youngman wrote:
+
+&gt;<i> I've got the following code in my parser ...
+</I>&gt;<i>
+</I>&gt;<i> ----------------------
+</I>&gt;<i> // Can I distinguish between COLON and COLONPRINT here, I need to look
+</I>&gt;<i> // ahead but not eat a SEMI or nl. It'll work if I can get catexpr to
+</I>&gt;<i> // take priority.
+</I>&gt;<i>
+</I>&gt;<i> printst : ( PRINT^ (expr (COLON)? )? );
+</I>&gt;<i>
+</I>&gt;<i> catexpr : pmexpr ( COLON^ pmexpr)* ;
+</I>&gt;<i> --------------------
+</I>&gt;<i>
+</I>&gt;<i> plus a bit more code that effectively says
+</I>&gt;<i>
+</I>&gt;<i> expr : catexpr ;
+</I>&gt;<i>
+</I>&gt;<i> How do I resolve the ambiguity by doing a lookahead in printst - I
+</I>&gt;<i> effectively want to look for an &quot;end of statement&quot; marker eg a newline
+</I>&gt;<i> or semicolon.
+</I>
+Syntactic predicates are for doing lookahead, but you need it in the  
+rule that decides whether to call printst v. catexpr.
+
+&gt;<i> Unfortunately, &quot;:&quot; has three different meanings, as
+</I>&gt;<i> exemplified in this simple line of code ...
+</I>&gt;<i>
+</I>&gt;<i> XXX: PRINT A : B :
+</I>&gt;<i>
+</I>&gt;<i> Where the first colon says &quot;this is a label&quot; (I haven't even touched
+</I>&gt;<i> this yet!),
+</I>Yeah, see my parser filter article--I was trying to solve that for your  
+grammar!
+
+
+&gt;<i> the second says &quot;concatenate the variables A and B
+</I>&gt;<i> together&quot;, and the third says &quot;don't print a newline at the end&quot;.  
+</I>&gt;<i> Yeuch!
+</I>&gt;<i> At the moment I'm disambiguating in the lexer, but I don't think that's
+</I>&gt;<i> a good idea ... it'll be messy :-( but I really haven't got to grips
+</I>&gt;<i> with predicates, which I think is what I need ...
+</I>&gt;<i>
+</I>&gt;<i> Further on, I have a hiccup with my treeparser ...
+</I>&gt;<i>
+</I>&gt;<i> printst
+</I>&gt;<i> 	: #(PRINT expr COLON) { st.write(&quot;PRINT&quot;);}
+</I>&gt;<i> 	| #(PRINT expr) { st.write(&quot;PRTLN&quot;);}
+</I>&gt;<i> //	| #(PRINT) { st.write(&quot;CRLF&quot;);}
+</I>&gt;<i> 	;
+</I>&gt;<i>
+</I>
+#() expects a root and at least one child.  What you want is simply  
+PRINT.
+
+Note that tree parsers only have k=1 lookahead.  Which means you will  
+need something like this:
+
+printst
+	: #(PRINT
+		(
+		 expr COLON) { st.write(&quot;PRINT&quot;);}
+		| expr { st.write(&quot;PRTLN&quot;);}
+		| /*empty*/ { st.write(&quot;CRLF&quot;);}
+		)
+	)
+	;
+
+Except, of course that expr is ambiguous too.  You could syn pred here,  
+but better would be to alter the tree
+
+printst : ( PRINT^ (expr (COLON {##.setType(PRINT_WITH_COLON);})? )? );
+
+Then tree parser is
+printst
+	: #(PRINT
+		(
+		| expr { st.write(&quot;PRTLN&quot;);}
+		| /*empty*/ { st.write(&quot;CRLF&quot;);}
+		)
+	)
+	| #(PRINT_WITH_COLON expr COLON  { st.write(&quot;PRINT&quot;);})
+	;
+
+Monty
+
+&gt;<i> antlr.Tool does not like the commented-out line - I'm guessing it's
+</I>&gt;<i> incredibly simple, but it's objecting to PRINT :-(
+</I>&gt;<i>
+</I>&gt;<i> Cheers,
+</I>&gt;<i> Wol
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> *********************************************************************** 
+</I>&gt;<i> *****
+</I>&gt;<i>
+</I>&gt;<i> This transmission is intended for the named recipient only. It may  
+</I>&gt;<i> contain private and confidential information. If this has come to you  
+</I>&gt;<i> in error you must not act on anything disclosed in it, nor must you  
+</I>&gt;<i> copy it, modify it, disseminate it in any way, or show it to anyone.  
+</I>&gt;<i> Please e-mail the sender to inform us of the transmission error or  
+</I>&gt;<i> telephone ECA International immediately and delete the e-mail from  
+</I>&gt;<i> your information system.
+</I>&gt;<i>
+</I>&gt;<i> Telephone numbers for ECA International offices are: Sydney +61 (0)2  
+</I>&gt;<i> 9911 7799, Hong Kong + 852 2121 2388, London +44 (0)20 7351 5000 and  
+</I>&gt;<i> New York +1 212 582 2333.
+</I>&gt;<i>
+</I>&gt;<i> *********************************************************************** 
+</I>&gt;<i> *****
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Yahoo! Groups Links
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>Monty Zukowski
+
+ANTLR &amp; Java Consultant -- <A HREF="http://www.codetransform.com">http://www.codetransform.com</A>
+ANSI C/GCC transformation toolkit --  
+<A HREF="http://www.codetransform.com/gcc.html">http://www.codetransform.com/gcc.html</A>
+Embrace the Decay -- <A HREF="http://www.codetransform.com/EmbraceDecay.html">http://www.codetransform.com/EmbraceDecay.html</A>
+
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+     <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+     <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+     <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="007869.html">[antlr-interest] simple parser lookahead problem
+</A></li>
+	<LI>Next message: <A HREF="007885.html">[antlr-interest] simple parser lookahead problem
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#7872">[ date ]</a>
+              <a href="thread.html#7872">[ thread ]</a>
+              <a href="subject.html#7872">[ subject ]</a>
+              <a href="author.html#7872">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

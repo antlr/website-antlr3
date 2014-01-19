@@ -1,0 +1,192 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Problems writing a searchbar language
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Problems%20writing%20a%20searchbar%20language&In-Reply-To=%3C4B4B5258.8060506%404dconcept.fr%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="037273.html">
+   <LINK REL="Next"  HREF="037277.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Problems writing a searchbar language</H1>
+    <B>Aur&#233;lien LARIVE</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Problems%20writing%20a%20searchbar%20language&In-Reply-To=%3C4B4B5258.8060506%404dconcept.fr%3E"
+       TITLE="[antlr-interest] Problems writing a searchbar language">aurelien.larive at 4dconcept.fr
+       </A><BR>
+    <I>Mon Jan 11 08:31:20 PST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="037273.html">[antlr-interest] Problems writing a searchbar language
+</A></li>
+        <LI>Next message: <A HREF="037277.html">[antlr-interest] Problems writing a searchbar language
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37275">[ date ]</a>
+              <a href="thread.html#37275">[ thread ]</a>
+              <a href="subject.html#37275">[ subject ]</a>
+              <a href="author.html#37275">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Below is the e-mail John B. Brodie sent to me, which solved my problem.
+
+John B. Brodie wrote :
+
+Greetings!
+
+(I tried to send this to the mail-list, but the list seems to be
+rejecting my e-mail at the moment.... sigh)
+
+When you have an implicit AND (e.g. whitespace), your andexpression
+sub-tree will not have any root. It will be just a list of notexpression
+sub-trees, which your tree walker is not prepared to handle.
+
+More below.....
+
+On Mon, 2010-01-11 at 12:51 +0100, Aur&#233;lien LARIVE wrote:
+&gt;<i> Hi,
+</I>&gt;<i> 
+</I>&gt;<i> I'm currently writing a small grammar to parse a searchbar language
+</I>and
+&gt;<i> I'm failing at making whitespaces behave like the AND keyword.
+</I>&gt;<i> 
+</I>&gt;<i> Here is my grammar :
+</I>&gt;<i> 
+</I>&gt;<i> grammar SearchBar;
+</I>&gt;<i> 
+</I>&gt;<i> options {
+</I>&gt;<i>     output=AST;
+</I>&gt;<i> }
+</I>&gt;<i> 
+</I>&gt;<i> WS  : ( ' ' | '\t' ) { skip(); } ;
+</I>&gt;<i> AND : 'AND' ;
+</I>&gt;<i> OR  : 'OR' ;
+</I>&gt;<i> NOT : 'NOT' ;
+</I>&gt;<i> LEFT_PAREN  : '(' ;
+</I>&gt;<i> RIGHT_PAREN : ')' ;
+</I>&gt;<i> TERM        : ~(' '|'\t'|'&quot;'|RIGHT_PAREN|LEFT_PAREN|NOT|OR|AND)* ;
+</I>&gt;<i> QUOTEDTERM  : '&quot;' ~('&quot;')* '&quot;' ;
+</I>&gt;<i> 
+</I>&gt;<i> orexpression
+</I>&gt;<i>     : andexpression ( OR^ andexpression )*
+</I>&gt;<i>     ;
+</I>&gt;<i> 
+</I>&gt;<i> andexpression
+</I>&gt;<i>     : notexpression ( (AND^)? notexpression )*
+</I>&gt;<i>     ;
+</I>
+when the AND is absent e.g. an implied AND via whitespace there will be
+no root. so (I THINK) you will just end up with a simple list of
+notexpression sub-trees.
+
+suggest these parsing rules instead (tested!):
+
+andexpression
+     : notexpression ( and_operator^ notexpression )*
+     ;
+
+and_operator : AND | (/*empty*/-&gt;AND[&quot;implicit_AND&quot;]) ;
+
+NOTE!!! The token spawned for &quot;implicit_AND&quot; above may not contain
+meaningful location information (e.g. line number, column, ...whatever).
+If that information is important to your application (usually for error
+messages), you may need to dig into the details of the &quot;X[...]&quot; ANTLR
+meta-notation for token insertion....
+
+&gt;<i> 
+</I>&gt;<i> notexpression
+</I>&gt;<i>     : (NOT^)? searchterm
+</I>&gt;<i>     ;
+</I>&gt;<i> 
+</I>&gt;<i> searchterm
+</I>&gt;<i>     : TERM
+</I>&gt;<i>     | QUOTEDTERM
+</I>&gt;<i>     | LEFT_PAREN! orexpression RIGHT_PAREN!
+</I>&gt;<i>     ;
+</I>&gt;<i> 
+</I>&gt;<i> And here is my tree grammar :
+</I>&gt;<i> 
+</I>&gt;<i> tree grammar SearchBarEval;
+</I>&gt;<i> 
+</I>&gt;<i> options {
+</I>&gt;<i>     ASTLabelType=CommonTree;
+</I>&gt;<i>     tokenVocab=SearchBar;
+</I>&gt;<i> }
+</I>&gt;<i> 
+</I>&gt;<i> prog
+</I>&gt;<i>     : expr+ ;
+</I>&gt;<i> 
+</I>&gt;<i> expr returns [XMSExpression expression]
+</I>&gt;<i>     : ^(OR a=expr b=expr) {
+</I>&gt;<i>         $expression = new Or($a.expression, $b.expression);
+</I>&gt;<i>     }
+</I>&gt;<i>     | ^(AND a=expr b=expr) {
+</I>&gt;<i>         $expression = new And($a.expression, $b.expression);
+</I>&gt;<i>     }
+</I>&gt;<i>     | ^(NOT a=expr) {
+</I>&gt;<i>         $expression = new Not($a.expression);
+</I>&gt;<i>     }
+</I>&gt;<i>     | TERM {
+</I>&gt;<i>         $expression = new Term($TERM.text);
+</I>&gt;<i>     }
+</I>&gt;<i>     | QUOTEDTERM {
+</I>&gt;<i>         $expression = new QuotedTerm($QUOTEDTERM.text);
+</I>&gt;<i>     }
+</I>
+if you would rather not apply the above suggested parser changes, you
+might be able to alter the tree grammar as follows (UNTESTED!):
+
+add an alternative to the expr rule (i think it has to be at the end,
+not sure...):
+       | implicit_and
+&gt;<i>     ;
+</I>&gt;<i> 
+</I>and then add an implicit_and rule (UNTESTED!):
+
+implicit_and returns [XMSExpression expression]
+       : a=expr {$expression = $a.expression;}
+           ( b=implicit_and {
+               $expression = new And($a.expression, $b.expression);
+             }
+           )?
+       ;
+&gt;<i> When I try to evaluate, for example, the input 'apples bananas
+</I>tomatos',
+&gt;<i> I only get the Term 'apples'. I understand why I'm having this
+</I>problem
+&gt;<i> but I was unable to find a good solution.
+</I>&gt;<i> 
+</I>&gt;<i> Thanks in advance,
+</I>
+Hope this helps....
+    -jbb
+
+
+
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="037273.html">[antlr-interest] Problems writing a searchbar language
+</A></li>
+	<LI>Next message: <A HREF="037277.html">[antlr-interest] Problems writing a searchbar language
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37275">[ date ]</a>
+              <a href="thread.html#37275">[ thread ]</a>
+              <a href="subject.html#37275">[ subject ]</a>
+              <a href="author.html#37275">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,421 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Compression of dfa tables
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Compression%20of%20dfa%20tables&In-Reply-To=%3C4C5B264C.9090906%40member.fsf.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="039321.html">
+   <LINK REL="Next"  HREF="039318.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Compression of dfa tables</H1>
+    <B>Andreas Jonsson</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Compression%20of%20dfa%20tables&In-Reply-To=%3C4C5B264C.9090906%40member.fsf.org%3E"
+       TITLE="[antlr-interest] Compression of dfa tables">aj at member.fsf.org
+       </A><BR>
+    <I>Thu Aug  5 13:59:56 PDT 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="039321.html">[antlr-interest] Compression of dfa tables
+</A></li>
+        <LI>Next message: <A HREF="039318.html">[antlr-interest] [il-antlr-interest: 29675] ANTLR v3 C# Code	generator and Runtime library
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#39328">[ date ]</a>
+              <a href="thread.html#39328">[ thread ]</a>
+              <a href="subject.html#39328">[ subject ]</a>
+              <a href="author.html#39328">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>2010-08-05 18:21, Jim Idle skrev:
+&gt;<i> The size of the DFA tables is known about, but despite cache misses, you
+</I>&gt;<i> won't notice the effect unless you have huge inputs, in which case there
+</I>&gt;<i> will be plenty of other cache misses anyway. However, when you end up with a
+</I>&gt;<i> large DFA set, it usually (not always) means that the lexer can be specified
+</I>&gt;<i> 'better' (in terms of allowing ANTLR to deal with it better).
+</I>&gt;<i>
+</I>&gt;<i>    
+</I>That sounds reassuring.  But I thought that the cache misses was mostly 
+depending on how varying the input is?
+
+&gt;<i> Can you post your grammar so we can see it?
+</I>&gt;<i>
+</I>&gt;<i>    
+</I>Certainly.  I'll post what I have below.  Funny thing is that the size 
+of the lexer have suddenly decreased to 2MB.
+
+I have taken upon me the perhaps foolish task of attempting to write a 
+parser for MediaWiki. The wikitext have the property that any sequence 
+of bytes is valid input, and MediaWiki's wikitext is inherently not 
+context free.  So, I'm using the antlr generated parser as a front-end 
+that interacts with a context object.
+
+I'm currently working on the table parsing.  If anyone have any ideas on 
+how to do things differently, I would be greatful to hear it.
+
+/Andreas
+
+/*
+  * Copyright 2010  Andreas Jonsson
+  *
+  * This file is part of libmwparser.
+  *
+  * Libmwparser is free software: you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation, either version 3 of the License, or
+  * (at your option) any later version.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program.  If not, see &lt;<A HREF="http://www.gnu.org/licenses/">http://www.gnu.org/licenses/</A>&gt;.
+  */
+
+grammar mw;
+
+options {
+     language = C;
+     k = 1;
+}
+
+@lexer::preincludes {
+struct MWKEYVALUE_struct;
+}
+
+@lexer::includes {
+#include &lt;mwparsercontext.h&gt;
+}
+
+@parser::includes {
+#include &lt;mwparsercontext.h&gt;
+}
+
+@lexer::members{
+#define X ((MWPARSERCONTEXT*)(ctx-&gt;pLexer-&gt;super))
+
+#define BOL (LEXER-&gt;input-&gt;charPositionInLine &lt;= 0)
+
+static pANTLR3_COMMON_TOKEN newToken(pANTLR3_TOKEN_FACTORY factory, 
+ANTLR3_UINT32 type, pANTLR3_STRING text)
+{
+     pANTLR3_COMMON_TOKEN t = factory-&gt;newToken(factory);
+     t-&gt;setType(t, type);
+     t-&gt;setText(t, text);
+     return t;
+}
+
+#define D(msg) (fputs(msg, stderr), fputc('\n', stderr), 
+printLexerInfo(LEXER), true)
+
+#define NEW_TOK(type, text) (newToken(LEXSTATE-&gt;tokFactory, type, text))
+#define SUBSTR1(start) (INPUT-&gt;substr(INPUT, start, GETCHARINDEX() - 1))
+#define SUBSTR2(start, end) (INPUT-&gt;substr(INPUT, start, end))
+}
+
+@parser::members{
+#define X ((MWPARSERCONTEXT*)(ctx-&gt;pParser-&gt;super))
+#define INLINE_ELEMENT(code) if (!X-&gt;inlinePrescan) { code } else { 
+X-&gt;onInlineTokenPrescan(X, LT(-1)); }
+
+#define D(msg) (fputs(msg, stderr), fputc('\n', stderr), 
+printParserInfo(PARSER), true)
+
+}
+
+article: NEWLINE* blocks NEWLINE* EOF
+     ;
+
+blocks: block ((NEWLINE)=&gt; NEWLINE)*  blocks?
+     ;
+
+block: paragraph | table
+     ;
+
+paragraph: {X-&gt;beginParagraph(X);} inline_text ((NEWLINE 
+inline_element)=&gt; NEWLINE inline_text)* {X-&gt;endParagraph(X);}
+     ;
+
+inline_text: inline_prescan actual_inline_text
+     ;
+
+inline_prescan
+@init {
+     ANTLR3_MARKER mark;
+}:
+         {
+             mark = MARK();
+             X-&gt;beginInlinePrescan(X);
+         }
+         ((inline_element)=&gt; inline_element)+
+         {
+             X-&gt;endInlinePrescan(X);
+             REWIND(mark);
+         }
+
+     ;
+
+actual_inline_text: ((inline_element)=&gt;inline_element)+
+     ;
+
+inline_element: (format|special|space|word|nowiki|html_entity)
+     ;
+
+special: (SPECIAL | apostrophes) {INLINE_ELEMENT(X-&gt;onSpecial(X, $text);)}
+     ;
+
+space: ((SPACE_TAB)=&gt; SPACE_TAB)+  {INLINE_ELEMENT(X-&gt;onSpace(X, $text);)}
+     ;
+
+word: WORD {INLINE_ELEMENT(X-&gt;onWord(X, $text);)}
+     ;
+
+html_entity: HTML_ENTITY {INLINE_ELEMENT(X-&gt;onHTMLEntity(X, $text);)}
+     ;
+
+newline: NEWLINE  {INLINE_ELEMENT(X-&gt;onNewline(X);)}
+     ;
+
+nowiki : NOWIKI {INLINE_ELEMENT(X-&gt;onNowiki(X, $text);)}
+     ;
+
+format: ({!X-&gt;inlinePrescan}?=&gt; (bold | italic)  
+{X-&gt;onConsumedApostrophes(X);});
+apostrophes: (apostrophe)+ { if(X-&gt;inlinePrescan) { 
+X-&gt;onApostrophesPrescan(X, $text); } };
+
+bold:   {X-&gt;takeBold}?=&gt; (begin_bold   | end_bold);
+italic: {X-&gt;takeItalic}?=&gt; (begin_italic | end_italic);
+apostrophe: {X-&gt;inlinePrescan}?=&gt; A
+     |       {X-&gt;takeApostrophe}?=&gt; A {X-&gt;onConsumedApostrophes(X);} ;
+
+begin_bold:   {!X-&gt;inBold}?=&gt;   A A A {X-&gt;beginBold(X);}  ;
+end_bold:     { X-&gt;inBold}?=&gt;   A A A {X-&gt;endBold(X);}    ;
+begin_italic: {!X-&gt;inItalic}?=&gt; A A   {X-&gt;beginItalic(X);};
+end_italic:   { X-&gt;inItalic}?=&gt; A A   {X-&gt;endItalic(X);}  ;
+
+table: begin_table table_rows end_table
+     ;
+
+begin_table: begin = BEGIN_TABLE NEWLINE* (garbage_inline_text 
+NEWLINE*)* {X-&gt;beginTable(X, $begin-&gt;custom);}
+     ;
+
+garbage_inline_text: inline_text
+     ;
+
+end_table: (END_TABLE | EOF) {X-&gt;endTable(X);}
+     ;
+
+table_rows: ((~(BEGIN_TABLE_COLUMN|TABLE_ROW_SEPARATOR))=&gt; table_first_row)?
+         ((TABLE_ROW_SEPARATOR)=&gt; table_row)*
+     ;
+
+table_first_row: table_row_content
+     ;
+
+table_row:  TABLE_ROW_SEPARATOR table_row_content
+     ;
+
+table_row_content: table_columns
+     ;
+
+table_columns: table_column*
+     ;
+
+table_column: BEGIN_TABLE_COLUMN
+     ;
+
+NOWIKI
+     @init  {
+         ANTLR3_MARKER nowikiStart;
+         ANTLR3_MARKER nowikiEnd;
+     }
+     :
+         '&lt;nowiki&gt;'
+         ((SPACE_CHAR|NEWLINE_CHAR) =&gt; (SPACE_CHAR|NEWLINE_CHAR))*
+         { nowikiStart = GETCHARINDEX(); }
+         NOWIKI_BODY[&amp;nowikiEnd]
+         { SETTEXT(SUBSTR2(nowikiStart, nowikiEnd)); }
+     ;
+
+
+fragment
+NOWIKI_BODY[ANTLR3_MARKER *nowikiEnd]:
+         (((SPACE_CHAR|NEWLINE_CHAR)* ('&lt;/nowiki&gt;'|EOF))=&gt;
+           (SPACE_CHAR|NEWLINE_CHAR)* ('&lt;/nowiki&gt;'|EOF)   )
+     |
+         ({ *nowikiEnd = GETCHARINDEX(); } . ) NOWIKI_BODY[nowikiEnd]
+
+     ;
+
+BEGIN_TABLE @init{pANTLR3_VECTOR attrs = NULL;}:  {BOL || 
+X-&gt;prevTokenWasIndent(X, GETCHARINDEX())}?=&gt;
+         SPACE_TAB* '{|' { X-&gt;onBeginTableToken(X);}
+         ATTRIBUTES[&amp;attrs]
+         { CUSTOM = attrs; }
+     ;
+
+END_TABLE: {BOL &amp;&amp; X-&gt;inTable(X)}?=&gt;
+         (SPACE_TAB)* '|}' {X-&gt;onEndTableToken(X);}
+     ;
+
+TABLE_ROW_SEPARATOR @init{pANTLR3_VECTOR attrs = NULL;}:
+     {BOL &amp;&amp; X-&gt;inTable(X)}?=&gt; ((SPACE_TAB)* '|-') =&gt; (SPACE_TAB)* '|' 
+(('-')=&gt;'-')+
+         ATTRIBUTES[&amp;attrs]
+         { CUSTOM = attrs; }
+     ;
+
+BEGIN_TABLE_COLUMN @init{pANTLR3_VECTOR attrs = NULL;}: {BOL &amp;&amp; 
+X-&gt;inTable(X)}?=&gt;
+         (SPACE_TAB)* '|' {attrs = NULL;} ATTRIBUTE_LIST[&amp;attrs] ('|' 
+~('|'))=&gt;
+         { CUSTOM = attrs; }
+      ;
+
+fragment
+ATTRIBUTES[pANTLR3_VECTOR *attrs]:
+         ((SPACE_TAB)=&gt; SPACE_TAB)*
+         ((ATTRIBUTE_LIST[NULL])=&gt; ATTRIBUTE_LIST[attrs])?
+         ((~(NEWLINE_CHAR))=&gt; .)* (NEWLINE | EOF)
+     ;
+
+fragment
+ATTRIBUTE_LIST[pANTLR3_VECTOR *attrs] @init{MWKEYVALUE attr;}:
+     ( (ATTRIBUTE[NULL] (SPACE_TAB)+ ATTRIBUTE[NULL])=&gt;
+       ATTRIBUTE[&amp;attr] (SPACE_TAB)+ ATTRIBUTE_LIST[attrs]
+     | ATTRIBUTE[&amp;attr] )
+     {
+         MWKEYVALUE *p = ANTLR3_MALLOC(sizeof(*p));
+         *p = attr;
+         if (*attrs == NULL) {
+             *attrs=X-&gt;vectorFactory-&gt;newVector(X-&gt;vectorFactory);
+         }
+         (*attrs)-&gt;add(*attrs, p, ANTLR3_FREE_FUNC);
+     }
+   ;
+
+fragment
+ATTRIBUTE[struct MWKEYVALUE_struct *attr]:
+      ATTRIBUTE_NAME[&amp;attr-&gt;key] SPACE_TAB* '=' SPACE_TAB* 
+ATTRIBUTE_VALUE[&amp;attr-&gt;value];
+
+fragment
+ATTRIBUTE_NAME[pANTLR3_STRING *name] @init{ ANTLR3_MARKER start; }:
+         { start = GETCHARINDEX(); }
+         (('xml:'|'xmlns:')? (LETTER|DECIMAL_DIGIT))+
+         { *name = SUBSTR1(start); }
+      ;
+
+fragment
+ATTRIBUTE_VALUE[pANTLR3_STRING *value] @init{ ANTLR3_MARKER start; }:
+         { start = GETCHARINDEX(); }
+         (
+             ('&quot;'
+                { start = GETCHARINDEX(); }
+                     ~('&quot;' |'&lt;')+
+                { *value = SUBSTR1(start);}
+              '&quot;' )
+         |  ('\''
+               { start = GETCHARINDEX(); }
+                     ~('\''|'&lt;')+
+               { *value = SUBSTR1(start);}
+             '\'')
+          // Regexp from Sanitizer.php: 
+[a-zA-Z0-9!#$%&amp;()*,\\-.\\/:;&lt;&gt;?@[\\]^_`{|}~]
+        | { start = GETCHARINDEX(); }
+        |
+             
+(LETTER|DECIMAL_DIGIT|'!'|'#'|'$'|'%'|'&amp;'|'('|')'|'*'|','|'-'|'.'
+              
+|<i>'/'|':'|';'|'&lt;'|'&gt;'|'?'|'@'|'['|']'|'^'|'_'|'`'|'{'|'|'|'}'|'~')+
+</I>          { *value = SUBSTR1(start);}
+         //  This case (from Sanitizer.php) can never be matched as it 
+is already covered by
+         //  the previous case:
+         //  (\#[0-9a-fA-F]+) # Technically wrong, but lots of
+         //                   # colors are specified like this.
+         //                   # We'll be normalizing it.
+         //    | '#' HEX_DIGIT+
+       )
+    ;
+
+HTML_ENTITY:
+                               '&amp;'   HTML_ENTITY_CHARS ';'
+                             | '&amp;#'  DECIMAL_NUMBER    ';'
+                             | '&amp;#x' HEX_NUMBER        ';'
+     ;
+
+WORD: CHAR+
+     ;
+
+SPACE_TAB: /* { X-&gt;spaceTabEnabled}?=&gt; */ (SPACE_CHAR | TAB_CHAR)+ ;
+//SPACE:     {!X-&gt;spaceTabEnabled}?=&gt;  SPACE_CHAR+             ;
+//TAB:       {!X-&gt;spaceTabEnabled}?=&gt;  TAB_CHAR+               ;
+
+
+NEWLINE:             '\r\n' | '\n\r' | NEWLINE_CHAR {X-&gt;onNewlineToken(X);};
+
+SPECIAL: SPECIAL_SYMBOL+
+     ;
+
+A: '\'';
+
+fragment CHARACTER:           WHITESPACE_CHAR | NON_WHITESPACE_CHAR | 
+HTML_ENTITY;
+
+fragment WHITESPACE:          WHITESPACE_CHAR+;
+fragment WHITESPACE_CHAR:     SPACE_CHAR ;
+fragment TAB_CHAR:            '\t' | '\xB0';
+fragment SPACE_CHAR:          ' ';
+fragment NEWLINE_CHAR:        '\n' | '\r';
+fragment NEWLINES:            NEWLINE+;
+fragment NON_WHITESPACE_CHAR: ~(SPACE_CHAR | TAB_CHAR | NEWLINE_CHAR);
+fragment LETTER:              UCASE_LETTER | LCASE_LETTER;
+fragment HTML_ENTITY_CHARS:   HTML_ENTITY_CHAR+;
+fragment HTML_ENTITY_CHAR:    UCASE_LETTER | LCASE_LETTER | DECIMAL_DIGIT;
+fragment UCASE_LETTER:        'A'..'Z';
+fragment LCASE_LETTER:        'a'..'z';
+fragment HTML_UNSAFE_SYMBOL:  '&lt;' | '&gt;' | '&amp;';
+fragment UNDERSCORE:          '_';
+fragment DECIMAL_NUMBER:      DECIMAL_DIGIT+;
+fragment DECIMAL_DIGIT:       '0'..'9';
+fragment HEX_NUMBER:          HEX_DIGIT+;
+fragment HEX_DIGIT:           DECIMAL_DIGIT | ('A'..'F') | ('a'..'f');
+fragment SPECIAL_SYMBOL:      '!'|'&quot;'|'#'|'$'|'%'|'&amp;'|'('|
+                               ')'|'*'|'+'|','|'-'|'.'|'/'|':'|
+                               ';'|'&lt;'|'='|'&gt;'|'?'|'@'|'['|'\\'|
+                               ']'|'^'|'_'|'`'|'{'|'|'|'}'|'~';
+
+fragment
+CHAR:  ~(SPECIAL_SYMBOL|SPACE_CHAR|TAB_CHAR|NEWLINE_CHAR|A);
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="039321.html">[antlr-interest] Compression of dfa tables
+</A></li>
+	<LI>Next message: <A HREF="039318.html">[antlr-interest] [il-antlr-interest: 29675] ANTLR v3 C# Code	generator and Runtime library
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#39328">[ date ]</a>
+              <a href="thread.html#39328">[ thread ]</a>
+              <a href="subject.html#39328">[ subject ]</a>
+              <a href="author.html#39328">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

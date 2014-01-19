@@ -1,0 +1,166 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [stringtemplate-interest] ST in multi-threaded environment
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:stringtemplate-interest%40antlr.org?Subject=%5Bstringtemplate-interest%5D%20ST%20in%20multi-threaded%20environment&In-Reply-To=44B34F59.4090902%40market-maker.de">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000522.html">
+   <LINK REL="Next"  HREF="000536.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[stringtemplate-interest] ST in multi-threaded environment</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:stringtemplate-interest%40antlr.org?Subject=%5Bstringtemplate-interest%5D%20ST%20in%20multi-threaded%20environment&In-Reply-To=44B34F59.4090902%40market-maker.de"
+       TITLE="[stringtemplate-interest] ST in multi-threaded environment">parrt at cs.usfca.edu
+       </A><BR>
+    <I>Tue Jul 11 13:47:20 PDT 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000522.html">[stringtemplate-interest] pageforge link with antlr.org /
+	peerscope.com source
+</A></li>
+        <LI>Next message: <A HREF="000536.html">[stringtemplate-interest] caching property lookup (sync issue too)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#535">[ date ]</a>
+              <a href="thread.html#535">[ thread ]</a>
+              <a href="subject.html#535">[ subject ]</a>
+              <a href="author.html#535">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+On Jul 11, 2006, at 12:12 AM, Oliver Flege wrote:
+
+&gt;<i> Hi,
+</I>&gt;<i>
+</I>&gt;&gt;<i> I don't think we have a threading issue...can somebody point out a
+</I>&gt;&gt;<i> scenario?
+</I>&gt;<i>
+</I>&gt;<i> let me point you to some examples:
+</I>&gt;<i>
+</I>&gt;<i> In my web application, a StringTemplateGroup is created at startup  
+</I>&gt;<i> [servlet container main thread]
+</I>&gt;<i> StringTemplateGroup g = new StringTemplateGroup(name, rootDir)
+</I>&gt;<i>
+</I>&gt;<i> Every servlet that needs to render a page, uses that group (which  
+</I>&gt;<i> can be obtained from
+</I>&gt;<i> the ServletContext) as follows:
+</I>&gt;<i>
+</I>&gt;<i> StringTemplate st = g.getInstanceOf(templateName)
+</I>
+Makes sense so far...
+
+&gt;<i> getInstanceOf invokes lookupTemplate, which uses the &quot;templates&quot;  
+</I>&gt;<i> Map: it might
+</I>&gt;<i> clear it, it calls get to lookup a template, and maybe put if it  
+</I>&gt;<i> had to load the template
+</I>&gt;<i> All of these actions are performed in the context of the servlet's  
+</I>&gt;<i> thread. So when the
+</I>&gt;<i> servlet container uses a thread-pool to run servlets (as most of  
+</I>&gt;<i> them do), the actions
+</I>&gt;<i> on the &quot;templates&quot; Map in StringTemplateGroup are performed by  
+</I>&gt;<i> multiple threads
+</I>&gt;<i> and without synchronization =&gt; threading issue, as HashMap cannot  
+</I>&gt;<i> cope reliably with
+</I>&gt;<i> multiple threads accessing it in parallel.
+</I>
+I see.  Yes, the group of templates could be unsafe due to caching.   
+If all templates are loaded up front then this would be avoided I  
+suppose.  Technically though you are absolutely correct.  Loading of  
+templates is not safe.  Shall I wrap the Map in a thread-safety thing  
+or just use Hashtable?
+
+&gt;<i> Once st.write(...) gets called, an ASTExpr may need to access the  
+</I>&gt;<i> property of some object,
+</I>&gt;<i> so it calls StringTemplateGroup's getCachedClassProperty and maybe  
+</I>&gt;<i> later cacheClassProperty.
+</I>&gt;<i> Both of these static methods access the &quot;classPropertyCache&quot; static  
+</I>&gt;<i> Map, again w/o synchronization,
+</I>&gt;<i> although multiple servlet threads may invoke these operations in  
+</I>&gt;<i> parallel =&gt; another threading issue.
+</I>
+Yes, I just *knew* that would cause trouble...i'm thinking of taking  
+out..not sure it's worth the complexity.
+
+&gt;<i> StringTemplateGroup's attributeRenderers Map can be replaced or  
+</I>&gt;<i> renderers can be added to it
+</I>&gt;<i> without synchronization. If a servlet's thread later calls  
+</I>&gt;<i> getAttributeRenderer, again w/o sync,
+</I>&gt;<i> one would assume that it should be able to access those renderers  
+</I>&gt;<i> right away, but this assumption
+</I>&gt;<i> is plain wrong* =&gt; yet another threading issue.
+</I>
+That is an ordering issue.  The real issue is that a read thread  
+could catch a write thread in the act of updating the data structure.
+&gt;<i> =&gt; For each mutable state variable in both StringTemplateGroup and  
+</I>&gt;<i> StringTemplate that may be
+</I>&gt;<i> accessed by more than one thread, all accesses (not just writes,  
+</I>&gt;<i> also reads) should be performed
+</I>&gt;<i> with the same lock held, so that the variable is guarded by that  
+</I>&gt;<i> lock. Ideally, the documentation
+</I>&gt;<i> would state which lock has to be used for each variable (important  
+</I>&gt;<i> since there are so many protected
+</I>&gt;<i> variables that subclasses or other package level classes can access).
+</I>
+ST objects should be ok.  It's the group, as you point out, that has  
+issues.
+
+&gt;<i> I hope this clarifies my concers about ST's tread-safety.
+</I>
+it does, thanks!
+
+&gt;<i> PS: I know I am somewhat picky about this issue, but we develop  
+</I>&gt;<i> heavily threaded systems for
+</I>&gt;<i> stock market data feed processing and neglecting thread-safety is  
+</I>&gt;<i> just not an option for us :)
+</I>
+I'm glad you're paranoid then!
+
+Ok, i did this:
+
+o made static maps in STG synchronized, also synchronized the look
+up/def methods for templates in STG.
+
+also added a comment on map defs:
+
+	/** Define a map for this group; not thread safe...do not keep adding
+	 *  these while you reference them.
+	 */
+
+Hmm...I should really do a heavy analysis on the whole STG thing...I  
+use it now in a very diff env than the web where all templates are  
+loaded via a group file.
+
+How much are synchronized methods slowed down these days for  
+uncontentious locks?  I'm worried that I just slowed antlr down.  Did  
+I just kill performance?
+
+Ter
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000522.html">[stringtemplate-interest] pageforge link with antlr.org /
+	peerscope.com source
+</A></li>
+	<LI>Next message: <A HREF="000536.html">[stringtemplate-interest] caching property lookup (sync issue too)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#535">[ date ]</a>
+              <a href="thread.html#535">[ thread ]</a>
+              <a href="subject.html#535">[ subject ]</a>
+              <a href="author.html#535">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">More information about the stringtemplate-interest
+mailing list</a><br>
+</body></html>

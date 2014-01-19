@@ -1,0 +1,343 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Re: Translators Should Use Tree Grammars
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20Translators%20Should%20Use%20Tree%20Grammars&In-Reply-To=cnlui0%2Bl878%40eGroups.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="010304.html">
+   <LINK REL="Next"  HREF="010302.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Re: Translators Should Use Tree Grammars</H1>
+    <B>micheal_jor</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20Translators%20Should%20Use%20Tree%20Grammars&In-Reply-To=cnlui0%2Bl878%40eGroups.com"
+       TITLE="[antlr-interest] Re: Translators Should Use Tree Grammars">open.zone at virgin.net
+       </A><BR>
+    <I>Sat Nov 20 18:43:04 PST 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="010304.html">[antlr-interest] Re: Translators Should Use Tree Grammars
+</A></li>
+        <LI>Next message: <A HREF="010302.html">[antlr-interest] Re: Translators Should Use Tree Grammars
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#10293">[ date ]</a>
+              <a href="thread.html#10293">[ thread ]</a>
+              <a href="subject.html#10293">[ subject ]</a>
+              <a href="author.html#10293">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+
+--- In <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>, &quot;atripp54321&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">atripp at c...</A>&gt; wrote:
+&gt;<i> 
+</I>&gt;<i> Terence,
+</I>&gt;<i> 
+</I>&gt;<i> Here's my 8-page-or-so furiously written diatribe against
+</I>&gt;<i> treewalkers:
+</I>&gt;<i> <A HREF="http://jazillian.com/antlr/trees.html">http://jazillian.com/antlr/trees.html</A>
+</I>&gt;<i> 
+</I>&gt;<i> I don't address the Visitor pattern, and I haven't even finished
+</I>&gt;<i> reading your page and the posted responses. I just thought I'd
+</I>&gt;<i> get my early, uninformed thoughts down on paper first.
+</I>&gt;<i> Wouldn't want to let well-argued points that you gurus
+</I>&gt;<i> make make get in my way of opinions :)
+</I>&gt;<i> 
+</I>&gt;<i> Andy
+</I>
+Hi Andy,
+
+Read your paper and my overall impression is this:
+
+Yes, anything that an ANTLR tree parser can do can also be done in
+other ways including the tree-library approach that you describe.
+Nevertheless, I consider the tree-grammar approach to be the &quot;best&quot;
+choice from an engineering point of view. You get the most bang for
+the least amount of work. Alexey's TreeDL approach also has some
+positives from an engineering pov.
+
+My other impression was that you haven't grokked the tree-grammar
+approach yet. It can take a while as my posts to the list attest but,
+it's time well spent if you intend to build complex language
+analysis/transformation tools with ANTLR.
+
+Section-secific comments:
+=========================
+
+1. The Complex Case: Tranforming a C AST to a Java AST
+======================================================
+
+The tree-library approaches you outline rely on methods that would
+seem to involve significant local (and/or global) tree
+navigation/searching and analysis. Take getAllGlobalVarNames() for
+instance - in the general case it would have to search the entire
+input AST (or AST forest in the multi-file case) to build up this
+list. Similarly for getAllLocalVarNames (localized search) and
+findDeclaration (global search).
+
+With the typical tree-grammar approach, a symbol table is built
+(either during parsing or as a separate phase) and is then use to
+answer queries such as &quot;is this a global var declaration?&quot; or &quot;get all
+global var declarations&quot; very efficiently. Some times, the structure
+of the tree encodes such information. For instance, it may be that
+global var declarations are always children COMPILATION_UNIT nodes. So
+you might have:
+
+compilationUnit
+ :  #( COMPILATION_UNIT
+       ( .......
+       |  variableDeclaration[VarDeclarationKind.Global]
+       | ......
+       )*
+    )
+ ;
+ 
+statementList
+ :  #( STMT_LIST
+       ( .......
+       |  variableDeclaration[VarDeclarationKind.Local]
+       | ......
+       )*
+    )
+ ;
+ 
+variableDeclaration [VarDeclarationKind varKind]
+ : #( VARIABLE_DEF type
+      ( ID ( variableInitialization )?
+        {
+           if (varKind == VarDeclarationKind.Global)
+           {
+             // process global variable decl
+           }
+           else
+           {
+             // process non-global variable decl
+           }
+        }
+      )*
+    )
+  ;
+
+To be able to answer queries such as &quot;get all VAR_REF nodes that refer
+to this declaration&quot; efficiently, you would have added appropriate
+attributes during the symbol table construction pass(es). In fact, it
+is helpful to think of the information in the symbol table as
+attributes of nodes in the AST (which is what they are in fact). They
+are just designed for very fast lookup.
+
+
+2a. Keeping the TreeStack and SymbolTable in sync with the AST
+==============================================================
+
+I don't understand the need for a TreeStack. If what we are talking
+about is renaming a local variable then, following on from the grammar
+snippets in my previous comments:
+
+variableDeclaration [VarDeclarationKind varKind]
+ : #( VARIABLE_DEF type
+      ( varid:ID ( variableInitialization )?
+        {
+           if (varKind == VarDeclarationKind.Global)
+           {
+             // process global variable decl
+           }
+           else
+           {
+             // process non-global variable decl
+             IBinding varDecl = #varid.Binding;
+             if (thisVarNeedsRenaming(varDecl,....))
+             {
+             	string....
+             	renameLocalVarTo(varDecl, #varid, getNewNameFor(varDecl));
+             }
+           }
+        }
+      )*
+    )
+  ;
+
+Where renameLocalVarTo() might is a method that looks something like:
+
+void renameLocalVarTo(IBinding decl, ISimpleIdentNode node, string
+newName)
+{
+   IList refNodes = node.getAllReferringNodes();
+   foreach(INode refnode in refNodes)
+   {
+      refnode.setText(newName);
+   }
+   node.setText(newName);
+   
+   decl.Scope.rename(decl, newName);  // a) removes decl and it's key
+from scope dictionary
+                                      // b) re-inserts decl with a new key
+}
+
+
+2b. Do you want methods in AST or TreeStack?
+============================================
+
+decl.Scope.getAllBindings() or similar should give you a list of all
+names in the scope. This isn't a tree-grammar approach benefit. ANTLR
+does nothing to help or hinder the requirement that the symbol table
+code has to be written.
+
+Since the symbol table stores extended node attributes, there isn't a
+question of which is more &quot;natural&quot;. The binding attribute on the node
+is where the actions starts:
+  IBinding decl  = #varid.Binding;
+  IList bindings = decl.Scope.getAllBindings();
+
+
+2c. Sometimes you need multiple passes
+======================================
+
+Given all the information that the symbol table construction phase
+accumulates, it would be pretty easy to provide a getAllGlobalVar()
+method on the symbol table object itself. Combined with the
+getAllReferringNodes() method on the nodes, what you propose is
+trivially accomplished. And without expensive (re-)calculation.
+
+
+3. The Simple Case: PrettyPrinting an AST
+=========================================
+
+There are two general approaches to pretty printing with a tree-grammar:
+a) Embed the knowledge of how to print each AST element within the
+tree-grammar
+     builtInType [Writer output]
+      :   &quot;void&quot;	{ output.write(&quot;void&quot;); }
+      |   &quot;boolean&quot;	{ output.write(&quot;boolean&quot;); }
+          ........
+      ;
+
+b) Use hetero-AST classes that know how to print themselves to a
+stream or writer. The tree-grammar simple invokes the class's print()
+method and supplies the stream or writer.
+     builtInType [Writer output]
+      :   v:&quot;void&quot;	{#v.print(output);}
+      |   b:&quot;boolean&quot;	{#b.print(output);}
+          ........
+      ;
+
+
+4. Comparing approaches by analyzing ease of change
+===================================================
+
+In your third change - we want three blank lines after the &quot;package&quot;
+line instead of two - I can't understand why there is any confusion in
+the tree-grammar approach. If you are adding lines *after* the output
+from the package rule and, the rootID rule calls the package rule then
+the change would be in the rootID rule. In your description, it is
+clear that the rootID rule prints the current two lines in any case.
+
+In your fourth change - we want to change the order of printing...and
+print the static block before the variable declarations for example -
+you can simply employ multiple output writers. Buffer all static
+blocks in one writer, all variable declarations in another etc. At the
+end print contents of the various writers in any order you wish. No
+need to modify the AST structure.
+
+
+5. Limitations of TreeWalkers
+=============================
+
+I don't see a tree-grammar limitation here Andy. I may be wrong but,
+isn't the real problem that &quot;a[3]&quot; is an array access while &quot;int[] x&quot;
+is an array declaration?. If I am right they would have difference AST
+representations in any case.
+
+In any case, I can't provide a tree-grammar equivalent of your sample
+without knowing what the child of the ARRAY_DECLARATOR is when it
+isn't an EXPR. In other words without knowing a bit more about your
+tree's grammar.
+
+
+6. Contrasting the approaches
+=============================
+
+1. Code generation isn't magic. We all use it quite happily for lexers
+and parsers for instance. The same benefits exist for tree parsers.
+
+2. It can be argued that the tree-grammar approach actually encourages
+your &quot;keep related code together&quot; maxim. All the code (excluding
+library code) that applies to a phase of your transformation is kept
+together in one file - the grammar file.
+
+3. Complex tools require training investment before you can use then
+effectively. Having invested in training to be able to ANTLR notation
+for specifying lexers and parsers, tree parsers are the next logical step.
+
+4. The comments about debugging apply equally to generated tree
+parsers and hand-written tree walkers (they are often very similar).
+The tree structure is the same in any case so print the AST as you please.
+
+5. ANTLR support for hetero-ASTs could be improved but nothing you
+have mentioned so far is beyond the support ANTLR 2.7.4's hetero-AST
+support. Can you give an example where this is important?
+
+
+7. Summary
+==========
+
+All I can say is that the two approaches you present here are tools
+for getting a job done. If you've invested the time to learn both
+approaches and you feel the tree-library approach offers you more then
+by all means use it. 
+
+I suspect however that you are yet to fully grok the tree-grammar
+approach. What information or resources would help you to better
+understand the tree-grammar approach?. Perhaps knowing this would help
+in making ANTLR v3 docs even more useful.
+
+Cheers!
+
+Micheal
+ANTLR/C#
+
+
+
+
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+    <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+    <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+    <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="010304.html">[antlr-interest] Re: Translators Should Use Tree Grammars
+</A></li>
+	<LI>Next message: <A HREF="010302.html">[antlr-interest] Re: Translators Should Use Tree Grammars
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#10293">[ date ]</a>
+              <a href="thread.html#10293">[ thread ]</a>
+              <a href="subject.html#10293">[ subject ]</a>
+              <a href="author.html#10293">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

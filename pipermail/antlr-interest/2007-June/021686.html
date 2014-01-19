@@ -1,0 +1,193 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Avoiding warnings without code bloat
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Avoiding%20warnings%20without%20code%20bloat&In-Reply-To=%3Cce40b1470706251633h41693aaap10ed71c673d722cd%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="021685.html">
+   <LINK REL="Next"  HREF="021705.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Avoiding warnings without code bloat</H1>
+    <B>David Piepgrass</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Avoiding%20warnings%20without%20code%20bloat&In-Reply-To=%3Cce40b1470706251633h41693aaap10ed71c673d722cd%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Avoiding warnings without code bloat">qwertie256 at gmail.com
+       </A><BR>
+    <I>Mon Jun 25 16:33:29 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="021685.html">[antlr-interest] Avoiding warnings without code bloat
+</A></li>
+        <LI>Next message: <A HREF="021705.html">[antlr-interest] Avoiding warnings without code bloat
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#21686">[ date ]</a>
+              <a href="thread.html#21686">[ thread ]</a>
+              <a href="subject.html#21686">[ subject ]</a>
+              <a href="author.html#21686">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Problem Solved!
+
+On p.285 of the ANTLR book it implies that you cannot suppress
+warnings in ANTLR v3 like you could in v2.
+
+However, it appears that a semantic predicate works nicely as a workaround:
+
+// Strings
+SQ_STRING: '\''! ({true}? ESC_SEQ | ~'\'')* '\''!;
+DQ_STRING: '&quot;'!  ({true}? ESC_SEQ | ~'&quot;')* '&quot;'!;
+BQ_STRING: '`'!  ({true}? ESC_SEQ | ~'`')* '`'!;
+fragment ESC_SEQ:
+	  '\\r' {$text = &quot;\r&quot;;}
+	| '\\n' {$text = &quot;\n&quot;;}
+	| '\\t' {$text = &quot;\t&quot;;}
+	| '\\a' {$text = &quot;\a&quot;;}
+	| '\\b' {$text = &quot;\b&quot;;}
+	| '\\f' {$text = &quot;\f&quot;;}
+	| '\\0' {$text = &quot;\0&quot;;}
+	| '\\u' HEXDIGIT HEXDIGIT HEXDIGIT HEXDIGIT
+		{
+			char ch = (char)int.Parse(Text, System.Globalization.NumberStyles.HexNumber);
+			$text = new string(ch, 1);
+		}
+	| '\\'! '\''
+	| '\\'! '\&quot;'
+	| '\\'! '\`';
+
+The generated code now contains LL(2) lookahead for no reason, and
+some redundant code. For example, code that originally read
+
+            	    if ( (LA19_0 == '\&quot;') )
+            	    {
+            	        alt19 = 1;
+            	    }
+
+Now says
+
+            	    if ( (LA19_0 == '\&quot;') )
+            	    {
+            	        int LA19_1 = input.LA(2);
+            	        if ( (true) )
+            	        {
+            	            alt19 = 1;
+            	        }
+            	    }
+
+However, its behavior appears to be the same.
+
+The compiler will emit some &quot;unreachable code&quot; warnings. In C# you can
+disable them like this:
+
+grammar Expr;
+options {
+	language=CSharp;
+}
+@lexer::members {
+	#pragma warning disable 0162
+}
+@parser::members {
+	#pragma warning disable 0162
+}
+
+I think there may be a caveat: using {true}? on a nullable rule can
+lead to an infinite loop if there is a syntax error in the input
+stream (i.e. don't say &quot;{true}? foo&quot; if foo can match no input).
+
+&gt;<i> I'm trying to match strings with escape sequences, so I tried this:
+</I>&gt;<i>
+</I>&gt;<i> // Strings
+</I>&gt;<i> SQ_STRING: '\''! (ESC_SEQ | ~'\'')* '\''!;
+</I>&gt;<i> DQ_STRING: '&quot;'!  (ESC_SEQ | ~'&quot;' )* '&quot;'!;
+</I>&gt;<i> fragment ESC_SEQ:
+</I>&gt;<i>         | '\\r' {$text = &quot;\r&quot;;}
+</I>...
+&gt;<i>         | '\\'! '&quot;';
+</I>&gt;<i>
+</I>&gt;<i> But this produces 12 warnings, and this makes sense because in the
+</I>&gt;<i> first three lines, escape sequences can match the first and second
+</I>&gt;<i> alternatives.
+</I>...
+&gt;<i> I can eliminate all warnings using a syntactic predicate:
+</I>&gt;<i>
+</I>&gt;<i> SQ_STRING: '\''! ((ESC_SEQ)=&gt;ESC_SEQ | ~'\'')* '\''!;
+</I>&gt;<i> DQ_STRING: '&quot;'!  ((ESC_SEQ)=&gt;ESC_SEQ | ~'\&quot;')* '&quot;'!;
+</I>&gt;<i>
+</I>&gt;<i> However, this changes the generated code substantially; not only does
+</I>&gt;<i> the lexer test for an ESC_SEQ before matching it, but ALL lexer rules,
+</I>&gt;<i> including rules that are in no way related to strings, have additional
+</I>&gt;<i> lines of code such as &quot;if (failed) return ;&quot; sprinkled throughout
+</I>&gt;<i> them.
+</I>&gt;<i>
+</I>&gt;<i> So my question is, can I get the &quot;bloat-free&quot; behavior of the original code:
+</I>...
+&gt;<i> while suppressing the warnings?
+</I></PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="021685.html">[antlr-interest] Avoiding warnings without code bloat
+</A></li>
+	<LI>Next message: <A HREF="021705.html">[antlr-interest] Avoiding warnings without code bloat
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#21686">[ date ]</a>
+              <a href="thread.html#21686">[ thread ]</a>
+              <a href="subject.html#21686">[ subject ]</a>
+              <a href="author.html#21686">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

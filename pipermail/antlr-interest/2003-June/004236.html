@@ -1,0 +1,243 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Cloning/dup* seriously broken for C++???
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Cloning/dup%2A%20seriously%20broken%20for%20C%2B%2B%3F%3F%3F&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004246.html">
+   <LINK REL="Next"  HREF="004237.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Cloning/dup* seriously broken for C++???</H1>
+    <B>Tiller, Michael (M.M.)</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Cloning/dup%2A%20seriously%20broken%20for%20C%2B%2B%3F%3F%3F&In-Reply-To="
+       TITLE="[antlr-interest] Cloning/dup* seriously broken for C++???">mtiller at ford.com
+       </A><BR>
+    <I>Thu Jun 19 07:23:27 PDT 2003</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004246.html">[antlr-interest] Re: ANTLR and runtime token assigning - URGENT
+</A></li>
+        <LI>Next message: <A HREF="004237.html">[antlr-interest] Cloning/dup* seriously broken for C++???
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4236">[ date ]</a>
+              <a href="thread.html#4236">[ thread ]</a>
+              <a href="subject.html#4236">[ subject ]</a>
+              <a href="author.html#4236">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Ric,
+
+  Thanks for your suggestions, but perhaps I wasn't really clear about the issue (see my previous message titled &quot;Cloning&quot; for a few other details).
+
+  I'm not having a problem with the tree construction per se.  I can build the tree exactly the way I want it.  The problem is in the reference counting data structures.  In my previous example, every time I would dup/clone the &quot;pre&quot; or &quot;type&quot; data structures, a copy would get made but the &quot;RefAST&quot; structure would always point back to the original?!?  This messed up the data structures.
+
+  In looking through the list, I found an email that had a useful suggestion.  If you look at the definition of BaseAST's copy constructor in antlr-2.7.2, you find this:
+
+BaseAST::BaseAST(const BaseAST&amp; other)
+:<i> AST(other) // RK: don't copy links! , down(other.down), right(other.right)
+</I>{
+}
+
+  Note that you have correctly pointed out that when making a copy of a node, you do not want to copy its down and right links.  That wouldn't make sense since this a copy.  But, it appears that there was something forgotten here.  The &quot;ref&quot; member inherited from &quot;AST&quot; should also not be copied since &quot;ref&quot; points back to the ASTRef that is looking at the node.  The AST copy constructor preserves the value of &quot;ref&quot;.  THIS IS A MISTAKE (as far as I can tell).
+
+  Here is a typical scenario:
+
+ 
+declaration
+  : pre:prefix type:type list:component_list
+    {
+      for(antlr::RefAST cur=#list;
+          cur!=antlr::nullAST;
+          cur=cur-&gt;getNextSibling()) {
+              cur-&gt;addChild(#([DECL_TYPE_INFO, &quot;TypeInfo&quot;],
+                      astFactory-&gt;dupTree(#pre),
+                      astFactory-&gt;dupTree(#type))));
+     }
+    }
+  ;
+
+The #pre tree does indeed get duplicated.  That isn't the problem (I can see this from the output of my clone() method).  The problem is that dup_pre has the same &quot;ref&quot; value that #pre.  When you try to wrap an ASTRef around dup_pre, the ASTRef tries to be clever and sees that &quot;ref&quot; for dup_pre is !=NULL (this is the mistake...it should be because nothing, up to this point, has actually referenced dup_pre).  Seeing that &quot;ref&quot; is non-NULL it says &quot;Let me be clever and get rid of this unnecessary duplicate and go back and reference the value of &quot;ptr&quot; that this &quot;ref&quot; is using...clever, but wrong.
+
+I think there is a simple fix for this.  Note that BaseAST cannot set the value of &quot;ref&quot; to be zero and in fact calls the AST copy constructor.  If you look at the AST copy constructor, you see this:
+
+  AST(const AST&amp; other) : ref(other.ref-&gt;increment()) {}
+
+Yikes!!!  This is a copy!  It shouldn't use the value of ref from &quot;other&quot;.  Instead, it should initialize ref as if this was a completely new AST, e.g.
+
+  AST(const AST&amp; other) : ref(0) {}
+
+I didn't come up with all of this on my own.  I found most of this in a previous discussion in the newsgroup.
+
+Looking at your development snapshot, I see this has been addressed.  I've patched 2.7.2 and so far (fingers crossed) I have been able to dup* things OK.  Of course, if I have any other problems I'll be sure to make everyone aware of them. :-)
+
+--
+Mike
+
+&gt;<i> -----Original Message-----
+</I>&gt;<i> From: Ric Klaren [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">klaren at cs.utwente.nl</A>]
+</I>&gt;<i> Sent: Thursday, June 19, 2003 6:19 AM
+</I>&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>
+</I>&gt;<i> Subject: Re: [antlr-interest] Cloning/dup* seriously broken for C++???
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> Hi,
+</I>&gt;<i> 
+</I>&gt;<i> On Wed, Jun 18, 2003 at 04:15:16PM -0400, Tiller, Michael 
+</I>&gt;<i> (M.M.) wrote:
+</I>&gt;<i> &gt; I have spent my entire day trying to figure out how to do 
+</I>&gt;<i> something that
+</I>&gt;<i> &gt; should be really simple.  I've got a declaration statement, 
+</I>&gt;<i> essentially it
+</I>&gt;<i> &gt; looks like this:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; declaration
+</I>&gt;<i> &gt;   : pre:prefix type:type list:component_list
+</I>&gt;<i> &gt;   ;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Now I need to iterate over component_list and add a *COPY* 
+</I>&gt;<i> of prefix and
+</I>&gt;<i> &gt; type as children of each node in component_list.  I have 
+</I>&gt;<i> tried a dozen ways
+</I>&gt;<i> &gt; of doing this and none of them have worked.  Here are a few 
+</I>&gt;<i> examples:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;      for(antlr::RefAST 
+</I>&gt;<i> cur=#list;cur!=antlr::nullAST;cur=cur-&gt;getNextSibling()) {
+</I>&gt;<i> &gt;                 cur-&gt;addChild(#([DECL_TYPE_INFO, &quot;TypeInfo&quot;],
+</I>&gt;<i> &gt;                         astFactory-&gt;dupTree(#pre),
+</I>&gt;<i> &gt;                         astFactory-&gt;dupTree(#type))));
+</I>&gt;<i> &gt;      }
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;      for(antlr::RefAST 
+</I>&gt;<i> cur=#list;cur!=antlr::nullAST;cur=cur-&gt;getNextSibling()) {
+</I>&gt;<i> &gt;                 cur-&gt;addChild(#pre-&gt;clone());
+</I>&gt;<i> &gt;                 cur-&gt;addChild(#type-&gt;clone());
+</I>&gt;<i> &gt;      }
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;      for(antlr::RefAST 
+</I>&gt;<i> cur=#list;cur!=antlr::nullAST;cur=cur-&gt;getNextSibling()) {
+</I>&gt;<i> &gt;                 cur-&gt;addChild(#pre);
+</I>&gt;<i> &gt;                 cur-&gt;addChild(#type);
+</I>&gt;<i> &gt;      }
+</I>&gt;<i> 
+</I>&gt;<i> It looks like you're modifying the tree while you're stepping 
+</I>&gt;<i> through it?
+</I>&gt;<i> I'm not sure if that will work... Try turning off AST 
+</I>&gt;<i> generation for the
+</I>&gt;<i> declaration rule. Then collect the trees generated by 
+</I>&gt;<i> prefix/type/comp_list
+</I>&gt;<i> (basically what you're already doing now). Then use a loop to 
+</I>&gt;<i> insert copies
+</I>&gt;<i> of all the parts you are glueing together. Something like 
+</I>&gt;<i> (abbreviated the
+</I>&gt;<i> duptrees):
+</I>&gt;<i> 
+</I>&gt;<i> RefAST nchild = #( duptree(cur), duptree(#pre), duptree(#type) );
+</I>&gt;<i> #declaration = #( nullAST, #declaration, nchild );
+</I>&gt;<i> 
+</I>&gt;<i> The above may need some tweaking. I'm not a big star in writing AST
+</I>&gt;<i> construction stuff. The nullAST thing adds them as siblings 
+</I>&gt;<i> to the returned
+</I>&gt;<i> tree if I recall right.
+</I>&gt;<i> 
+</I>&gt;<i> Also grab the print_tree template from
+</I>&gt;<i> 
+</I>&gt;<i> <A HREF="http://wwwhome.cs.utwente.nl/~klaren/antlr/print_tree.h">http://wwwhome.cs.utwente.nl/~klaren/antlr/print_tree.h</A>
+</I>&gt;<i> 
+</I>&gt;<i> It prints out a more or less readable dump of an AST tree so 
+</I>&gt;<i> you can see
+</I>&gt;<i> what happens while copying, or between operations.
+</I>&gt;<i> 
+</I>&gt;<i> Other idea is to open up the component_list rule safes you the manual
+</I>&gt;<i> traversal of the list:
+</I>&gt;<i> 
+</I>&gt;<i> declaration!
+</I>&gt;<i>   : pre:prefix type:type ( comp:component
+</I>&gt;<i> 		{
+</I>&gt;<i> 			#declaration = #( nullAST, #declaration,
+</I>&gt;<i> 						#( 
+</I>&gt;<i> duptree(#pre), duptree(#type), duptree(#comp) ) );
+</I>&gt;<i> 		}
+</I>&gt;<i> 		)+
+</I>&gt;<i>   ;
+</I>&gt;<i> 
+</I>&gt;<i> &gt; All these problems see to stem from the (sorry I have to 
+</I>&gt;<i> say it) extremely
+</I>&gt;<i> &gt; complicated family of types including (but not limited to): ASTRef,
+</I>&gt;<i> &gt; ASTRefCount, RefAST, RefMyCustomNodeAST, AST, BaseAST, 
+</I>&gt;<i> CommonAST, etc. :-)
+</I>&gt;<i> 
+</I>&gt;<i> I'm afraid we have to live with those in the 2.x.x series.
+</I>&gt;<i> 
+</I>&gt;<i> &gt; I tried the recently announced development snapshot but I 
+</I>&gt;<i> couldn't get it
+</I>&gt;<i> &gt; to run.  Does anybody have a fix for this issue?!?  I'm 
+</I>&gt;<i> completely stuck!!!
+</I>&gt;<i> &gt; I cannot move forward on this project until I have some 
+</I>&gt;<i> kind of workaround.
+</I>&gt;<i> 
+</I>&gt;<i> The dev snapshot contains some fixes to the RefCounter. So 
+</I>&gt;<i> I'd definitely
+</I>&gt;<i> grab it (non serious though only memory leak if I recall 
+</I>&gt;<i> right). Might look
+</I>&gt;<i> at a diff between the release version you have now and the 
+</I>&gt;<i> support lib and
+</I>&gt;<i> manually port over.
+</I>&gt;<i> 
+</I>&gt;<i> Add default comment about bugreports. Compiler/system/error 
+</I>&gt;<i> output. This is
+</I>&gt;<i> not helping I'm afraid.
+</I>&gt;<i> 
+</I>&gt;<i> Cheers,
+</I>&gt;<i> 
+</I>&gt;<i> Ric
+</I>&gt;<i> --
+</I>&gt;<i> -----+++++****************************************************
+</I>*+++++++++-------
+&gt;<i>     ---- Ric Klaren ----- <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">j.klaren at utwente.nl</A> ----- +31 53 
+</I>&gt;<i> 4893722  ----
+</I>&gt;<i> -----+++++****************************************************
+</I>*+++++++++-------
+&gt;<i>   &quot;You know how to use that thing?&quot; [pointing to the sword]
+</I>&gt;<i>   &quot;Sure.. The pointy end goes into the other guy.&quot;
+</I>&gt;<i>   --- The Mask of Zorro
+</I>&gt;<i> 
+</I>&gt;<i>  
+</I>&gt;<i> 
+</I>&gt;<i> Your use of Yahoo! Groups is subject to 
+</I><A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004246.html">[antlr-interest] Re: ANTLR and runtime token assigning - URGENT
+</A></li>
+	<LI>Next message: <A HREF="004237.html">[antlr-interest] Cloning/dup* seriously broken for C++???
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4236">[ date ]</a>
+              <a href="thread.html#4236">[ thread ]</a>
+              <a href="subject.html#4236">[ subject ]</a>
+              <a href="author.html#4236">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

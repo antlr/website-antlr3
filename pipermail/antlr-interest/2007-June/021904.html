@@ -1,0 +1,127 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Fun with ANTLR3: mystery of the huge lexer
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Fun%20with%20ANTLR3%3A%20mystery%20of%20the%20huge%20lexer&In-Reply-To=%3C051466DAA0D608439E196797955018D76E63%40wavemachine.temporal-wave.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="021903.html">
+   <LINK REL="Next"  HREF="021905.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Fun with ANTLR3: mystery of the huge lexer</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Fun%20with%20ANTLR3%3A%20mystery%20of%20the%20huge%20lexer&In-Reply-To=%3C051466DAA0D608439E196797955018D76E63%40wavemachine.temporal-wave.com%3E"
+       TITLE="[antlr-interest] Fun with ANTLR3: mystery of the huge lexer">jimi at temporal-wave.com
+       </A><BR>
+    <I>Sat Jun 30 17:15:30 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="021903.html">[antlr-interest] Fun with ANTLR3: mystery of the huge lexer
+</A></li>
+        <LI>Next message: <A HREF="021905.html">[antlr-interest] Fun with ANTLR3: mystery of the huge lexer
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#21904">[ date ]</a>
+              <a href="thread.html#21904">[ thread ]</a>
+              <a href="subject.html#21904">[ subject ]</a>
+              <a href="author.html#21904">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Yes, you need to use the fragment, though in this particular case, you
+might actually get away with it. If you leave rules that are not
+creating tokens as non fragment rules then the lexer thinks it has to
+create tokens for them and you get clashes.
+
+The lexer will assign the priority from top to bottom in listed order so
+you should be able to achieve what you need - I find you get simpler
+lexers though if you code the rule yourself to eliminate clashes and use
+$type = xxx;. 
+
+User operators eh, how do they specify precedence?
+
+Jim
+
+&gt;<i> -----Original Message-----
+</I>&gt;<i> From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:antlr-interest-
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">bounces at antlr.org</A>] On Behalf Of David Piepgrass
+</I>&gt;<i> Sent: Saturday, June 30, 2007 4:12 PM
+</I>&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> Subject: Re: [antlr-interest] Fun with ANTLR3: mystery of the huge
+</I>&gt;<i> lexer
+</I>&gt;<i> 
+</I>&gt;<i> &gt; Your ML_COMMENT needs to be a fragment rule and you need a predicate
+</I>&gt;<i> to
+</I>&gt;<i> &gt; stop '.' interfering with ML_COMMENT. I just produce this rule for
+</I>my
+&gt;<i> &gt; T-SQL lexer in fact (C here but the predicate is just input.LA(n)
+</I>for
+&gt;<i> &gt; Java):
+</I>&gt;<i> 
+</I>&gt;<i> Thanks, but is it really necessary to use a fragment? At the end of my
+</I>&gt;<i> message I noted that this rule seems to work okay:
+</I>&gt;<i> 
+</I>&gt;<i> ML_COMMENT:
+</I>&gt;<i>     ('/*')=&gt; '/*'
+</I>&gt;<i>     (options{greedy=false;} : ML_COMMENT | .)*
+</I>&gt;<i>     '*/'
+</I>&gt;<i>     { $channel = HIDDEN; };
+</I>&gt;<i> 
+</I>&gt;<i> ANTLR's architecture has changed and rules do not actually create
+</I>&gt;<i> tokens (did they in v2?). All token functions return void.
+</I>&gt;<i> 
+</I>&gt;<i> &gt; fragment        ML_COMFRAG
+</I>&gt;<i> &gt;             :
+</I>&gt;<i> &gt;                     '/*' ( options { greedy=false;}
+</I>&gt;<i> &gt;                                 : {(LA(1)== '/' &amp;&amp; LA(2) == '*')}?
+</I>&gt;<i> ML_COMFRAG
+</I>&gt;<i> &gt;                                 |  .
+</I>&gt;<i> &gt;                                 )* '*/'
+</I>&gt;<i> &gt;             ;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; That should help with that part. Then is your PUNC rule something
+</I>&gt;<i> that
+</I>&gt;<i> &gt; returns a token, or are you using that somewhere else too?
+</I>&gt;<i> 
+</I>&gt;<i> PUNC returns a token and is not used anywhere else. Its job is to
+</I>&gt;<i> gather any sequence of adjacent punctuation into one token, which is a
+</I>&gt;<i> problem because  a string like /*!*/ matches all three rules:
+</I>&gt;<i> ML_COMMENT, PUNC and RE_STRING.
+</I>&gt;<i> 
+</I>&gt;<i> It's too bad I can't assign &quot;priorities&quot; to each rule. I would like to
+</I>&gt;<i> match /* as a comment whenever possible, with /regular-expressions/
+</I>&gt;<i> having the next-highest priority and PUNC having the lowest.
+</I>&gt;<i> 
+</I>&gt;<i> The reason I treat punctuation this was, by the way, is that the set
+</I>&gt;<i> of available operators can be user-defined and it can vary by scope.
+</I>&gt;<i> Therefore it is not possible to identify operators within the lexer.
+</I>&gt;<i> 
+</I>&gt;<i> --
+</I>&gt;<i> - David
+</I>&gt;<i> <A HREF="http://qism.blogspot.com">http://qism.blogspot.com</A>
+</I></PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="021903.html">[antlr-interest] Fun with ANTLR3: mystery of the huge lexer
+</A></li>
+	<LI>Next message: <A HREF="021905.html">[antlr-interest] Fun with ANTLR3: mystery of the huge lexer
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#21904">[ date ]</a>
+              <a href="thread.html#21904">[ thread ]</a>
+              <a href="subject.html#21904">[ subject ]</a>
+              <a href="author.html#21904">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

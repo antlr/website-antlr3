@@ -1,0 +1,238 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] AST rewrite &quot;requirements&quot;
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20AST%20rewrite%20%22requirements%22&In-Reply-To=%3C4888E3AB.20806%40jazillian.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="029375.html">
+   <LINK REL="Next"  HREF="029350.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] AST rewrite &quot;requirements&quot;</H1>
+    <B>Andy Tripp</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20AST%20rewrite%20%22requirements%22&In-Reply-To=%3C4888E3AB.20806%40jazillian.com%3E"
+       TITLE="[antlr-interest] AST rewrite &quot;requirements&quot;">antlr at jazillian.com
+       </A><BR>
+    <I>Thu Jul 24 13:18:51 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="029375.html">[antlr-interest] recognizing a function
+</A></li>
+        <LI>Next message: <A HREF="029350.html">[antlr-interest] Token Mismatch
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#29348">[ date ]</a>
+              <a href="thread.html#29348">[ thread ]</a>
+              <a href="subject.html#29348">[ subject ]</a>
+              <a href="author.html#29348">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>AST-rewrite fans,
+
+As Terence and Leon Su are working on a new term-rewriting system, I'd
+like to approach the same problem from the other end. I want to define
+what features I think are needed for a term-rewrite system to be
+useful for certain translation projects. By &quot;certain&quot;, I mean 
+translators that do things like C-to-Java, C++-to-Java, and COBOL-to-Java.
+
+So I've started by taking one of my current &quot;translation rules&quot;, and
+writing down pseudocode (actually, fairly reasonable Java code) that
+does what needs to be done. If people find this useful, then I'll repeat this
+for the many other &quot;rules&quot;.
+
+Each &quot;rule&quot; modifies an AST in some way.
+The &quot;rule&quot; that I chose modifies a C++/Java AST to change the
+ access modifiers (&quot;public&quot;, &quot;private&quot;, &quot;protected&quot;) from being &quot;C++ - like&quot;
+to &quot;Java like&quot;. For example, this C++ code... 
+
+class C {
+    int a;
+    public:
+        int b;
+        int c;
+    private:
+        int d;
+}
+
+...might produce a &quot;C++-ish&quot; AST that looks like this...
+
+CLASS_SPECIFIER &quot;C&quot;
+    DECL
+        TYPE
+            LITERAL_int 
+        NAME
+            ID &quot;a&quot;
+    DECL 
+        MODIFIERS
+            LITERAL_public 
+        TYPE
+            LITERAL_int 
+        NAME
+            ID &quot;b&quot;
+    DECL 
+        TYPE
+            LITERAL_int 
+        NAME
+            ID &quot;c&quot;
+    DECL 
+        MODIFIERS
+            LITERAL_private 
+        TYPE
+            LITERAL_int 
+        NAME
+            ID &quot;d&quot;
+
+...and we want to transform that AST to this &quot;Java-ish&quot; AST...
+
+CLASS_SPECIFIER &quot;C&quot;
+    DECL
+        MODIFIERS
+            LITERAL_private
+        TYPE 
+            LITERAL_int 
+        NAME
+            ID &quot;a&quot;
+    DECL 
+        MODIFIERS
+            LITERAL_public 
+        TYPE
+            LITERAL_int 
+        NAME
+            ID &quot;b&quot;
+    DECL 
+        MODIFIERS
+            LITERAL_public 
+        TYPE
+            LITERAL_int 
+        NAME
+            ID &quot;c&quot;
+    DECL 
+        MODIFIERS
+            LITERAL_private 
+        TYPE
+            LITERAL_int 
+        NAME
+            ID &quot;d&quot;
+
+...which will produce this Java code...
+class C {
+    private int a;
+    public int b;
+    public int c;
+    private int d;
+}
+
+
+I won't cover the &quot;big picture&quot; here, all I want to do is to
+outline what logic is needed to make the AST transformation that
+we see above.
+
+So here is some rough Java code that would do what needs to be done:
+
+    private final static List&lt;Integer&gt; ALL_C_MODIFIERS = ASTFactory.createList(
+        LITERAL_private, LITERAL_public, LITERAL_protected);
+ 
+    AST currentModifier = ASTFactory.create(LITERAL_private);
+
+    // Loop through each of the CLASS_SPECIFIER ASTs, checking
+    // each of its children to see if it has any access modifier
+    // (&quot;public&quot;, &quot;private&quot;, or &quot;protected&quot;).
+    for (AST classSpecifier: root.getASTs(CLASS_SPECIFIER)) {
+        // If there is any &quot;friend&quot; keyword in this class, we'll need
+        // to just make everything &quot;public&quot;.
+        boolean hasFriend = classSpecifier.contains(LITERAL_friend);
+        if (hasFriend) {
+            currentModifier = ASTFactory.create(LITERAL_public);
+        }
+        for (AST child: classSpecifier.getChildren()) {
+            AST foundModifier = child.findAny(ALL_C_MODIFIERS);
+            if (foundModifier != AST.NOT_FOUND) {
+                // Once we've found an access modifier, that's the one
+                // we'll use until we find another (unless we have a friend,
+                // in which case leave it &quot;public&quot;.
+                if (!hasFriend) {
+                    currentModifier = foundModifier;
+                }
+            } else {
+                // This child does not yet have an access modifier,
+                // as required by Java. Insert a COPY of the last modifier 
+                // that we encountered, as the first child
+                child.insert(0, currentModifier);
+            }
+        }
+    }
+
+&gt;<i>From that code, we see the following features being used:    
+</I>    ASTFactory class:
+        create() static method that creates a single AST
+    
+    AST class:
+        getASTs() method which gets a List of ancestor ASTs of the given type
+        contains() method which returns true iff there is any ancestor AST of the given type
+        getChildren() method returns the direct children of the AST
+        findAny() method returns any one ancestor AST that has one of the given types
+        NOT_FOUND final static AST flag that indicates no AST was found 
+        insert() method that inserts a copy of the given AST as a child.
+      
+Obviously, I haven't shown a &quot;real term-rewrite system&quot;, I've just shown some
+Java code with an AST class that has some reasonable tree-data-structure functionality.
+For any term-rewrite-system to be useful to me, it's got to be easier to
+develop and maintain that what I show here. I'm doubtful that that can be done,
+but I'd love to be proven wrong.
+
+My point here is not to start a long &quot;Which is better for AST transformation:
+a DSL or plain Java code?&quot; debate (although I'd be happy to have that
+debate, too). Instead, what I want to know is:
+Is it worth my time to write up perhaps a couple hundred more examples of
+this sort of Java code that does tree transformations? Would you guys 
+who are buildinga currently-unnamed-rewrite-system actually be willing 
+to go through such &quot;requirements&quot; and make sure your system provides 
+that functionality?
+
+The reason I ask is that a long time ago when I did look into the various tools 
+(SF+SDF, Stratego, TXL, and later Tom), it seemed to me that they got to
+be a real mess to do anything non-trivial. Maybe I'm wrong, but I think
+if you implemented the same logic shown above in any of these systems,
+it would be harder to write and maintain than the &quot;vanilla Java&quot; shown above.
+
+Andy
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="029375.html">[antlr-interest] recognizing a function
+</A></li>
+	<LI>Next message: <A HREF="029350.html">[antlr-interest] Token Mismatch
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#29348">[ date ]</a>
+              <a href="thread.html#29348">[ thread ]</a>
+              <a href="subject.html#29348">[ subject ]</a>
+              <a href="author.html#29348">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

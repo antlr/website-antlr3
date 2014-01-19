@@ -1,0 +1,177 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Prediction DFA bug?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Prediction%20DFA%20bug%3F&In-Reply-To=%3C49B15A88.9020806%40smartshift.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="033251.html">
+   <LINK REL="Next"  HREF="033270.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Prediction DFA bug?</H1>
+    <B>Andreas Meyer</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Prediction%20DFA%20bug%3F&In-Reply-To=%3C49B15A88.9020806%40smartshift.de%3E"
+       TITLE="[antlr-interest] Prediction DFA bug?">andreas.meyer at smartshift.de
+       </A><BR>
+    <I>Fri Mar  6 09:16:56 PST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="033251.html">[antlr-interest] Execute part of a tree multiple times
+</A></li>
+        <LI>Next message: <A HREF="033270.html">[antlr-interest] Prediction DFA bug?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#33253">[ date ]</a>
+              <a href="thread.html#33253">[ thread ]</a>
+              <a href="subject.html#33253">[ subject ]</a>
+              <a href="author.html#33253">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+some days ago there was a discussion on how to solve the identifier vs. 
+keyword problem. Some said it's not feasible to have 800 individual 
+keyword tokens, and one should rather partition the token set into 
+&quot;supertokens&quot; representing (lets say) 40 tokens, or even only have one 
+&quot;keyword&quot; token. Some weeks ago I tried already, with an extreme 
+approach, namely every keyword is an ID token + semantic predicates. The 
+produced parser had some strange properties, namely, it was misled into 
+wrong rules, and then complained about mismatched keywords, ie, while 
+looking for a statement beginning with keyword_1, it decided to go for 
+the statement rule beginning with keyword_2, which in turn raised a 
+PredicateFailedException:
+
+keyword_2: {is_keyword2()}? IDENTIFIER;
+
+I quickly put this attempt into my archive and tried again with the 800 
+keyword tokens approach, which also did not work (timeout because of 
+huge prediction DFAs). Now, after the discussion yesterday on this list, 
+I again looked at the &quot;supertoken&quot; approach, but now I did it more 
+&quot;hybrid&quot;, namely with two tokens: ID and KEYWORD --- with limited 
+success. I have simplified the original grammar a lot, so that it only 
+contains few lines of code and is self-contained (can be debugged in 
+ANTLRworks). The error/issue/behaviour-producing input is also attached 
+(XXXTEST.abap).
+
+Here is the problem, as I see it:
+
+program
+    :  statements  EOF
+    ;
+
+statements
+    :  ( statement PERIOD  ) * 
+    ;
+   
+// here the parser see's a KEYWORD token, and wants to further 
+disambiguate by looking ahead
+statement
+      // somehow, on input KEYWORD ID KEYWORD ID, the parser is 
+attracted into this alternative,
+      // because it only considers the lookahead KEYWORD ID KEYWORD ...
+    : kw_stmt2^  id kw_abc
+      // .. although it should take this path, on input KEYWORD ID 
+KEYWORD ID PERIOD:
+    | kw_stmt1^  rule
+    | kw_stmt3^  id
+    ;
+
+rule
+    : id  xyz*
+    ;
+
+xyz   
+    : kw_xyz^ id
+    ;
+
+id  : ID
+    | KEYWORD
+    ;
+
+kw_stmt1: {getKeywordType( input.LT(1) ) == KW_STMT1}? KEYWORD -&gt; KW_STMT1;
+....
+
+Now, one could advise to switch the semantic lookahead into a gated 
+semantic lookahead:
+
+kw_stmt1: {getKeywordType( input.LT(1) ) == KW_STMT1}?=&gt; KEYWORD -&gt; 
+KW_STMT1;
+
+This in fact solves the above problem, so what? When using the 
+gated-semantic-predicate approach in my original grammar, with 800 of 
+these keyword distinguishing rules (note: rules! not tokens), however, 
+this again leads to timeouts in exactly the same rule as with the 
+original 800 individual keyword tokens. It must be due to the size of 
+some automaton, and it seems to grow not because of the number of 
+tokens, but because of the number of rules+attached gated semantic 
+predicates.
+
+I'm sorry that currently I dont have small or at least synthetic grammar 
+that also demonstrates my timeout issue, but I think that the above 
+behaviour is in itself interesting, or (so to say) not correct, 
+regardless of what problem I am trying to solve with it. My opinion is 
+that ANTLR should somehow use a larger lookahead in the situation above. 
+I would really like to dive into ANTLR source code and check for myself, 
+but are somewhat overwhelmed by its complexity ... it seems that LL(*) 
+is built on a simple idea, but to implement it with all corner cases, 
+takes a lot of effort.
+
+Best Regards,
+Andreas Meyer
+-------------- next part --------------
+An embedded and charset-unspecified text was scrubbed...
+Name: ABAP4.g
+Url: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20090306/69087271/attachment.pl">http://www.antlr.org/pipermail/antlr-interest/attachments/20090306/69087271/attachment.pl</A> 
+-------------- next part --------------
+An embedded and charset-unspecified text was scrubbed...
+Name: XXXTEST.abap
+Url: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20090306/69087271/attachment-0001.pl">http://www.antlr.org/pipermail/antlr-interest/attachments/20090306/69087271/attachment-0001.pl</A> 
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="033251.html">[antlr-interest] Execute part of a tree multiple times
+</A></li>
+	<LI>Next message: <A HREF="033270.html">[antlr-interest] Prediction DFA bug?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#33253">[ date ]</a>
+              <a href="thread.html#33253">[ thread ]</a>
+              <a href="subject.html#33253">[ subject ]</a>
+              <a href="author.html#33253">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

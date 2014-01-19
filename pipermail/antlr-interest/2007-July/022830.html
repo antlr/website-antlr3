@@ -1,0 +1,197 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Help controlling parser decisions
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Help%20controlling%20parser%20decisions&In-Reply-To=%3Cebc876d70707252351u1503c7edga7c7923db7a3f423%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="022828.html">
+   <LINK REL="Next"  HREF="022832.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Help controlling parser decisions</H1>
+    <B>Thomas Brandon</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Help%20controlling%20parser%20decisions&In-Reply-To=%3Cebc876d70707252351u1503c7edga7c7923db7a3f423%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Help controlling parser decisions">tbrandonau at gmail.com
+       </A><BR>
+    <I>Wed Jul 25 23:51:01 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="022828.html">[antlr-interest] Help controlling parser decisions
+</A></li>
+        <LI>Next message: <A HREF="022832.html">[antlr-interest] Is there a way to fast fail the Lexer errors?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#22830">[ date ]</a>
+              <a href="thread.html#22830">[ thread ]</a>
+              <a href="subject.html#22830">[ subject ]</a>
+              <a href="author.html#22830">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 7/26/07, Ted Villalba &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">ted.villalba at gmail.com</A>&gt; wrote:
+&gt;<i> Thanks for the input Gavin.
+</I>&gt;<i>
+</I>&gt;<i> I'm still finding that no matter how I tweak the parser rules, it's really
+</I>&gt;<i> the order of the lexer rules that determine how a token is evaluated,
+</I>&gt;<i> semantic predicates be damned.
+</I>&gt;<i>
+</I>&gt;<i> It seems if I have more than one lexer rule that share a common token, then
+</I>&gt;<i> the rule that comes first wins all the time.
+</I>Yes, lexing is independent of parsing. How a lexer rule features in
+the parser has no influence on how it matches in the lexer.
+&gt;<i>
+</I>&gt;<i> My objective is to allow the term NEAR to be entered as a boolean, except if
+</I>&gt;<i> it begins or ends a sequence of  terms, then recognize it as a WCHAR.
+</I>&gt;<i> TAG=APPLES NEAR ORANGES //this should parse NEAR as an OP
+</I>&gt;<i> TAG=NEAR APPLES ORANGES//this should treat it as a WCHAR
+</I>&gt;<i>
+</I>There are two options, you can either recognise keywords (e.g. near)
+as identifiers (WCHAR in your case) in the lexer and then use a
+predicate in the parser to check the text of identifier tokens to see
+if they are keywords. This is the option I gave code for before. You
+do not have lexer rules for your keywords in this case. So you want
+something like:
+grammar WQL;
+options{
+   output=AST;
+   ASTLabelType=CommonTree;
+}
+
+tokens {
+	NEAR;
+	FAR;
+}
+
+query :  tag '=' terms ;
+
+tag    : WCHAR ;
+
+terms
+	:	WCHAR
+		(	(op WCHAR)=&gt;(op^ terms)
+		|	WCHAR terms
+		)?
+	;
+
+op: near|far;
+
+near
+    : {input.LT(1).getText().toLowerCase().equals(&quot;near&quot;)}? w=WCHAR
+{$w.setType(NEAR);}
+    ;
+
+far
+    : {input.LT(1).getText().toLowerCase().equals(&quot;far&quot;)}? w=WCHAR
+{$w.setType(FAR);}
+    ;
+
+WS      : (' '|'\t'|'\r'|'\n')+ {skip();};
+WCHAR   : ~('='|'('| ')'|'&quot;'|' '|'\t'|'\n'|'\r'|'#')+;
+
+Add rules like near and far for each keyword and use them instead of
+lexer rules.
+
+Or the other alternative, as Gavin presented, is to match keywords in
+the lexer and have a parser rule that accepts keywords as well as
+identifiers and use this when keywords are allowed. So, you'd have
+something like:
+grammar WQL;
+options{
+   output=AST;
+   ASTLabelType=CommonTree;
+}
+
+query :  tag '=' terms ;
+
+tag    : WCHAR ;
+
+terms
+	:	term
+		(	(op term)=&gt;(op^ terms)
+		|	term terms
+		)?
+	;
+
+term:	t=(WCHAR|NEAR|FAR) { $t.setType(WCHAR); };
+op: NEAR|FAR;
+
+NEAR:	'NEAR';
+FAR	:	'FAR';
+WS      : (' '|'\t'|'\r'|'\n')+ {skip();};
+WCHAR   : ~('='|'('| ')'|'&quot;'|' '|'\t'|'\n'|'\r'|'#')+;
+
+So, instead of using WCHAR you use term.
+
+The setType actions in both mean that tree parsers need not deal with the issue.
+
+Which method you use is a matter of preference. The second option
+probably performs better, not requiring a semantic predicate, but
+requires you to make multiple changes to add keywords.
+
+Note that this grammar doesn't necessarily do quite what you want due
+to the predicate in terms. Something like &quot;TAG=APPLES NEAR NEAR&quot; will
+give an error as it will match the second NEAR as an operator and want
+some more terms for it. Here your language is somewhat ambiguous.
+Given input such as &quot;TAG=NEAR NEAR NEAR NEAR&quot; what should happen?
+Which NEAR's are operators and which are WCHARS? But the basic stuff
+of handling keywords as identifiers is there.
+
+Tom.
+&gt;<i> Here is my simplified grammar. Is it easy enough for someone to recognize
+</I>&gt;<i> the changes that need to be made to this grammar to meet that objective?
+</I>&gt;<i> Sorry if I'm just not getting it, this has been a challenging exercise.
+</I>&gt;<i>
+</I>&gt;<i> grammar WQL;
+</I>&gt;<i>
+</I>&gt;<i> options{
+</I>&gt;<i>    output=AST;
+</I>&gt;<i>    ASTLabelType=CommonTree;
+</I>&gt;<i> }
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> query :  tag '=' terms ;
+</I>&gt;<i>
+</I>&gt;<i> tag    : WCHAR ;
+</I>&gt;<i>
+</I>&gt;<i> terms  : WCHAR+  (OP^ WCHAR+)*  ;
+</I>&gt;<i>
+</I>&gt;<i> OP    : 'NEAR'|'near';
+</I>&gt;<i> WS      : (' '|'\t'|'\r'|'\n')+ {skip();};
+</I>&gt;<i> WCHAR   : ~('='|'('| ')'|'&quot;'|' '|'\t'|'\n'|'\r'|'#')+;
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Thank you,
+</I>&gt;<i> Ted
+</I>&gt;<i>
+</I>&gt;<i>
+</I></PRE>
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="022828.html">[antlr-interest] Help controlling parser decisions
+</A></li>
+	<LI>Next message: <A HREF="022832.html">[antlr-interest] Is there a way to fast fail the Lexer errors?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#22830">[ date ]</a>
+              <a href="thread.html#22830">[ thread ]</a>
+              <a href="subject.html#22830">[ subject ]</a>
+              <a href="author.html#22830">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

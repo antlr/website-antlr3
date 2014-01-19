@@ -1,0 +1,130 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [stringtemplate-interest] Problem with null actual parameters (in anonymous templates)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20Problem%20with%20null%20actual%20parameters%0A%20%28in%20anonymous%20templates%29&In-Reply-To=%3C49C3F91D.3020704%40fmf.uni-lj.si%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001828.html">
+   <LINK REL="Next"  HREF="001818.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[stringtemplate-interest] Problem with null actual parameters (in anonymous templates)</H1>
+    <B>Iztok Kavkler</B> 
+    <A HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20Problem%20with%20null%20actual%20parameters%0A%20%28in%20anonymous%20templates%29&In-Reply-To=%3C49C3F91D.3020704%40fmf.uni-lj.si%3E"
+       TITLE="[stringtemplate-interest] Problem with null actual parameters (in anonymous templates)">iztok.kavkler at fmf.uni-lj.si
+       </A><BR>
+    <I>Fri Mar 20 13:14:21 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001828.html">[stringtemplate-interest] Problem with null actual parameters	(in anonymous templates)
+</A></li>
+        <LI>Next message: <A HREF="001818.html">[stringtemplate-interest] StringTemplate Compiler for .NET
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1835">[ date ]</a>
+              <a href="thread.html#1835">[ thread ]</a>
+              <a href="subject.html#1835">[ subject ]</a>
+              <a href="author.html#1835">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I'm sorry, there was a slight mistake in the example, the '?' was
+missing (so the pl could not be empty).
+
+expr: id=IDENTIFIER '(' (pl+=expr (',' pl+=expr)*)? ')'
+-&gt;    template(id={$id.text}, par={$pl})
+    &lt;&lt; &lt;id&gt;(&lt;par; separator=&quot;, &quot;&gt;) &gt;&gt; ;
+
+The reason for the infinite recursion is as follows: when processing
+	f1(f2(), f3())
+the first instance of the template gets paramaters
+1)	id = &quot;f1&quot;,  par = [f2(), f3()]
+because expr rule is recursive, template is invoked recursively for both
+parameters, first with
+2)	id = &quot;f2&quot;,  par = null
+at this point, the engine will think that &quot;par&quot; is a missing parameter
+and will check the enclosing instance, which is 1), obtaining
+	par = [f2(), f3()]
+and so on to infinity.
+
+
+&gt;<i> Wow. Yes, I had not thought of this. sometimes you want to say &quot;empty&quot;
+</I>&gt;<i> not missing. I'm not sure I see the infinite loop though. the only way
+</I>&gt;<i> to get an infinite loop is if they template is ultimately and enclosing
+</I>&gt;<i> template of itself.
+</I>&gt;<i> 
+</I>&gt;<i> Ter
+</I>&gt;<i> On Mar 18, 2009, at 9:10 AM, Iztok Kavkler wrote:
+</I>&gt;<i> 
+</I>&gt;&gt;<i> If an actual parameter to a template without formal attributes is
+</I>&gt;&gt;<i> specified but its value is null, the attribute will be looked-up in
+</I>&gt;&gt;<i> enclosing instances. This will almost always break recursive invocations
+</I>&gt;&gt;<i> of templates (they are common in grammars with output=template), because
+</I>&gt;&gt;<i> it creates cycles in the list of enclosing instances.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> For example, the following snippet should parse and print back nested
+</I>&gt;&gt;<i> functions with any number of parameters, like &quot; f1(f2(), f3()) &quot;, but it
+</I>&gt;&gt;<i> actually dies with stack owerflow (or it diagnoses the cycle when lint
+</I>&gt;&gt;<i> is on):
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> expr: id=IDENTIFIER '(' (pl+=expr (',' pl+=expr)*) ')'
+</I>&gt;&gt;<i> -&gt;    template(id={$id.text}, par={$pl})
+</I>&gt;&gt;<i>     &lt;&lt; &lt;id&gt;(&lt;par; separator=&quot;, &quot;&gt;) &gt;&gt; ;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> The solution is simple: when checking for attributes th function
+</I>&gt;&gt;<i> StringTemplate.get should return null if the attribute is present but
+</I>&gt;&gt;<i> its value is null (some modifications to setAttribute are also
+</I>&gt;&gt;<i> necessary). The following patch to StringTemplate.java does the trick:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> 486c486
+</I>&gt;&gt;<i> &lt;         if ( value==null || name==null ) {
+</I>&gt;&gt;<i> ---
+</I>&gt;&gt;&gt;<i>         if ( name==null ) {
+</I>&gt;&gt;<i> 510a511,516
+</I>&gt;&gt;&gt;<i>        
+</I>&gt;&gt;&gt;<i>         // null value should be added only if the attribute does not
+</I>&gt;&gt;&gt;<i> yet exist
+</I>&gt;&gt;&gt;<i>         if ( value==null ) {
+</I>&gt;&gt;&gt;<i>            return;
+</I>&gt;&gt;&gt;<i>         }
+</I>&gt;&gt;&gt;<i>        
+</I>&gt;&gt;<i> 772a779,783
+</I>&gt;&gt;&gt;<i>         // there is an actual argument, but it is null
+</I>&gt;&gt;&gt;<i>         if ( o==null &amp;&amp; self.attributes!=null &amp;&amp;
+</I>&gt;&gt;<i> self.attributes.containsKey(attribute) ) {
+</I>&gt;&gt;&gt;<i>            return o;
+</I>&gt;&gt;&gt;<i>         }
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;<i> _______________________________________________
+</I>&gt;&gt;<i> stringtemplate-interest mailing list
+</I>&gt;&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">stringtemplate-interest at antlr.org</A>
+</I>&gt;&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">http://www.antlr.org/mailman/listinfo/stringtemplate-interest</A>
+</I>&gt;<i> 
+</I>
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001828.html">[stringtemplate-interest] Problem with null actual parameters	(in anonymous templates)
+</A></li>
+	<LI>Next message: <A HREF="001818.html">[stringtemplate-interest] StringTemplate Compiler for .NET
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1835">[ date ]</a>
+              <a href="thread.html#1835">[ thread ]</a>
+              <a href="subject.html#1835">[ subject ]</a>
+              <a href="author.html#1835">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">More information about the stringtemplate-interest
+mailing list</a><br>
+</body></html>

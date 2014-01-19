@@ -1,0 +1,163 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] ANTLR3.0b5 - Embedding on parser within	another one (Parser nesting)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20ANTLR3.0b5%20-%20Embedding%20on%20parser%20within%0A%09another%20one%20%28Parser%20nesting%29&In-Reply-To=696E9A46BED8E544A7BD2C20A7E94F680452B6E4%40marena.SIDON.OLYMP">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="018656.html">
+   <LINK REL="Next"  HREF="018657.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] ANTLR3.0b5 - Embedding on parser within	another one (Parser nesting)</H1>
+    <B>Kay Roepke</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20ANTLR3.0b5%20-%20Embedding%20on%20parser%20within%0A%09another%20one%20%28Parser%20nesting%29&In-Reply-To=696E9A46BED8E544A7BD2C20A7E94F680452B6E4%40marena.SIDON.OLYMP"
+       TITLE="[antlr-interest] ANTLR3.0b5 - Embedding on parser within	another one (Parser nesting)">kroepke at classdump.org
+       </A><BR>
+    <I>Wed Nov 29 03:35:20 PST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="018656.html">[antlr-interest] ANTLR3.0b5 - Embedding on parser within	another one (Parser nesting)
+</A></li>
+        <LI>Next message: <A HREF="018657.html">[antlr-interest] Antlr 3.0b5 - possible Bug in NFAToDFAConverter
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#18661">[ date ]</a>
+              <a href="thread.html#18661">[ thread ]</a>
+              <a href="subject.html#18661">[ subject ]</a>
+              <a href="author.html#18661">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Moin Alex!
+
+On 29. Nov 2006, at 8:28 , <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">alexander.berger at finnova.ch</A> wrote:
+
+&gt;<i> Hi Kay
+</I>&gt;<i>
+</I>&gt;<i> Thank you for your answer. Of course you are right, but it is not  
+</I>&gt;<i> what I
+</I>&gt;<i> intended to do. The problem is not to force antlr to use the return  
+</I>&gt;<i> value
+</I>&gt;<i> of a rule as the resulting tree. The Problem is within the called  
+</I>&gt;<i> rule to
+</I>&gt;<i> force antlr to set the resulting tree to the one returned by the  
+</I>&gt;<i> embedded parser.
+</I>
+Oops, I missed that.
+
+&gt;<i> My next approach was the following one:
+</I>[...]
+&gt;<i> 	retval.tree = (Object)adaptor.rulePostProcessing(root_0);
+</I>
+Yes, the retval stuff is done last. Setting $tree only makes sense in  
+@finally actions (I think, I might be wrong here).
+
+&gt;<i> And horray it worked the way I expected it, but I think that using  
+</I>&gt;<i> &quot;root_0&quot; is very intrusive and not the way to go. So I am still  
+</I>&gt;<i> wondering if there
+</I>&gt;<i> is a way to do things like that in a non-intrusive way.
+</I>
+You're right, depending on root_0 is a bad idea. At some point this  
+might get an '_' prefix.
+Try this (I haven't actually tried to execute it, but the code looks  
+good):
+
+grammar Parent;
+
+options {
+	output=AST;
+	ASTLabelType=CommonTree;
+}
+
+start
+	:	s=subRule -&gt; ^($s);
+	
+subRule
+@init {
+	CommonTree child = null;
+}
+	:	'do' {
+			ChildParser p = new ChildParser(this.getTokenStream());
+			p.setTreeAdaptor(this.getTreeAdaptor());
+			child = (CommonTree)p.some_rule().getTree();
+		}
+		-&gt; ^({child})
+	;
+
+generates this for start():
+
+             retval.tree = root_0;
+             root_0 = (CommonTree)adaptor.nil();
+             // 9:14: -&gt; ^( $s)
+             {
+                 // /Users/kroepke/test/Parent.g:9:17: ^( $s)
+                 {
+                 CommonTree root_1 = (CommonTree)adaptor.nil();
+                 root_1 = (CommonTree)adaptor.becomeRoot(s.tree,  
+root_1);
+
+                 adaptor.addChild(root_0, root_1);
+                 }
+
+             }
+and this for subRule():
+             retval.tree = root_0;
+             root_0 = (CommonTree)adaptor.nil();
+             // 20:3: -&gt; ^()
+             {
+                 // /Users/kroepke/test/Parent.g:20:6: ^()
+                 {
+                 CommonTree root_1 = (CommonTree)adaptor.nil();
+                 root_1 = (CommonTree)adaptor.becomeRoot(child, root_1);
+
+                 adaptor.addChild(root_0, root_1);
+                 }
+
+             }
+
+Postprocessing at the end should get rid of the nil nodes, leaving  
+you with 'child'.
+
+HTH,
+-k
+
+-- 
+Kay R&#246;pke
+<A HREF="http://classdump.org/">http://classdump.org/</A>
+
+
+
+
+</PRE>
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="018656.html">[antlr-interest] ANTLR3.0b5 - Embedding on parser within	another one (Parser nesting)
+</A></li>
+	<LI>Next message: <A HREF="018657.html">[antlr-interest] Antlr 3.0b5 - possible Bug in NFAToDFAConverter
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#18661">[ date ]</a>
+              <a href="thread.html#18661">[ thread ]</a>
+              <a href="subject.html#18661">[ subject ]</a>
+              <a href="author.html#18661">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

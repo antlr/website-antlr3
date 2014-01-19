@@ -1,0 +1,203 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Reading contents of file using Antlr
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Reading%20contents%20of%20file%20using%20Antlr&In-Reply-To=20030123000314.2188.qmail%40web40903.mail.yahoo.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002731.html">
+   <LINK REL="Next"  HREF="002745.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Reading contents of file using Antlr</H1>
+    <B>jbb at acm.org</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Reading%20contents%20of%20file%20using%20Antlr&In-Reply-To=20030123000314.2188.qmail%40web40903.mail.yahoo.com"
+       TITLE="[antlr-interest] Reading contents of file using Antlr">jbb at acm.org
+       </A><BR>
+    <I>Wed Jan 22 21:13:26 PST 2003</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002731.html">[antlr-interest] Reading contents of file using Antlr
+</A></li>
+        <LI>Next message: <A HREF="002745.html">[antlr-interest] Reading contents of file using Antlr
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2744">[ date ]</a>
+              <a href="thread.html#2744">[ thread ]</a>
+              <a href="subject.html#2744">[ subject ]</a>
+              <a href="author.html#2744">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello :-
+
+I am not sure that this reply to your lexical non-determinism question will
+be of any help to you...
+
+I strictly focused on the lexer, I think your parser has alot of problems but
+I suspect that you are still working on the parser so I did not worry too
+much about its problems.
+
+I was able to remove some of the lexical non-determinism in your lexer (an
+updated CSVLexer is attached). But I could not completely remove all of the
+non-determinism.
+
+The non-determinism in your lexer seems to be centered on your RECORD token.
+
+The first problem I see is between RECORD and NUMERIC. Your rules are:
+
+RECORD  : ('a'..'z' | 'A'..'Z'| NUMERIC)(!~('\r'|'\n'|':'))+ ;
+
+NUMERIC : ('0'..'9'|','|'.'|'-')+;
+
+the problem I see here is that when trying to recognize RECORD, and if the
+lexer is given the sequence of characters 000000, the lexer is unable to
+determine whether the second and subsequen 0's belong to the leading NUMERIC
+sub-component of the RECORD token or belong to the trailing
+(!~('\r'|'\n'|':'))+ sub-component of the RECORD token. So I would change
+these token rule to be:
+
+protected DIGIT : '0'..'9'|','|'.'|'-';
+
+NUMERIC : ( DIGIT )+;
+
+RECORD : ('a'..'z' | 'A'..'Z' | DIGIT) (!~('\r'|'\n'|':'))+;
+
+and we now have just a single leading character for RECORD followed by any
+number of non-(newline or colon) characters. But we still have some
+non-determinism here. We have specified that the sequence of characters
+000000 is to be recognized as either a NUMERIC token or a RECORD token and
+the lexer has no way of knowing which token we really want.
+
+The next problem I see is with the KEYWORD token. There is internal
+non-determinism in this token's definition because your k=4 character look
+ahead is not enough to uniquely identify all of the keywords. For example
+&quot;initial color&quot; and &quot;initial line width&quot; are identical in the first 4
+characters, these two keyword strings would need k=9 look ahead I think.
+
+But I really hate look ahead and so I would replace your KEYWORD rule with:
+
+KEYWORD
+    : &quot;angle factor&quot;
+    | &quot;back distance&quot;
+    | &quot;c&quot; ( &quot;olor increment&quot; | &quot;ue range&quot; )
+    | &quot;diffuse reflection&quot;
+    | &quot;elasticity increment&quot;
+    | &quot;front distance&quot;
+    | &quot;initial &quot; ( &quot;color&quot; | &quot;elasticity&quot; | &quot;line width&quot; )
+    | &quot;li&quot; ( &quot;ght direction&quot; | &quot;ne &quot; ( &quot;style&quot; | &quot;width increment&quot; ) )
+    | &quot;projection&quot;
+    | &quot;render mode&quot;
+    | &quot;s&quot; ( &quot;cale factor&quot; | &quot;hade mode&quot; )
+    | &quot;t&quot; ( &quot;ropism direction&quot; | &quot;wist&quot; )
+    | &quot;view&quot; ( &quot; reference point&quot; | &quot;point&quot; )
+    | &quot;z buffer&quot;
+    ;
+
+Unfortunately this still leaves us with lexical non-determinism between
+KEYWORD and RECORD because we have specified that the character sequence (for
+example):
+
+				angle factor
+
+is both a KEYWORD token and a RECORD token. The lexer has no way of knowing
+which token we really want.
+
+This is the complete modified lexer I tried:
+//------------------
+class CSVLexer extends Lexer;
+options {
+    charVocabulary='\3'..'\377';
+    /*k = 4;*/
+}
+
+protected DIGIT : '0'..'9'|','|'.'|'-';
+
+NUMERIC : ( DIGIT )+;
+
+RECORD : ('a'..'z' | 'A'..'Z' | DIGIT) (!~('\r'|'\n'|':'))+;
+
+KEYWORD
+    : &quot;angle factor&quot;
+    | &quot;back distance&quot;
+    | &quot;c&quot; ( &quot;olor increment&quot; | &quot;ue range&quot; )
+    | &quot;diffuse reflection&quot;
+    | &quot;elasticity increment&quot;
+    | &quot;front distance&quot;
+    | &quot;initial &quot; ( &quot;color&quot; | &quot;elasticity&quot; | &quot;line width&quot; )
+    | &quot;li&quot; ( &quot;ght direction&quot; | &quot;ne &quot; ( &quot;style&quot; | &quot;width increment&quot; ) )
+    | &quot;projection&quot;
+    | &quot;render mode&quot;
+    | &quot;s&quot; ( &quot;cale factor&quot; | &quot;hade mode&quot; )
+    | &quot;t&quot; ( &quot;ropism direction&quot; | &quot;wist&quot; )
+    | &quot;view&quot; ( &quot; reference point&quot; | &quot;point&quot; )
+    | &quot;z buffer&quot;
+    ;
+
+SEMICOLON : ':'; // ??? maybe should be ';', ':' is a COLON
+
+BRACKET : ('(' | ')');
+
+COMMENT : &quot;/*&quot; (options {greedy=false;} :.)* &quot;*/&quot; ;
+
+NEWLINE : ('\r''\n')=&gt; '\r''\n' //DOS
+        | '\r'                  //MAC
+        | '\n'                  //UNIX
+        { newline(); }
+        ;
+   
+WS      : (' '|'\t') { $setType(Token.SKIP); } ;
+//--------------------
+
+and these are the errors Antlr finds when processing the modified lexer:
+//--------------------
+java antlr.Tool CSVLexer.g
+ANTLR Parser Generator   Version 2.7.2a4 (20021027-1)   1989-2002 jGuru.com
+warning: lexical nondeterminism between rules NUMERIC and RECORD upon
+CSVLexer.g: 	k==1:','..'.','0'..'9'
+warning: lexical nondeterminism between rules RECORD and KEYWORD upon
+CSVLexer.g: 	k==1:'a'..'f','i','l','p','r'..'t','v','z'
+//--------------------
+
+I suspect you could probably use lexical states to distinguish when NUMERIC,
+KEYWORD, and RECORD are expected to be uniquely valid in the input stream of
+characters from the file. But lexical states can get really nasty. I hope
+that perhaps you are able to refine your parsing rules so that these three
+ambiguous tokens can be re-defined to be unambigous.
+
+Hope this helps...
+
+-- 
+	-jbb
+----------------+----------------------------
+ John B. Brodie | Email : <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">jbrodie at cs.fit.edu</A>
+----------------+----------------------------
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002731.html">[antlr-interest] Reading contents of file using Antlr
+</A></li>
+	<LI>Next message: <A HREF="002745.html">[antlr-interest] Reading contents of file using Antlr
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2744">[ date ]</a>
+              <a href="thread.html#2744">[ thread ]</a>
+              <a href="subject.html#2744">[ subject ]</a>
+              <a href="author.html#2744">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

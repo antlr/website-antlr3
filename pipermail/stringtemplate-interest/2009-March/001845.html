@@ -1,0 +1,168 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [stringtemplate-interest] StringTemplate Compiler for .NET
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20StringTemplate%20Compiler%20for%20.NET&In-Reply-To=%3C86403CA0939415448BCCB83855EFE09AA67BDA%40Bloodymary.ironwillgames.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001864.html">
+   <LINK REL="Next"  HREF="001823.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[stringtemplate-interest] StringTemplate Compiler for .NET</H1>
+    <B>Sam Harwell</B> 
+    <A HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20StringTemplate%20Compiler%20for%20.NET&In-Reply-To=%3C86403CA0939415448BCCB83855EFE09AA67BDA%40Bloodymary.ironwillgames.com%3E"
+       TITLE="[stringtemplate-interest] StringTemplate Compiler for .NET">sharwell at pixelminegames.com
+       </A><BR>
+    <I>Mon Mar 23 22:46:01 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001864.html">[stringtemplate-interest] StringTemplate Compiler for .NET
+</A></li>
+        <LI>Next message: <A HREF="001823.html">[stringtemplate-interest] StringTemplate Compiler for .NET
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1845">[ date ]</a>
+              <a href="thread.html#1845">[ thread ]</a>
+              <a href="subject.html#1845">[ subject ]</a>
+              <a href="author.html#1845">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I implemented more (almost all of) of the DynamicMethod compiler in
+ActionEvaluator. In its present state, the functional compiler is
+tremendously faster. The only hope for DynamicMethod is compiling (once)
+a template that gets evaluated many times. Currently the program I'm
+using for testing doesn't implement a template caching strategy that
+comes even close to meeting this condition. Nevertheless, I've checked
+in the work to give an idea of what's involved. If you plan to work with
+this code, I highly recommend the DynamicMethod visualizer for Visual
+Studio so you can see the full generated IL code for a compiled method.
+<A HREF="http://weblogs.asp.net/rosherove/archive/2007/11/02/debugger-visualizers">http://weblogs.asp.net/rosherove/archive/2007/11/02/debugger-visualizers</A>
+-for-methodinfo-dynamicmethod-and-methodbase.aspx
+
+I think I'll put further work on the compiler on ice until frozen
+templates are implemented. I should have frozen templates
+implemented/checked in by the end of the week, at which point we can
+start to look at improved compilation that takes advantage of the
+templates' immutable state.
+
+Sam
+
+-----Original Message-----
+From: Volkan Ceylan [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">volkanceylan at gmail.com</A>] 
+Sent: Saturday, March 21, 2009 5:39 AM
+To: Sam Harwell; <A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">stringtemplate-interest at antlr.org</A>
+Subject: Re: [stringtemplate-interest] StringTemplate Compiler for .NET
+
+Hi again,
+
+Thanks a lot Prof. Parr, now i can see Sam's code.
+
+It will take some time before i understand your work fully, but seems
+like you are following a similar path with me,
+emitting dynamic methods in ActionEvaluator.cs but certainly
+proceeding a lot faster than me. If you finish your
+work, mine will probably become obsolete but anyway i'll keep on
+working, its a practice and brainstorming for me
+to perform in evenings :)
+
+Yesterday i made a profiling session to find out why it is working so
+slow in StringTemplate.ToString() or
+StringTemplate.Write methods using my templates. It seemed like most
+calls are to new HashTable(),
+new StringTemplate(), StringTemplate.BreakTemplateIntoChunks(),
+GetConstructorInfo() methods. I can understand
+new StringTemplate() calls caused by GetInstanceOf() methods but why
+BreakTemplateIntoChunks()??
+It shouldn't be parsing templates in evaluation stage.
+
+In ActionEvaluator.attribute(), for ANONYMOUS_TEMPLATE nodes, there is
+a code like below:
+
+StringTemplate valueST = new StringTemplate(self.Group, at.GetText());
+valueST.EnclosingInstance = self;
+valueST.Name = &quot;&lt;anonymous template argument&gt;&quot;;
+value = valueST;
+
+This is called for all anonymous templates and all separator, format,
+null etc. options in each evaluation.
+Caching the template by replacing code with:
+
+if (at.StringTemplate == null)
+{
+   at.StringTemplate = new StringTemplate(at.getText());
+   at.StringTemplate.Name = &quot;&lt;anonymous template argument&gt;&quot;;
+}
+StringTemplate valueST = at.StringTemplate.GetInstanceOf();
+valueST.EnclosingInstance = self;
+valueST.Group = self.Group;
+value = valueST;
+
+removed all these parsing calls, and it saved a lot time alone as
+parsing is slow.
+Your port seems to have the same code block causing problem.
+
+Reflection method GetConstructorInfo() was called in
+BreakTemplateIntoChunks()
+while creating an instance of lexer class but seems like you spotted
+that performance bottleneck.
+
+There is also another potential problem i spotted while working on the
+compiler:
+
+AFAIK, StringTemplate.ToString() calls (i mean evaluation) is
+thread-safe, as long as you
+use a unique instance created with GetInstanceOf() methods. I see no
+reason why it should't.
+But in just a few places in ActionEvaluator.cs for ANONYMOUS_TEMPLATE
+nodes,
+and in ApplyTemplateToListOfAttributes, ApplyAlternatingTemplates
+methods, an instance of
+anonymous template is not used (by calling of GetInstanceOf()), but
+directly anonymous
+template itself is modified (this is not true for named templates,
+always a new instance of
+them is used). This will cause same anonymous template instance to be
+modified
+in different threads. If threads modify at same time, this may cause
+unexpected side-effects.
+Am i wrong in assuming string template instance evaluation as
+thread-safe or this is a bug??
+
+2009/3/20 Sam Harwell &lt;<A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">sharwell at pixelminegames.com</A>&gt;:
+&gt;<i> I checked in (CL5952) an update that builds a delegate
+</I>(System.Func&lt;T&gt;)
+&gt;<i> inside ActionEvaluator instead of basic interpretation. I have not
+</I>&gt;<i> implemented caching of the delegates or optimized resolution of
+</I>&gt;<i> arguments other special name attributes. However, the implementation
+</I>is
+&gt;<i> a complete working example of execution of a compiled template that
+</I>&gt;<i> passes the same 1200 unit tests that the interpreter does.
+</I></PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001864.html">[stringtemplate-interest] StringTemplate Compiler for .NET
+</A></li>
+	<LI>Next message: <A HREF="001823.html">[stringtemplate-interest] StringTemplate Compiler for .NET
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1845">[ date ]</a>
+              <a href="thread.html#1845">[ thread ]</a>
+              <a href="subject.html#1845">[ subject ]</a>
+              <a href="author.html#1845">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">More information about the stringtemplate-interest
+mailing list</a><br>
+</body></html>

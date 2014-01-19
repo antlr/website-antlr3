@@ -1,0 +1,166 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] [C] my v3 Parser no reuse() slower 20% than v2. With reuse() 2GB leaks, oops.
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5BC%5D%20my%20v3%20Parser%20no%20reuse%28%29%20slower%2020%25%20than%0A%20v2.%20With%20reuse%28%29%202GB%20leaks%2C%20oops.&In-Reply-To=%3CCAEB3E7F.F59BD%25ruslan_zasukhin%40valentina-db.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="043322.html">
+   <LINK REL="Next"  HREF="043348.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] [C] my v3 Parser no reuse() slower 20% than v2. With reuse() 2GB leaks, oops.</H1>
+    <B>Ruslan Zasukhin</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5BC%5D%20my%20v3%20Parser%20no%20reuse%28%29%20slower%2020%25%20than%0A%20v2.%20With%20reuse%28%29%202GB%20leaks%2C%20oops.&In-Reply-To=%3CCAEB3E7F.F59BD%25ruslan_zasukhin%40valentina-db.com%3E"
+       TITLE="[antlr-interest] [C] my v3 Parser no reuse() slower 20% than v2. With reuse() 2GB leaks, oops.">ruslan_zasukhin at valentina-db.com
+       </A><BR>
+    <I>Thu Nov 17 12:43:11 PST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="043322.html">[antlr-interest] [C] my v3 Parser no reuse() slower 20% than v2. With reuse() 2GB leaks, oops.
+</A></li>
+        <LI>Next message: <A HREF="043348.html">[antlr-interest] [C] my v3 Parser no reuse() slower 20% than v2. With reuse() 2GB leaks, oops.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#43345">[ date ]</a>
+              <a href="thread.html#43345">[ thread ]</a>
+              <a href="subject.html#43345">[ subject ]</a>
+              <a href="author.html#43345">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Jim,
+
+Thank you  for your feedback, and I have update now...
+
+1) I was able remove all  .text  usage in both Parser and TreeParser. GOOD.
+
+2) BAD ... This have save 500MB,
+   but I still have 1.5GB of allocations in my bench ...
+
+And now I see (using Apple Instruments) that all this is eaten by PARSER.
+Not by Lexer, and not by TreeParser.
+
+I just see endless 
+                    newPool
+                    newPool
+                    newPool
+                    newPool
+                    newPool
+                    newPool
+
+I will send you snapshoot off list so you can see that.
+
+And now there is ZERO my code, which affect this.
+Only ANTLR own logic...
+
+This makes me think, that reuse() do not work as expected.
+
+As I understand, when we do
+        parser( reset )
+
+It must mark all existed allocations as free in your pool,
+So next run should reuse all that. Yes?
+
+And note, that all my calls to parser, are very similar by size.
+This is just 
+    INSERT INTO( f1, f,2 ... f9 ) VALUES ( v1, v2, ... )
+
+I.e. Pool really should not grow much after first / second iteration of
+loop. But it grows like crazy.
+
+
+I think you have own test app where you did test this ...
+May be just increase loop count to million or such
+To see that RAM on your computer go away ...
+
+
+I very hope you will be able find issue and show how fix it
+in sources of ANTLR 3.4 ...  Please?  May be some kind of objects is not
+marked as free ?
+
+
+======
+Also interesting fact.
+
+v3 without reuse                                 22.4 sec
+v3 with reuse and 1.5GB allocation     20.4 sec
+
+v2 with reuse                                      19.7
+
+
+So if we will be able resolve this 1.5GB &quot;leaks&quot;, there is yet hope to be at
+least not slower of v2 ...
+
+
+=======================
+About your hope that V3 C should be much faster of v2 C++
+So far I do not see this.
+
+I see in profiles,
+    parser                           36%    RAM only
+    tree parser                    24%    RAM only
+    execute of vdb engine  13%     insert recs into disk (!!) db
+
+And when I am starting go deep by parser calls ... I just see that deep is
+big  
+        sql -&gt; sql_single -&gt; ....
+
+And each step down just reduce 0.5-0.8%  ...
+
+This is BODY of each rule of parser ...
+
+And nothing really to optimize :(
+Just a lots of small calls  ... NilNodes,  LT(), ...
+
+
+=======================
+My vision is that this is Nature of ANTLR ... We get many calls of parser
+funcs ... Deep stack ... Although they are light they eat milliseconds ...
+
+
+And fact that in C you need create structures with huge number of pointers
+sometimes, then e.g NULL them,  in C++ virtual table of methods is created
+once per class, not once per instances ... This fact can be one of hidden
+bottleneck IMO. You can workaround this, if also will extract pointers into
+single separate structure, so instances will have just a single pointer.
+
+
+-- 
+Best regards,
+
+Ruslan Zasukhin
+VP Engineering and New Technology
+Paradigma Software, Inc
+
+Valentina - Joining Worlds of Information
+<A HREF="http://www.paradigmasoft.com">http://www.paradigmasoft.com</A>
+
+[I feel the need: the need for speed]
+
+
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="043322.html">[antlr-interest] [C] my v3 Parser no reuse() slower 20% than v2. With reuse() 2GB leaks, oops.
+</A></li>
+	<LI>Next message: <A HREF="043348.html">[antlr-interest] [C] my v3 Parser no reuse() slower 20% than v2. With reuse() 2GB leaks, oops.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#43345">[ date ]</a>
+              <a href="thread.html#43345">[ thread ]</a>
+              <a href="subject.html#43345">[ subject ]</a>
+              <a href="author.html#43345">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

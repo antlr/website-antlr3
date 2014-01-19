@@ -1,0 +1,160 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Re: My ASTNode gets deleted more than once
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20My%20ASTNode%20gets%20deleted%20more%20than%20once&In-Reply-To=b6jd9e%2Bf2q9%40eGroups.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003526.html">
+   <LINK REL="Next"  HREF="003506.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Re: My ASTNode gets deleted more than once</H1>
+    <B>Ric Klaren</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20My%20ASTNode%20gets%20deleted%20more%20than%20once&In-Reply-To=b6jd9e%2Bf2q9%40eGroups.com"
+       TITLE="[antlr-interest] Re: My ASTNode gets deleted more than once">klaren at cs.utwente.nl
+       </A><BR>
+    <I>Fri Apr  4 02:26:38 PST 2003</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003526.html">[antlr-interest] Re: My ASTNode gets deleted more than once
+</A></li>
+        <LI>Next message: <A HREF="003506.html">[antlr-interest] Re: How to add the initial code into the Lexer/Parser's constructor
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3531">[ date ]</a>
+              <a href="thread.html#3531">[ thread ]</a>
+              <a href="subject.html#3531">[ subject ]</a>
+              <a href="author.html#3531">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Fri, Apr 04, 2003 at 07:46:54AM -0000, marcschellens wrote:
+&gt;<i> But for the test I input only a very simple line to
+</I>&gt;<i> scan/parse/treeparse/interpret so that mos of the stuff isn't used.
+</I>&gt;<i> Anyhow, after more thourough testing, it seems to me that
+</I>&gt;<i> not a node is actually deleted more than once, but it seems
+</I>&gt;<i> to me that two different nodes containing the same info are
+</I>&gt;<i> deleted.
+</I>&gt;<i> Furthermore I defined ci constructor and operator= as private.
+</I>&gt;<i> And the program runs through Parser/TreeParser and Interpreter
+</I>&gt;<i> (the interpreter based on a TreeParser, but tree generation is set off
+</I>&gt;<i> here).
+</I>&gt;<i> I switched to 2.7.2 meanwhile but the problem is the same.
+</I>
+2.7.2 contains a refcount bug though :/
+
+Fix:
+
+==== //depot/code/org.antlr/main/main/lib/cpp/antlr/AST.hpp#7 (ktext) ====
+@@ -5,7 +5,7 @@
+  * Project led by Terence Parr at <A HREF="http://www.jGuru.com">http://www.jGuru.com</A>
+  * Software rights: <A HREF="http://www.antlr.org/RIGHTS.html">http://www.antlr.org/RIGHTS.html</A>
+  *
+- * $Id: //depot/code/org.antlr/main/main/lib/cpp/antlr/AST.hpp#6 $
++ * $Id: //depot/code/org.antlr/main/main/lib/cpp/antlr/AST.hpp#7 $
+  */
+
+ #include &lt;antlr/config.hpp&gt;
+@@ -23,7 +23,7 @@
+ class ANTLR_API AST {
+ public:
+ 	AST() : ref(0) {}
+-	AST(const AST&amp; other) : ref(other.ref-&gt;increment()) {}
++	AST(const AST&amp; other) : ref(0) {}
+ 	virtual ~AST() {}
+
+ 	/// Return the type name for this AST node. (for XML output)
+
+&gt;<i> I overloaded CommonAST and set the factory accordingly like
+</I>&gt;<i> you described in the doc.
+</I>
+My suspicion would be that there's a problem in there. You could send the
+file to me and I'll have a look. Another option might be that somewhere the
+lowlevel ASTRefcount methods are used to create a new ast.
+
+&gt;<i> Actually I was hoping for a hint to a common cave-eat.
+</I>
+Double delete's I've never seen with the ASTRefcount of antlr. (most of the
+time I'm running with a memory debugger that would catch those errors) Also
+I know of no common caveats with this stuff.
+
+&gt;<i> One thing I found out:
+</I>&gt;<i>
+</I>&gt;<i> My input is just:
+</I>&gt;<i>
+</I>&gt;<i> a=1
+</I>&gt;<i>
+</I>&gt;<i> but when the via getTree() retrieved RefMyNode objects go out of scope
+</I>&gt;<i> there seem to be more than one node containing '1'
+</I>&gt;<i> I modified the increment and decrement functions of ASTRefCount.
+</I>&gt;<i>
+</I>&gt;<i> for increment (decrement accordingly):
+</I>&gt;<i> cout &lt;&lt; &quot;inc: &quot; &lt;&lt; this &lt;&lt; &quot; &quot; &lt;&lt; ptr &lt;&lt; &quot; &quot; &lt;&lt; count &lt;&lt; &quot; &quot; &lt;&lt;
+</I>&gt;<i> ((MyNode*)ptr)-&gt;getText() &lt;&lt; &quot; &quot; &lt;&lt; endl;
+</I>&gt;<i>
+</I>&gt;<i> and get the following at the end:
+</I>&gt;<i>
+</I>&gt;<i> ...
+</I>&gt;<i> dec: 0x81a5950 0x81a5920 0 1
+</I>&gt;<i> deletion of TreeParsers (getTree()) tree
+</I>&gt;<i>
+</I>&gt;<i> dec: 0x819db38 0x81a5760 0 A
+</I>&gt;<i> dec: 0x819dbc8 0x81a58f0 0 :=
+</I>&gt;<i> dec: 0x819db20 0x819db48 0 VAR
+</I>&gt;<i> dec: 0x81a58c8 0x81a5898 0 1
+</I>&gt;<i> deletion of Parsers tree
+</I>&gt;<i>
+</I>&gt;<i> here the segmetation fault takes place
+</I>&gt;<i> (it happends in the destructor of MyNode)
+</I>&gt;<i>
+</I>&gt;<i> So one question is:
+</I>&gt;<i> How can a MyNode be there more than once?
+</I>
+You tell me ;) I'm not seeing anything really disturbing in the trace above
+(except for the sigsegv) You might add a trace in the destructor of MyNode
+(with the address of the thing so you know for certain there's a thing
+being destroyed twice). A gdb backtrace would also be helpfull. Or more
+information...
+
+Cheers,
+
+Ric
+--
+-----+++++*****************************************************+++++++++-------
+    ---- Ric Klaren ----- <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">j.klaren at utwente.nl</A> ----- +31 53 4893722  ----
+-----+++++*****************************************************+++++++++-------
+  &quot;I think we better split up.&quot;
+  &quot;Good idea. We can do more damage that way.&quot;
+  --- Ghostbusters
+
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003526.html">[antlr-interest] Re: My ASTNode gets deleted more than once
+</A></li>
+	<LI>Next message: <A HREF="003506.html">[antlr-interest] Re: How to add the initial code into the Lexer/Parser's constructor
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3531">[ date ]</a>
+              <a href="thread.html#3531">[ thread ]</a>
+              <a href="subject.html#3531">[ subject ]</a>
+              <a href="author.html#3531">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

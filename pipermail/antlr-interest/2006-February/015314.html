@@ -1,0 +1,319 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Handling lexical nondeterminism in Tokens
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Handling%20lexical%20nondeterminism%20in%20Tokens&In-Reply-To=43E64701.7070800%40latte.harvard.edu">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="015305.html">
+   <LINK REL="Next"  HREF="015316.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Handling lexical nondeterminism in Tokens</H1>
+    <B>Gabriel Radu</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Handling%20lexical%20nondeterminism%20in%20Tokens&In-Reply-To=43E64701.7070800%40latte.harvard.edu"
+       TITLE="[antlr-interest] Handling lexical nondeterminism in Tokens">gabriel.adrian.radu at googlemail.com
+       </A><BR>
+    <I>Mon Feb  6 03:40:47 PST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="015305.html">[antlr-interest] Handling lexical nondeterminism in Tokens
+</A></li>
+        <LI>Next message: <A HREF="015316.html">[antlr-interest] Handling lexical nondeterminism in Tokens
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#15314">[ date ]</a>
+              <a href="thread.html#15314">[ thread ]</a>
+              <a href="subject.html#15314">[ subject ]</a>
+              <a href="author.html#15314">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Dear Mark,
+
+I suggest using syntactic predicates. Also increasing the lexers look
+ahead to 2 (k=2) for example may sort out the ambiguity between LT and
+LTE, and GT and GTE. However, if you use syntactic predicates for all
+tokens, increasing the look ahead may not be necessary.
+
+An example of using syntactic predicates for your grammar is following:
+
+
+class SearchQueryLexer extends Lexer;
+    options
+    {
+        charVocabulary='\3'..'\377';
+    }
+
+
+MAIN_LEXER_RULE
+  : ( LITERAL ) =&gt; ( LITERAL { $setType( LITERAL ); } )
+
+  | ( NOT_EQUALS ) =&gt; ( NOT_EQUALS { $setType( NOT_EQUALS ); } )
+  | ( LTE ) =&gt; ( LTE { $setType( LTE ); } )
+  | ( GTE ) =&gt; ( GTE { $setType( GTE ); } )
+
+  | ( LT ) =&gt; ( LT { $setType( LT ); } )
+  | ( GT ) =&gt; ( GT { $setType( GT ); } )
+
+  | ( NOT ) =&gt; ( NOT { $setType( NOT ); } )
+  | ( AND ) =&gt; ( AND { $setType( AND ); } )
+  | ( OR ) =&gt; ( OR { $setType( OR ); } )
+
+  | ( LEFT_PAREN ) =&gt; ( LEFT_PAREN { $setType( LEFT_PAREN ); } )
+  | ( RIGHT_PAREN ) =&gt; ( RIGHT_PAREN { $setType( RIGHT_PAREN ); } )
+
+  | ( EQUALS ) =&gt; ( EQUALS { $setType( EQUALS ); } )
+
+  | ( IDENTIFIER ) =&gt; ( IDENTIFIER { $setType( IDENTIFIER ); } )
+
+  | ( WS ) =&gt; WS
+
+  ;
+
+protected
+WS
+    :
+        ('\n' | ' ' | '\t' | '\r')+
+        {
+            $setType(Token.SKIP);
+        }
+    ;
+
+
+protected
+SINGLE_QUOTE_STRING
+    :
+        '\''! (~('\''))* '\''!
+    ;
+
+protected
+DOUBLE_QUOTE_STRING
+    :
+        '&quot;'! (~('&quot;'))* '&quot;'!
+    ;
+
+protected
+LITERAL
+    :
+        SINGLE_QUOTE_STRING | DOUBLE_QUOTE_STRING
+    ;
+
+protected
+IDENTIFIER
+
+    options
+    {
+        testLiterals=true;
+    }
+
+    :
+        ('\241'..'\377'|'a'..'z'|'A'..'Z'|'_')
+('\241'..'\377'|'a'..'z'|'A'..'Z'|'-'|'_'|'0'..'9'|'.')*
+    ;
+
+protected
+LEFT_PAREN
+    :    '('        ;
+
+protected
+RIGHT_PAREN
+    :    ')'        ;
+
+protected
+NOT
+    :    (&quot;NOT&quot;|&quot;not&quot;)    ;
+
+protected
+AND
+    :    (&quot;AND&quot;|&quot;and&quot;)    ;
+
+protected
+OR
+    :    (&quot;OR&quot;|&quot;or&quot;)        ;
+
+protected
+EQUALS
+    :    '='        ;
+
+protected
+NOT_EQUALS
+    :    &quot;&lt;&gt;&quot;    ;
+
+protected
+LT
+    :    '&lt;'        ;
+
+protected
+LTE
+    :    &quot;&lt;=&quot;    ;
+
+protected
+GT
+    :    '&gt;'        ;
+
+protected
+GTE
+    :    &quot;&gt;=&quot;    ;
+
+
+The syntactic predicates are in MAIN_LEXER_RULE. The order of
+productions (alternative rules) in MAIN_LEXER_RULE is important,
+because the lexer will try to match them in the order they are
+declared and will stop as soon as it finds a match. So for example LTE
+must be above LT because other ways the lexer will match the LT and
+then an EQUALS in stead of LTE.
+
+Let me know if this has solved your problem.
+
+
+Best regards,
+Gabriel
+
+
+
+
+On 05/02/06, Mark R. Diggory &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">mdiggory at latte.harvard.edu</A>&gt; wrote:
+&gt;<i> I'm still working on building a Parser for our query syntax. I've
+</I>&gt;<i> encountered an issue with nondeterminism. I've included my grammar file:
+</I>&gt;<i>
+</I>&gt;<i> My question is how can I assure that the boolean predicate AND not the
+</I>&gt;<i> quoted string literal &quot;you AND I&quot; do not collide? I'd be very thankful
+</I>&gt;<i> to anyone with comments about obvious problems with my grammar file.
+</I>&gt;<i>
+</I>&gt;<i> thanks,
+</I>&gt;<i> Mark
+</I>&gt;<i>
+</I>&gt;<i> &gt; class SearchQueryParser extends Parser;
+</I>&gt;<i> &gt;     options
+</I>&gt;<i> &gt;     {
+</I>&gt;<i> &gt;           k=3;
+</I>&gt;<i> &gt;         exportVocab=SearchQuery;
+</I>&gt;<i> &gt;         buildAST = true;   // uses CommonAST by default
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;     }
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; expr
+</I>&gt;<i> &gt;     :
+</I>&gt;<i> &gt;         mexpr ((AND|OR|NOT) mexpr)*
+</I>&gt;<i> &gt;     ;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; mexpr
+</I>&gt;<i> &gt;     :
+</I>&gt;<i> &gt;         LITERAL^ | IDENTIFIER^ ((EQUALS|NOT_EQUALS|LT|LTE|GT|GTE)
+</I>&gt;<i> &gt; LITERAL^)+
+</I>&gt;<i> &gt;     ;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; atom
+</I>&gt;<i> &gt;       :
+</I>&gt;<i> &gt;           IDENTIFIER | LEFT_PAREN! expr RIGHT_PAREN!
+</I>&gt;<i> &gt;     ;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; class SearchQueryLexer extends Lexer;
+</I>&gt;<i> &gt;     options
+</I>&gt;<i> &gt;     {
+</I>&gt;<i> &gt;         charVocabulary='\3'..'\377';
+</I>&gt;<i> &gt;     }
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; WS
+</I>&gt;<i> &gt;     :
+</I>&gt;<i> &gt;         ('\n' | ' ' | '\t' | '\r')+
+</I>&gt;<i> &gt;         {
+</I>&gt;<i> &gt;             $setType(Token.SKIP);
+</I>&gt;<i> &gt;         }
+</I>&gt;<i> &gt;     ;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; protected
+</I>&gt;<i> &gt; SINGLE_QUOTE_STRING
+</I>&gt;<i> &gt;     :
+</I>&gt;<i> &gt;         '\''! (~('\''))* '\''!
+</I>&gt;<i> &gt;     ;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; protected
+</I>&gt;<i> &gt; DOUBLE_QUOTE_STRING
+</I>&gt;<i> &gt;     :
+</I>&gt;<i> &gt;         '&quot;'! (~('&quot;'))* '&quot;'!
+</I>&gt;<i> &gt;     ;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; LITERAL
+</I>&gt;<i> &gt;     :
+</I>&gt;<i> &gt;         SINGLE_QUOTE_STRING | DOUBLE_QUOTE_STRING
+</I>&gt;<i> &gt;     ;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; IDENTIFIER
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;     options
+</I>&gt;<i> &gt;     {
+</I>&gt;<i> &gt;         testLiterals=true;
+</I>&gt;<i> &gt;     }
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;     :
+</I>&gt;<i> &gt;         ('\241'..'\377'|'a'..'z'|'A'..'Z'|'_')
+</I>&gt;<i> &gt; ('\241'..'\377'|'a'..'z'|'A'..'Z'|'-'|'_'|'0'..'9'|'.')*
+</I>&gt;<i> &gt;     ;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; LEFT_PAREN
+</I>&gt;<i> &gt;     :    '('        ;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; RIGHT_PAREN
+</I>&gt;<i> &gt;     :    ')'        ;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; NOT
+</I>&gt;<i> &gt;     :    (&quot;NOT&quot;|&quot;not&quot;)    ;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; AND
+</I>&gt;<i> &gt;     :    (&quot;AND&quot;|&quot;and&quot;)    ;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; OR
+</I>&gt;<i> &gt;     :    (&quot;OR&quot;|&quot;or&quot;)        ;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; EQUALS
+</I>&gt;<i> &gt;     :    '='        ;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; NOT_EQUALS
+</I>&gt;<i> &gt;     :    &quot;&lt;&gt;&quot;    ;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; LT
+</I>&gt;<i> &gt;     :    '&lt;'        ;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; LTE
+</I>&gt;<i> &gt;     :    &quot;&lt;=&quot;    ;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; GT
+</I>&gt;<i> &gt;     :    '&gt;'        ;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; GTE
+</I>&gt;<i> &gt;     :    &quot;&gt;=&quot;    ;
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I></PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="015305.html">[antlr-interest] Handling lexical nondeterminism in Tokens
+</A></li>
+	<LI>Next message: <A HREF="015316.html">[antlr-interest] Handling lexical nondeterminism in Tokens
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#15314">[ date ]</a>
+              <a href="thread.html#15314">[ thread ]</a>
+              <a href="subject.html#15314">[ subject ]</a>
+              <a href="author.html#15314">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

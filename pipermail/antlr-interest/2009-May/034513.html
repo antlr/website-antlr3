@@ -1,0 +1,157 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] How to free ANTLR3_STRING (c runtime)?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20How%20to%20free%20ANTLR3_STRING%20%28c%20runtime%29%3F&In-Reply-To=%3C2EBBC96B326FDE479F15A609ECF7171F2CE54BB2%40orsmsx503.amr.corp.intel.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="034512.html">
+   <LINK REL="Next"  HREF="034515.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] How to free ANTLR3_STRING (c runtime)?</H1>
+    <B>Chetty, Jay</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20How%20to%20free%20ANTLR3_STRING%20%28c%20runtime%29%3F&In-Reply-To=%3C2EBBC96B326FDE479F15A609ECF7171F2CE54BB2%40orsmsx503.amr.corp.intel.com%3E"
+       TITLE="[antlr-interest] How to free ANTLR3_STRING (c runtime)?">jay.chetty at intel.com
+       </A><BR>
+    <I>Fri May 15 11:22:32 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="034512.html">[antlr-interest] How to free ANTLR3_STRING (c runtime)?
+</A></li>
+        <LI>Next message: <A HREF="034515.html">[antlr-interest] How to free ANTLR3_STRING (c runtime)?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#34513">[ date ]</a>
+              <a href="thread.html#34513">[ thread ]</a>
+              <a href="subject.html#34513">[ subject ]</a>
+              <a href="author.html#34513">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Jim thanks for the reply.
+
+My understanding was also that string factory will manage the life time of the strings it created.
+But ran into out of memory issue on a 32 bit machine, so thought of freeing up some strings that 
+Were created while forward looking some tokens during error reporting.
+
+As you suggested I will access the token structure directly.
+
+And thanks for info on dot generator , I will give it a try.
+
+Note:
+By the way the toStringSS() function doesn't check for the pointer returned by the string factory 
+(so and seg faults when out of memory).
+
+
+static pANTLR3_STRING	    
+toStringSS   (pANTLR3_TOKEN_STREAM ts, ANTLR3_UINT32 start, ANTLR3_UINT32 stop)
+{
+	...
+	
+	string	= tsource-&gt;strFactory-&gt;newRaw(tsource-&gt;strFactory);
+
+	for (i = start; i &lt;= stop; i++)
+	{
+	    tok	= ts-&gt;get(ts, i);
+
+	    if	(tok != NULL)
+	    {
+		string-&gt;appendS(string, tok-&gt;getText(tok));
+	    }
+	}
+
+    ...
+}
+
+Thanks
++Jay
+ 
+-----Original Message-----
+From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Jim Idle
+Sent: Friday, May 15, 2009 10:54 AM
+Cc: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: Re: [antlr-interest] How to free ANTLR3_STRING (c runtime)?
+
+Chetty, Jay wrote:
+&gt;<i> What's the right way to free the ANTLR3_STRING returned from
+</I>&gt;<i> pANTLR3TOKEN_STREAM's toStringSS()
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> I used destroy method of the string factory and it seems that's not the right way
+</I>&gt;<i> As I get these lines when my executable exists.
+</I>&gt;<i>
+</I>&gt;<i> *** glibc detected *** double free or corruption (fasttop): 0x081514b8 ***
+</I>&gt;<i> *** glibc detected *** double free or corruption (!prev): 0x081641a8 ***
+</I>&gt;<i>   
+</I>The correct way is to do nothing at all:-). The string factory tracks 
+the memory and releases it once you close the factory. The factory will 
+be created by the token or node stream and will be closed when you free 
+the token or node stream.
+
+Note that the string factory stuff is basically convenience methods for 
+things like toStringTree(). If you need pure performance, then you 
+should access the token structures yourself.
+
+You can use valgrind to check that all your memory is being freed correctly.
+
+Also note that while making a string from the AST is a quick way of 
+looking at your tree, you might find the dot generator and the dot 
+program much more useful (install graphviz from your distro or 
+www.graphviz.org).
+
+To use it from C, you just do this:
+
+pANTLR3_STRING    dotSpec;
+dotSpec = nodes-&gt;adaptor-&gt;makeDot(nodes-&gt;adaptor, psrReturn.tree);
+
+Where nodes is the pANTLR3_COMMON_TREE_NODE_STREAM and psrReturn is the 
+return type of the rule you invoke on your parser.
+
+You can then fwrite the spec to a text file:
+
+dotSpec = dotSpec-&gt;toUTF8(dotSpec);   // Only need this if your input 
+was not 8 bit characters
+fwrite((const void *) dotSpec-&gt;chars, 1, (size_t) dotSpec-&gt;len, dotFILE);
+
+Then turn this in to a neat png graphic like this:
+
+sprintf(command, &quot;dot -Tpng -o%spng %sdot&quot;, dotFname, dotFname);
+system(command)
+
+Jim
+
+List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</PRE>
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="034512.html">[antlr-interest] How to free ANTLR3_STRING (c runtime)?
+</A></li>
+	<LI>Next message: <A HREF="034515.html">[antlr-interest] How to free ANTLR3_STRING (c runtime)?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#34513">[ date ]</a>
+              <a href="thread.html#34513">[ thread ]</a>
+              <a href="subject.html#34513">[ subject ]</a>
+              <a href="author.html#34513">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

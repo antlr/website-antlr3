@@ -1,0 +1,210 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Error in 2.7.1 translator
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Error%20in%202.7.1%20translator&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004029.html">
+   <LINK REL="Next"  HREF="004032.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Error in 2.7.1 translator</H1>
+    <B>Matthew Ford</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Error%20in%202.7.1%20translator&In-Reply-To="
+       TITLE="[antlr-interest] Error in 2.7.1 translator">Matthew.Ford at forward.com.au
+       </A><BR>
+    <I>Fri May 30 05:33:25 PDT 2003</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004029.html">[antlr-interest] Problem with caseSensitivity
+</A></li>
+        <LI>Next message: <A HREF="004032.html">[antlr-interest] Integration of antlr generated lexer-parser into a GUI app.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4031">[ date ]</a>
+              <a href="thread.html#4031">[ thread ]</a>
+              <a href="subject.html#4031">[ subject ]</a>
+              <a href="author.html#4031">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi
+When I add one action I get the error message.  I think this is an error as
+the grammar has not changed.
+
+   [antlr] ANTLR Parser Generator   Version 2.7.1   1989-2000 jGuru.com
+    [antlr] C:\temp\antlrTest\links.g:107: warning: lexical nondeterminism
+upon
+    [antlr] C:\temp\antlrTest\links.g:107:  k==1:'\t','\n','\u000c','\r',' '
+    [antlr] C:\temp\antlrTest\links.g:107:  k==2:&lt;end-of-token&gt;
+    [antlr] C:\temp\antlrTest\links.g:107:  between alts 1 and 2 of block
+
+The .g file is shown below
+The only difference needed to generate the above error is to change
+
+protected
+SCARF
+ : WS // track line numbers while you scarf
+ | .  ;  // no action here and no errors
+
+TO
+
+protected
+SCARF
+ : WS // track line numbers while you scarf
+ | . {output.print(&quot;&quot;);}  // added this action to get errors
+ ;
+
+
+regards
+Matthew
+P.S. I will try this on 2.7.2 tomorrow.
+
+
+//link.g file
+{
+import java.util.Vector;
+import java.io.PrintStream;
+}
+
+
+/** Parse an entire html file, firing events to a single listener
+ *  for each image and href link encountered.  All tokens are
+ *  defined to skip so the lexer will continue scarfing until EOF.
+ */
+class ImageLinkExtractor extends Lexer;
+options {
+ caseSensitive=false;
+ k=2;
+ filter=SCARF;
+ charVocabulary='\3'..'\u0FFE';
+}
+
+{
+ PrintStream output = null;
+
+  String tableWidth=&quot;65&quot;;
+
+ public void setOutput(PrintStream out) {
+   output = out;
+ }
+
+ /** strip quotes from &quot;...&quot; or '...' strings */
+ public static String stripQuotes(String src) {
+  int h = src.indexOf('&quot;');
+  if ( h==-1 ) h = src.indexOf('\'');
+  int t = src.lastIndexOf('&quot;');
+  if ( t==-1 ) t = src.lastIndexOf('\'');
+  if ( h==-1 || t==-1 ) return src;
+  return src.substring(h+1,t);
+ }
+}
+
+
+IMG : (&quot;&lt;img&quot; {output.print(&quot;&lt;img&quot;);}
+       WS (ATTR)+
+    '&gt;' {output.print(&quot;&gt;&quot;);})
+    {$setType(Token.SKIP);}
+ ;
+
+protected
+ATTR
+options {
+ ignore=WS;
+}
+ : w:WORD '='
+  ( s:STRING // output handled below
+  | v:WORD {output.print(v.getText());}
+  )
+  { output.print(&quot; &quot;+w.getText()+&quot;=&quot;);
+    if (v!=null) {
+     output.print(v.getText());
+   } else if (s!=null) {
+    String heightOrWidth = stripQuotes(s.getText());
+    if (( w.getText().equalsIgnoreCase(&quot;height&quot;) )
+      || ( w.getText().equalsIgnoreCase(&quot;width&quot;) ) ) {
+      int size = Integer.parseInt(heightOrWidth);
+      size++;
+      output.print(&quot;\&quot;&quot;+size+&quot;\&quot;&quot;);
+    } else {
+      // some other attribute like src just output
+     output.print(s.getText()+&quot;&quot;);
+    }
+   } else {
+     // s==null have output v above
+   }
+  }
+  ;
+
+/** Match until next whitespace; can be file, int, etc... */
+protected
+WORD: (
+   options {
+    generateAmbigWarnings=false;
+   }
+  : 'a'..'z' | '0'..'9' | '/' | '.' | '#' | '_'
+  )+
+ ;
+
+protected
+STRING
+ : '&quot;' (~'&quot;')* '&quot;'
+ | '\'' (~'\'')* '\''
+ ;
+
+
+protected
+WS : ( ' ' {output.print(&quot; &quot;);}
+  | '\t' {output.print(&quot;\t&quot;);}
+  | '\f'  {output.print(&quot;\f&quot;);}
+  | ( &quot;\r\n&quot;  {output.print(&quot;\r\n&quot;);} // DOS
+   | '\r'   {output.print(&quot;\r&quot;);} // Macintosh
+   | '\n'   {output.print(&quot;\r&quot;);} // Unix (the right way)
+   )
+   { newline(); }
+  )
+  { //$setType(Token.SKIP);
+  }
+ ;
+
+protected
+SCARF
+ : WS // track line numbers while you scarf
+ | . {output.print(&quot;&quot;);}
+ ;
+----------------------------------------------------
+Dr. Matthew.Ford
+Forward Computing &amp; Control Pty. Ltd.
+www.forward.com.au
+
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004029.html">[antlr-interest] Problem with caseSensitivity
+</A></li>
+	<LI>Next message: <A HREF="004032.html">[antlr-interest] Integration of antlr generated lexer-parser into a GUI app.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4031">[ date ]</a>
+              <a href="thread.html#4031">[ thread ]</a>
+              <a href="subject.html#4031">[ subject ]</a>
+              <a href="author.html#4031">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

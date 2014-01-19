@@ -1,0 +1,128 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Problem with lexer rule for an optional suffix
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Problem%20with%20lexer%20rule%20for%20an%20optional%20suffix&In-Reply-To=%3C1258222510.13521.12.camel%40gecko.home.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="036762.html">
+   <LINK REL="Next"  HREF="036767.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Problem with lexer rule for an optional suffix</H1>
+    <B>John B. Brodie</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Problem%20with%20lexer%20rule%20for%20an%20optional%20suffix&In-Reply-To=%3C1258222510.13521.12.camel%40gecko.home.org%3E"
+       TITLE="[antlr-interest] Problem with lexer rule for an optional suffix">jbb at acm.org
+       </A><BR>
+    <I>Sat Nov 14 10:15:10 PST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="036762.html">[antlr-interest] Problem with lexer rule for an optional suffix
+</A></li>
+        <LI>Next message: <A HREF="036767.html">[antlr-interest] Problem with lexer rule for an optional suffix
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36765">[ date ]</a>
+              <a href="thread.html#36765">[ thread ]</a>
+              <a href="subject.html#36765">[ subject ]</a>
+              <a href="author.html#36765">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Be wary of mng lexer rules into the parser! see below....
+On Sat, 2009-11-14 at 09:17 -0800, Jim Idle wrote:
+&gt;<i> 
+</I>&gt;<i> &gt; -----Original Message-----
+</I>&gt;<i> &gt; From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:antlr-interest-
+</I>&gt;<i> &gt; <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">bounces at antlr.org</A>] On Behalf Of Scott Oakes
+</I>&gt;<i> &gt; Sent: Saturday, November 14, 2009 1:08 AM
+</I>&gt;<i> &gt; To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> &gt; Subject: [antlr-interest] Problem with lexer rule for an optional
+</I>&gt;<i> &gt; suffix
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Hoping for some newbie help on the following lexer.
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt;   fragment DIGIT:      '0'..'9';
+</I>&gt;<i> &gt;   fragment LETTER: ('a'..'z'|'A'..'Z');
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt;   ID:  (LETTER | '.')+ ('.' DIGIT+)?
+</I>&gt;<i> &gt;        | DIGIT+
+</I>&gt;<i> &gt;       ;
+</I>&gt;<i> 
+</I>&gt;<i> Well this rule is wrong. It allows:
+</I>&gt;<i> 
+</I>&gt;<i> .....99
+</I>&gt;<i> A..44
+</I>&gt;<i> 
+</I>&gt;<i> But not A.56
+</I>&gt;<i> 
+</I>&gt;<i> You would need:
+</I>&gt;<i> 
+</I>&gt;<i> ID : (LETTER+) (('.' LETTER)=&gt;'.' LETTER+)* (('.' DIGIT)=&gt; '.' DIGIT+)? ;
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> But you really want to do such things in the parser as you usually want to dissect the identifier. If a part of the id can only be numbers, then you could do it in the lexer, but then any errors will come out from the lexer and be very confusing.
+</I>&gt;<i> 
+</I>&gt;<i> The general idea is to cover everything in the lexer so it does not issue messages, but leave context out of the lexer. Then in the parser, defer as much error handling as possible to the tree walker. This way you get much better error messages. With your example:
+</I>&gt;<i> 
+</I>&gt;<i> a.b4.f.5
+</I>&gt;<i> 
+</I>&gt;<i> Lexer: Unexpected character at '4'
+</I>&gt;<i> Parser: Extraneous token '4'
+</I>&gt;<i> Walker (Though you can do this one in the parser): 'b4' is not a valid component of multipart identifier
+</I>&gt;<i> 
+</I>&gt;<i> So:
+</I>&gt;<i> 
+</I>&gt;<i> ID : LETTER+;
+</I>&gt;<i> NUM : DIGIT+;
+</I>&gt;<i> id : id_part (DOT^ id_part)*  { actions to check in Java go here if you have no tree walker } ;
+</I>
+Jim makes an excellent argument for hoisting these lexer rules up into
+the parser -- better error checking.
+
+But you need to be aware of interactions with other lexer rules, in
+particular, any token you put on the HIDDEN channel will be accepted in
+between (*any*) of your other tokens.
+
+So if you have Jim's 3 rules plus a lexer rule to ignore whitespace,
+like:
+
+ID : LETTER+ ;
+NUM : DIGIT+ ; 
+id : id_part (DOT^ id_part)* ; //also rules for id_part and DOT
+WS : (' ' | '\t' | '\n' | '\r')+ { $channel = HIDDEN; } ;
+
+
+
+then the input string &quot;foo   .   bar&quot; (observe spaces surrounding the .)
+would be accepted by your lexer as the three token sequence ID DOT ID
+If this is acceptable in your language, you should definitely follow
+Jim's advice...
+
+
+
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="036762.html">[antlr-interest] Problem with lexer rule for an optional suffix
+</A></li>
+	<LI>Next message: <A HREF="036767.html">[antlr-interest] Problem with lexer rule for an optional suffix
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36765">[ date ]</a>
+              <a href="thread.html#36765">[ thread ]</a>
+              <a href="subject.html#36765">[ subject ]</a>
+              <a href="author.html#36765">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

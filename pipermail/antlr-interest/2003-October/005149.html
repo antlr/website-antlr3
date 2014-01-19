@@ -1,0 +1,698 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Re: Skipping grammar
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20Skipping%20grammar&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="005150.html">
+   <LINK REL="Next"  HREF="005153.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Re: Skipping grammar</H1>
+    <B>mzukowski at yci.com</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20Skipping%20grammar&In-Reply-To="
+       TITLE="[antlr-interest] Re: Skipping grammar">mzukowski at yci.com
+       </A><BR>
+    <I>Wed Oct  8 09:03:09 PDT 2003</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="005150.html">[antlr-interest] On a more personal note...
+</A></li>
+        <LI>Next message: <A HREF="005153.html">[antlr-interest] Tree transformation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5149">[ date ]</a>
+              <a href="thread.html#5149">[ thread ]</a>
+              <a href="subject.html#5149">[ subject ]</a>
+              <a href="author.html#5149">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I haven't spent too much time analyzing this but in general it sounds good!
+
+Monty
+
+-----Original Message-----
+From: Arnar Birgisson [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">arnarb at oddi.is</A>] 
+Sent: Wednesday, October 08, 2003 4:48 AM
+To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>
+Subject: RE: [antlr-interest] Re: Skipping grammar
+
+Per: Anthony is on the money here.. do not stop posting here! I'm taking
+a graduate course in compiler design and implementation and I choose (or
+is it chose?) ANTLR as my tool for the term-project. I first saw ANTLR
+no more than 4-5 weeks ago, so in fact you are doing me (and probably
+others) a big favour in helping me learn and uderstand this myself.
+
+Does &quot;method {...}&quot; always appear inside &quot;model {...}&quot;, and does &quot;model
+{..}&quot; always appear inside &quot;packet {...}&quot;? Can a packet contain another
+packet, and can a model contain another model? If the answers are yes,
+and no, respectively, the nesting level of the starting { for a method
+is fixed and you can adapt the first solution we discussed.
+
+If the grammar is more general, i.e. packets can contain other packets
+etc. you can do more fancy stuff, like having a stack in your lexer, and
+each time you see a &quot;{&quot;, determine it's type by the keyword appearing
+before it, and push the token-id for the corresponding closing &quot;}&quot; on
+the stack. Then, upon seeing an } in the input, pop the type of the
+stack and use it with &quot;setType&quot;. That way, matching braces will have
+matching token types which the parser can use. Example (pseudo-code):
+
+class MyLexer extends Lexer;
+
+tokens { OPEN_PACKET; CLOSE_PACKET; OPEN_MODEL; CLOSE_MODEL;
+OPEN_METHOD; CLOSE_METHOD; }
+
+{
+	stack braces = new stack();
+	int nextBrace = OPEN_PACKET;
+	bool readingMethodBody = false;
+
+	int getMatchingToken(int open) {
+		if (open == OPEN_PACKET) return CLOSE_PACKET;
+		if (open == OPEN_MODEL) reutrn CLOSE_MODE;
+		// etc.
+	}
+}
+
+PACKET: &quot;PACKET&quot; { netxtBrace = OPEN_PACKET; };
+MODEL: &quot;model&quot; { nextBrace = OPEN_MODEL; };
+METHOD: &quot;method&quot; { nextBrace = OPEN_METHOD; };
+
+OPEN_BRACE /* except method opening braces */
+	{ nextBrace != OPEN_METHOD }?
+	: '{'
+	{
+		$setType(nextBrace);
+		braces.push(getMatchingToken(nextBrace));
+	}
+	;
+
+METHOD_BODY
+	{ nextBrace == OPEN_METHOD }?
+	: '{'! ( BracedExpr | ~'}' )* '}'!
+
+protected
+BracedExpr
+  : '{' ( BracedExpr | ~'}' )* '}'
+  ;
+
+CLOSE_BRACE
+	: '}' { $setType(braces.pop()); }
+	;
+
+/* plus other tokens you need. */
+
+The token stream for this input
+
+Packet name{
+Model name {
+Method{
+ 	Expressiontext;
+	If/else and so on
+};
+};
+};
+
+would be something like:
+
+[PACKET,&quot;packet&quot;]
+[ID,&quot;name&quot;]
+[OPEN_PACKET,&quot;{&quot;]
+[MODEL,&quot;model&quot;]
+[ID,&quot;name&quot;]
+[OPEN_MODEL,&quot;{&quot;]
+[METHOD,&quot;method&quot;]
+[METHOD_BODY,&quot;Expressiontext;\nIf/else and so on&quot;]
+              ^ note that the '{' and '}' were discarded with !
+[SEMI,&quot;;&quot;]
+[CLOSE_MODEL,&quot;}&quot;]
+[SEMI,&quot;;&quot;]
+[CLOSE_PACKET,&quot;}&quot;]
+[SEMI,&quot;;&quot;]
+
+Do any of you gurus see a problem with this?
+
+My next suggestion was using token multiplexing, and just now I recieved
+Ric's post on that :o)
+
+This allows you to add in f.x. tokens for &quot;(param1,param2)&quot; in between
+&quot;method&quot; and it's opening brace.
+If I'm still way of course: Do you have a formal BNF, EBNF or equivalent
+grammar for your input? If so, it would help to see it.
+
+Arnar
+
+&gt;<i> -----Original Message-----
+</I>&gt;<i> From: Anthony W Youngman 
+</I>&gt;<i> [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">Anthony.Youngman at ECA-International.com</A>] 
+</I>&gt;<i> Sent: 8. okt&#243;ber 2003 11:10
+</I>&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>
+</I>&gt;<i> Subject: RE: [antlr-interest] Re: Skipping grammar
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> Firstly, DON'T stop posting here ... what matters is that you 
+</I>&gt;<i> show that
+</I>&gt;<i> you are trying to understand. What pisses people off is when 
+</I>&gt;<i> they think
+</I>&gt;<i> students are trying to skip homework ...
+</I>&gt;<i> 
+</I>&gt;<i> Secondly, the best way to learn is to teach. I probably don't 
+</I>&gt;<i> know much
+</I>&gt;<i> more than you, so you're helping me learn (plus all those 
+</I>&gt;<i> other lurkers
+</I>&gt;<i> who are watching and haven't dived in :-) I've posted similarly &quot;dumb&quot;
+</I>&gt;<i> posts and been grateful to everyone who's helped me - I owe it to the
+</I>&gt;<i> list to help when I can.
+</I>&gt;<i> 
+</I>&gt;<i> Okay. In your &quot;file to parse&quot; you have &quot;packet&quot;, &quot;model&quot;, 
+</I>&gt;<i> &quot;method&quot;. Are
+</I>&gt;<i> these keywords? If so, your life is nice and simple. Similarly, if
+</I>&gt;<i> that's your nesting such that the method braces are always at 
+</I>&gt;<i> the third
+</I>&gt;<i> level down, it's equally as simple, just slightly different. So how do
+</I>&gt;<i> you handle that?
+</I>&gt;<i> 
+</I>&gt;<i> At the start of the lexer, you can declare an initialisation 
+</I>&gt;<i> code block.
+</I>&gt;<i> You want to declare a state enum with the values NULL, IN_PACKET,
+</I>&gt;<i> IN_MODEL, and IN_METHOD.
+</I>&gt;<i> 
+</I>&gt;<i> Your lexer will now contain something like this ...
+</I>&gt;<i> 
+</I>&gt;<i> packet: state == NULL   // this is a predicate
+</I>&gt;<i>    {
+</I>&gt;<i>       &quot;PACKET&quot; lcurly {state = IN_PACKET}  //set the state variable
+</I>&gt;<i>       model lcurly {state = NULL} // reset the state variable
+</I>&gt;<i>    } ;
+</I>&gt;<i> 
+</I>&gt;<i> model: state == IN_PACKET
+</I>&gt;<i>    {
+</I>&gt;<i>       &quot;MODEL&quot; lcurly {state = IN_MODEL}
+</I>&gt;<i>       method lcurly {state = IN_PACKET}
+</I>&gt;<i>    } ;
+</I>&gt;<i> 
+</I>&gt;<i> method: ... I'll leave it to you :-)
+</I>&gt;<i> 
+</I>&gt;<i> I'm sure I've messed up my ANTLR syntax good and proper, and other
+</I>&gt;<i> people will help you with how to do this, but this looks like the
+</I>&gt;<i> approach you want. Particularly, look at predicates and in-line code.
+</I>&gt;<i> And WATCH OUT !!! because predicates *can* get you into trouble with
+</I>&gt;<i> look-ahead. It looks like what you're doing is pretty simple and won't
+</I>&gt;<i> be any trouble, but it does happen ...
+</I>&gt;<i> 
+</I>&gt;<i> Cheers,
+</I>&gt;<i> Wol
+</I>&gt;<i> 
+</I>&gt;<i> -----Original Message-----
+</I>&gt;<i> From: pwolleba [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">pwolleba at yahoo.no</A>] 
+</I>&gt;<i> Sent: 08 October 2003 11:36
+</I>&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>
+</I>&gt;<i> Subject: [antlr-interest] Re: Skipping grammar
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> Hello!
+</I>&gt;<i> 
+</I>&gt;<i> I am starting to dominate this newsgroup with my problem, so I guess 
+</I>&gt;<i> I have to stop after this post!
+</I>&gt;<i> Anyway, I will paste some of my code from my parser and if you could 
+</I>&gt;<i> find where I am thinking wrong I would appreciate if you could 
+</I>&gt;<i> comment it!
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> PARSER
+</I>&gt;<i>  
+</I>&gt;<i> //---------------------------------------------- METHODE -------------
+</I>&gt;<i> methodeNode         : (METHOD^) declarationName methodeDecleration 
+</I>&gt;<i> methodBody;
+</I>&gt;<i> 
+</I>&gt;<i> methodeDecleration  : (LPAREN!) (methodArguments)? (RPAREN!)
+</I>&gt;<i>                       {#methodeDecleration=#
+</I>&gt;<i> ([ARGUMENTS,&quot;Arguments&quot;],#methodeDecleration);};
+</I>&gt;<i> 
+</I>&gt;<i> methodArguments     : (methodArgument (COMMA! methodArguments)?);
+</I>&gt;<i> 
+</I>&gt;<i> methodArgument      : declarationName;
+</I>&gt;<i> 
+</I>&gt;<i> methodBody          : (METHOD_BODY)
+</I>&gt;<i>                       {#methodBody=#
+</I>&gt;<i> ([EXPRESSION,&quot;Expression&quot;],#methodBody);};
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> LEX
+</I>&gt;<i> 
+</I>&gt;<i> METHOD_BODY : '{'! (BracedExpr | ~'}')* &quot;};&quot;!;
+</I>&gt;<i> 
+</I>&gt;<i> protected
+</I>&gt;<i> BracedExpr : '{' (BracedExpr | ~'}')* &quot;}&quot;;
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> FILE TO PARSE
+</I>&gt;<i> 
+</I>&gt;<i> Packet name{
+</I>&gt;<i> Model name {
+</I>&gt;<i> Method{
+</I>&gt;<i> 	Expressiontext;
+</I>&gt;<i> 	If/else and so on
+</I>&gt;<i> };
+</I>&gt;<i> };
+</I>&gt;<i> };
+</I>&gt;<i> 
+</I>&gt;<i> As you can see the method is build up much like a method in both C++ 
+</I>&gt;<i> or Java. What makes it difficult is the fact that I don't want to 
+</I>&gt;<i> parse the method body text, I just want to consume it.
+</I>&gt;<i> 
+</I>&gt;<i> As you can see my Lex wont work, since it will react at both the 
+</I>&gt;<i> Packet bracket as well as Model bracket. If I somehow could just make 
+</I>&gt;<i> it start when it is a method I would be really happy.
+</I>&gt;<i> 
+</I>&gt;<i> Best regards,
+</I>&gt;<i> Per
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> --- In <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>, &quot;Anthony W Youngman&quot; 
+</I>&gt;<i> &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">Anthony.Youngman at E...</A>&gt; wrote:
+</I>&gt;<i> &gt; Hmmm ...
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; You should be able to declare that in the lexer.
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; method: lcurly method_body rcurly ;
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; protected method_body: name arguments expression ;
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Do the curly brackets always indicate a method? If not, how do you 
+</I>&gt;<i> tell
+</I>&gt;<i> &gt; whether it's the start of a method or the start of something else? 
+</I>&gt;<i> If
+</I>&gt;<i> &gt; you can unabiguously identify the start of a method (eg it's 
+</I>&gt;<i> flagged by
+</I>&gt;<i> &gt; an lcurly, which is the only use of an lcurly) then what you appear 
+</I>&gt;<i> to
+</I>&gt;<i> &gt; want is pretty simple to achieve.
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Solve the problem of how to identify &quot;this is a method&quot;, and the 
+</I>&gt;<i> rest of
+</I>&gt;<i> &gt; it should just fall into place. If the lexer can recognise &quot;this is 
+</I>&gt;<i> a
+</I>&gt;<i> &gt; method&quot; then the lexer can handle methods for you. The parser will 
+</I>&gt;<i> then
+</I>&gt;<i> &gt; build your tree for you the way you want it.
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; I think your original comment about &quot;;&quot; being used to terminate 
+</I>&gt;<i> both IFs
+</I>&gt;<i> &gt; and methods is a red herring. Have you grasped why it's not a 
+</I>&gt;<i> problem?
+</I>&gt;<i> &gt; If you have, then you should be able to work out the rest of the
+</I>&gt;<i> &gt; solution fairly easily. If you haven't, then you need to get that
+</I>&gt;<i> &gt; straight because it shows a fundamental misunderstanding of ANTLR. 
+</I>&gt;<i> Don't
+</I>&gt;<i> &gt; forget, both the lexer and parser are recursive (they &quot;drill 
+</I>&gt;<i> down&quot;), so
+</I>&gt;<i> &gt; context-dependent semantics shouldn't be a problem ...
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Cheers,
+</I>&gt;<i> &gt; Wol
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; -----Original Message-----
+</I>&gt;<i> &gt; From: pwolleba [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">pwolleba at y...</A>] 
+</I>&gt;<i> &gt; Sent: 08 October 2003 10:13
+</I>&gt;<i> &gt; To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>
+</I>&gt;<i> &gt; Subject: [antlr-interest] Re: Skipping grammar
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Hello again
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Thanks for helping me out Arnar, your solutions are really good! 
+</I>&gt;<i> &gt; Still I think I will have problem implementing them, much because I 
+</I>&gt;<i> &gt; have not given you enough information. 
+</I>&gt;<i> &gt; I need to make a method tag in my tree that contains information, 
+</I>&gt;<i> &gt; such as arguments into the method and such (see example).
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Method testMethod (Args,Args....){
+</I>&gt;<i> &gt; 	Expression text
+</I>&gt;<i> &gt; }
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; method
+</I>&gt;<i> &gt; |
+</I>&gt;<i> &gt; |--------Name
+</I>&gt;<i> &gt; |
+</I>&gt;<i> &gt; |--------Arguments
+</I>&gt;<i> &gt; |
+</I>&gt;<i> &gt; |-------- Expression
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; If I solve this in my lexer I will not be able to create this node 
+</I>&gt;<i> &gt; tree, it will just be one node method that contains all the text. 
+</I>&gt;<i> If 
+</I>&gt;<i> &gt; I drop the &quot;method&quot;tag in my METHOD_BODY tag, it will trigger at 
+</I>&gt;<i> all 
+</I>&gt;<i> &gt; the other bracket in my document.
+</I>&gt;<i> &gt; Can I somehow make my lexer rule without the &quot;method&quot; tag, and then 
+</I>&gt;<i> &gt; make it just trigger when I need the method body?
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; best regards,
+</I>&gt;<i> &gt; Per
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; --- In <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>, &quot;Arnar Birgisson&quot; 
+</I>&gt;<i> &gt; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">arnarb at o...</A>&gt; wrote:
+</I>&gt;<i> &gt; &gt; Hello Per,
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; Perhaps you could make &quot;method {&quot; a single token in the parser, 
+</I>&gt;<i> and 
+</I>&gt;<i> &gt; set
+</I>&gt;<i> &gt; &gt; the nestingLevel variable to zero when that one matches.
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; The solution I posted uses the parser to eat up the stuff inside 
+</I>&gt;<i> &gt; {...},
+</I>&gt;<i> &gt; &gt; another possibility might be to make the lexer do this:
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; METHOD_BODY
+</I>&gt;<i> &gt; &gt;   : &quot;method&quot;! '{'! ( BracedExpr | ~'}' )* &quot;};&quot;!
+</I>&gt;<i> &gt; &gt;   ;
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; protected
+</I>&gt;<i> &gt; &gt; BracedExpr
+</I>&gt;<i> &gt; &gt;   : '{' ( BracedExpr | ~'}' )* &quot;}&quot;
+</I>&gt;<i> &gt; &gt;   ;
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; Overall, this might be a better solution. The token METHOD_BODY 
+</I>&gt;<i> will
+</I>&gt;<i> &gt; &gt; then contain as it's text whatever was inside the {...}.
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; As a side note, this is possible in ANTLR lexers because the are 
+</I>&gt;<i> LL
+</I>&gt;<i> &gt; (k)
+</I>&gt;<i> &gt; &gt; and can thus handle context-free grammars. Conventional lexers are
+</I>&gt;<i> &gt; &gt; limited to regular grammars (represented by regular expressions 
+</I>&gt;<i> &gt; which
+</I>&gt;<i> &gt; &gt; are equivalent to finite automata) and can f.x. not match nested 
+</I>&gt;<i> &gt; braces,
+</I>&gt;<i> &gt; &gt; parenthesis etc. See
+</I>&gt;<i> &gt; &gt; <A HREF="http://www.antlr.org/doc/lexer.html#Predicated-LL(k">http://www.antlr.org/doc/lexer.html#Predicated-LL(k</A>)_Lexing for 
+</I>&gt;<i> more
+</I>&gt;<i> &gt; &gt; information on this.
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; Arnar
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; ps. yes, the &quot;i&quot; should have been &quot;nestingLevel&quot; :o)
+</I>&gt;<i> &gt; &gt; pps. again, I haven't tried this, it might not even be 
+</I>&gt;<i> syntactically
+</I>&gt;<i> &gt; &gt; correct
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt;&gt;&gt; <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">pwolleba at y...</A> 10/07/03 5:34 PM &gt;&gt;&gt;
+</I>&gt;<i> &gt; &gt; Hello again!
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; I am looking at your example Arnar, and I have some questions. 
+</I>&gt;<i> &gt; &gt; When I wrote my example I should have included some more 
+</I>&gt;<i> &gt; information. 
+</I>&gt;<i> &gt; &gt; The methode node is inside of another node called member (see 
+</I>&gt;<i> &gt; &gt; example) and it can be more than one!
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; Member{
+</I>&gt;<i> &gt; &gt; Methode {
+</I>&gt;<i> &gt; &gt; 	Sometext;
+</I>&gt;<i> &gt; &gt; };
+</I>&gt;<i> &gt; &gt; };
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; This makes your example a bit more difficult to implement, since 
+</I>&gt;<i> &gt; the 
+</I>&gt;<i> &gt; &gt; counter will start a zero at the first bracket, which is the 
+</I>&gt;<i> member 
+</I>&gt;<i> &gt; &gt; bracket. I must somehow be able to set nestingLevel = 0 from the 
+</I>&gt;<i> &gt; &gt; parser when the method node is starting.
+</I>&gt;<i> &gt; &gt; How do I do that?
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; best regards,
+</I>&gt;<i> &gt; &gt; Per
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; Ps: I guess it should be nestingLevel++ instead of i++. Correct?
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; --- In <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>, &quot;pwolleba&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">pwolleba at y...</A>&gt; 
+</I>&gt;<i> &gt; &gt; wrote:
+</I>&gt;<i> &gt; &gt; &gt; Yes that is correct, what is inside the bracket is a different 
+</I>&gt;<i> &gt; &gt; &gt; language which I at the moment don't want to write a parser for 
+</I>&gt;<i> &gt; (it 
+</I>&gt;<i> &gt; &gt; &gt; is pretty complex and big). Anyway I have just come back to 
+</I>&gt;<i> work, 
+</I>&gt;<i> &gt; &gt; and 
+</I>&gt;<i> &gt; &gt; &gt; I am going to try out your solution Arnar, hopefully it will 
+</I>&gt;<i> &gt; work! 
+</I>&gt;<i> &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; I just want to thank the community for trying to find a 
+</I>&gt;<i> solution 
+</I>&gt;<i> &gt; to 
+</I>&gt;<i> &gt; &gt; &gt; my question, and I must say it came really fast!
+</I>&gt;<i> &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; Best regards,
+</I>&gt;<i> &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; Per
+</I>&gt;<i> &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; --- In <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>, &quot;Arnar Birgisson&quot; 
+</I>&gt;<i> &gt; &gt; &gt; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">arnarb at o...</A>&gt; wrote:
+</I>&gt;<i> &gt; &gt; &gt; &gt; Hi..
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; In my earlier post, I understood Per differently. I think he 
+</I>&gt;<i> &gt; &gt; want's 
+</I>&gt;<i> &gt; &gt; &gt; to
+</I>&gt;<i> &gt; &gt; &gt; &gt; parse &quot;method name{ &lt;whatever&gt; };&quot; and just eat up 
+</I>&gt;<i> &lt;whatever&gt;, 
+</I>&gt;<i> &gt; &gt; &gt; including
+</I>&gt;<i> &gt; &gt; &gt; &gt; any nested braces, and put it in a variable, completely 
+</I>&gt;<i> without 
+</I>&gt;<i> &gt; &gt; &gt; lexing
+</I>&gt;<i> &gt; &gt; &gt; &gt; and/or parsing it. Per, is this correct?
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; The result of all this being a tree something like this:
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; METHOD
+</I>&gt;<i> &gt; &gt; &gt; &gt;  |
+</I>&gt;<i> &gt; &gt; &gt; &gt; name-body
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; where the body node contains anything inside the {..} as it's 
+</I>&gt;<i> &gt; &gt; text.
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; Arnar
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; &gt;&gt;&gt; <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">Anthony.Youngman at E...</A> 10/07/03 1:33 PM &gt;&gt;&gt;
+</I>&gt;<i> &gt; &gt; &gt; &gt; I think you're missing the point. Define a ; as SEMI. The way 
+</I>&gt;<i> &gt; I'd 
+</I>&gt;<i> &gt; &gt; &gt; do it
+</I>&gt;<i> &gt; &gt; &gt; &gt; (and this is all pseudocode) is
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; if_statement: &quot;IF&quot; lcurly (method)* rcurly &quot;ELSE&quot; lcurly 
+</I>&gt;<i> &gt; (method)*
+</I>&gt;<i> &gt; &gt; &gt; &gt; rcurly SEMI ;
+</I>&gt;<i> &gt; &gt; &gt; &gt; method: blah_blah SEMI ;
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; That way, the lexer doesn't care whether ; is ending a method 
+</I>&gt;<i> &gt; or 
+</I>&gt;<i> &gt; &gt; an 
+</I>&gt;<i> &gt; &gt; &gt; if
+</I>&gt;<i> &gt; &gt; &gt; &gt; clause, and the parser won't get confused because when it 
+</I>&gt;<i> hits a
+</I>&gt;<i> &gt; &gt; &gt; &gt; right-curly it will be expecting an ELSE or a SEMI, and not a 
+</I>&gt;<i> &gt; &gt; &gt; method.
+</I>&gt;<i> &gt; &gt; &gt; &gt; And if the ELSE is optional you just mark it as such so when 
+</I>&gt;<i> &gt; the 
+</I>&gt;<i> &gt; &gt; &gt; parser
+</I>&gt;<i> &gt; &gt; &gt; &gt; hits the right-curly after the if, it's expecting an ELSE or 
+</I>&gt;<i> a 
+</I>&gt;<i> &gt; &gt; SEMI 
+</I>&gt;<i> &gt; &gt; &gt; and
+</I>&gt;<i> &gt; &gt; &gt; &gt; nothing else.
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; Cheers,
+</I>&gt;<i> &gt; &gt; &gt; &gt; Wol
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; -----Original Message-----
+</I>&gt;<i> &gt; &gt; &gt; &gt; From: pwolleba [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">pwolleba at y...</A>] 
+</I>&gt;<i> &gt; &gt; &gt; &gt; Sent: 07 October 2003 08:19
+</I>&gt;<i> &gt; &gt; &gt; &gt; To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>
+</I>&gt;<i> &gt; &gt; &gt; &gt; Subject: [antlr-interest] Skipping grammar
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; I am pretty new to ANTLR so maybe this question is very 
+</I>&gt;<i> &gt; trivial, 
+</I>&gt;<i> &gt; &gt; if 
+</I>&gt;<i> &gt; &gt; &gt; &gt; so even better then maybe it is a simple solution to my 
+</I>&gt;<i> &gt; problem. 
+</I>&gt;<i> &gt; &gt; &gt; &gt; Anyway I am struggling with writing a new parser in ANTLR to 
+</I>&gt;<i> &gt; &gt; &gt; replace 
+</I>&gt;<i> &gt; &gt; &gt; &gt; and old implementation in Flex/Bison, this to make a product 
+</I>&gt;<i> &gt; that 
+</I>&gt;<i> &gt; &gt; &gt; are 
+</I>&gt;<i> &gt; &gt; &gt; &gt; open for implementation from both C++ as well as Java. 
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; The parser will parse a language that we are using to build 
+</I>&gt;<i> &gt; &gt; &gt; &gt; databases, and it must support this language 100% if to be 
+</I>&gt;<i> &gt; &gt; &gt; accepted. 
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; Here is the code cutting that I am struggling with.
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; method name{
+</I>&gt;<i> &gt; &gt; &gt; &gt;   SomeText!()text[];
+</I>&gt;<i> &gt; &gt; &gt; &gt;   if(a &lt; b &amp;&amp; b &lt; c){
+</I>&gt;<i> &gt; &gt; &gt; &gt;      SomeText()!()[];
+</I>&gt;<i> &gt; &gt; &gt; &gt;   }
+</I>&gt;<i> &gt; &gt; &gt; &gt;   else{
+</I>&gt;<i> &gt; &gt; &gt; &gt;      SomeText()!()[];
+</I>&gt;<i> &gt; &gt; &gt; &gt;   };
+</I>&gt;<i> &gt; &gt; &gt; &gt; };
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; I am not interesting in the expression that is inside the 
+</I>&gt;<i> name 
+</I>&gt;<i> &gt; &gt; &gt; &gt; method, I just want ANTLR to grab the text for me, and put it 
+</I>&gt;<i> &gt; as 
+</I>&gt;<i> &gt; &gt; a 
+</I>&gt;<i> &gt; &gt; &gt; &gt; node inside the tree. The problem is the fact that the 
+</I>&gt;<i> if/else 
+</I>&gt;<i> &gt; &gt; &gt; &gt; statement is ending with a &quot;};&quot; which is the same token as 
+</I>&gt;<i> the 
+</I>&gt;<i> &gt; &gt; &gt; method 
+</I>&gt;<i> &gt; &gt; &gt; &gt; end token, and I have no guarantee that there could be more 
+</I>&gt;<i> &gt; that 
+</I>&gt;<i> &gt; &gt; &gt; one 
+</I>&gt;<i> &gt; &gt; &gt; &gt; inside the method. A solution would be to make a counter that 
+</I>&gt;<i> &gt; &gt; will 
+</I>&gt;<i> &gt; &gt; &gt; &gt; increase for each &quot;{&quot; and decrease for each &quot;}&quot;, then I would 
+</I>&gt;<i> &gt; &gt; know 
+</I>&gt;<i> &gt; &gt; &gt; &gt; when the method ends. To my frustration I don't know how I 
+</I>&gt;<i> &gt; should 
+</I>&gt;<i> &gt; &gt; &gt; &gt; make such a counter in ANTRL, that still supports implement 
+</I>&gt;<i> in 
+</I>&gt;<i> &gt; &gt; both 
+</I>&gt;<i> &gt; &gt; &gt; &gt; Java or C++ code.
+</I>&gt;<i> &gt; &gt; &gt; &gt; I would be really really happy if someone could help me with 
+</I>&gt;<i> &gt; this 
+</I>&gt;<i> &gt; &gt; &gt; &gt; problem!
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; Best reagards,
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; Per
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt;  
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; Your use of Yahoo! Groups is subject to
+</I>&gt;<i> &gt; &gt; &gt; &gt; <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; 
+</I>&gt;<i> **********************************************************************
+</I>&gt;<i> &gt; &gt; &gt; *************
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; This transmission is intended for the named recipient only. 
+</I>&gt;<i> It 
+</I>&gt;<i> &gt; may
+</I>&gt;<i> &gt; &gt; &gt; &gt; contain private and confidential information. If this has 
+</I>&gt;<i> come 
+</I>&gt;<i> &gt; to 
+</I>&gt;<i> &gt; &gt; &gt; you in
+</I>&gt;<i> &gt; &gt; &gt; &gt; error you must not act on anything disclosed in it, nor must 
+</I>&gt;<i> &gt; you 
+</I>&gt;<i> &gt; &gt; &gt; copy
+</I>&gt;<i> &gt; &gt; &gt; &gt; it, modify it, disseminate it in any way, or show it to 
+</I>&gt;<i> anyone. 
+</I>&gt;<i> &gt; &gt; &gt; Please
+</I>&gt;<i> &gt; &gt; &gt; &gt; e-mail the sender to inform us of the transmission error or 
+</I>&gt;<i> &gt; &gt; &gt; telephone
+</I>&gt;<i> &gt; &gt; &gt; &gt; ECA International immediately and delete the e-mail from your
+</I>&gt;<i> &gt; &gt; &gt; &gt; information system.
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; Telephone numbers for ECA International offices are: Sydney 
+</I>&gt;<i> +61 
+</I>&gt;<i> &gt; &gt; (0)2
+</I>&gt;<i> &gt; &gt; &gt; &gt; 9911 7799, Hong Kong + 852 2121 2388, London +44 (0)20 7351 
+</I>&gt;<i> &gt; 5000 
+</I>&gt;<i> &gt; &gt; &gt; and New
+</I>&gt;<i> &gt; &gt; &gt; &gt; York +1 212 582 2333.
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; 
+</I>&gt;<i> **********************************************************************
+</I>&gt;<i> &gt; &gt; &gt; *************
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt;  
+</I>&gt;<i> &gt; &gt; &gt; &gt; 
+</I>&gt;<i> &gt; &gt; &gt; &gt; Your use of Yahoo! Groups is subject to
+</I>&gt;<i> &gt; &gt; &gt; &gt; <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt;  
+</I>&gt;<i> &gt; &gt; 
+</I>&gt;<i> &gt; &gt; Your use of Yahoo! Groups is subject to
+</I>&gt;<i> &gt; &gt; <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt;  
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Your use of Yahoo! Groups is subject to
+</I>&gt;<i> &gt; <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i>  
+</I>&gt;<i> 
+</I>&gt;<i> Your use of Yahoo! Groups is subject to
+</I>&gt;<i> <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i>  
+</I>&gt;<i> 
+</I>&gt;<i> Your use of Yahoo! Groups is subject to 
+</I>&gt;<i> <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="005150.html">[antlr-interest] On a more personal note...
+</A></li>
+	<LI>Next message: <A HREF="005153.html">[antlr-interest] Tree transformation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#5149">[ date ]</a>
+              <a href="thread.html#5149">[ thread ]</a>
+              <a href="subject.html#5149">[ subject ]</a>
+              <a href="author.html#5149">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

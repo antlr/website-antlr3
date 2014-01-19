@@ -1,0 +1,188 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Newbie question about lex token	matching	priority
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Newbie%20question%20about%20lex%20token%0A%09matching%09priority&In-Reply-To=%3C80531546B1EAB64CBA160D97566FC7E52F171CB7FF%40NA-EXMSG-C117.redmond.corp.microsoft.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="032676.html">
+   <LINK REL="Next"  HREF="032669.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Newbie question about lex token	matching	priority</H1>
+    <B>Curt Carpenter</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Newbie%20question%20about%20lex%20token%0A%09matching%09priority&In-Reply-To=%3C80531546B1EAB64CBA160D97566FC7E52F171CB7FF%40NA-EXMSG-C117.redmond.corp.microsoft.com%3E"
+       TITLE="[antlr-interest] Newbie question about lex token	matching	priority">Curt.Carpenter at microsoft.com
+       </A><BR>
+    <I>Mon Feb  2 07:25:28 PST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="032676.html">[antlr-interest] Newbie question about lex token matching	priority
+</A></li>
+        <LI>Next message: <A HREF="032669.html">[antlr-interest] Antlr3 C Runtime Improvement Patches
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#32677">[ date ]</a>
+              <a href="thread.html#32677">[ thread ]</a>
+              <a href="subject.html#32677">[ subject ]</a>
+              <a href="author.html#32677">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Note that ' ' is expressly not allowed in a name. Unfortunately, a name only sometimes has (#) before it, but also sometimes has colon after it. See my lexer rules. And these names (with or without ids and/or colon) have other elements on a line. I only mentioned the part that was not straight-forward. I guess you could make more parse rules like the one you made, using the idea of making a lex rule for a single character (and don't forget to allow NUMBER in your name rule). But the downside is that the token stream gets much longer, with a token for every character in every name. That seems like a clear disadvantage, but I'm less clear on what the upside would be of moving paren matching to parser rule.
+
+BTW, by my  understanding, you needn't complicate the CHAR lex rule to get what you're after (removing the parens). Rather, you can simply put the paren rules ahead of the CHAR rule. This was a bit of frustration for me before I finally got that internalized.
+
+BTW#2, I just noticed that in my previous email's lex rules, the fragment NAME is obsolete. It doesn't work and I stopped using it for reasons I already explained.
+
+-----Original Message-----
+From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Rob Greene
+Sent: Monday, February 02, 2009 9:26 PM
+To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: Re: [antlr-interest] Newbie question about lex token matching priority
+
+Ok, how about this?  The problem I had was I'd define the '(' and ')'
+as a lexer rule and then try to use it as such in the grammar.  I had
+to break it out --
+
+/* Parsing input such as &quot;(#)name&quot; */
+grammar CurtCarpenter;
+
+language:       data+ ;
+data    :       LPAREN NUMBER RPAREN name NEWLINE ;
+name    :       (CHAR | LPAREN | RPAREN)+ ;
+
+NUMBER  :       '-'? '0'..'9'+ ;
+CHAR    :       ' ' | '!'..'\'' | '*'..'\u00fe' ;
+NEWLINE :       '\r'? '\n';
+LPAREN  :       '(';
+RPAREN  :       ')';
+
+Is that close to what you need?  It seemed to work in ANTLRWorks and I
+checked it against this input:
+
+(1)apple
+(2)george
+(3)bad (one)
+(-5) lots of spaces in here! ((()))
+
+-Rob
+
+On Sun, Feb 1, 2009 at 9:13 AM, Curt Carpenter
+&lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">Curt.Carpenter at microsoft.com</A>&gt; wrote:
+&gt;<i> Hi Rob, thanks for the reply. I was beginning to wonder whether my email went off into the ether.
+</I>&gt;<i>
+</I>&gt;<i> The problem with making PARENNUM a parse rule is that it ALSO matches NAME. In fact it would ONLY match NAME, and never the parse rule, since (0) is also a valid NAME (a lex token). So what I finally came up with (not sure this is exactly what I said in my follow-up) is a bunch of different tokens, matching the combinations that a name can appear in:
+</I>&gt;<i> ID_NAME_COLON   : PARENNUM ('!'..'\u00FE')+ ':';        // (0)curtc:
+</I>&gt;<i> ID_NAME         : PARENNUM ('!'..'\u00FE')+ ;           // (0)curtc
+</I>&gt;<i> NAME_COLON              : ('!'..'\u00FE')+ ':';                 // curtc:
+</I>&gt;<i> PARENNUM                : '(' NUMBER ')';                               // (0)
+</I>&gt;<i> NUMBER          : '-'? ('0'..'9')+;                     // 0
+</I>&gt;<i> fragment NAME   : ('!'..'\u00FE')+;                     // curtc
+</I>&gt;<i> WS                      : ( '\t' | ' ' | '\r' | '\n'| '\u000C' )+ { $channel = HIDDEN; } ;
+</I>&gt;<i>
+</I>&gt;<i> Then in parse rules, given whichever token matches, I can know which portion is the name, and whether there is an id, by using different target language actions for each separate token, and trivially cracking. After I think finally wrapping my head around it, I'm pretty sure what I have is reasonable (passes all 250,000+ existing source files), given that I can't change the input. But if you think there's a much better way, I'd still be interested to hear, even though I'm not blocked.
+</I>&gt;<i>
+</I>&gt;<i> Thanks,
+</I>&gt;<i>
+</I>&gt;<i> Curt
+</I>&gt;<i>
+</I>&gt;<i> -----Original Message-----
+</I>&gt;<i> From: Rob Greene
+</I>&gt;<i> Sent: Saturday, January 31, 2009 10:50 AM
+</I>&gt;<i>
+</I>&gt;<i> Hi Curt --
+</I>&gt;<i>
+</I>&gt;<i> First off, I'm a total hack at ANTLR.  And that's in the golfing sense
+</I>&gt;<i> with grass flying everywhere and not in the geek sense of being
+</I>&gt;<i> totally awesome.  Awesome is reserved for others on this list.  So, if
+</I>&gt;<i> I mislead you, sorry in advance!!
+</I>&gt;<i>
+</I>&gt;<i> Anyway, from your description, think PARENNUM isn't a lexer rule but a
+</I>&gt;<i> grammar rule.
+</I>&gt;<i>
+</I>&gt;<i> So you'd have something like:
+</I>&gt;<i>
+</I>&gt;<i> language: data+ ;
+</I>&gt;<i> data: '(' NUMBER ')' NAME ;
+</I>&gt;<i>
+</I>&gt;<i> and the same lex rules for NUMBER and NAME as before.  Also, don't
+</I>&gt;<i> forget a whitespace rule (I assume you need one?)
+</I>&gt;<i>
+</I>&gt;<i> WS: (' ' | '\t' | '\n' | '\r')+ {skip();}
+</I>&gt;<i>
+</I>&gt;<i> I hope I'm leading you in the right direction at least!
+</I>&gt;<i> -Rob
+</I>&gt;<i>
+</I>&gt;<i> On Thu, Jan 29, 2009 at 10:14 AM, Curt Carpenter
+</I>&gt;<i> &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">Curt.Carpenter at microsoft.com</A>&gt; wrote:
+</I>&gt;&gt;<i> Hi all, I am 1 day in on ANTLR, so be gentle. J
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I have gone through the tutorials and such, and have created a grammar from
+</I>&gt;&gt;<i> scratch, debugged it and have it mostly working, except for one problem. I
+</I>&gt;&gt;<i> want to parse something like this:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> (#)name
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Where # is a number, but name can be virtually anything except space. I
+</I>&gt;&gt;<i> think. I don't own the language, so please don't suggest that name should be
+</I>&gt;&gt;<i> further restricted. So I defined the lex rules as so:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> PARENNUM       : '(' NUMBER ')';
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> NUMBER             : '-'? ('0'..'9')+;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> NAME                   : ('!'..'\u00FE')+; // ansi only
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> You can see the problem at NAME. (0)curt is a valid name. But what I really
+</I>&gt;&gt;<i> want is to parse as PARENNUM=(0) NAME=curt. I have a parse rule to match
+</I>&gt;&gt;<i> that. But, the lex rules match longest string first, so (0)curt is always
+</I>&gt;&gt;<i> tokenized as NAME. Is there any way to change the priority of matching lex
+</I>&gt;&gt;<i> tokens to be the order they're defined, rather than order only breaking ties
+</I>&gt;&gt;<i> in string length?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Or is there some other way to accomplish the simple parse rule I'm trying to
+</I>&gt;&gt;<i> solve?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Thanks,
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Curt
+</I>&gt;<i>
+</I>
+List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="032676.html">[antlr-interest] Newbie question about lex token matching	priority
+</A></li>
+	<LI>Next message: <A HREF="032669.html">[antlr-interest] Antlr3 C Runtime Improvement Patches
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#32677">[ date ]</a>
+              <a href="thread.html#32677">[ thread ]</a>
+              <a href="subject.html#32677">[ subject ]</a>
+              <a href="author.html#32677">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

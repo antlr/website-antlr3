@@ -1,0 +1,422 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] enums in v4 ANTLR Java code generation	considered useless
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20enums%20in%20v4%20ANTLR%20Java%20code%20generation%0A%09considered%20useless&In-Reply-To=%3C46e67e9439d1f946b5c6d03761e95a1f%40temporal-wave.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="038726.html">
+   <LINK REL="Next"  HREF="038732.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] enums in v4 ANTLR Java code generation	considered useless</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20enums%20in%20v4%20ANTLR%20Java%20code%20generation%0A%09considered%20useless&In-Reply-To=%3C46e67e9439d1f946b5c6d03761e95a1f%40temporal-wave.com%3E"
+       TITLE="[antlr-interest] enums in v4 ANTLR Java code generation	considered useless">jimi at temporal-wave.com
+       </A><BR>
+    <I>Wed May 19 18:25:54 PDT 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="038726.html">[antlr-interest] enums in v4 ANTLR Java code generation	considered useless
+</A></li>
+        <LI>Next message: <A HREF="038732.html">[antlr-interest] enums in v4 ANTLR Java code generation	considered useless
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#38730">[ date ]</a>
+              <a href="thread.html#38730">[ thread ]</a>
+              <a href="subject.html#38730">[ subject ]</a>
+              <a href="author.html#38730">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I suspect that your benchmark runs afoul of clock granularity issues for the JIT. If you run it a few times you will likely get different results. Also you say 10% better for enums but look at your results again. 
+
+Take the client JIT, your first run gives:
+
+Enum Time: 25707993
+Int Time : 28520406
+
+So enum is slightly better, but your second run gives:
+
+Enum Time: 34060167
+Int Time : 24820249
+
+
+And Int time in this run is superior to your enum time by a far greater margin than the reverse in the first run. Your server shows a similar disparity. You have to run for much longer times and repeat many times, then average out because the JIT does not always make the same decision. 
+
+Unless there is something about your print outs that I am missing?
+
+Finally, I would not trust 64 bit openjdk as far as I can throw my house :-)
+
+Finally, finally, you need to look at switch() performance really, and as ANTLR will (does if you set the -X options to the same values as I use in the C generator) use them. There tend to be a fair number of switch cases with some further embedded switches. 
+
+The C optimizer will murder those but the Java JIT has some opportunity to reorder the case at runtime and theoretically it could do better than the C compiler for some use cases. It rarely does though because of other overheads and the fact that most real world applications don't exhibit a polarization to one or two oft used cases out of many. You can see that ANTLR generated code would only do this if out of many alts, just one or two were taken a lot (which would depend on the language being parsed).
+
+Jim
+
+&gt;<i> -----Original Message-----
+</I>&gt;<i> From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:antlr-interest-
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">bounces at antlr.org</A>] On Behalf Of Kirby Bohling
+</I>&gt;<i> Sent: Wednesday, May 19, 2010 4:29 PM
+</I>&gt;<i> To: Scott Stanchfield
+</I>&gt;<i> Cc: antlr-interest interest
+</I>&gt;<i> Subject: Re: [antlr-interest] enums in v4 ANTLR Java code generation
+</I>&gt;<i> considered useless
+</I>&gt;<i> 
+</I>&gt;<i> On topic, I think the only important decision to make is from an API
+</I>&gt;<i> perspective, while one can go &quot;tweak&quot; the generator, going from int's
+</I>&gt;<i> to enums would change the API.  I'd suggest just deciding which one
+</I>&gt;<i> you want to support.  Enums are definitely nicer from that
+</I>&gt;<i> perspective.  Given the below performance benchmarks, and just how
+</I>&gt;<i> much of ANTLR's output is really just a series of &quot;if/else&quot; or switch
+</I>&gt;<i> blocks buried inside of a huge number of loops, I actually do think
+</I>&gt;<i> you'd spot the difference.
+</I>&gt;<i> 
+</I>&gt;<i> Moving well off-topic, but since you said to, I did just what you
+</I>&gt;<i> suggested:
+</I>&gt;<i> 
+</I>&gt;<i> Using my personal laptop running Fedora 11 using x86_64 for the kernel
+</I>&gt;<i> and JVM:
+</I>&gt;<i> $ java -version
+</I>&gt;<i> java version &quot;1.6.0_18&quot;
+</I>&gt;<i> OpenJDK Runtime Environment (IcedTea6 1.8) (fedora-35.b18.fc11-x86_64)
+</I>&gt;<i> OpenJDK 64-Bit Server VM (build 14.0-b16, mixed mode)
+</I>&gt;<i> 
+</I>&gt;<i> Both CPU's are Intel(R) Core(TM)2 Duo CPU     P8600  @ 2.40GHz w/ 3MB
+</I>&gt;<i> cache.
+</I>&gt;<i> 
+</I>&gt;<i> These aren't spectacular benchmarks from an accuracy perspective, but
+</I>&gt;<i> illustrate that assuming ints and enums have identical performance
+</I>&gt;<i> characteristics in all cases is an invalid assumption:
+</I>&gt;<i> 
+</I>&gt;<i> Using java -Xint Foo:
+</I>&gt;<i> Enum Time: 516121334
+</I>&gt;<i> Int Time : 424748884
+</I>&gt;<i> Enum Time: 514078841
+</I>&gt;<i> Int Time : 423574161
+</I>&gt;<i> 
+</I>&gt;<i> ~21% performance hit to use enums with HotSpot disabled, (similar to
+</I>&gt;<i> the DalikVM because it has minimal JIT as of right now, which I'm
+</I>&gt;<i> guessing why the original article suggested you stay away from them
+</I>&gt;<i> near performance critical areas).
+</I>&gt;<i> 
+</I>&gt;<i> Using: java -client Foo
+</I>&gt;<i> Enum Time: 25707993
+</I>&gt;<i> Int Time : 28520406
+</I>&gt;<i> Enum Time: 34060167
+</I>&gt;<i> Int Time : 24820249
+</I>&gt;<i> 
+</I>&gt;<i> ~10% speed up for using enums.
+</I>&gt;<i> 
+</I>&gt;<i> Using: java -server Foo
+</I>&gt;<i> Enum Time: 25543589
+</I>&gt;<i> Int Time : 28637110
+</I>&gt;<i> Enum Time: 32887612
+</I>&gt;<i> Int Time : 28968574
+</I>&gt;<i> 
+</I>&gt;<i> Again ~10% speed up for using enums.
+</I>&gt;<i> 
+</I>&gt;<i> So there might actually be a reason to support Enum's internally from
+</I>&gt;<i> a speed/performance perspective if the non-JIT case is considered
+</I>&gt;<i> negligible.  I thought they'd match your claim in this case.  Didn't
+</I>&gt;<i> have any reason to actually think enums would be faster then int's.
+</I>&gt;<i> 
+</I>&gt;<i> -- Sample code:
+</I>&gt;<i> 
+</I>&gt;<i> public class Foo {
+</I>&gt;<i> 
+</I>&gt;<i>     private static long MAX = 10000000;
+</I>&gt;<i> 
+</I>&gt;<i>     public static void main(String[] args) {
+</I>&gt;<i>         doEnums();
+</I>&gt;<i>         doInts();
+</I>&gt;<i>         doEnums();
+</I>&gt;<i>         doInts();
+</I>&gt;<i>     }
+</I>&gt;<i> 
+</I>&gt;<i>     public static void doInts() {
+</I>&gt;<i>         int val = 0;
+</I>&gt;<i>         long start = System.nanoTime();
+</I>&gt;<i>         for (long iii = 0; iii &lt; MAX; ++iii) {
+</I>&gt;<i>             if (0 == val) {
+</I>&gt;<i>                 val = 1;
+</I>&gt;<i>             } else if (1 == val) {
+</I>&gt;<i>                 val = 0;
+</I>&gt;<i>             }
+</I>&gt;<i>         }
+</I>&gt;<i>         long end = System.nanoTime();
+</I>&gt;<i>         System.out.println(&quot;Int Time : &quot; + (end - start));
+</I>&gt;<i>     }
+</I>&gt;<i> 
+</I>&gt;<i>     enum Parity { EVEN, ODD };
+</I>&gt;<i>     public static void doEnums() {
+</I>&gt;<i>         Parity val = Parity.EVEN;
+</I>&gt;<i>         long start = System.nanoTime();
+</I>&gt;<i>         for (long iii = 0; iii &lt; MAX; ++iii) {
+</I>&gt;<i>             if (Parity.EVEN == val) {
+</I>&gt;<i>                 val = Parity.ODD;
+</I>&gt;<i>             } else if (Parity.ODD == val) {
+</I>&gt;<i>                 val = Parity.EVEN;
+</I>&gt;<i>             }
+</I>&gt;<i>         }
+</I>&gt;<i>         long end = System.nanoTime();
+</I>&gt;<i>         System.out.println(&quot;Enum Time: &quot; + (end - start));
+</I>&gt;<i>     }
+</I>&gt;<i> 
+</I>&gt;<i> }
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> On Wed, May 19, 2010 at 3:30 PM, Scott Stanchfield &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">scott at javadude.com</A>&gt;
+</I>&gt;<i> wrote:
+</I>&gt;<i> &gt; Don't pre-optimize for things like this. Profile, then optimize. This
+</I>&gt;<i> &gt; won't even show up as an issue.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; I think whoever wrote that page was daydreaming about any minor way
+</I>&gt;<i> &gt; performance might be increased - note that they don't talk at all on
+</I>&gt;<i> &gt; that page about the big performance issues (I/O, networking, etc),
+</I>&gt;<i> &gt; though I do like that they talk about limiting object creation.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; With the example they show on that android dev page, you'll never
+</I>&gt;<i> &gt; see/feel the difference. And their example on grabbing the ordinal
+</I>&gt;<i> &gt; value so you don't need to lookup a static field is really silly. If
+</I>&gt;<i> &gt; they just want to avoid looking up the static field everytime through
+</I>&gt;<i> &gt; the loop, don't do:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; &#160; &#160; int valX = MyEnum.VAL_X.ordinal();
+</I>&gt;<i> &gt; &#160; &#160;int valY = MyEnum.VAL_Y.ordinal();
+</I>&gt;<i> &gt; &#160; &#160;int count = list.size();
+</I>&gt;<i> &gt; &#160; &#160;MyItem items = list.items();
+</I>&gt;<i> &gt; &#160; &#160;for (int &#160;n = 0; n &lt; count; n++) &#160; {
+</I>&gt;<i> &gt; &#160; &#160; &#160; &#160;int &#160;valItem = items[n].e.ordinal();
+</I>&gt;<i> &gt; &#160; &#160; &#160; &#160;if (valItem == valX)
+</I>&gt;<i> &gt; &#160; &#160; &#160; &#160; &#160; &#160;// do stuff 1
+</I>&gt;<i> &gt; &#160; &#160; &#160; &#160;else if (valItem == valY)
+</I>&gt;<i> &gt; &#160; &#160; &#160; &#160; &#160; &#160;// do stuff 2
+</I>&gt;<i> &gt; &#160; &#160;}
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; instead do
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; &#160; &#160;MyEnum valX = MyEnum.VAL_X;
+</I>&gt;<i> &gt; &#160; &#160;MyEnum valY = MyEnum.VAL_Y;
+</I>&gt;<i> &gt; &#160; &#160;int count = list.size();
+</I>&gt;<i> &gt; &#160; &#160;MyItem items = list.items();
+</I>&gt;<i> &gt; &#160; &#160;for (int &#160;n = 0; n &lt; count; n++) &#160; {
+</I>&gt;<i> &gt; &#160; &#160; &#160; &#160;MyEnum valItem = items[n].e;
+</I>&gt;<i> &gt; &#160; &#160; &#160; &#160;if (valItem == valX)
+</I>&gt;<i> &gt; &#160; &#160; &#160; &#160; &#160; &#160;// do stuff 1
+</I>&gt;<i> &gt; &#160; &#160; &#160; &#160;else if (valItem == valY)
+</I>&gt;<i> &gt; &#160; &#160; &#160; &#160; &#160; &#160;// do stuff 2
+</I>&gt;<i> &gt; &#160; &#160;}
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Stuff like that makes me think whoever wrote that really didn't think
+</I>&gt;<i> &gt; it through all the way. The pointer comparison is the same expense as
+</I>&gt;<i> &gt; the int comparison and avoids n+2 calls to ordinal() in their example
+</I>&gt;<i> &gt; code.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Moreso, the suggestion to use constants that the compiler will inline
+</I>&gt;<i> &gt; is truly evil. Compiler constant inlining can very easily lead to
+</I>&gt;<i> &gt; incorrect constant values when a library (that provides a constant)
+</I>&gt;<i> &gt; changes (new jar dropped in with a new value for the constant) but
+</I>&gt;<i> the
+</I>&gt;<i> &gt; code using that library isn't recompiled. Safety issue.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; If this becomes an issue (which I doubt it will), someone can always
+</I>&gt;<i> &gt; extend the code generator to tweak it.
+</I>&gt;<i> &gt; -- Scott
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; ----------------------------------------
+</I>&gt;<i> &gt; Scott Stanchfield
+</I>&gt;<i> &gt; <A HREF="http://javadude.com">http://javadude.com</A>
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; On Wed, May 19, 2010 at 3:59 PM, Kirby Bohling
+</I>&gt;<i> &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">kirby.bohling at gmail.com</A>&gt; wrote:
+</I>&gt;<i> &gt;&gt; On Wed, May 19, 2010 at 2:13 PM, Scott Stanchfield
+</I>&gt;<i> &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">scott at javadude.com</A>&gt; wrote:
+</I>&gt;<i> &gt;&gt;&gt; Interesting point re common code generation approaches, but as far
+</I>&gt;<i> as
+</I>&gt;<i> &gt;&gt;&gt; performance goes, it's equivalent - all == tests are done using
+</I>&gt;<i> &gt;&gt;&gt; pointers, which are the same size as ints. If switch is used the
+</I>&gt;<i> &gt;&gt;&gt; ordinal values of the enums are used, and the java compiler may be
+</I>&gt;<i> &gt;&gt;&gt; able to better optimize which switch bytecode is used b/c it knows
+</I>&gt;<i> the
+</I>&gt;<i> &gt;&gt;&gt; exact possible range of values.
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; That's true of most full scale JVMs with good JIT, but for many
+</I>&gt;<i> &gt;&gt; embedded VM's that isn't true. &#160;See the Dalvik VM for Android.
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; This link for instance:
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> <A HREF="http://developer.android.com/guide/practices/design/performance.html#av">http://developer.android.com/guide/practices/design/performance.html#av</A>
+</I>&gt;<i> oid_enums
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; I believe it is becoming less true as time goes along, but from what
+</I>&gt;<i> I
+</I>&gt;<i> &gt;&gt; know right now it is true.
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; If you can't support generating both, I'd agree with Jim Idle
+</I>&gt;<i> support
+</I>&gt;<i> &gt;&gt; the one that will go everywhere. &#160;If however you could treat it like
+</I>&gt;<i> &gt;&gt; the C target does with using switch vs. if/else, I'd think that'd be
+</I>&gt;<i> &gt;&gt; nifty. &#160;Doubly so because maintenance burden is free when somebody
+</I>&gt;<i> &gt;&gt; else is doing the work. &#160;As this affects the external API, I would
+</I>&gt;<i> &gt;&gt; assume that it's a non-option to generate one or the other.
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; I'd much rather use enums where available, though. I'd think any
+</I>&gt;<i> code
+</I>&gt;<i> &gt;&gt;&gt; generator could generate a simple int equivalent where enums don't
+</I>&gt;<i> &gt;&gt;&gt; exist, though. The only &quot;gotcha&quot; would be if we had the
+</I>&gt;<i> &gt;&gt;&gt; pattern/description properties, which would have to be represented
+</I>&gt;<i> as
+</I>&gt;<i> &gt;&gt;&gt; separate arrays in most languages. They aren't necessary though
+</I>&gt;<i> (but
+</I>&gt;<i> &gt;&gt;&gt; I'd love to have them)
+</I>&gt;<i> &gt;&gt;&gt; -- Scott
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; ----------------------------------------
+</I>&gt;<i> &gt;&gt;&gt; Scott Stanchfield
+</I>&gt;<i> &gt;&gt;&gt; <A HREF="http://javadude.com">http://javadude.com</A>
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; On Wed, May 19, 2010 at 3:04 PM, Jim Idle &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">jimi at temporal-wave.com</A>&gt;
+</I>&gt;<i> wrote:
+</I>&gt;<i> &gt;&gt;&gt;&gt; I also have doubts about the performance characteristics and the
+</I>&gt;<i> possibility of starting to rely on the target language to fill in gaps
+</I>&gt;<i> such as token numbering - we could get to the point where code
+</I>&gt;<i> generators cannot be built for more primitive languages because the
+</I>&gt;<i> schema is relying the language to automatically do things.
+</I>&gt;<i> &gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt; The generated code should be as primitive as possible, with the
+</I>&gt;<i> runtime being as maintainable and clear as possible while not
+</I>&gt;<i> sacrificing performance.
+</I>&gt;<i> &gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt; Jim
+</I>&gt;<i> &gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; -----Original Message-----
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:antlr-interest-
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">bounces at antlr.org</A>] On Behalf Of Terence Parr
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; Sent: Wednesday, May 19, 2010 11:35 AM
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; To: antlr-interest interest
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; Subject: Re: [antlr-interest] enums in v4 ANTLR Java code
+</I>&gt;<i> generation
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; considered useless
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; On May 18, 2010, at 2:58 PM, Scott Stanchfield wrote:
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; &gt; There are several advantages to enums:
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; &gt; * there is a discrete set of values that can be used (no
+</I>&gt;<i> accidental
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; &gt; 42's passed in when 42 isn't a token type)
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; &gt; * the enum value can carry extra information
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; &gt; * the enum values can override methods differently
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; These are all excellent advantages. I believe that these mostly
+</I>&gt;<i> apply
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; when you're writing code, not generating. Just like the compiler
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; generates integers underneath, if antlr is generating integers,
+</I>&gt;<i> it's
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; probably okay.
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; &gt; OH - one of the things that's clouding this is that you really
+</I>&gt;<i> don't
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; &gt; need the numeric type identifers anymore. You can just have
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; &gt; &#160;public enum TokenType {
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; &gt; &#160; &#160;IDENT, INT ...;
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; &gt; &#160;}
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; &gt; then in your match method:
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; &gt; &#160;void match(TokenType type) {
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; &gt; &#160; &#160;if (LA(1).getType() == type) {
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; &gt; &#160; &#160; &#160; &#160;...
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; &gt; &#160; &#160;}
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; &gt; &#160;}
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; The only problem is that match() lives up in the superclass in
+</I>&gt;<i> the
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; library but the generated parser needs to define the enum.
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; I also have the problem that I need to merge token types from
+</I>&gt;<i> multiple
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; grammars for grammar imports. This gets more competition with
+</I>&gt;<i> enum
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; types without inheritance.
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; &gt; And you can use the types in a switch statement:
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; &gt; &#160;switch(type) {
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; &gt; &#160; &#160;case INT:
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; &gt; &#160; &#160;case IDENT:
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; &gt; &#160; &#160;...
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; &gt; &#160;}
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; &gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; &gt; No more magic numbers! Woohoo!
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; ANTLR already uses the labels when possible such as INT. If you
+</I>&gt;<i> use a
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; literal in your grammar such as ';' in don't label it in the
+</I>&gt;<i> lexer,
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; than I had no choice but to generate the integer token type or a
+</I>&gt;<i> weird
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; label like TOKEN34.
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; Ter
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-">http://www.antlr.org/mailman/options/antlr-</A>
+</I>&gt;<i> interest/your-
+</I>&gt;<i> &gt;&gt;&gt;&gt;&gt; email-address
+</I>&gt;<i> &gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt; List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> &gt;&gt;&gt;&gt; Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-">http://www.antlr.org/mailman/options/antlr-</A>
+</I>&gt;<i> interest/your-email-address
+</I>&gt;<i> &gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> &gt;&gt;&gt; Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-">http://www.antlr.org/mailman/options/antlr-</A>
+</I>&gt;<i> interest/your-email-address
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> 
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-">http://www.antlr.org/mailman/options/antlr-interest/your-</A>
+</I>&gt;<i> email-address
+</I>
+
+
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="038726.html">[antlr-interest] enums in v4 ANTLR Java code generation	considered useless
+</A></li>
+	<LI>Next message: <A HREF="038732.html">[antlr-interest] enums in v4 ANTLR Java code generation	considered useless
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#38730">[ date ]</a>
+              <a href="thread.html#38730">[ thread ]</a>
+              <a href="subject.html#38730">[ subject ]</a>
+              <a href="author.html#38730">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

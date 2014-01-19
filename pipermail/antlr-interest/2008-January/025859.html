@@ -1,0 +1,196 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] ANTLR NUB
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20ANTLR%20NUB&In-Reply-To=%3C20080121193826.C00EA11EB4F%40www.antlr.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="025854.html">
+   <LINK REL="Next"  HREF="025858.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] ANTLR NUB</H1>
+    <B>Gavin Lambert</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20ANTLR%20NUB&In-Reply-To=%3C20080121193826.C00EA11EB4F%40www.antlr.org%3E"
+       TITLE="[antlr-interest] ANTLR NUB">antlr at mirality.co.nz
+       </A><BR>
+    <I>Mon Jan 21 11:31:30 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="025854.html">[antlr-interest] ANTLR NUB
+</A></li>
+        <LI>Next message: <A HREF="025858.html">[antlr-interest] ANTLR NUB
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25859">[ date ]</a>
+              <a href="thread.html#25859">[ thread ]</a>
+              <a href="subject.html#25859">[ subject ]</a>
+              <a href="author.html#25859">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>At 06:32 22/01/2008, Jan Nielsen wrote:
+ &gt;
+ &gt;Here are a few examples of valid expressions:
+ &gt;
+ &gt; &quot;from 1/January/2008&quot;
+ &gt; &quot;from 1/January/2008 to 1/January/2009&quot;
+ &gt; &quot;from 1/January/2008 to 1/January/2009 excluding 
+21/January/2008&quot;
+ &gt; &quot;from 1/January/2008 to 1/January/2009 excluding 
+21/January/2008&quot;
+ &gt; &quot;from 1/January/2008 to 1/January/2009 excluding 
+Thursday-Sunday&quot;
+ &gt; &quot;from 1/January/2008 to 1/January/2009 excluding 
+Thursday-Sunday
+ &gt;including June-July&quot;
+ &gt; &quot;from 1/January/2008 to 1/January/2009 excluding 
+Monday-Thursday
+ &gt;including 21/January/2008&quot;
+ &gt; &quot;from 1/January/2008 to 1/January/2009 excluding 
+Monday-Thursday
+ &gt;including 'Dr. Martin Luther King Day'&quot;
+ &gt;
+ &gt;A &quot;including&quot; after an &quot;excluding&quot;, i.e., to the right of,
+ &gt;overrides the exclusion.
+
+Is it permitted to have repeated clauses?  ie. &quot;from X including A 
+excluding B including C&quot;?
+
+ &gt;prog
+ &gt;    : 'from' date ('to' date)?
+ &gt;      ('including' period)? (',' period)*
+ &gt;      ('excluding' period)? (',' period)*
+ &gt;    ;
+
+This enforces an order between &quot;including&quot; and &quot;excluding&quot;; one 
+which doesn't match your examples above.  At minimum to get the 
+examples to work (and assuming repeated clauses are not permitted) 
+you'll need to reverse these.
+
+Also your scoping on the comma-separated bits is wrong; this 
+should be inside the optional clause (otherwise it doesn't make 
+much sense).  So:
+
+prog
+   : 'from' date ('to' date)? excluding_clause? including_clause?
+   ;
+
+excluding_clause
+   : 'excluding' period (',' period)*
+   ;
+
+including_clause
+   : 'including' period (',' period)*
+   ;
+
+ &gt;day_of_month_period
+ &gt;    : DAY_OF_MONTH (MONTH)? (YEAR)?
+ &gt;    ;
+ &gt;
+ &gt;day_of_week_period
+ &gt;    : DAY_OF_WEEK ('[' OCCURRENCE ']')? (YEAR)?
+ &gt;    ;
+
+Shouldn't these have slashes?  You're also not covering other 
+types of constructs permitted by your examples.
+
+ &gt;OCCURRENCE
+ &gt;    : '1'..'4'
+ &gt;    ;
+ &gt;
+ &gt;YEAR
+ &gt;    : '1'..'9' '0'..'9' '0'..'9' '0'..'9'
+ &gt;    ;
+[...]
+ &gt;DAY_OF_MONTH : '1'..'9' | '1'..'2' '0'..'9' | '30' | '31';
+
+You can't do this.  The most important thing to remember is that 
+all lexing is done up front with no input from the parser (since 
+the parser doesn't even exist yet).  Thus any non-fragment tokens 
+become independent candidates for output.  Facing a '3' in the 
+input stream, it could match any one of these rules; given no 
+clear preference ANTLR will choose the first listed and generate 
+an OCCURRENCE token, which you're not accepting when it finally 
+does reach the parser.
+
+At the lexer level you should just recognise basic integers, and 
+then validate them based on context in the parser:
+
+NUMBER: ('0'..'9')+;
+
+occurrence: n=NUMBER { validateOccurrence($n.text); }?;
+year: n=NUMBER { validateYear($n.text); }?;
+day_of_month: n=NUMBER { validateDayOfMonth($n.text); }?;
+
+ &gt; But once I have a parser for my expression, how do I actually
+ &gt; use the parser to implement my API???
+
+There are two common ways to do this.  One is to output an AST 
+from the parser, which in your case could end up looking something 
+like this (expressed in string form):
+   ^(FROM ^(DATE 1 January 2008) ^(DATE 1 January 2009) 
+^(EXCLUDING ^(DAY ^(RANGE Monday Thursday))) ^(INCLUDING ^(DAY 
+&quot;Dr. Martin Luther King Day&quot;))
+
+(Of course the exact syntax is variable; you can put in what you 
+want for the most part, although a certain structure will be 
+dictated by how the rules are organised.)  Then you can just write 
+tree-walking code to call your various API functions as 
+appropriate.  (Or even write a tree parser, though that's usually 
+unnecessary.)
+
+Another approach is to simply include the action code as you are 
+parsing.  For example:
+
+excluding_clause
+   : 'excluding' p=period { addExclusion($p.result); }
+     (',' p=period { addExclusion($p.result); } )*
+   ;
+
+Of course for this to work, you'll need to also enhance the period 
+and date rules with 'returns' clauses, which create a data 
+structure that describes what they have just recognised.
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="025854.html">[antlr-interest] ANTLR NUB
+</A></li>
+	<LI>Next message: <A HREF="025858.html">[antlr-interest] ANTLR NUB
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25859">[ date ]</a>
+              <a href="thread.html#25859">[ thread ]</a>
+              <a href="subject.html#25859">[ subject ]</a>
+              <a href="author.html#25859">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

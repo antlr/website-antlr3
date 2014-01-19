@@ -1,0 +1,212 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] C-Target $label.text / toString malfunction
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20C-Target%20%24label.text%20/%20toString%20malfunction&In-Reply-To=%3CB36CCC332A32904F8FA3DE134A2353362522C3%40wavemachine.temporal-wave.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="020065.html">
+   <LINK REL="Next"  HREF="020075.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] C-Target $label.text / toString malfunction</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20C-Target%20%24label.text%20/%20toString%20malfunction&In-Reply-To=%3CB36CCC332A32904F8FA3DE134A2353362522C3%40wavemachine.temporal-wave.com%3E"
+       TITLE="[antlr-interest] C-Target $label.text / toString malfunction">jimi at temporal-wave.com
+       </A><BR>
+    <I>Tue Apr  3 12:29:45 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="020065.html">[antlr-interest] Manipulating lexer text output
+</A></li>
+        <LI>Next message: <A HREF="020075.html">[antlr-interest] C-Target $label.text / toString malfunction
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#20063">[ date ]</a>
+              <a href="thread.html#20063">[ thread ]</a>
+              <a href="subject.html#20063">[ subject ]</a>
+              <a href="author.html#20063">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>OK - I see what you are getting at - should be an easy fix (I think) -
+have to give me a few days though as I just got back from vacation and
+have lots of things piled up.
+
+Jim
+
+-----Original Message-----
+From: Tobias Pape [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">Das.Linux at gmx.de</A>] 
+Sent: Saturday, March 31, 2007 9:26 AM
+To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Cc: Jim Idle
+Subject: C-Target $label.text / toString malfunction
+
+Hi guys, hi Jim in particular.
+
+
+I've recently got a nasty behavoir in my generated Lexer/Parser.
+
+example grammar snippet:
+==============================================
+unaryPattern returns [ pASTPattern p ]
+   : s=unarySelector
+     { $p = (pASTPattern) ASTUnaryPattern_new((char *) $s.text-
+&gt;<i>chars); }
+</I>   ;
+
+binaryPattern returns [ pASTPattern p  ]
+   : s=binarySelector v=argument
+     { $p = (pASTPattern) ASTBinaryPattern_new((char *) $s.text-
+&gt;<i>chars, v.v); }
+</I>   ;
+
+keywordPattern returns [ pASTKeywordPattern p ]
+   : (s=keyword v=argument {
+   	$p = ASTKeywordPattern_new();
+   	$p-&gt;add_argument($p,(char *)  $s.text-&gt;chars, v.v);
+   } )+
+   ;
+==============================================
+
+as you see, i reference the s-label (as suggested to me by Jim) to then
+get the chars out of it.
+
+At this point, i have particular serious problems:
+ &gt;&gt;
+ &gt;&gt; warning: passing argument 1 of 'ctx-&gt;pParser-&gt;tstream-&gt;toString'  
+from incompatible pointer type
+ &gt;&gt;
+I looked into the code and found:
+==============================================
+            	            /* End: ruleRef
+(rule,label,elementIndex,args) */
+             	            if ( backtracking == 0 )
+             	            {
+             	
+             	                  	retval.p=
+ASTKeywordPattern_new();
+             	                  	retval.p-&gt;add_argument(retval.p,
+(char *)  strStream-&gt;toString(s.start,s.stop)-&gt;chars, v.v);
+             	
+             	            }
+==============================================
+
+as you see, it's from the keywordPattern-rule.
+the problem is, as of b6/b7 (which I tried) one can't call toString like
+this.
+I found some toString functions in the antlr3tokenstream,h connected to
+what strStream should return:
+==============================================
+    /** Return the text of all the tokens in the stream, as the old
+tramp in
+      *  Leeds market used to say; &quot;Get the lot!&quot;
+      */
+     pANTLR3_STRING	    (*toString)		(struct  
+ANTLR3_TOKEN_STREAM_struct * tokenStream);
+
+     /** Return the text of all tokens from start to stop, inclusive.
+      *  If the stream does not buffer all the tokens then it can just
+      *  return an empty ANTLR3_STRING or NULL;  Grammars should not
+access $ruleLabel.text in
+      *  an action in that case.
+      */
+     pANTLR3_STRING	    (*toStringSS)	(struct  
+ANTLR3_TOKEN_STREAM_struct * tokenStream, ANTLR3_UINT64 start,
+ANTLR3_UINT64 stop);
+
+     /** Because the user is not required to use a token with an index
+stored
+      *  in it, we must provide a means for two token objects themselves
+to
+      *  indicate the start/end location.  Most often this will just
+delegate
+      *  to the other toString(int,int).  This is also parallel with
+      *  the pTREENODE_STREAM-&gt;toString(Object,Object).
+      */
+     pANTLR3_STRING	    (*toStringTT)	(struct  
+ANTLR3_TOKEN_STREAM_struct * tokenStream, pANTLR3_COMMON_TOKEN start,
+pANTLR3_COMMON_TOKEN stop);
+
+==============================================
+
+
+
+therefore I included
+==============================================
+	 //seems to be buggy in \$label.text implementation
+	 //THIS IS A DIRTY HACK!
+	 #define toString(A,B) toStringTT(strStream,(A),(B))
+==============================================
+
+into the @init block of my first parser rule, but later patched the
+C.stg to say ==============================================
+&lt;else&gt;
+strStream-&gt;toStringSS(strStream,(ANTLR3_INT32)(&lt;scope&gt;.start-
+ &gt;getTokenIndex(&lt;scope&gt;.start)),(ANTLR3_INT32)(&lt;scope&gt;.stop-
+ &gt;getTokenIndex(&lt;scope&gt;.stop)))
+&lt;endif&gt;
+==============================================
+instead of
+==============================================
+&lt;else&gt;
+strStream-&gt;toString(&lt;scope&gt;.start,&lt;scope&gt;.stop)
+&lt;endif&gt;
+==============================================
+
+
+this maked my Source compile, but nasty, nasty, now _every_ reference in
+the form of $label.text (irrespective of the label) turns out to be the
+same string (i.e. for me, the Text of the first non-hidden Token).
+
+can somebody try to reproduce or tell me, where im wrong?
+I suspect this a bug in either the C.stg or in the libantlr3c (or both).
+
+thaks for listening to me,
+have a nice Sunday,
+	-Tobias
+
+
+
+
+
+
+
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="020065.html">[antlr-interest] Manipulating lexer text output
+</A></li>
+	<LI>Next message: <A HREF="020075.html">[antlr-interest] C-Target $label.text / toString malfunction
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#20063">[ date ]</a>
+              <a href="thread.html#20063">[ thread ]</a>
+              <a href="subject.html#20063">[ subject ]</a>
+              <a href="author.html#20063">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

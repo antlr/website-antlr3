@@ -1,0 +1,213 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] first steps with a lexer/parser
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20first%20steps%20with%20a%20lexer/parser&In-Reply-To=%3C20080104100214.63100%40gmx.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="025527.html">
+   <LINK REL="Next"  HREF="025536.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] first steps with a lexer/parser</H1>
+    <B>Harald Mueller</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20first%20steps%20with%20a%20lexer/parser&In-Reply-To=%3C20080104100214.63100%40gmx.net%3E"
+       TITLE="[antlr-interest] first steps with a lexer/parser">harald_m_mueller at gmx.de
+       </A><BR>
+    <I>Fri Jan  4 02:02:14 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="025527.html">[antlr-interest] RewriteEmptyStreamException from	antlr-2007-12-31.17 interim 3b1 build
+</A></li>
+        <LI>Next message: <A HREF="025536.html">[antlr-interest] Server access
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25533">[ date ]</a>
+              <a href="thread.html#25533">[ thread ]</a>
+              <a href="subject.html#25533">[ subject ]</a>
+              <a href="author.html#25533">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>&gt;<i> a). it is indeed simpler if i use tokens instead of rules, but then i
+</I>&gt;<i> cannot strip the double quotes (! don't work unlike in the case of
+</I>&gt;<i> rules), and getting rid of them explicitly in code seems to be
+</I>&gt;<i> terribly hacky.
+</I>
+No. The correct way is to normalize the token text in the lexer. Everything else is considered hacky in lexer+parser design.
+(Yes, there is a bug in ANTLR 3.x, as far as I know, so that ! does not work in the lexer right now. Terence promised to work on this somewhen &quot;now&quot; - please complain about this!).
+
+&gt;<i> 
+</I>&gt;<i> b). i could not simply skip() WS, because then they get removed from
+</I>&gt;<i> my strings within the quotes (and i want spaces preserved inside
+</I>&gt;<i> quotes). 
+</I>
+If this is the only reason for keeping the WS, it shows even more that the decision to do string assembly on the parser level is wrong. Please don't do this. One simple line in the lext
+
+    $text = $text.substring(1,....);
+
+or a repaired ANTLR with two tiny !
+
+    STRING : '&quot;'! ~('&quot;')* '&quot;'!
+
+as opposed to thinking about WS in the grammar at multiple places, where it is (by language definition - at least I assume this) irrelevant: Please go for the time-proven, text-book decision.
+
+&gt;<i> or perhaps some sort of a flag that says that if i am inside a
+</I>&gt;<i> quoted string i do not throw away spaces.
+</I>
+If at all, you can re-create the original text from the HIDDEN channel - there, all the characters are preserved.
+
+&gt;<i> d). i guess similar to a). i prefer semantic rather than symbolic...
+</I>&gt;<i> err.. symbols
+</I>
+Yeah - here it is perfectly ok to use a sensible name instead of '='.
+
+Regards
+Harald
+ 
+
+&gt;<i> 
+</I>&gt;<i> thanks again for the pointers, i will keep digging.
+</I>&gt;<i> 
+</I>&gt;<i> -a
+</I>&gt;<i> 
+</I>&gt;<i> On 1/3/08, Harald Mueller &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">harald_m_mueller at gmx.de</A>&gt; wrote:
+</I>&gt;<i> &gt; Hi -
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; a) A quoted string should be a token, IMO, not a rule (except ... see
+</I>&gt;<i> the thread on parsing BSDL where we quarrel about &quot;structured string parsing&quot;
+</I>&gt;<i> ... but this would not be &quot;first steps&quot;).
+</I>&gt;<i> &gt; (I am constantly unsure whether ! works in lexer rules - so, if you wnat
+</I>&gt;<i> to strip the &quot; and it does NOT work, first complain to Terence; and then
+</I>&gt;<i> do something like
+</I>&gt;<i> &gt;     $text = $text.Trim('\&quot;'); // in C#
+</I>&gt;<i> &gt; or
+</I>&gt;<i> &gt;     $text = $text.substring(1,$text.length-1); // in Java
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; b) Are you really sure that whitespace is that significant? According to
+</I>&gt;<i> your grammar,
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; {a=1}
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; is not allowed: You require a WS after { and before } - and WS is at
+</I>&gt;<i> least one blank. Also, { a = 1 } would be wrong: No WS around = ...
+</I>&gt;<i> &gt; Almost all languages I know *ignore* whitespace. In ANTLR, you do this
+</I>&gt;<i> by sending the WS tokens to the HIDDEN channel via { $channel = HIDDEN; }.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; c) There is no good reason to have artificial roots for single tokens -
+</I>&gt;<i> instead of ^(INT_VAL INT), just use the INT; same for STR_VAL.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; d) Also for the '=', I would not add an artificial symbol, but simply
+</I>&gt;<i> use the '=' as root:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;      ...: NAME '='^ valueExpr;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; - but this is a matter of taste, I'd say.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Regards
+</I>&gt;<i> &gt; Harald
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; -------- Original-Nachricht --------
+</I>&gt;<i> &gt; &gt; Datum: Thu, 3 Jan 2008 08:40:38 -0500
+</I>&gt;<i> &gt; &gt; Von: body &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-list at splitbody.com</A>&gt;
+</I>&gt;<i> &gt; &gt; An: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> &gt; &gt; Betreff: [antlr-interest] first steps with a lexer/parser
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; &gt; hello,
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; i am trying to deal with the messages that look like this:
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; { a=1 b=&quot;2&quot; c=&quot;t&quot; d=&quot;stuff&quot; e=&quot;one two&quot; f={ g=&quot;three four&quot; h={ i=5
+</I>&gt;<i> &gt; &gt; j=&quot;a ha&quot; } } }
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; below is my lexer/parser. it seems to work and emit proper-looking
+</I>&gt;<i> &gt; &gt; tree, but i want to run it by you, because it does not feel right.
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; it seems like i should be using fragments somewhere, also i cannot
+</I>&gt;<i> &gt; &gt; figure out how to build a proper tree grammar out of it.
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; any suggestions appreciated.
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; thank you.
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; -----------------
+</I>&gt;<i> &gt; &gt; grammar MsgString;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; options { output = AST; }
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; tokens {
+</I>&gt;<i> &gt; &gt;       PAIR;
+</I>&gt;<i> &gt; &gt;       MSG;
+</I>&gt;<i> &gt; &gt;       STR_VAL;
+</I>&gt;<i> &gt; &gt;       INT_VAL;
+</I>&gt;<i> &gt; &gt; }
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; start  :    msg NL? EOF -&gt; ^(MSG msg) ;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; msg    :    '{' WS nameValuePairExpr* WS '}' -&gt; ^(MSG
+</I>&gt;<i> nameValuePairExpr*)
+</I>&gt;<i> &gt; &gt; ;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; nameValuePairExpr
+</I>&gt;<i> &gt; &gt;        :    NAME '=' valueExpr WS? -&gt; ^(PAIR NAME valueExpr) ;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; valueExpr
+</I>&gt;<i> &gt; &gt;        :    quotedString -&gt; ^(STR_VAL quotedString)
+</I>&gt;<i> &gt; &gt;        |    INT -&gt; ^(INT_VAL INT)
+</I>&gt;<i> &gt; &gt;        |    msg
+</I>&gt;<i> &gt; &gt;        ;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; quotedString
+</I>&gt;<i> &gt; &gt;        :    '&quot;'! .* '&quot;'!
+</I>&gt;<i> &gt; &gt;        ;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; INT    :    '0'..'9'+ ;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; NAME   :    ('a'..'z'|'A'..'Z'|'0'..'9')+ ;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; WS     :    ' '+ ;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; NL     :    ('\n'|'\r')+ ;
+</I>&gt;<i> &gt; &gt; -----------------
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; --
+</I>&gt;<i> &gt; Psssst! Schon vom neuen GMX MultiMessenger geh&#246;rt?
+</I>&gt;<i> &gt; Der kann`s mit allen: <A HREF="http://www.gmx.net/de/go/multimessenger?did=10">http://www.gmx.net/de/go/multimessenger?did=10</A>
+</I>&gt;<i> &gt;
+</I>
+-- 
+GMX FreeMail: 1 GB Postfach, 5 E-Mail-Adressen, 10 Free SMS.
+Alle Infos und kostenlose Anmeldung: <A HREF="http://www.gmx.net/de/go/freemail">http://www.gmx.net/de/go/freemail</A>
+</PRE>
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="025527.html">[antlr-interest] RewriteEmptyStreamException from	antlr-2007-12-31.17 interim 3b1 build
+</A></li>
+	<LI>Next message: <A HREF="025536.html">[antlr-interest] Server access
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25533">[ date ]</a>
+              <a href="thread.html#25533">[ thread ]</a>
+              <a href="subject.html#25533">[ subject ]</a>
+              <a href="author.html#25533">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

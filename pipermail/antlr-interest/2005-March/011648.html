@@ -1,0 +1,250 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Lexer switching
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Lexer%20switching&In-Reply-To=423E9580.5070400%40web.de">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="011540.html">
+   <LINK REL="Next"  HREF="011528.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Lexer switching</H1>
+    <B>Dean Tribble</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Lexer%20switching&In-Reply-To=423E9580.5070400%40web.de"
+       TITLE="[antlr-interest] Lexer switching">tribble at e-dean.com
+       </A><BR>
+    <I>Sun Mar 27 09:38:54 PST 2005</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="011540.html">[antlr-interest] Switching lexer rules on/off from parser
+</A></li>
+        <LI>Next message: <A HREF="011528.html">[antlr-interest] Assertion failure in cicularqueue.hpp
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#11648">[ date ]</a>
+              <a href="thread.html#11648">[ thread ]</a>
+              <a href="subject.html#11648">[ subject ]</a>
+              <a href="author.html#11648">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Summary: I'm rebuilding the E grammar in antlr 
+(<A HREF="http://www.erights.org/e-impls/e-on-e/egrammar/">http://www.erights.org/e-impls/e-on-e/egrammar/</A>).  It contains a few 
+occurrences of *recursively* nesting grammars, for which the current 
+lexer switching is inadequate.  I finally figured out a different and 
+simpler way to manage switching lexers that addresses this problem.
+
+Context: E is an expression language, in which one of the expressions is 
+a &quot;quasi-literal&quot;.  A quasi-literal is similar to (but more general 
+than) a Perl string (or a Lisp quasi-list) in that it can contain 
+$-escaped expressions in E.  Because these are arbitrary E expressions, 
+they can recursively contain further quasi-literals.  A couple of examples:
+
+    print(`The value of X is $x`)
+
+    print(`Name: ${if (title.isEmpty()) { `${name}'s book` } else 
+{title}} date: $date`
+
+Backquote introduces a quasi-literal (and causes a switch to the 
+quasi-lexer).  Within a quasi-literal, '$' escapes a nested expression 
+(and switches to the E lexer).  If it is just an identifier, then no 
+braces are required.  If it is a more complex expression, then braces 
+are required.  Note, however, that since E also uses braces, simply 
+encountering a brace is not the right reason to switch back to the quasi 
+lexer from the E lexer (and thus the lexer by itself cannot manage the 
+transitions back).  BTW The more general aspects of quasi-literals are 
+outside the parsing realm, so I won't go into those, but they are really 
+cool :-)
+
+I initially implemented all this with multiple parsers and corresponding 
+grammars, and blithely switched lexers in the parser productions.  This 
+did not work at all because of lookahead and predicates:  lexer actions 
+to switch the current lexer will happen during parser lookahead (whether 
+it was triggered by a parser predicate or not), whereas parser actions 
+by default do not.  Even if you make them happen in predicates, they 
+still happen when the parser gets to the relevant token, which because 
+of lookahead, is already after the wrong (unswitched) lexer has already 
+consumed tokens past where you wanted to switch.  Thus, all lexer 
+switching needs to happen purely within lexers.  There is not sufficient 
+support to do that if the exit of the nested lexer must be driven by the 
+grammar (and thus the parser) rather than by simple lexing.
+
+After several rounds, it seems that implementing lexer switching as a 
+TokenStream  (via TokenStreamSelector) is not the right place.  It is 
+less accessible to the lexer or parser, cannot participate in the 
+lookahead process, has less access to the line numbers, etc.  I instead 
+merged that concept with the TokenBuffer, so a TokenMultiBuffer can 
+select from different streams of tokens.  The class supports a stack of 
+nesting lexers.  It also directly supports enter and exit (e.g., of 
+braces) so that a nested grammar can be exited when encountering a 
+close-&quot;brace&quot; that does not match an open brace in that grammar.  I had 
+started support for participation in the parser predicates, but by then 
+had figured that brace management was enough to keep all lexer switching 
+under control of the lexers, so that semi-support is removed.
+
+Even without the support for the parser changing the lexer, I found that 
+using a special TokenBuffer to handle lexer changing was simpler than 
+using a stream selector.  This is mainly because it adds no layers in 
+the process of getting tokens, so debugging is easier.  Because it does 
+not add per-token overhead, it could perfectly well be *always* wired 
+into the framework.  Then, having multiple lexers would be special, but 
+would not be an awkward integration.  In an informal sampling of 
+languages, I believe that multiple-lexers will be increasing, and 
+already would have been used more if it was more integral.  Thus, I'd 
+like to see the token-buffer by default support it (fold the 
+TokenMultiBuffer support into TokenBuffer), and make it so that adding a 
+lexer will arrange for that lexer to have the shared input state 
+(instead of having to arrange that explicitly).  This will also mean 
+that lexers will by default be able to switch lexers, and you won't need 
+to add language-specific code to do so (e.g., add a setSelector method, 
+etc.).
+-------------- next part --------------
+package antlr;
+
+/**
+ * Combines and interleaves multiple streams of tokens together into a single stream.
+ * Actions during token recognition change the token stream to be provided.  This
+ * simultaneously supports mark/rewind across changes in the token stream, recursive
+ * use of token streams (for languages that nest in each other), and tracking of
+ * such nesting (e.g., if a nested language is terminated by a bracket that is also
+ * used in an outer language).
+ *
+ * &lt;p&gt;
+ *
+ * @author Dean Tribble
+ *
+ * Software rights: <A HREF="http://www.antlr.org/license.html">http://www.antlr.org/license.html</A>
+ *
+ * @see antlr.TokenBuffer
+ * @see antlr.Token
+ * @see antlr.TokenQueue
+ */
+public class TokenMultiBuffer extends TokenBuffer {
+
+    protected String[] myNames;
+    protected TokenStream[] myInputs;
+    protected MarkRecord myLayers = null;
+
+    protected int myEnterCount = 0;
+
+    /** Create a token buffer */
+    public TokenMultiBuffer(TokenStream input_) {
+        this(new String[]{&quot;base&quot;}, new TokenStream[]{input_});
+    }
+
+    /** Create a token buffer will multiple token streams. */
+    public TokenMultiBuffer(String[] names, TokenStream[] inputs) {
+        myNames = names;
+        myInputs = inputs;
+        input = myInputs[0];
+    }
+
+    /** Nest into a named lexer. */
+    public void push(String name) {
+        myLayers = new MarkRecord(myEnterCount, input, myLayers);
+        myEnterCount = 0;
+        select(findInput(name));
+        trace(&quot;push&quot;);
+    }
+
+    /** Exit the current lexer and continue lexing with the outer lexer. */
+    public void pop() {
+        trace(&quot;pop&quot;);
+        //TODO check for myNesting==0?
+        input = myLayers.stream;
+        myEnterCount = myLayers.enterCount;
+        myLayers = myLayers.next;
+    }
+
+    /** Record that we entered the kind of brace that will cause this lexer to exit.
+     * This could be called when parsing multiple brace-typed, or generalized to enforce
+     * specific matching (e.g., so that if both paren and bracket were supported, it
+     * would throw a parsing exception if the matching brace was not on the top of the
+     * brace stack). */
+    public void enterBrace() {
+        trace(&quot;enter&quot;);
+        myEnterCount++;
+    }
+    /** Exit from a nested brace.  If the corresponding open brace was not lexed by this lexer
+     * (or more specifically, by the lexing of this layer if the grammars recursively nest), then
+     * this lexer is also finished lexing, so pop it and continue lexing in the outer lexer.
+     */
+    public void exitBrace() {
+        trace(&quot;exit&quot;);
+        if (myEnterCount &lt;= 0) {
+            pop();
+        } else {
+            myEnterCount--;
+        }
+    }
+
+    public void select(int streamNum) {
+        input = myInputs[streamNum];
+    }
+    public void select(String name) {
+        input = myInputs[findInput(name)];
+        trace(&quot;select&quot;);
+    }
+    private int findInput(String name) {
+        for (int i = 0, max = myInputs.length; i&lt;max; i++) {
+            if (myNames[i].equals(name)) {
+                return i;
+            }
+        }
+        return -1; //not a great default, but ensures an error
+    }
+    private String findName(TokenStream ts) {
+        for (int i = 0, max = myInputs.length; i&lt;max; i++) {
+            if (myInputs[i] == ts) {
+                return myNames[i];
+            }
+        }
+        return &quot;unknown&quot;;
+    }
+
+    private class MarkRecord {
+        final int enterCount;
+        final TokenStream stream;
+        final MarkRecord next;
+        MarkRecord(int count, TokenStream s, MarkRecord n) {
+            enterCount = count;
+            stream = s;
+            next = n;
+        }
+    };
+
+    private void trace(String header) {
+//        System.err.print(header + &quot; [&quot; + findName(input));
+//        for (MarkRecord r = myLayers; r != null; r = r.next) {
+//            System.err.print(&quot;, &quot; + findName(r.stream));
+//        }
+//        System.err.println(&quot;]&quot;);
+//        Thread.dumpStack();
+    }
+
+}
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="011540.html">[antlr-interest] Switching lexer rules on/off from parser
+</A></li>
+	<LI>Next message: <A HREF="011528.html">[antlr-interest] Assertion failure in cicularqueue.hpp
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#11648">[ date ]</a>
+              <a href="thread.html#11648">[ thread ]</a>
+              <a href="subject.html#11648">[ subject ]</a>
+              <a href="author.html#11648">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

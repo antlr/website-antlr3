@@ -1,0 +1,234 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Problem using code from ANTLR 3 FAQ How do I	implement include files?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Problem%20using%20code%20from%20ANTLR%203%20FAQ%20How%20do%20I%0A%09implement%20include%20files%3F&In-Reply-To=%3Ca7e86e130710061046q50506872x9b457254f1a88309%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="023983.html">
+   <LINK REL="Next"  HREF="023985.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Problem using code from ANTLR 3 FAQ How do I	implement include files?</H1>
+    <B>Rob Finneran</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Problem%20using%20code%20from%20ANTLR%203%20FAQ%20How%20do%20I%0A%09implement%20include%20files%3F&In-Reply-To=%3Ca7e86e130710061046q50506872x9b457254f1a88309%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Problem using code from ANTLR 3 FAQ How do I	implement include files?">robfinneran at gmail.com
+       </A><BR>
+    <I>Sat Oct  6 10:46:31 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="023983.html">[antlr-interest] Suggestion: Parameterized Productions
+</A></li>
+        <LI>Next message: <A HREF="023985.html">[antlr-interest] Problem using code from ANTLR 3 FAQ How do I implement include files?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#23984">[ date ]</a>
+              <a href="thread.html#23984">[ thread ]</a>
+              <a href="subject.html#23984">[ subject ]</a>
+              <a href="author.html#23984">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello fellow ANTLR  fans!
+
+Please forgive my newbie-ness.
+
+The code from the FAQ doesn't seem to work for me:
+
+@lexer::members {
+    class SaveStruct {
+      SaveStruct(CharStream input){
+        this.input = input;
+        this.marker = input.mark();
+      }
+      public CharStream input;
+      public int marker;
+     }
+
+     Stack&lt;SaveStruct&gt; includes = new Stack&lt;SaveStruct&gt;();
+
+    // We should override this method for handling EOF of included file
+     public Token nextToken(){
+       Token token = super.nextToken();
+
+       if(token==Token.EOF_TOKEN &amp;&amp; !includes.empty()){
+        // We've got EOF and have non empty stack.
+         SaveStruct ss = includes.pop();
+         setCharStream(ss.input);
+         input.rewind(ss.marker);
+         token = super.nextToken();
+       }
+
+      // Skip first token after switching on another input.
+       if(((CommonToken)token).getStartIndex() &lt; 0)
+         token = super.nextToken();
+
+       return token;
+     }
+ }
+
+// and lexer rule
+ INCLUDE
+     : 'include' (WS)? f=STRING {
+       String name = f.getText();
+       name = name.substring(1,name.length()-1);
+       try {
+        // save current lexer's state
+         SaveStruct ss = new SaveStruct(input);
+         includes.push(ss);
+
+        // switch on new input stream
+         setCharStream(new ANTLRFileStream(name));
+         reset();
+
+       } catch(Exception fnf) { throw new Error(&quot;Cannot open file &quot; + name); }
+     }
+     ;
+
+The lexer code appears to process both the included file, and the main
+file, but the parser only seems to build the included file as a tree,
+and does not appear to build a tree for the main file.
+
+------------
+
+Below is an email I sent to antlr-interest two days ago with a
+slightly more sophisticated mechanism to process entire directory as
+indicated by the namespace However, I don't see how this enhancement
+has anything to do with the problem. Please forgive if I overlooked
+something.
+
+I have modified someone's code example to enhance the C-style include
+file example to support reading all include files in a directory in a
+similar fashion to C# &quot;using&quot; statements.
+
+
+The lexer USING rule seems to recursively walk through the files using
+a stack mechanism.
+The problem is that the parser only SEEMS to see the tokens from the
+very first include (or using statement) file. It never SEEMS to fully
+processes the remainder of the original file. The lexer rule however
+does actually process all of the files. The real problem is that the
+AST tree that the PARSER builds only builds the tree for the first
+included file.
+
+I tried using input.mark() to save the state info but that version did
+not work either.
+
+Could the problem be caused because I need to separate the parser from
+the lexer? I'm just  using the default combined lexer/parser but the
+code here calls super.nextToken().
+
+Is there a way for me to see the token stream? I have also tried input
+= ss.input;
+
+Thanks!
+
+@lexer::members {
+       class SaveStruct {
+               public CharStream input;
+               public String fileName;
+       public int tokenStartCharIndex, tokenStartLine,
+tokenStartCharPositionInLine;
+    }
+
+       Stack&lt;SaveStruct&gt; includes = new Stack&lt;SaveStruct&gt;();
+       String currentFile = &quot;default&quot;;
+       List usingNamespaces = new ArrayList();
+       // We should override this method for handling EOF of included file
+       public Token nextToken() {
+               Token token = super.nextToken();
+
+               if(token==Token.EOF_TOKEN &amp;&amp; !includes.empty()) {
+                       // We've got EOF and have non empty stack.
+                       SaveStruct ss = includes.pop();
+                       System.err.println(&quot;pop: &quot; + ss.fileName);
+                       currentFile = ss.fileName;
+                       setCharStream(ss.input);
+                       tokenStartCharIndex = ss.tokenStartCharIndex;
+           tokenStartLine = ss.tokenStartLine;
+           tokenStartCharPositionInLine = ss.tokenStartCharPositionInLine;
+                       token = super.nextToken();
+               }
+
+               // Skip first token after switching on another input.
+               if(((CommonToken)token).getStartIndex() &lt; 0) {
+                       token = super.nextToken();
+               }
+               return token;
+       }
+}
+
+USING
+       : 'using' WS f+=ID ('.' f+=ID)* {
+               StringBuffer sb = new StringBuffer();
+               sb.append(Test.projectBaseDir);
+               java.util.Iterator i = $f.iterator();
+               while (i.hasNext()) {
+                       Token t = (Token)i.next();
+                       sb.append(&quot;\\&quot;);
+                       sb.append(t.getText());
+               }
+               String name = sb.toString();
+               if (!usingNamespaces.contains(name)) {
+               usingNamespaces.add(name);
+               try {
+                       String fullName = null;
+                       System.err.println(&quot;namespace: &quot; + name);
+                       java.io.File namespaceDir = new java.io.File(name);
+                       String[] files = namespaceDir.list();
+                               for (int j = 0; j &lt; files.length; j++) {
+                                       fullName = name + &quot;\\&quot; + files[j];
+                                       // save current lexer's state
+                                       SaveStruct ss = new SaveStruct();
+                                       ss.input = input;
+                                       ss.fileName = currentFile;
+                                       ss.tokenStartCharIndex =
+tokenStartCharIndex;
+                                       ss.tokenStartLine = tokenStartLine;
+                                       ss.tokenStartCharPositionInLine
+= tokenStartCharPositionInLine;
+                                       includes.push(ss);
+                                       System.err.println(&quot;Push: &quot; +
+ss.fileName);
+
+                                       // switch on new input stream
+                                       setCharStream(new
+ANTLRFileStream(fullName));
+                                       currentFile = fullName;
+                                       System.err.println(&quot;Current: &quot;
++ currentFile);
+                                       reset();
+                               }
+      } catch(Exception fnf) { throw new Error(&quot;Cannot open file &quot; + name); }
+          }
+    }
+    ;
+
+Thanks!
+
+Rob
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="023983.html">[antlr-interest] Suggestion: Parameterized Productions
+</A></li>
+	<LI>Next message: <A HREF="023985.html">[antlr-interest] Problem using code from ANTLR 3 FAQ How do I implement include files?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#23984">[ date ]</a>
+              <a href="thread.html#23984">[ thread ]</a>
+              <a href="subject.html#23984">[ subject ]</a>
+              <a href="author.html#23984">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,364 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [stringtemplate-interest] format option implementation details
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:stringtemplate-interest%40antlr.org?Subject=%5Bstringtemplate-interest%5D%20format%20option%20implementation%20details&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000866.html">
+   <LINK REL="Next"  HREF="000851.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[stringtemplate-interest] format option implementation details</H1>
+    <B>John Snyders</B> 
+    <A HREF="mailto:stringtemplate-interest%40antlr.org?Subject=%5Bstringtemplate-interest%5D%20format%20option%20implementation%20details&In-Reply-To="
+       TITLE="[stringtemplate-interest] format option implementation details">jjsnyders at rcn.com
+       </A><BR>
+    <I>Sat Dec  9 23:12:23 PST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000866.html">[stringtemplate-interest] Output string lengths..
+</A></li>
+        <LI>Next message: <A HREF="000851.html">[stringtemplate-interest] format option implementation details
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#847">[ date ]</a>
+              <a href="thread.html#847">[ thread ]</a>
+              <a href="subject.html#847">[ subject ]</a>
+              <a href="author.html#847">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Here are the details of what I have implemented for the format option.
+
+format is treated syntactically like any other option and can be combined
+with any of the other options. The syntax is
+$template;format=expr$. Where expr is an expression resulting in a string
+value that names the format to be applied to the template by the renderer
+available to the template if available.  There is no default for the format
+expression so it must be given. For example $myDate;format=&quot;longDate&quot;$
+
+Format applies to either the attribute type or the result of the template,
+which is a string. Format will apply to the value of the null option but not
+to the separator.
+
+For example
+  $list : {a $it$ b};format=&quot;toUpper&quot;,separator=&quot; and &quot;,null=&quot;woops&quot;$
+results in
+  A X B and A Y B and A WOOPS B and A Z B
+when list contains x, y, &lt;null&gt;, y and toUpper is a supported format option
+of the available renderer for type String that returns the upper case input
+string.
+
+Note that the value of null was upper cased but the separator &quot; and &quot; was
+not.
+If you really want the separator to be formatted then you must do this
+
+  ${$list : {a $it$ b};separator={ and },null={null}$};format={toUpper}$
+which results in
+  A X B AND A Y B AND A NULL B AND A Z B
+
+To make use of format you must create a renderer that implements
+AttributeRenderer. AttributeRenderer is enhanced to add the toString method
+that takes a formatName. (Now that I think of it, for backwards
+compatibility perhaps we should create a new interface such as
+AttributeRendererEx? so that existing renderers don't break)
+
+public interface AttributeRenderer {
+    public String toString(Object o);
+    public String toString(Object o, String formatName);
+}
+
+Implement the second toString method to check the formatName and apply the
+appropriate formatting.
+Register the renderer with a template group or template as you normally
+would.
+If the format string passed to the renderer is not recognized then simply
+call toString on the object or throw an exception. If the format option is
+used but there is no renderer for the type then format is ignored and the
+value is rendered as if format was not specified.
+
+Here is an example renderer toString method:
+    public String toString(Object o, String formatName)
+    {
+        String s = (String)o;
+        if (formatName.equals(&quot;toUpper&quot;))
+        {
+            s = s.toUpperCase();
+        }
+        else {
+            throw new IllegalArgumentException();
+        }
+        return s;
+    }
+
+The details of the renderer could easily change without affecting the
+behavior of the format option.
+
+There are two interesting things to be aware of with the format option
+1) If format is applied to a template rather than an attribute an
+intermediate string must be created so that the format can be applied to the
+result of the template. This is not unlike when a template is used in an
+indirect property (i.e. $attribute.({&lt;some template})$
+
+2) if the renderer is associated with type String then it is possible for
+the value of an attribute to be rendered twice. This will only happen if the
+format is applied to a template rather than an attribute.It happens because
+the String attribute is rendered and written as part of the value of the
+template expansion then the format is applied to the String value of the
+template. Now that I think of this more it may be a bug. I'll look into it.
+
+I need to do more testing but here is what I have done so far. If someone
+wants the whole file let me know and I can send it but it has other changes
+as well.
+
+The changes were in ASTExpr.java and AttributeRenderer.java (which is shown
+above). While working on ASTExpr I also implemented checking of the option
+to make sure it is one of the supported options. I saw this issue come up on
+the list and it was also bothering me because I can't spell seperator right.
+Now if you use an unsupported option you get a warning.
+
+Add near the top of the class:
+    public static final Set supportedOptions = new HashSet() {
+        {
+            add(&quot;anchor&quot;);
+            add(&quot;format&quot;);
+            add(&quot;null&quot;);
+            add(&quot;separator&quot;);
+            add(&quot;wrap&quot;);
+        }
+    };
+
+    /** A cached value of option format=expr
+     */
+ String formatString = null;
+
+Change handleExprOptions to (I need to clean up my formatting wrt { and
+whitespace):
+
+ private void handleExprOptions(StringTemplate self) {
+        int matchCount = 0;
+  StringTemplateAST wrapAST = (StringTemplateAST)getOption(&quot;wrap&quot;);
+  if ( wrapAST!=null ) {
+   wrapString = evaluateExpression(self,wrapAST);
+            matchCount++;
+  }
+  StringTemplateAST nullValueAST = (StringTemplateAST)getOption(&quot;null&quot;);
+  if ( nullValueAST!=null ) {
+   nullValue = evaluateExpression(self,nullValueAST);
+            matchCount++;
+  }
+  StringTemplateAST separatorAST =
+(StringTemplateAST)getOption(&quot;separator&quot;);
+  if ( separatorAST!=null ) {
+   separatorString = evaluateExpression(self, separatorAST);
+            matchCount++;
+  }
+        StringTemplateAST formatAST =
+(StringTemplateAST)getOption(&quot;format&quot;);
+        if ( formatAST!=null ) {
+            formatString = evaluateExpression(self, formatAST);
+            matchCount++;
+        }
+        StringTemplateAST anchorAST =
+(StringTemplateAST)getOption(&quot;anchor&quot;);
+        if ( anchorAST!=null ) {
+            matchCount++;
+        }
+
+        if (options != null &amp;&amp; matchCount != options.size())
+        {
+            // report the ones that are not supported
+            StringBuffer badOptions = new StringBuffer();
+            Iterator it = options.keySet().iterator();
+            int i = 0;
+            while (it.hasNext())
+            {
+                String option = (String)it.next();
+                if (!supportedOptions.contains(option))
+                {
+                    if (i &gt; 0)
+                    {
+                        badOptions.append(&quot;, &quot;);
+                    }
+                    i++;
+                    badOptions.append(option);
+                }
+            }
+            self.warning(&quot;ignoring unsupported option(s): &quot;+
+badOptions.toString());
+        }
+ }
+
+Change write to
+
+ protected int write(StringTemplate self,
+      Object o,
+      StringTemplateWriter out)
+    {
+        if ( o==null ) {
+   if ( nullValue==null ) {
+    return 0;
+   }
+   o = nullValue; // continue with null option if specified
+  }
+  int n = 0;
+        try {
+            if ( o instanceof StringTemplate ) {
+                StringTemplate stToWrite = (StringTemplate)o;
+    // failsafe: perhaps enclosing instance not set
+    // Or, it could be set to another context!  This occurs
+    // when you store a template instance as an attribute of more
+    // than one template (like both a header file and C file when
+    // generating C code).  It must execute within the context of
+    // the enclosing template.
+    stToWrite.setEnclosingInstance(self);
+                // if self is found up the enclosing instance chain, then
+                // infinite recursion
+                if ( StringTemplate.inLintMode() &amp;&amp;
+
+                    StringTemplate.isRecursiveEnclosingInstance(stToWrite) )
+                {
+                    // throw exception since sometimes eval keeps going
+                    // even after I ignore this write of o.
+                    throw new IllegalStateException(&quot;infinite recursion to
+&quot;+
+                            stToWrite.getTemplateDeclaratorString()+&quot;
+referenced in &quot;+
+
+stToWrite.getEnclosingInstance().getTemplateDeclaratorString()+
+                            &quot;; stack
+trace:\n&quot;+stToWrite.getEnclosingInstanceStackTrace());
+                }
+                else {
+     // if we have a wrap string, then inform writer it
+     // might need to wrap
+     if ( wrapString!=null ) {
+      n = out.writeWrapSeparator(wrapString);
+     }
+
+                    // check if formating needs to be applied to the whole
+template
+                    if (formatString != null) {
+                        AttributeRenderer renderer =
+                            self.getAttributeRenderer(String.class);
+                        if (renderer != null) {
+                            // you pay a penalty for applying format option
+to a template
+                            // because the template must be writen to a temp
+StringWriter so it can
+                            // be formated before being writen to the real
+output.
+                            StringWriter buf = new StringWriter();
+                            StringTemplateWriter sw =
+
+self.getGroup().getStringTemplateWriter(buf);
+                            stToWrite.write(sw);
+                            n = out.write( renderer.toString(buf.toString(),
+formatString) );
+                            return n;
+                        }
+                    }
+
+                    n = stToWrite.write(out);
+                }
+                return n;
+            }
+            // normalize anything iteratable to iterator
+   o = convertAnythingIteratableToIterator(o);
+   if ( o instanceof Iterator ) {
+    Iterator iter = (Iterator)o;
+    Object prevIterValue = null;
+    boolean seenPrevValue = false;
+    while ( iter.hasNext() ) {
+                    Object iterValue = iter.next();
+     if ( iterValue==null ) {
+      iterValue = nullValue;
+     }
+     if ( iterValue!=null ) {
+      if ( seenPrevValue /*prevIterValue!=null*/
+       &amp;&amp; separatorString!=null ) {
+       n += out.writeSeparator(separatorString);
+      }
+      seenPrevValue = true;
+      int nw = write(self, iterValue, out);
+      n += nw;
+     }
+     prevIterValue = iterValue;
+    }
+   }
+   else {
+    AttributeRenderer renderer =
+     self.getAttributeRenderer(o.getClass());
+    String v = null;
+    if ( renderer!=null ) {
+                    if (formatString != null) {
+                        v = renderer.toString(o, formatString);
+                    }
+                    else {
+                        v = renderer.toString(o);
+                    }
+    }
+    else {
+     v = o.toString();
+    }
+    if ( wrapString!=null ) {
+     n = out.write(v, wrapString);
+    }
+    else {
+     n = out.write( v );
+    }
+    return n;
+            }
+        }
+        catch (IOException io) {
+            self.error(&quot;problem writing object: &quot;+o, io);
+        }
+  return n;
+    }
+
+
+
+
+
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20061210/1bd6803f/attachment-0001.html">http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20061210/1bd6803f/attachment-0001.html</A> 
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000866.html">[stringtemplate-interest] Output string lengths..
+</A></li>
+	<LI>Next message: <A HREF="000851.html">[stringtemplate-interest] format option implementation details
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#847">[ date ]</a>
+              <a href="thread.html#847">[ thread ]</a>
+              <a href="subject.html#847">[ subject ]</a>
+              <a href="author.html#847">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">More information about the stringtemplate-interest
+mailing list</a><br>
+</body></html>

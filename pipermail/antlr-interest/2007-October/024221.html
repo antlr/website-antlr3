@@ -1,0 +1,202 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Parser stops,	returns partial tree sometimes correctly so.
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Parser%20stops%2C%0A%09returns%20partial%20tree%20sometimes%20correctly%20so.&In-Reply-To=%3C3cac8fdf0710162245n728b1d9emfa048f0e2fa3002c%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="024214.html">
+   <LINK REL="Next"  HREF="024224.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Parser stops,	returns partial tree sometimes correctly so.</H1>
+    <B>Kirby Bohling</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Parser%20stops%2C%0A%09returns%20partial%20tree%20sometimes%20correctly%20so.&In-Reply-To=%3C3cac8fdf0710162245n728b1d9emfa048f0e2fa3002c%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Parser stops,	returns partial tree sometimes correctly so.">kirby.bohling at gmail.com
+       </A><BR>
+    <I>Tue Oct 16 22:45:26 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="024214.html">[antlr-interest] Parser stops,	returns partial tree sometimes correctly so.
+</A></li>
+        <LI>Next message: <A HREF="024224.html">[antlr-interest] Parser stops, returns partial tree  sometimes correctly so.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24221">[ date ]</a>
+              <a href="thread.html#24221">[ thread ]</a>
+              <a href="subject.html#24221">[ subject ]</a>
+              <a href="author.html#24221">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Ted,
+
+  I think I know what problem your having.  I am intentionally feeding
+the parser bad inputs to validate that my grammar recognizes only what
+I want, and not what I don't want.  To do this, I had to add the stuff
+that at the bottom to my grammar file.  I think it's a sign of an
+implementation oversight in Antlr that there's no stock way to verify
+that no recovery logic was executed short of reading in
+stdin/stderror.  It generates a grammar recognizer for goodness sake,
+it'd be novel if the API had a &quot;wasRecognizedCleanly&quot; method, even I
+had to reset it between parses (even if it auto-recovered).  If you go
+look at the gUnit project that has been discussed recently on the
+list, you'll find that they capture stderr and then look for &quot;FAIL&quot; or
+some such to see if it accepted or rejected the parse.
+
+   You might have better luck if you use the DebugParser, but
+unfortunately, in 3.0, there is no DebugLexer, so you can't capture
+the Lexer doing auto-recovery.  It looked to be on a TODO list, but
+not sure if or when it's going to be implemented.  I believe that the
+interface you can pass into DebugParser has changed between 3.0 and
+3.0.1 according the to the release notes.  I can't get either to
+build, and unless you can get it to build, you can't actually read the
+source to the several core pieces of Antlr as they are generated
+during the build.  (It'd be really nice if there was a version of the
+source that included the generated source for debugging when I'm just
+running the thing.  Maybe it's there, but  Eclipse can't find the
+source when I attach the jar for the Parser source).
+
+First, you have to check with both the lexer and the parser, and you
+have to reset both of them if you want to parse more stuff.  For my
+unit tests, have handy access to both the Parser and the Lexer.
+
+Then do something like this:
+
+	    CLangLexer lexer = new CLangLexer(input.stream);
+	
+	    CommonTokenStream tokens = new CommonTokenStream(lexer);
+	    CLangParser parser = new CLangParser(tokens);
+
+            // Parse some stuff...
+            // I added a bogus eof : EOF ; rule, so I parse everything
+I want, and then make sure
+           // that EOF is the next thing to ensure that it matched all
+of the input.
+
+           boolean isMatch = !parser.getRecognitionFailed() &amp;&amp;
+!lexer.getExceptionsCaught();
+
+  Hope this helps,
+       Kirby
+
+@members {
+   private boolean recognitionFailed = false;
+
+   public boolean getRecognitionFailed() {
+        return recognitionFailed;
+   }
+
+   public void resetRecognitionFailed() {
+        recognitionFailed = false;
+   }
+
+   protected void mismatch(IntStream input, int ttype, BitSet follow)
+       throws RecognitionException
+   {
+      recognitionFailed = true;
+      super.mismatch(input, ttype, follow);
+   }
+
+   public void recoverFromMismatchedSet(IntStream input,
+                                        RecognitionException e,
+                                        BitSet follow)
+                                        throws RecognitionException
+   {
+   	   recognitionFailed = true;
+   	   super.recoverFromMismatchedSet(input, e, follow);
+   }
+
+}
+
+
+@rulecatch {
+catch (RecognitionException re) {
+    reportError(re);
+    recover(input, re);
+    recognitionFailed = true;
+}
+}
+
+@lexer::header{
+package org.kbohling.codegrind.parser;
+}
+
+@lexer::members {
+
+private boolean exceptionsCaught = false;
+
+public boolean getExceptionsCaught() {
+   return exceptionsCaught;
+}
+
+public void clearExceptionsCaught() {
+	exceptionsCaught = false;
+}
+
+public void reportError(RecognitionException e) {
+	exceptionsCaught = true;
+    super.reportError(e);
+}
+}
+
+
+On 10/16/07, Ted Villalba &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">ted.villalba at gmail.com</A>&gt; wrote:
+&gt;<i> Hi,
+</I>&gt;<i>
+</I>&gt;<i> I have created a parser that stops parsing my input string and returns an
+</I>&gt;<i> AST, when instead, I expected it to throw a recognition exception.
+</I>&gt;<i> Testing in ANTLRWorks I get a NullPointerException, i think because of some
+</I>&gt;<i> code that sets the token type.
+</I>&gt;<i>
+</I>&gt;<i> boolTerm : b=BOOL_OP|WOK_OP { $b.setType(WCHAR); }  ;
+</I>&gt;<i>
+</I>&gt;<i> Is there a way to force the parser to either parse an entire string or throw
+</I>&gt;<i> an exception?
+</I>&gt;<i> I have a similar( i think) issue where when I add an extra parenthesis to my
+</I>&gt;<i> input, or intentionally remove a required parenthesis from the input,the
+</I>&gt;<i> parser does not throw an exception, but determines instead the best course
+</I>&gt;<i> of action to take.
+</I>&gt;<i> Although generally correct in its assumptions, the requirement is that an
+</I>&gt;<i> exception be thrown. Not sure if there is a switch that will force this
+</I>&gt;<i> behavior?
+</I>&gt;<i>
+</I>&gt;<i> Thank you,
+</I>&gt;<i> Ted
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I></PRE>
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="024214.html">[antlr-interest] Parser stops,	returns partial tree sometimes correctly so.
+</A></li>
+	<LI>Next message: <A HREF="024224.html">[antlr-interest] Parser stops, returns partial tree  sometimes correctly so.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24221">[ date ]</a>
+              <a href="thread.html#24221">[ thread ]</a>
+              <a href="subject.html#24221">[ subject ]</a>
+              <a href="author.html#24221">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

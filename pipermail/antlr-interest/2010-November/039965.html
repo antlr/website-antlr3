@@ -1,0 +1,184 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Matching multiple occurrences of quoted text joined by 'and' (i.e. &quot;a&quot; and &quot;b&quot; and &quot;c&quot;)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Matching%20multiple%20occurrences%20of%20quoted%20text%0A%20joined%20by%20%27and%27%20%28i.e.%20%22a%22%20and%20%22b%22%20and%20%22c%22%29&In-Reply-To=%3CAANLkTimQbFWx_BpoH%2B9RyC3oT%3DOfM3%2BpAU-r5vX9ii4Z%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="039963.html">
+   <LINK REL="Next"  HREF="039966.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Matching multiple occurrences of quoted text joined by 'and' (i.e. &quot;a&quot; and &quot;b&quot; and &quot;c&quot;)</H1>
+    <B>Colin Yates</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Matching%20multiple%20occurrences%20of%20quoted%20text%0A%20joined%20by%20%27and%27%20%28i.e.%20%22a%22%20and%20%22b%22%20and%20%22c%22%29&In-Reply-To=%3CAANLkTimQbFWx_BpoH%2B9RyC3oT%3DOfM3%2BpAU-r5vX9ii4Z%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Matching multiple occurrences of quoted text joined by 'and' (i.e. &quot;a&quot; and &quot;b&quot; and &quot;c&quot;)">colin.yates at gmail.com
+       </A><BR>
+    <I>Wed Nov  3 15:40:14 PDT 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="039963.html">[antlr-interest] Matching multiple occurrences of quoted text joined by 'and' (i.e. &quot;a&quot; and &quot;b&quot; and &quot;c&quot;)
+</A></li>
+        <LI>Next message: <A HREF="039966.html">[antlr-interest] Matching multiple occurrences of quoted text joined by 'and' (i.e. &quot;a&quot; and &quot;b&quot; and &quot;c&quot;)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#39965">[ date ]</a>
+              <a href="thread.html#39965">[ thread ]</a>
+              <a href="subject.html#39965">[ subject ]</a>
+              <a href="author.html#39965">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hmmm - I think I might be running into a bug - either in the code or my
+understanding (almost certainly my understanding!).
+
+I have created a simple grammar which demonstrates the problem (I am testing
+the first parser rule called 'rule1') :
+
+--- start
+grammar QuotedText;
+
+@parser::header {
+package examples.aandb;
+}
+
+@lexer::header {
+package examples.aandb;
+}
+
+rule1
+:<i> a=QUOTED_TEXT 'and' b=QUOTED_TEXT 'and' c=QUOTED_TEXT
+</I>{ System.out.println(&quot;rule1: &quot; + a.getText() + &quot;, &quot; + b.getText() + &quot;,&quot; +
+c.getText());}
+;
+ruleThatShouldBeIgnored
+:<i> 'and whose' 'external'? 'resource is' theResource=('this' | QUOTED_TEXT)
+</I>{ System.out.println(&quot;taskResource: &quot; + $theResource);}
+;
+
+QUOTED_TEXT : '&quot;' (~'&quot;')* '&quot;';
+WS
+    : (' '|'\t'|'\n'|'\r')+ {skip();}
+    ;
+--- end
+
+My test case is as follows:
+
+--- start
+package examples.aandb;
+
+import org.junit.Test;
+import org.antlr.runtime.CommonTokenStream;
+import org.antlr.runtime.CharStream;
+import org.antlr.runtime.ANTLRStringStream;
+import org.antlr.runtime.RecognitionException;
+
+import java.io.IOException;
+
+public class TestCase {
+
+    @Test
+    public void happyPath() throws IOException, RecognitionException {
+        String dsl = &quot;\&quot;a\&quot; and \&quot;b\&quot; and \&quot;c\&quot;&quot;;
+        createParser(dsl).rule1();
+    }
+
+    private QuotedTextParser createParser(String testString) throws
+IOException {
+        QuotedTextLexer lexer = createLexer(testString);
+        CommonTokenStream tokens = new CommonTokenStream(lexer);
+        return new QuotedTextParser(tokens);
+    }
+
+    private QuotedTextLexer createLexer(String testString) throws
+IOException {
+        CharStream stream = new ANTLRStringStream(testString);
+        return new QuotedTextLexer(stream);
+    }
+}
+
+--- end
+
+If I run that (in IDEA 8 using latest antlrworks and antlr 3.2 then I get
+the following output:
+
+--- start
+lline 1:8 mismatched character '&quot;' expecting 'w'
+line 1:9 no viable alternative at character 'b'
+line 1:17 no viable alternative at character 'c'
+line 1:19 mismatched character '&lt;EOF&gt;' expecting '&quot;'
+line 1:10 missing 'and' at '&quot; and &quot;'
+line 0:-1 mismatched input '&lt;EOF&gt;' expecting 'and'
+--- end
+
+if however, I comment out the second rule ('ruleThatShouldBeIgnored') then
+everything works as expected.  The output is:
+
+--- start
+rule1: &quot;a&quot;, &quot;b&quot;,&quot;c&quot;
+--- end
+
+I don't understand this behaviour - I don't see why
+'ruleThatShouldBeIgnored' is having any influence.
+
+Any ideas?
+
+Thanks,
+
+Col
+
+On 3 November 2010 19:37, Colin Yates &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">colin.yates at gmail.com</A>&gt; wrote:
+
+&gt;<i> Thanks Gordon,
+</I>&gt;<i>
+</I>&gt;<i> That doesn't work either.  I think I need to separate out just this
+</I>&gt;<i> fragment into its own grammar to ensure that the rest of the grammar
+</I>&gt;<i> isn't having any unexpected side effects.
+</I>&gt;<i>
+</I>&gt;<i> I will report back once I have isolated these two rules... Thanks!
+</I>&gt;<i>
+</I>&gt;<i> Sent from my iPad
+</I>&gt;<i>
+</I>&gt;<i> On 3 Nov 2010, at 19:25, Gordon Tyler &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">Gordon.Tyler at quest.com</A>&gt; wrote:
+</I>&gt;<i>
+</I>&gt;<i> &gt;&gt; QUOTED_TEXT : '\&quot;' ( options {greedy=false;} : .)* '\&quot;'
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Try this:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; QUOTED_TEXT : '&quot;' (~'&quot;')* '&quot;'
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; In English: Match '&quot;', then match zero or more characters which are not
+</I>&gt;<i> '&quot;', then match '&quot;'.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Ciao,
+</I>&gt;<i> &gt; Gordon
+</I>&gt;<i> &gt;
+</I>&gt;<i>
+</I></PRE>
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="039963.html">[antlr-interest] Matching multiple occurrences of quoted text joined by 'and' (i.e. &quot;a&quot; and &quot;b&quot; and &quot;c&quot;)
+</A></li>
+	<LI>Next message: <A HREF="039966.html">[antlr-interest] Matching multiple occurrences of quoted text joined by 'and' (i.e. &quot;a&quot; and &quot;b&quot; and &quot;c&quot;)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#39965">[ date ]</a>
+              <a href="thread.html#39965">[ thread ]</a>
+              <a href="subject.html#39965">[ subject ]</a>
+              <a href="author.html#39965">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

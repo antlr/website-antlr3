@@ -1,0 +1,213 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] ANTLR v3 tree construction :)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20ANTLR%20v3%20tree%20construction%20%3A%29&In-Reply-To=20050623224348.74066.qmail%40web30805.mail.mud.yahoo.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="012829.html">
+   <LINK REL="Next"  HREF="012834.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] ANTLR v3 tree construction :)</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20ANTLR%20v3%20tree%20construction%20%3A%29&In-Reply-To=20050623224348.74066.qmail%40web30805.mail.mud.yahoo.com"
+       TITLE="[antlr-interest] ANTLR v3 tree construction :)">parrt at cs.usfca.edu
+       </A><BR>
+    <I>Thu Jun 23 16:39:05 PDT 2005</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="012829.html">[antlr-interest] ANTLR v3 tree construction :)
+</A></li>
+        <LI>Next message: <A HREF="012834.html">[antlr-interest] ANTLR v3 tree construction :)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#12831">[ date ]</a>
+              <a href="thread.html#12831">[ thread ]</a>
+              <a href="subject.html#12831">[ subject ]</a>
+              <a href="author.html#12831">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+On Jun 23, 2005, at 3:43 PM, Akhilesh Mritunjai wrote:
+
+&gt;<i> Hi Terence
+</I>
+Hi.  I've started a new blog today and decided to add my reply to it  
+(dup of this email at the bottom of today's blog entry):
+
+<A HREF="http://www.antlr.org/blog/antlr3/treegrammar.tml">http://www.antlr.org/blog/antlr3/treegrammar.tml</A>
+
+&gt;<i> Yup, in tree parser, and I vote for default in-line.
+</I>&gt;<i> As for creating a new tree, thats what 'buildAST=true'
+</I>&gt;<i> is there for. Am I right ? Coupled together with a
+</I>
+Ok, so output=AST (in 3.0 parlance) would construct a tree from  
+whatever the input was: tokens or trees.  A tree parser with rewrite  
+rules, however, would do a rewrite.  Let's see an example:
+
+parser grammar langParser;
+options {output=AST;}
+program : decl+ -&gt; ^(DECL decl+) ;
+decl : FLOAT_TYPE ID ';' -&gt; ^(FLOAT_TYPE ID) ;
+
+which creates trees like this:
+
+        DECL
+       /    \
+&quot;float&quot;  &quot;float&quot;
+    |        |
+   var1     var2
+
+(ain't that easy using the new notation?!!)
+
+then we'd have a tree grammar that created a new tree from the old:
+
+tree grammar langTreeParser;
+options {output=AST;}
+program : ^(DECL decl+) ;
+decl : ^(FLOAT_TYPE ID) -&gt; ^(FLOAT_TYPE ID FLOAT[&quot;0.0&quot;]) ; // add &quot;=  
+0.0&quot; initialization
+
+(note how the tree grammar is the collection of right-hand-sides from  
+the -&gt; rewrites).  heh, somebody ought to write this down as doc ;)
+
+Now, to do rewrites, one would leave off the output option:
+
+tree grammar langTreeParser;
+program : ^(DECL decl+) ;
+decl : ^(FLOAT_TYPE ID) -&gt; ^(FLOAT_TYPE ID FLOAT[&quot;0.0&quot;]) ; // add &quot;=  
+0.0&quot; initialization
+
+Yes...I guess that makes sense.  The method generated for rule  
+&quot;program&quot; would have to replace the children list of DECL with the  
+*new* subtrees created by rule decl.  I guess like this:
+
+program() {
+   match(DECL);
+   match(DOWN);
+   while ( input.LA(1)==FLOAT_TYPE ) {
+     result = decl();
+     // replace child i with result tree
+   }
+   match(UP);
+}
+
+I am not sure how to do that easily, though I of course see the need  
+(particularly given the tree sizes you refer to below...yikes!).  The  
+TreeNodeStream that serializes the trees for two-dimensional parsing  
+could be asked to replace the node I suppose...sort of like asking an  
+iterator to do a delete.  Hmm...that is an interesting approach.  It  
+would only allow replacement of a node under the &quot;cursor&quot; at input.LT 
+(1) I guess.  It would have to make sure not to try to parse the new  
+node.  You might have a  single node replaced with two nodes:
+
+tree grammar t;
+a : b+ ;
+b : B -&gt; X Y ; // replace B with X Y (2 nodes)
+
+If the input were say B B then after the first call to b the &quot;X Y&quot;  
+would replace the first B, yielding X Y B, but the TreeNodeStream  
+would have to do a &quot;replace and jump over new nodes&quot; so the current  
+pointer was on the 2nd B not the Y.
+
+Regardless, the approach would invisibly allow a completely new tree  
+to be created or to have a tree modified inline.  Wow.
+
+&gt;<i> 'dupTree=true' option (patch/standard), it will parser
+</I>&gt;<i> and either build a new tree of just the traversed
+</I>&gt;<i> nodes or 'peel-off' the whole traversed tree, if user
+</I>&gt;<i> doesn't want to write whole grammar for un-interesting
+</I>&gt;<i> sub-trees.
+</I>
+I'm not sure I follow.  I normally use dot (wildcard) to jump over  
+uninteresting nodes/trees, though I'm not sure how well that will  
+work in 3.0 as the parsing algorithm is a little different.  I might  
+have to add another element other than dot to mean ignore tree  
+instead of just ignore node.
+
+&gt;<i> The reason for asking this is to remove an assumption
+</I>&gt;<i> that trees would be small enough to fit in memory! (My
+</I>&gt;<i> trees can have around 10M nodes... and I have to scale
+</I>&gt;<i> to ~half a billion nodes very shortly... and no I'm
+</I>&gt;<i> not making this up, our tool will process chip
+</I>&gt;<i> descriptions that will routinely have 10-100M gates)
+</I>
+Seems like you'll have a hard time fitting 500M nodes in memory.  1  
+32 bit word per node would already be 4G of RAM. ;)  Are you going to  
+marshall these into/out of memory like virtual memory?
+
+&gt;<i> Basically, what I'm looking for is a full blown ANTLR
+</I>&gt;<i> tree-parsing stuff that whould make writing native
+</I>&gt;<i> code (visitors etc) as un-necessary as can be... Tree
+</I>&gt;<i> parser should be a full blown declarative language to
+</I>&gt;<i> process and manipulate trees in a language agnostic
+</I>&gt;<i> way.
+</I>
+That is my goal.  How much RAM does each node take for you?
+
+&gt;<i>
+</I>&gt;<i> Next thing on wish list would be a XQuery/XPath like
+</I>&gt;<i> declarative query language to query and manipulate
+</I>&gt;<i> tree.
+</I>
+eeewwww! ;)  Down with anything specified in XML that a human has to  
+touch. ;)
+
+&gt;<i> Thanks for all this stuff Terence
+</I>
+My pleasure :)
+
+Ter
+--
+CS Professor &amp; Grad Director, University of San Francisco
+Creator, ANTLR Parser Generator, <A HREF="http://www.antlr.org">http://www.antlr.org</A>
+Cofounder, <A HREF="http://www.jguru.com">http://www.jguru.com</A>
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="012829.html">[antlr-interest] ANTLR v3 tree construction :)
+</A></li>
+	<LI>Next message: <A HREF="012834.html">[antlr-interest] ANTLR v3 tree construction :)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#12831">[ date ]</a>
+              <a href="thread.html#12831">[ thread ]</a>
+              <a href="subject.html#12831">[ subject ]</a>
+              <a href="author.html#12831">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

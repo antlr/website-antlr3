@@ -1,0 +1,241 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [stringtemplate-interest] some templates do, some don't
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20some%20templates%20do%2C%20some%20don%27t&In-Reply-To=%3C081320071649.4600.46C08BB00009B365000011F822058864429C0909079D9D05%40comcast.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001159.html">
+   <LINK REL="Next"  HREF="001160.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[stringtemplate-interest] some templates do, some don't</H1>
+    <B>krriggs at comcast.net</B> 
+    <A HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20some%20templates%20do%2C%20some%20don%27t&In-Reply-To=%3C081320071649.4600.46C08BB00009B365000011F822058864429C0909079D9D05%40comcast.net%3E"
+       TITLE="[stringtemplate-interest] some templates do, some don't">krriggs at comcast.net
+       </A><BR>
+    <I>Mon Aug 13 09:49:53 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001159.html">[stringtemplate-interest] Newbie Help
+</A></li>
+        <LI>Next message: <A HREF="001160.html">[stringtemplate-interest] some templates do, some don't
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1157">[ date ]</a>
+              <a href="thread.html#1157">[ thread ]</a>
+              <a href="subject.html#1157">[ subject ]</a>
+              <a href="author.html#1157">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Probably a newbie error!
+
+Re-wrote an HL proof to java code gnerator using rewrite and tokenStream and added some extensions.
+Problem is this: some templates are invoked and others are not.
+I assume rewrites are 'in' the token stream and evaluated during 'toString'
+Am I overloking something basic?
+
+For the really obliging, the grammar, the (UTF-8) input to the system, the actual output and the required output for a sumple example are below:
+
+vvvvv       GRAMMAR vvvvvvvvvvvv
+grammar Jape;
+options {
+     //output =AST;
+     //ASTLabelType=CommonTree;
+     output=template;
+     rewrite=true;
+     }
+  @header{package j2j;}  
+  @lexer::header{package j2j;} 
+     @members {
+                   JapeProgramWriter prg = new JapeProgramWriter();
+ JapeProgramWriter results(){return prg;}
+}
+   
+proof: lSection (cSection lSection)+ EOF;
+lSection  :  '{' logic '}' 
+            -&gt; template(lx={$logic.text})
+               &quot; if (&lt;lx&gt;) passed(); else failed(); &quot;
+               ;
+cSection: '(' cc=code ')' | cc=code
+            -&gt; template(cx={$cc.text}) &quot; &lt;cx&gt; &quot;
+;
+// took += out after ex2
+logic  : ex1=impLogic (PIFF ex2=impLogic)*
+            -&gt; {ex2!=null}?  template(l1={$ex1.text},l2={$ex2.text})
+                 &quot; [[&lt;lx1&gt;) == [&lt;lx2&gt;]] &amp;&amp; [![&lt;lx1&gt;)== ![&lt;lx2&gt;]] &quot;
+           -&gt;  template(l3={$ex1.text})
+                                 &quot; &lt;l3&gt; &quot;
+;
+// took += out after ex2
+impLogic :  e1=orLogic (PIMPLIES e2=orLogic)*
+            -&gt; {e2!=null}? template(lx1={$e1.text},lx2={$e2.text})
+                                 &quot; !(&lt;lx1&gt;)||(&lt;lx2&gt;) &quot;
+             -&gt;template(lx1={$e1.text})
+                                &quot; &lt;lx1&gt; &quot;
+                       ;
+orLogic  :  andLogic (POR andLogic)*//-&gt;(LOR andLogic+) 
+                       ;
+andLogic :  bool (PAND bool)* //-&gt; (LAND bool+)
+                       ;
+bool :  boolTerm 
+                         | PNOT boolTerm
+                         ;
+boolTerm       :  'true' 
+                        | 'false'
+                        | BOOLVAR
+                        | cExpr //-&gt; (cExpr)
+                        | universal
+                        | existential
+                        | '(' logic ')';
+ universal  :  'forAll' ID '.' '(' logic ')' 
+                     -&gt;template(ix={$ID.text},lx={$logic.text})
+                        &quot; forAll(\&quot;&lt;ix&gt;\&quot;,\&quot;&lt;lx&gt;\&quot;)&quot;
+                     ;
+ existential
+  : 'eXists' ID '.' '(' logic ')'
+                     -&gt;template(ix={$ID.text},lx={$logic.text})
+                        &quot; eXists(\&quot;&lt;ix&gt;\&quot;,\&quot;&lt;lx&gt;\&quot;)&quot;
+  ;
+// add for all afteradded to CharTransliterator
+cExpr :  expr relOp expr ;
+code: statement  (';' statement)* 
+;
+statement: assigns | ifs | whiles | skips;
+assigns : ID ':=' expr 
+                       -&gt; template(id={$ID.text},e={$expr.text})&quot;&lt;id&gt;=&lt;e&gt;;&quot;
+               | BOOLVAR ':=' cExpr
+               {prg.addBool($BOOLVAR.text);}
+                       -&gt; template(id={$BOOLVAR.text},e={$cExpr.text})
+                          &quot;&lt;id&gt;=&lt;e&gt;;&quot;
+                       
+               ;
+ifs: PIF l=logic PTHEN e=code PELSE e2=code PFI
+     -&gt; template(lx={$logic.text},tx={$e.text},ex={$e2.text})
+         &quot;if (&lt;lx&gt;) {&lt;tx&gt;} else {&lt;ex&gt;}&quot;
+;
+whiles: PWHILE lx=logic PDO cx=code POD
+    -&gt; template(ly={$lx.text},cy={$cx.text})
+         &lt;&lt; while (&lt;ly&gt;) { 
+                 &lt;cy&gt; 
+                 } &gt;&gt;
+;
+skips: 'skip' -&gt;template()&quot; &quot;;
+expr :   multExpr (addOp multExpr)* ;
+addOp : PLUS | MINUS;
+multExpr     :  powerExpr (multOp powerExpr)*  ; 
+multOp : TIMES | DIVIDE | MOD ;
+powerExpr:  value 
+ | value (POWER e2=powerExpr )
+               -&gt; template(v1={$value.text},v2={$e2.text})
+                    &quot;Math.power(&lt;v1&gt;, &lt;v2&gt;)&quot;
+;
+value: ID         {prg.addVar($ID.text);}   
+           | NINT 
+           | parameter {prg.addConst($parameter.text);}
+           | BOOLVAR {if (!prg.boolNames.contains($BOOLVAR.text))
+                                     prg.addConst($BOOLVAR.text);}
+           ; 
+parameter :  GIVEN ;
+//id  :  ID;
+anInt  :  NINT;
+relOp: 
+         LT  
+         | GT 
+         | EQ -&gt; template()&quot;==&quot;
+         | LTE 
+         | GTE 
+         | NE ;
+// for the sake of the AST tree
+//LAND :;
+//LOR :;
+//LIMPLIES :;
+//LIFF :;
+//MCODE :;
+//MLOGIC :;
+PIF:'if';
+PFI:'fi';
+PELSE:'else';
+PTHEN:'then';
+PWHILE:'while';
+PDO:'do';
+POD:'od';
+PSKIP:'skip';
+ASSIGN:':=';
+LPAREN:  '(';
+RPAREN: ')' ;
+LBRKT:'{';
+RBRKT:'}';
+SEMIC:';';
+POWER:'^';
+PLUS  : '+' ;
+MINUS : '-' ;
+TIMES: '*';
+DIVIDE:'/';
+MOD : '%';
+
+GTE:'&gt;=';
+LTE:'&lt;=';
+NE: '!=';
+EQ: '=';
+GT: '&gt;';
+LT:'&lt;';
+PNOT: '!';
+POR: '||';
+PAND: '&amp;&amp;';
+PIMPLIES : '=&gt;';
+PIFF : '&lt;=&gt;';
+ID    : ('a'..'z')( 'a'..'z' | '0'..'9')?;
+BOOLVAR         : ('a'..'z')('a'..'z')('a'..'z')+;
+GIVEN : 'K'( 'a'..'z' | '0'..'9')?;
+NINT: /*'-'?*/ ('0'..'9')+;
+WS : (' '|'\t'|'\n'|'\r\n')+ {$channel=HIDDEN;};
+//JUNK : '\uFFFF' {$channel=HIDDEN;};
+
+vvvvvvvv INPUT vvvvvvvv
+{n&#161;&#195;2}(i:=2){2&#161;&#194;i&#161;&#252;i&#161;&#194;n&#161;&#252;&#162;&#163;x.(2&#161;&#194;x&#161;&#252;x&lt;i&#161;&#230;n mod x&#161;&#193;0)}while n mod i&#161;&#193;0 do i:=i+1 od{2&#161;&#194;i&#161;&#252;i&#161;&#194;n&#161;&#252;&#162;&#163;x.(2&#161;&#194;x&#161;&#252;x&lt;i&#161;&#230;n mod x&#161;&#193;0)&#161;&#252;n mod i=0}
+--- an XLATION from UTF-8 is also done
+vvvvvvvv ACTUAL OUTPUT (w/o pre-,post- amble) vvvvvvvvv
+if ( n&gt;=2 ) passed(); else failed(); 
+(i=2;) 
+if ( 2&lt;=i&amp;&amp;i&lt;=n&amp;&amp; forAll(&quot;x&quot;,&quot; !(2&lt;=x&amp;&amp;x&lt;i)||(n%x!=0) &quot;) ) passed(); else failed(); 
+while n%i!=0 do i=i+1; od 
+if ( 2&lt;=i&amp;&amp;i&lt;=n&amp;&amp; forAll(&quot;x&quot;,&quot; !(2&lt;=x&amp;&amp;x&lt;i)||(n%x!=0) &quot;)&amp;&amp;n%i==0 ) passed(); else failed(); 
+
+vvvvvvvv DESIRED OUTPUT vvvvvvvvv
+if ( n&gt;=2 ) passed(); else failed(); 
+i=2;
+if ( 2&lt;=i&amp;&amp;i&lt;=n&amp;&amp; forAll(&quot;x&quot;,&quot; !(2&lt;=x&amp;&amp;x&lt;i)||(n%x!=0) &quot;) ) passed(); else failed(); 
+while ( n%i!=0 ) { i=i+1; } 
+if ( 2&lt;=i&amp;&amp;i&lt;=n&amp;&amp; forAll(&quot;x&quot;,&quot; !(2&lt;=x&amp;&amp;x&lt;i)||(n%x!=0) &quot;)&amp;&amp;n%i==0 ) passed(); else failed(); 
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20070813/73b4c5d1/attachment.html">http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20070813/73b4c5d1/attachment.html</A> 
+</PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001159.html">[stringtemplate-interest] Newbie Help
+</A></li>
+	<LI>Next message: <A HREF="001160.html">[stringtemplate-interest] some templates do, some don't
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1157">[ date ]</a>
+              <a href="thread.html#1157">[ thread ]</a>
+              <a href="subject.html#1157">[ subject ]</a>
+              <a href="author.html#1157">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">More information about the stringtemplate-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,230 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Fundamental tree parsing question
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Fundamental%20tree%20parsing%20question&In-Reply-To=%3C69fb4b090707101831t2ef23d89s1f932a5271f1213b%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="022274.html">
+   <LINK REL="Next"  HREF="022304.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Fundamental tree parsing question</H1>
+    <B>Ted Villalba</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Fundamental%20tree%20parsing%20question&In-Reply-To=%3C69fb4b090707101831t2ef23d89s1f932a5271f1213b%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Fundamental tree parsing question">ted.villalba at gmail.com
+       </A><BR>
+    <I>Tue Jul 10 18:31:58 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="022274.html">[antlr-interest] Fundamental tree parsing question
+</A></li>
+        <LI>Next message: <A HREF="022304.html">[antlr-interest] Fundamental tree parsing question
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#22287">[ date ]</a>
+              <a href="thread.html#22287">[ thread ]</a>
+              <a href="subject.html#22287">[ subject ]</a>
+              <a href="author.html#22287">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+I thought I would reuse this thread since it seems a similar issue, or
+misunderstanding on my part...
+ When I add a rewrite specification to my grammar rule it suddenly fails
+with a .RewriteEmptyStreamException.
+ The full grammar is below, but here is what I think it boils down to - I'm
+not sure how to represent zero or more instances in the rewrite of an
+operator when it is the root node .
+For example, the following grammar is parsed successfully and ANTLRWorks
+builds a flat tree.
+value   : terms ((WS)+ operator^ (WS)+ value)*
+
+But when I try to add the following rewrite specification, I get the
+exception:
+value : terms ((WS)+ operator (WS)+ value)* -&gt; ^(operator ^(TERMS terms)
+^(VALUE value)*)
+
+((((((
+I created that rewrite because I thought I had read where if the operator (
+or other) node is null, it won't err out, it will simply not add a node.
+  I may be misguided here. It's how I interpreted the code snippet at the
+bottom of this wiki on AST:
+<A HREF="http://www.antlr.org/wiki/pages/viewpage.action?pageId=754">http://www.antlr.org/wiki/pages/viewpage.action?pageId=754</A>
+it says:
+
+/** Add t as a child to this node.  If t is null, do nothing.  If t
+ *  is nil, add all children of t to this' children.
+ */
+
+void addChild(Tree t);
+
+))))))
+
+
+At the end of parsing:
+PY=(hey hey what AND can I do)
+
+I get:
+Exception in thread &quot;main&quot;
+org.antlr.runtime.tree.RewriteEmptyStreamException: rule operator
+    at org.antlr.runtime.tree.RewriteRuleElementStream._next(Unknown Source)
+    at org.antlr.runtime.tree.RewriteRuleSubtreeStream.nextNode(Unknown
+Source)
+    at WQLParser.value(WQLParser.java:1195)
+    at WQLParser.value(WQLParser.java:1162)
+    at WQLParser.field(WQLParser.java:724)
+    at WQLParser.query(WQLParser.java:253)
+    at WQLParser.start(WQLParser.java:127)
+    at __Test__.main(__Test__.java:14)
+
+I've tried a bunch of combinations of that rewrite spec, but I can't get it
+to work with any of them.
+Once again thanks for the help.
+
+Here is the full grammar:
+
+grammar TQL;
+
+options{
+    output=AST;
+    ASTLabelType=CommonTree;
+}
+
+tokens{ TAG; VALUE; TERMS;} //imaginary token types
+
+@header{
+import java.util.HashMap;
+}
+
+@members {
+
+HashMap fieldMap = new HashMap();
+
+}
+
+start   : ( query  {System.out.println(&quot;AST:\n&quot;+$query.tree.toStringTree());}
+)+
+         ;
+
+
+query   : field ((WS!)+ BOOL_OP^ (WS!)+ query)*
+           | LPAREN! query RPAREN! ((WS!)* BOOL_OP^ (WS!)* query)*
+           ;
+
+field     : tag '=' LPAREN (WS)* value (WS)* RPAREN -&gt; ^('=' tag value)
+           | tag '=' terms+ -&gt; ^('=' tag terms)
+           | qid
+           ;
+
+value   : terms ((WS)+ operator (WS)+ value)* -&gt; ^(operator ^(TERMS terms)
+^(VALUE value)*)
+           | LPAREN! value RPAREN! ((WS)+ operator^ (WS!)+ value)*
+           ;
+
+tag    : WCHAR -&gt; ^(TAG WCHAR)
+         ;
+
+terms    : WCHAR (WS WCHAR)*  -&gt; WCHAR+
+            | QUOTE WCHAR (WS! WCHAR)* QUOTE
+            ;
+
+
+qid     : '#'!DIGIT
+        ;
+
+operator: BOOL_OP|WOK_OP;
+BOOL_OP    : 'AND'|'and'|'OR'|'or'|'NOT'|'not';
+WOK_OP    : 'SAME'|'same'|'NEAR'('/'DIGIT+)*|'near'('/'DIGIT+)*;
+DIGIT   : ('0'..'9');
+WS      : (' '|'\t'|'\r'|'\n')+ ;
+LPAREN    : '(' ;
+RPAREN    : ')' ;
+QUOTE    : '&quot;';
+WCHAR   : ~('='|'('| ')'|'&quot;'|' '|'\t'|'\n'|'\r'|'#')+;
+
+
+
+-Ted
+
+
+
+On 7/10/07, Ted Villalba &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">ted.villalba at gmail.com</A>&gt; wrote:
+&gt;<i>
+</I>&gt;<i> I was on 1.0.11b. Having upgraded to the latest version it works.
+</I>&gt;<i> Thanks for your time Benjamin.
+</I>&gt;<i> Very much appreciated!
+</I>&gt;<i>
+</I>&gt;<i> Ted
+</I>&gt;<i>
+</I>&gt;<i> On 7/10/07, Benjamin Niemann &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">pink at odahoda.de</A>&gt; wrote:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Ted Villalba wrote:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; &gt; Here is the grammar attached below, with your most recent suggestion.
+</I>&gt;<i> &gt; I
+</I>&gt;<i> &gt; &gt; can walk it without issue, with input like :
+</I>&gt;<i> &gt; &gt; query=(city AND mountain dwellers)
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; until I try to add the use of the imaginary tokens, for example, in
+</I>&gt;<i> &gt; the
+</I>&gt;<i> &gt; &gt; 'field' rule below:
+</I>&gt;<i> &gt; &gt; The grammar:
+</I>&gt;<i> &gt; &gt; [...]
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Mmm... I can't reproduce the problem. I can step through the input and
+</I>&gt;<i> &gt; get
+</I>&gt;<i> &gt; the output:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; AST:
+</I>&gt;<i> &gt; (= (TAG (TAG query)) (VALUE (AND (TERMS city)     (TERMS mountain
+</I>&gt;<i> &gt; dwellers))))
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Probably not what you finally want (redundant TAG and some WS not
+</I>&gt;<i> &gt; omitted),
+</I>&gt;<i> &gt; but at least it does not crash...
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; I used ANTLRWorks 1.0.2 and &quot;Java(TM) 2 Runtime Environment, Standard
+</I>&gt;<i> &gt; Edition (build 1.5.0_12-b04)&quot; on Debian GNU/Linux. What's your setup?
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; --
+</I>&gt;<i> &gt; Benjamin Niemann
+</I>&gt;<i> &gt; Email: pink at odahoda dot de
+</I>&gt;<i> &gt; WWW: <A HREF="http://pink.odahoda.de/">http://pink.odahoda.de/</A>
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i>
+</I>-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20070710/41cff760/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20070710/41cff760/attachment.html</A> 
+</PRE>
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="022274.html">[antlr-interest] Fundamental tree parsing question
+</A></li>
+	<LI>Next message: <A HREF="022304.html">[antlr-interest] Fundamental tree parsing question
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#22287">[ date ]</a>
+              <a href="thread.html#22287">[ thread ]</a>
+              <a href="subject.html#22287">[ subject ]</a>
+              <a href="author.html#22287">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

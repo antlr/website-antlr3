@@ -1,0 +1,190 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Problems with lexing tokens containing blanks
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Problems%20with%20lexing%20tokens%20containing%20blanks&In-Reply-To=OF340ED6DA.89ADB4EB-ON86257235.0073DE20-86257235.0074B092%40lawson.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="018684.html">
+   <LINK REL="Next"  HREF="018685.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Problems with lexing tokens containing blanks</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Problems%20with%20lexing%20tokens%20containing%20blanks&In-Reply-To=OF340ED6DA.89ADB4EB-ON86257235.0073DE20-86257235.0074B092%40lawson.com"
+       TITLE="[antlr-interest] Problems with lexing tokens containing blanks">jimi at intersystems.com
+       </A><BR>
+    <I>Wed Nov 29 17:16:25 PST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="018684.html">[antlr-interest] Problems with lexing tokens containing blanks
+</A></li>
+        <LI>Next message: <A HREF="018685.html">[antlr-interest] Problems with lexing tokens containing blanks
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#18693">[ date ]</a>
+              <a href="thread.html#18693">[ thread ]</a>
+              <a href="subject.html#18693">[ subject ]</a>
+              <a href="author.html#18693">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I cannot immediately see why this is not working for you, however unless whitespace is typically significant in the language you are parsing, you should not deal with this in the lexer. Though I suspect that if you supply the full source it will be evident as to why this does not seem to work, such as you have a lexer rule that captures whitespace before the INDEX_OF definition or something similar.
+ 
+However, I think you are confusing lexical definitions with disambiguation that the parser should be handling. For instance, what would happen if the source code was:
+ 
+index         &lt;tab&gt;&lt;tab&gt;      of
+ 
+ 
+You are well advised to think of the source input as you would any other language. In English you would not tokenize &#8220;index of&#8221; as one semantic element, and should not really do this in ANTLR (it isn&#8217;t as clear cut as this of course). 
+ 
+Is there any reason you cannot have:
+ 
+WS        : &#8216; &#8216; | &#8216;\t&#8217; {channel=$hidden};
+INDEX     : &#8216;index&#8217; ;
+OF        : &#8216;of&#8217;
+ 
+And then have parser rules that &#8216;know&#8217; the difference? Remember that the lexer is a simple beast whose only job is to just tokenize the input.
+ 
+indexer:
+          INDEX 
+              (
+                    OF somerule
+                   | somethingelse
+              )
+     ;
+ 
+Jim
+ 
+   _____  
+
+From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Ryan Hollom
+Sent: Wednesday, November 29, 2006 1:15 PM
+To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: Re: [antlr-interest] Problems with lexing tokens containing blanks
+ 
+
+Terence, 
+Putting the INDEX_OF rule first doesn't seem to do the trick for me.  For instance, the full lexer grammar: 
+
+lexer grammar testgrammarlexer; 
+
+INDEX_OF :        'index of' ; 
+INDEX         :        'index' ; 
+
+NEWLINE :   (('\r')? '\n' )+ ; 
+ID        : ( 'A' .. 'Z' | '0' .. '9') ( 'A' .. 'Z' | 'a' .. 'z' | '0' .. '9')*; 
+WS        :        (' '|'\t')+ {$channel=HIDDEN;}; 
+
+Still generates the mTOKENS section that checks for 'i' 'n' 'd' 'e' 'x' ' ', at which point it assumes the token is 'index of'.  In detail, it generates this: 
+    public void mTokens() throws RecognitionException { 
+        int alt5=5; 
+        switch ( input.LA(1) ) { 
+        case 'i': 
+            int LA5_1 = input.LA(2); 
+            if ( (LA5_1=='n') ) { 
+                int LA5_5 = input.LA(3); 
+                if ( (LA5_5=='d') ) { 
+                    int LA5_6 = input.LA(4); 
+                    if ( (LA5_6=='e') ) { 
+                        int LA5_7 = input.LA(5); 
+                        if ( (LA5_7=='x') ) { 
+                            int LA5_8 = input.LA(6); 
+                            if ( (LA5_8==' ') ) { 
+                                alt5=1; &lt;- INDEX_OF 
+                            } 
+                            else { 
+                                alt5=2;} &lt;- INDEX 
+                        } 
+
+I've run into this issue in other ways for my grammar, and even if putting INDEX_OF as the first rule did work, what if you're not directly creating a lexer rule for each multi word keyword (that is, just referencing the keywords in the parser rules like 'index of' and 'index')?  Do all of the parser rules therefore need to be in the proper order to generate the correct lexer?  Sometimes this is not possible, and likely not desired. 
+
+Do lexer predicates need to be used, or perhaps a fixed lookahead (of at least 7 in this case)? 
+
+Thanks, 
+-Ryan 
+
+
+
+
+Terence Parr &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">parrt at cs.usfca.edu</A>&gt; 
+Sent by: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> 
+11/29/2006 02:22 PM 
+
+To
+ANTLR Interest &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>&gt; 
+
+cc
+ 
+
+Subject
+Re: [antlr-interest] Problems with lexing tokens containing blanks
+ 
+
+ 
+ 
+
+
+
+
+On Nov 29, 2006, at 8:44 AM, Bernd Vogt wrote:
+
+&gt;<i> Hi all,
+</I>&gt;<i>
+</I>&gt;<i> in my current project I have the requirement to lex some tokens  
+</I>&gt;<i> like this:
+</I>&gt;<i>
+</I>&gt;<i> lexer grammar ExampleLexer;
+</I>&gt;<i> &#8230;
+</I>&gt;<i> INDEX : 'index' ;
+</I>&gt;<i> INDEX_OF : 'index of' ;
+</I>&gt;<i> INT : '0' | '1'..'9' '0'..'9'* ;
+</I>
+Hi, try putting
+
+INDEX_OF : 'index of' ;
+
+before INDEX.
+
+Ter
+
+
+
+
+--
+No virus found in this incoming message.
+Checked by AVG Free Edition.
+Version: 7.5.430 / Virus Database: 268.14.19/556 - Release Date: 11/28/2006 3:22 PM
+
+-- 
+No virus found in this outgoing message.
+Checked by AVG Free Edition.
+Version: 7.5.430 / Virus Database: 268.14.19/556 - Release Date: 11/28/2006 3:22 PM
+ 
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20061129/c4f8b40d/attachment-0001.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20061129/c4f8b40d/attachment-0001.html</A> 
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="018684.html">[antlr-interest] Problems with lexing tokens containing blanks
+</A></li>
+	<LI>Next message: <A HREF="018685.html">[antlr-interest] Problems with lexing tokens containing blanks
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#18693">[ date ]</a>
+              <a href="thread.html#18693">[ thread ]</a>
+              <a href="subject.html#18693">[ subject ]</a>
+              <a href="author.html#18693">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

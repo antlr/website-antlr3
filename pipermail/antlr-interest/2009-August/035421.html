@@ -1,0 +1,173 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] [antlr3c] Posible bug i C runtime generated code	(ANTLR v3.1.3 and libantlr3c 3.1.3)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5Bantlr3c%5D%20Posible%20bug%20i%20C%20runtime%20generated%20code%0A%09%28ANTLR%20v3.1.3%20and%20libantlr3c%203.1.3%29&In-Reply-To=%3C8129e4430908030138u6de848k98b7eff5ea8c32af%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="035425.html">
+   <LINK REL="Next"  HREF="035424.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] [antlr3c] Posible bug i C runtime generated code	(ANTLR v3.1.3 and libantlr3c 3.1.3)</H1>
+    <B>Adamic Tomislav</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5Bantlr3c%5D%20Posible%20bug%20i%20C%20runtime%20generated%20code%0A%09%28ANTLR%20v3.1.3%20and%20libantlr3c%203.1.3%29&In-Reply-To=%3C8129e4430908030138u6de848k98b7eff5ea8c32af%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] [antlr3c] Posible bug i C runtime generated code	(ANTLR v3.1.3 and libantlr3c 3.1.3)">tomislav.adamic at gmail.com
+       </A><BR>
+    <I>Mon Aug  3 01:38:25 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="035425.html">[antlr-interest] [antlr3c] Need help working with	ANTLR3_STRING...
+</A></li>
+        <LI>Next message: <A HREF="035424.html">[antlr-interest] [antlr3c] Posible bug i C runtime generated code (ANTLR v3.1.3 and libantlr3c 3.1.3)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#35421">[ date ]</a>
+              <a href="thread.html#35421">[ thread ]</a>
+              <a href="subject.html#35421">[ subject ]</a>
+              <a href="author.html#35421">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi
+
+Using two grammars below, ANTLR generates code that is not compilable
+with either C or C++ compiler. Specifically, generated file
+&quot;ExampleGrammarEval.c&quot; contains expression &quot;MyStruct value = NULL;&quot;
+which is not valid C/C++ (because value is not pointer) so the code
+doesn't compile. There is a work around which makes
+&quot;ExampleGrammarEval.g&quot; bigger and harder to read. Also, this
+workaround is not practical to apply for larger struct with more
+member variables.
+
+Following are the 2 grammars needed to reproduce the bug, and the
+third one that describes workaround.
+
+-------------------------------------cut
+here-----------------------------------------
+grammar ExampleGrammar;
+
+options {
+  output=AST;
+  ASTLabelType=pANTLR3_BASE_TREE;
+  language=C;
+}
+
+tokens {
+  PLUS	= '+';
+}
+
+prog : expr EOF!;
+expr : addition;
+addition : atom ( (PLUS)^ atom )*;
+atom : NUMBER;
+fragment DEC_DIGIT : '0'..'9' ;
+NUMBER : DEC_DIGIT+;
+WS : (' '|'\r'|'\t'|'\u000C'|'\n') {$channel=HIDDEN;};
+-------------------------------------cut
+here-----------------------------------------
+
+-------------------------------------cut
+here-----------------------------------------
+tree grammar ExampleGrammarEval;
+
+options {
+	tokenVocab=ExampleGrammar;
+	ASTLabelType=pANTLR3_BASE_TREE;
+	language=C;
+}
+
+@includes {
+typedef struct {
+	double d1, d2;
+} MyStruct ;
+}
+
+prog returns [MyStruct value]
+    : expr { $value = $expr.value; };
+
+expr returns [MyStruct value]
+    : addition { $value = $addition.value; };
+
+addition returns [MyStruct value]
+    : ^(PLUS a=atom b=atom) {
+		$value.d1 = $a.value.d1 + $b.value.d1;
+		$value.d2 = $a.value.d2 + $b.value.d2;
+    }
+	| atom {
+    	$value = $atom.value;
+    };
+
+atom returns [MyStruct value]
+// Here is actually some parsing done to convert string into numerical
+// value which is omited for simplicity.
+    : NUMBER { value.d1 = value.d2 = 0.0 };
+-------------------------------------cut
+here-----------------------------------------
+
+-------------------------------------cut
+here-----------------------------------------
+tree grammar ExampleGrammarEval;
+
+options {
+	tokenVocab=ExampleGrammar;
+	ASTLabelType=pANTLR3_BASE_TREE;
+	language=C;
+}
+
+@includes {
+typedef struct {
+	double d1, d2;
+} MyStruct ;
+}
+
+prog returns [double d1, double d2]
+    : expr { $d1 = $expr.d1; $d2 = $expr.d2; };
+
+expr returns [double d1, double d2]
+    : addition { $d1 = $addition.d1; $d2 = $addition.d2; };
+
+addition returns [double d1, double d2]
+    : ^(PLUS a=atom b=atom) {
+		$d1 = $a.d1 + $b.d1;
+		$d2 = $a.d2 + $b.d2;
+    }
+	| atom {
+    	$d1 = $a.d1; $d2 = $b.d2;
+    };
+
+atom returns [double d1, double d2]
+// Here is actually some parsing done to convert string into numerical
+// value which is omited for simplicity.
+    : NUMBER { value.d1 = value.d2 = 0.0 };
+-------------------------------------cut
+here-----------------------------------------
+</PRE>
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="035425.html">[antlr-interest] [antlr3c] Need help working with	ANTLR3_STRING...
+</A></li>
+	<LI>Next message: <A HREF="035424.html">[antlr-interest] [antlr3c] Posible bug i C runtime generated code (ANTLR v3.1.3 and libantlr3c 3.1.3)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#35421">[ date ]</a>
+              <a href="thread.html#35421">[ thread ]</a>
+              <a href="subject.html#35421">[ subject ]</a>
+              <a href="author.html#35421">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

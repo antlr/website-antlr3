@@ -1,0 +1,207 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [stringtemplate-interest] &lt;pre&gt; tags and recursive structures
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20%3Cpre%3E%20tags%20and%20recursive%20structures&In-Reply-To=%3Cop.twd5451yc4vsc3%40audioslave%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   
+   <LINK REL="Next"  HREF="001140.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[stringtemplate-interest] &lt;pre&gt; tags and recursive structures</H1>
+    <B>Johan Stuyts</B> 
+    <A HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20%3Cpre%3E%20tags%20and%20recursive%20structures&In-Reply-To=%3Cop.twd5451yc4vsc3%40audioslave%3E"
+       TITLE="[stringtemplate-interest] &lt;pre&gt; tags and recursive structures">j.stuyts at javathinker.com
+       </A><BR>
+    <I>Wed Aug  1 10:42:31 PDT 2007</I>
+    <P><UL>
+        
+        <LI>Next message: <A HREF="001140.html">[stringtemplate-interest] StringTemplate conditional
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1139">[ date ]</a>
+              <a href="thread.html#1139">[ thread ]</a>
+              <a href="subject.html#1139">[ subject ]</a>
+              <a href="author.html#1139">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>&gt;<i> Hi. The one weakness of the autoindent is that I have no mechanism
+</I>&gt;<i> yet to &quot;unindent&quot; any of the lines. :(
+</I>
+I took a look at the code to see if it was easy to add this functionality,
+and it was :-)
+
+My changes make it possible to add an extra option, newIndentationContext,
+to a template invocation. This will store the current indentation stack,
+and replace it with an empty one. When the invoked template returns, the
+new indentation stack is discarded and the previous one is restored. Here
+is an example template group that uses this option:
+
+group newIndentationContextTest;
+
+page() ::= &lt;&lt;
+&lt;html&gt;
+    &lt;head&gt;
+      &lt;title&gt;New indentation context test&lt;/title&gt;
+    &lt;/head&gt;
+    &lt;body&gt;
+      &lt;pre&gt;
+        $foo();newIndentationContext=&quot;dummy&quot;$
+      &lt;/pre&gt;
+    &lt;/body&gt;
+&lt;/html&gt;
+
+&gt;&gt;<i>
+</I>
+foo() ::= &lt;&lt;
+foo
+    $bar()$
+&gt;&gt;<i>
+</I>
+bar() ::= &lt;&lt;
+bar
+$baz()$
+&gt;&gt;<i>
+</I>
+baz() ::= &lt;&lt;
+baz
+&gt;&gt;<i>
+</I>
+This is the output that will be generated (using the AutoIndentWriter):
+
+&lt;html&gt;
+    &lt;head&gt;
+      &lt;title&gt;New indentation context test&lt;/title&gt;
+    &lt;/head&gt;
+    &lt;body&gt;
+      &lt;pre&gt;
+foo
+    bar
+    baz
+      &lt;/pre&gt;
+    &lt;/body&gt;
+&lt;/html&gt;
+
+See below for the changes that are needed to make it work.
+
+Johan
+
+
+--- original-src/org/antlr/stringtemplate/AutoIndentWriter.java	2007-08-01
+15:32:10.234375000 +0200
++++ src/org/antlr/stringtemplate/AutoIndentWriter.java	2007-08-01
+17:19:28.921875000 +0200
+@@ -54,6 +54,7 @@
+   	 *  from 0..n-1.  List&lt;String&gt;
+   	 */
+   	protected List indents = new ArrayList();
++	protected List indentationContexts = new ArrayList();
+
+   	/** Stack of integer anchors (char positions in line); avoid Integer
+   	 *  creation overhead.
+@@ -94,6 +95,16 @@
+           return (String)indents.remove(indents.size()-1);
+       }
+
++    public void pushIndentationContext() {
++    	indentationContexts.add(indents);
++    	indents = new ArrayList();
++    	indents.add(null);
++    }
++
++    public void popIndentationContext() {
++    	indents =
+(List)indentationContexts.remove(indentationContexts.size() - 1);
++    }
++
+   	public void pushAnchorPoint() {
+   		if ( (anchors_sp +1)&gt;=anchors.length ) {
+   			int[] a = new int[anchors.length*2];
+--- original-src/org/antlr/stringtemplate/language/ASTExpr.java	2007-08-01
+15:32:10.265625000 +0200
++++ src/org/antlr/stringtemplate/language/ASTExpr.java	2007-08-01
+15:33:18.312500000 +0200
+@@ -125,6 +125,10 @@
+           }
+   		out.pushIndentation(getIndentation());
+   		// handle options, anchor, wrap, separator...
++		StringTemplateAST newIndentationContextAST =
+(StringTemplateAST)getOption(&quot;newIndentationContext&quot;);
++		if ( newIndentationContextAST!=null ) { // any non-empty expr means
+true; check presence
++			out.pushIndentationContext();
++		}
+   		StringTemplateAST anchorAST = (StringTemplateAST)getOption(&quot;anchor&quot;);
+   		if ( anchorAST!=null ) { // any non-empty expr means true; check
+presence
+   			out.pushAnchorPoint();
+@@ -140,6 +144,9 @@
+           catch (RecognitionException re) {
+               self.error(&quot;can't evaluate tree: &quot;+exprTree.toStringList(),
+re);
+           }
++		if ( newIndentationContextAST!=null ) {
++			out.popIndentationContext();
++		}
+           out.popIndentation();
+   		if ( anchorAST!=null ) {
+   			out.popAnchorPoint();
+---
+original-src/org/antlr/stringtemplate/StringTemplateWriter.java	2007-08-01
+15:32:10.296875000 +0200
++++ src/org/antlr/stringtemplate/StringTemplateWriter.java	2007-08-01
+15:33:18.421875000 +0200
+@@ -43,6 +43,10 @@
+
+       String popIndentation();
+
++	void pushIndentationContext();
++
++	void popIndentationContext();
++
+   	void pushAnchorPoint();
+
+   	void popAnchorPoint();
+---
+original-src/org/antlr/stringtemplate/test/TestStringTemplate.java	2007-08-01
+15:32:10.296875000 +0200
++++ src/org/antlr/stringtemplate/test/TestStringTemplate.java	2007-08-01
+18:59:23.890625000 +0200
+@@ -2090,6 +2090,10 @@
+   			public String popIndentation() {
+   				return null;
+   			}
++			public void pushIndentationContext() {
++			}
++			public void popIndentationContext() {
++			}
+   			public void pushAnchorPoint() {
+   			}
+   			public void popAnchorPoint() {
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	
+	<LI>Next message: <A HREF="001140.html">[stringtemplate-interest] StringTemplate conditional
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1139">[ date ]</a>
+              <a href="thread.html#1139">[ thread ]</a>
+              <a href="subject.html#1139">[ subject ]</a>
+              <a href="author.html#1139">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">More information about the stringtemplate-interest
+mailing list</a><br>
+</body></html>

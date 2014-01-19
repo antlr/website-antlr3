@@ -1,0 +1,220 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] ANTLR3 Nested parser
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20ANTLR3%20Nested%20parser&In-Reply-To=%3Cebc876d70801221645u674d5b86g1eb7f56fb22ac97b%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="025919.html">
+   <LINK REL="Next"  HREF="025916.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] ANTLR3 Nested parser</H1>
+    <B>Thomas Brandon</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20ANTLR3%20Nested%20parser&In-Reply-To=%3Cebc876d70801221645u674d5b86g1eb7f56fb22ac97b%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] ANTLR3 Nested parser">tbrandonau at gmail.com
+       </A><BR>
+    <I>Tue Jan 22 16:45:38 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="025919.html">[antlr-interest] ANTLR3 Nested parser
+</A></li>
+        <LI>Next message: <A HREF="025916.html">[antlr-interest] ANTLR3 Nested parser
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25911">[ date ]</a>
+              <a href="thread.html#25911">[ thread ]</a>
+              <a href="subject.html#25911">[ subject ]</a>
+              <a href="author.html#25911">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Lexing and parsing are completely independent and cannot influence each
+other. In fact, in the current implementation of CommonTokenStream the
+entire file is lexed when the first token is requested. The trouble with
+using the nested parser to detect the extents is by the time it runs the
+nested lexer will have already processed the entire input stream producing
+errors you would have to ignore. You can try Jim's suggestion however it
+seems that that will complicate error handling, with a likelihood of tokens
+being processed by the wrong lexer.
+It may be easier to write fragment lexer rules that did a basic parse of
+your nested language. You should be able to take any parser rules, convert
+all except the root rule to fragments and use them as is in a lexer
+(assuming you don't use parameters, return values or scopes which would need
+to be replaced with global variables). Then you can simplify them as much as
+possible. Along the lines of the ANTLR grammar which parses actions for a
+few elements (strings, character literals, curly delimited blocks etc) to
+determine the end delimiter.
+
+Tom.
+On Jan 23, 2008 9:40 AM, Bertalan Fodor &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">lilypondtool at organum.hu</A>&gt; wrote:
+
+&gt;<i>  Now I could try this. The problem is that I would have to emit the
+</I>&gt;<i> EOF_TOKEN from the parser, because the lexer has no idea whether the nested
+</I>&gt;<i> language input has come to its end or not. But the token buffer surely
+</I>&gt;<i> contains tokens that are not in the nested language, so I have to get out
+</I>&gt;<i> from the nested lexer and roll back the consumed tokens somehow.
+</I>&gt;<i>
+</I>&gt;<i> Do you have an idea for the solution?
+</I>&gt;<i>
+</I>&gt;<i> Thank you,
+</I>&gt;<i>
+</I>&gt;<i> Bert
+</I>&gt;<i>
+</I>&gt;<i> Thomas Brandon &#237;rta:
+</I>&gt;<i>
+</I>&gt;<i> Check out the island-grammar example. It shows lexer based nesting. The
+</I>&gt;<i> pertinent code in the main lexer is:
+</I>&gt;<i> JAVADOC : '/**'
+</I>&gt;<i>           {
+</I>&gt;<i>             // create a new javadoc lexer/parser duo that feeds
+</I>&gt;<i>             // off the current input stream
+</I>&gt;<i>             System.out.println(&quot;enter javadoc&quot;);
+</I>&gt;<i>             JavadocLexer j = new JavadocLexer(input);
+</I>&gt;<i>             CommonTokenStream tokens = new CommonTokenStream(j);
+</I>&gt;<i>             tokens.discardTokenType (JavadocLexer.WS);
+</I>&gt;<i>             JavadocParser p = new JavadocParser(tokens);
+</I>&gt;<i>             p.comment();
+</I>&gt;<i>             // returns a JAVADOC token to the java parser but on a
+</I>&gt;<i>             // different channel than the normal token stream so it
+</I>&gt;<i>             // doesn't get in the way.
+</I>&gt;<i>             $channel = JAVADOC_CHANNEL;
+</I>&gt;<i>           }
+</I>&gt;<i>         ;
+</I>&gt;<i> And in the nested lexer:
+</I>&gt;<i> /** When the javadoc parser sees end-of-comment it just says 'I'm done',
+</I>&gt;<i> which
+</I>&gt;<i>  *  consumes the tokens and forces this javadoc parser (feeding
+</I>&gt;<i>  *  off the input stream currently) to exit.  It returns from
+</I>&gt;<i>  *  method comment(), which was called from JAVADOC action in the
+</I>&gt;<i>  *  Simple parser's lexer.
+</I>&gt;<i>  */
+</I>&gt;<i> END     : '*/' {token = Token.EOF_TOKEN;}
+</I>&gt;<i>           {System.out.println(&quot;exit javadoc&quot;);}
+</I>&gt;<i>         ;
+</I>&gt;<i>
+</I>&gt;<i> Your code in the outer lexer looks OK, just passing the same input stream
+</I>&gt;<i> should keep it synched. Check your code for exiting the inner lexer.
+</I>&gt;<i>
+</I>&gt;<i> Tom.
+</I>&gt;<i> On Jan 22, 2008 8:00 PM, Bertalan Fodor (LilyPondTool) &lt;
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">lilypondtool at organum.hu</A>&gt; wrote:
+</I>&gt;<i>
+</I>&gt;<i> &gt; Thank you for your answer.
+</I>&gt;<i> &gt; If I understand your suggestion correctly, the problem with it is that I
+</I>&gt;<i> &gt; can't lex the symbol: actually it is an embedded language, so only the
+</I>&gt;<i> &gt; nested lexer and parser can find the end of the embedded part. So actually I
+</I>&gt;<i> &gt; would need the following: feed the nested lexer/parser with all the input
+</I>&gt;<i> &gt; beginning from the '/**' symbol and let it parse it. Then when the parsing
+</I>&gt;<i> &gt; is over, I'd like to set the non-nested lexer/parser to the end position of
+</I>&gt;<i> &gt; the nested parsing. So the problem is how to set the input stream position
+</I>&gt;<i> &gt; to the end of the embedded part, either rewinding or forward winding. Maybe
+</I>&gt;<i> &gt; I can use the return value of the nested rootRule() to find the position.
+</I>&gt;<i> &gt; However I could not find a way yet how to do this all.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Anyway, if you have some example of some nested parsing, that could
+</I>&gt;<i> &gt; probably effectively help me.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Thanks,
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Bert
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Harald M. M&#252;ller wrote:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; I wouldn't do it like this.
+</I>&gt;<i> &gt; If you want to really do this in the (non-nested) lexer: &quot;Lex&quot; the symbol;
+</I>&gt;<i> &gt; and then start a NEW StringReader on the symbols's getText(), from which you
+</I>&gt;<i> &gt; feed your (nested) lexer and parser.
+</I>&gt;<i> &gt; Maybe you want to do this in the (non-nested) parser ... easy if the symbol
+</I>&gt;<i> &gt; turns up there; a little work if you pushed the symbol into the HIDDEN
+</I>&gt;<i> &gt; channel (or some other channel) in the (non-nested) lexer, so that you have
+</I>&gt;<i> &gt; to &quot;undig&quot; it somehow in the (non-nested) parser
+</I>&gt;<i> &gt; Hope this very short explanation helps.
+</I>&gt;<i> &gt; Regards
+</I>&gt;<i> &gt; Harald
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;  -----Original Message-----
+</I>&gt;<i> &gt; From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>
+</I>&gt;<i> &gt; [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>&gt;] On Behalf Of Bertalan Fodor
+</I>&gt;<i> &gt; Sent: Tuesday, January 22, 2008 12:45 AM
+</I>&gt;<i> &gt; To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> &gt; Subject: [antlr-interest] ANTLR3 Nested parser
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Hi,
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; I'm creating a parser with nested parser. To make it simple I
+</I>&gt;<i> &gt; tell you my problem as if I was doing Javadoc parsing inside
+</I>&gt;<i> &gt; a Java parser.
+</I>&gt;<i> &gt; So I have this in my lexer:
+</I>&gt;<i> &gt; JAVADOC: '/**' { JavadocParser javadocParser = new
+</I>&gt;<i> &gt; JavadocParser(new CommonTokenStream(new
+</I>&gt;<i> &gt; JavadocLexer(this.input))); javadocParser.rootRule(); }
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; The problem is that while this code correctly switches to the
+</I>&gt;<i> &gt; Javadoc lexer, and parses the Javadoc parts correctly, upon
+</I>&gt;<i> &gt; returning from the Javadoc parsing, the character stream is
+</I>&gt;<i> &gt; not correctly positioned.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Can you help me how to achieve the nested parsing in antlr 3?
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Thank you very much,
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Bertalan Fodor
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; ps I've already asked this on this list, but got no answer,
+</I>&gt;<i> &gt; so I tried to make my question more simple.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;  --
+</I>&gt;<i> &gt; LilyPondTool is the editor for LilyPond files.
+</I>&gt;<i> &gt; See <A HREF="http://lilypondtool.organum.hu">http://lilypondtool.organum.hu</A>
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i>
+</I>&gt;<i>
+</I>-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20080123/3aa663f4/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20080123/3aa663f4/attachment.html</A> 
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="025919.html">[antlr-interest] ANTLR3 Nested parser
+</A></li>
+	<LI>Next message: <A HREF="025916.html">[antlr-interest] ANTLR3 Nested parser
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25911">[ date ]</a>
+              <a href="thread.html#25911">[ thread ]</a>
+              <a href="subject.html#25911">[ subject ]</a>
+              <a href="author.html#25911">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

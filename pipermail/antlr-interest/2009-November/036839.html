@@ -1,0 +1,149 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] How to handle python-like indented code blocks
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20How%20to%20handle%20python-like%20indented%20code%20blocks&In-Reply-To=%3C5d198b347f5afc4cb83836f29b11d1f3%40temporal-wave.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="036836.html">
+   <LINK REL="Next"  HREF="036840.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] How to handle python-like indented code blocks</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20How%20to%20handle%20python-like%20indented%20code%20blocks&In-Reply-To=%3C5d198b347f5afc4cb83836f29b11d1f3%40temporal-wave.com%3E"
+       TITLE="[antlr-interest] How to handle python-like indented code blocks">jimi at temporal-wave.com
+       </A><BR>
+    <I>Thu Nov 26 12:13:45 PST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="036836.html">[antlr-interest] How to handle python-like indented code blocks
+</A></li>
+        <LI>Next message: <A HREF="036840.html">[antlr-interest] How to handle python-like indented code blocks
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36839">[ date ]</a>
+              <a href="thread.html#36839">[ thread ]</a>
+              <a href="subject.html#36839">[ subject ]</a>
+              <a href="author.html#36839">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Eric,
+
+What you need to do is either let TABs though and count them in the parser, or if they can only be at the start of the line, then set a flag to true when the lexer starts and whenever you hit newline. Based on the truth of that flag, you can let the tab through, count them and issue LEVEL1, LEVEL2, etc, or skip() them if the flag is false:
+
+@lexer::members {
+boolean countTabs = true;
+}
+
+fragment LEVEL1:;
+fragment LEVEL2:;
+fragment LEVEL3:;
+
+TAB
+@init {
+int tabCount = 0;
+}
+:<i> ('\n' { tabCount++; })+
+</I>  {
+    if (countTabs) {
+        switch (tabCount) {
+          case 1: $type = LEVEL1; break;
+          case 2: $type = LEVEL2; break;
+          case 3: $type = LEVEL3; break;
+          default: skip(); // too many levels error
+        }
+    }
+    else {
+        skip();
+    }
+    countTabs = false;
+  }
+;
+
+NL : '\r'? '\n' { countTabs = true; skip(); }
+
+
+Then you parser says:
+
+struct : element+;
+
+element : (elementAtom | level1Element)+ ;
+level1Element : (LEVEL1 elementAtom | level2Element)+ ;
+
+Or something similar to that - you can be smarter than that of course, for the sake of error processing/recovery.
+
+Jim
+
+PS: There did used to be a Python example that overrode nextToken() as well - look in the grammars section of the web site.
+
+
+&gt;<i> -----Original Message-----
+</I>&gt;<i> From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:antlr-interest-
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">bounces at antlr.org</A>] On Behalf Of Eric Bell
+</I>&gt;<i> Sent: Thursday, November 26, 2009 11:42 AM
+</I>&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> Subject: [antlr-interest] How to handle python-like indented code
+</I>&gt;<i> blocks
+</I>&gt;<i> 
+</I>&gt;<i> Could someone get me pointed in the right direction for how to parse
+</I>&gt;<i> grammars that use indenting to identify code blocks ... like in Python?
+</I>&gt;<i> 
+</I>&gt;<i> I searched around and looked through the source code for boo, which
+</I>&gt;<i> uses a
+</I>&gt;<i> python-like grammar, but I am a newbie to this and it's too much code
+</I>&gt;<i> for me
+</I>&gt;<i> to figure out.
+</I>&gt;<i> 
+</I>&gt;<i> I am trying to parse a file that defines nodes in a tree. Indenting is
+</I>&gt;<i> used
+</I>&gt;<i> to show that nodes are children of a parent, like this:
+</I>&gt;<i> 
+</I>&gt;<i>               s4\0 [n c] [r 0\22\33]
+</I>&gt;<i>                      s4s4\# [n t] [p s4]
+</I>&gt;<i>                      s4s5\.1 [n t] [p s5]
+</I>&gt;<i> 
+</I>&gt;<i> &quot;s4&quot;, &quot;s4s4&quot;, &quot;s4s5&quot; are node-names, with &quot;s4s4&quot; and &quot;s4s5&quot; being
+</I>&gt;<i> children
+</I>&gt;<i> of node &quot;s4&quot;. The indenting uses a tab character, with one tab per
+</I>&gt;<i> indent
+</I>&gt;<i> level.
+</I>&gt;<i> 
+</I>&gt;<i> Thanks,
+</I>&gt;<i> 
+</I>&gt;<i> --eric
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-">http://www.antlr.org/mailman/options/antlr-interest/your-</A>
+</I>&gt;<i> email-address
+</I>
+
+
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="036836.html">[antlr-interest] How to handle python-like indented code blocks
+</A></li>
+	<LI>Next message: <A HREF="036840.html">[antlr-interest] How to handle python-like indented code blocks
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36839">[ date ]</a>
+              <a href="thread.html#36839">[ thread ]</a>
+              <a href="subject.html#36839">[ subject ]</a>
+              <a href="author.html#36839">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

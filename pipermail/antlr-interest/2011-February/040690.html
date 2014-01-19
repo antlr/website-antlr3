@@ -1,0 +1,206 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Catching errors
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Catching%20errors&In-Reply-To=%3C4D4B7C87.3090706%40yahoo.com.ar%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="040674.html">
+   <LINK REL="Next"  HREF="040697.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Catching errors</H1>
+    <B>Victor Giordano</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Catching%20errors&In-Reply-To=%3C4D4B7C87.3090706%40yahoo.com.ar%3E"
+       TITLE="[antlr-interest] Catching errors">power_giordo at yahoo.com.ar
+       </A><BR>
+    <I>Thu Feb  3 20:11:51 PST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="040674.html">[antlr-interest] Catching errors
+</A></li>
+        <LI>Next message: <A HREF="040697.html">[antlr-interest] Catching errors
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40690">[ date ]</a>
+              <a href="thread.html#40690">[ thread ]</a>
+              <a href="subject.html#40690">[ subject ]</a>
+              <a href="author.html#40690">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello people, two days a posted this problem and i still having troubles 
+with this matter, pliz give a hand, if you can of course....
+I need to handle the errors of parsing in order to display a nice user 
+message.
+
+I am watching when i use the generated lexer and parser (Generated from 
+the LinearMath grammar below) in a java application is that do really 
+emit somekind of warning about two thinks:
+
+1)extraneous input '&lt;some_token&gt;' expecting EOF *Only when a append the 
+EOF token at the end of the rule*
+2)required (...)+ loop did not match anything at input &lt;some_token&gt;' 
+*Only when i use the '+' quantity token modifier*
+
+where &lt;some_token&gt; there is actually token.
+
+The matter is, again, how do i catch in a exception those errors. I show 
+below the grammar with an input example to try for yourself:
+
+grammar LinearMath;
+
+tokens
+{
+       PLUS     = '+';
+       MINUS     = '-';
+       MUL        = '*';
+       DIV        = '/';
+}
+
+inecuation:    linexpr ((RELATIONSHIP) linexpr)+ EOF!;
+catch [UnwantedTokenException ute]
+{
+     System.out.println (&quot;inecuation UnwantedTokenException  &quot; +
+ute.toString());
+     throw ute;
+}
+
+linexpr : (MINUS|PLUS)? linterm ((PLUS|MINUS) linterm)* EOF;
+
+linterm : factor? ID;
+
+expr returns [double value]
+       : e=term {$value = $e.value;}
+       (    PLUS e=term {$value += $e.value;}
+       |    MINUS e=term {$value -= $e.value;}
+       )*;
+
+term returns [double value]
+       : f=factor {$value = $f.value;}
+       (    MUL f=factor {$value *= $f.value;}
+       |    DIV f=factor {$value /= $f.value;}
+       )*;
+
+factor returns [double value]
+       : DOUBLE {$value = Double.parseDouble($DOUBLE.text);}
+       | '(' e=expr ')'{$value = $e.value;};
+
+ID  :    ('a'..'z'|'A'..'Z'|'_') ('a'..'z'|'A'..'Z'|'0'..'9'|'_')*;
+
+DOUBLE
+       :   ('0'..'9')+
+       |    ('0'..'9')+ '.' ('0'..'9')* EXPONENT?
+         |   '.' ('0'..'9')+ EXPONENT?
+         |   ('0'..'9')+ EXPONENT
+         ;
+
+fragment EXPONENT : ('e'|'E') ('+'|'-')? ('0'..'9')+ ;
+
+NEWLINE:'\r'? '\n' { $channel = HIDDEN; };
+
+WS  :   (' '|'\t'|'\n'|'\r')+ { $channel = HIDDEN; };
+
+
+RELATIONSHIP :    '&lt;'|'&lt;='|'='|'&gt;'|'&gt;=';
+
+and with the following input: &quot;x&lt;  y x&quot;
+that isn't a valid inecuation beacause the y x must have a binary
+aritmetic operator (PLUS OR MINUS). The parser do his job very well, he
+consume the &quot;x&quot; then &quot;&lt;&quot; later &quot;y&quot; and when it reachs the seconds &quot;x&quot; it
+emits an &quot;UnwantedTokenException&quot;. The think is, that i am not being
+able to catch it, and display an error to the final user. Look that i am
+using to parse that input the inecuation &quot;rule&quot;.
+
+--------------------------------------------------------------------------
+2) Other thing is about invalid tokens, i manage to treat then
+overriding a member function of the lexer called nextToken(), like this:
+
+@lexer::members
+{
+     @Override
+     public Token nextToken()
+     {
+         while (true) {
+             state.token = null;
+             state.channel = Token.DEFAULT_CHANNEL;
+             state.tokenStartCharIndex = input.index();
+             state.tokenStartCharPositionInLine = 
+input.getCharPositionInLine();
+             state.tokenStartLine = input.getLine();
+             state.text = null;
+             if ( input.LA(1)==CharStream.EOF ) {
+                 return Token.EOF_TOKEN;
+             }
+             try {
+                 mTokens();
+                 if ( state.token==null ) {
+                     emit();
+                 }
+                 else if ( state.token==Token.SKIP_TOKEN ) {
+                     continue;
+                 }
+                 return state.token;
+             }
+             catch (RecognitionException re) {
+                 reportError(re);
+                 throw new RuntimeException(&quot;Invalid Character  : &quot; + 
+(char) (re.c));
+// or throw Error
+             }
+         }
+     }
+}
+&#191;It's that the correct way?
+
+Ok, so far this.
+Sorry for the bombing III of emails!. Thanks for advance.
+V&#237;ctor.
+
+
+El 03/02/2011 12:36 a.m., Victor Giordano escribi&#243;:
+&gt;<i> I am watching when i use the generated lexer and parser (Generated from
+</I>&gt;<i> the LinearMath grammar below) in a java application is that do really
+</I>&gt;<i> emit somekind of warning about two thinks:
+</I>&gt;<i>
+</I>&gt;<i> 1)extraneous input '&lt;some_token&gt;' expecting EOF *Only when a append the
+</I>&gt;<i> EOF token at the end of the rule*
+</I>&gt;<i> 2)required (...)+ loop did not match anything at input &lt;some_token&gt;'
+</I>&gt;<i> *Only when i use the '+' quantity token modifier*
+</I>&gt;<i>
+</I>&gt;<i> where &lt;some_token&gt; there is actually token.
+</I>&gt;<i>
+</I>&gt;<i> In fact the warnings is actually are a strings sended to the standart
+</I>&gt;<i> error.
+</I>&gt;<i>
+</I>&gt;<i> The matter is, again, how do i do to manage those errors altering normal
+</I>&gt;<i> flow with a real exception and treating it like one.
+</I>&gt;<i> Ok, so far this.
+</I>&gt;<i> Sorry for the bombing of emails!. Thanks for advance.
+</I>&gt;<i> V&#237;ctor.
+</I></PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="040674.html">[antlr-interest] Catching errors
+</A></li>
+	<LI>Next message: <A HREF="040697.html">[antlr-interest] Catching errors
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40690">[ date ]</a>
+              <a href="thread.html#40690">[ thread ]</a>
+              <a href="subject.html#40690">[ subject ]</a>
+              <a href="author.html#40690">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,231 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Composed grammars: small bug with generated files	and pbs with errors reporting
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Composed%20grammars%3A%20small%20bug%20with%20generated%20files%0A%09and%20pbs%20with%20errors%20reporting&In-Reply-To=%3CB432E377-B375-45B8-97E5-5B2EDC90EFA3%40imag.fr%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="030450.html">
+   <LINK REL="Next"  HREF="030452.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Composed grammars: small bug with generated files	and pbs with errors reporting</H1>
+    <B>Jean-Claude Durand</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Composed%20grammars%3A%20small%20bug%20with%20generated%20files%0A%09and%20pbs%20with%20errors%20reporting&In-Reply-To=%3CB432E377-B375-45B8-97E5-5B2EDC90EFA3%40imag.fr%3E"
+       TITLE="[antlr-interest] Composed grammars: small bug with generated files	and pbs with errors reporting">jean-claude.durand at imag.fr
+       </A><BR>
+    <I>Mon Sep  1 08:55:06 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="030450.html">[antlr-interest] How do I generate an AST node with a given	text?
+</A></li>
+        <LI>Next message: <A HREF="030452.html">[antlr-interest] Composed grammars: small bug with	generated	files and pbs with errors reporting
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30451">[ date ]</a>
+              <a href="thread.html#30451">[ thread ]</a>
+              <a href="subject.html#30451">[ subject ]</a>
+              <a href="author.html#30451">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I use antlr v3.1 with the C language target to compose grammars. I  
+send you an archive to show
+you the problem:
+- first, in the different generated .h files, the variable 'tree' has  
+no type in the typedef definition of the
+&quot;return&quot; when building ASTs (you should have the type  
+'pANTLR3_BASE_TREE'):
+
+typedef struct Composed_Float_reel_return_struct
+{
+     /** Generic return elements for ANTLR3 rules that are not in  
+tree parsers or returning trees
+      */
+     pANTLR3_COMMON_TOKEN    start;
+     pANTLR3_COMMON_TOKEN    stop;
+     	tree;
+
+}
+     Composed_Float_reel_return;
+
+
+- second, error reporting does not work very well even with very  
+simple grammars as in my example
+below. Sometimes it is ok, sometimes not (the same message for 2  
+different errors or no message at all):
+
+I compose the 2 grammars:
+
+parser grammar Int;
+options
+{
+	language=C;
+	output=AST;
+}
+ent:	
+	INT Id SEMICOL
+					-&gt; ^(INT Id)	
+	;
+
+and:
+
+parser grammar Float;
+options
+{
+	language=C;	
+	output=AST;
+}
+reel	:	
+	FLOAT Id SEMICOL
+					-&gt; ^(FLOAT Id)	
+	;
+
+in the composed grammar:
+
+parser grammar Composed;
+options
+{
+	language=C;
+	tokenVocab=Lex;
+	output=AST;
+}
+import Int, Float;
+decls
+	:
+	e=ent
+	r=reel
+				-&gt; ^(DECL $e $r)
+	;
+
+- example 1: ok
+
+int a ;
+float x ;
+
+the result is:
+  main:
+  main: (DECL (int a) (float x))
+  main.
+
+- example 2: ok
+
+int a b;
+float x;
+
+the result is:
+
+  main:
+err1.ok(1)  : error 9 : Extraneous token, at offset 5
+     near [Index: 2 (Start: 5243798-Stop: 5243798) ='b', type&lt;8&gt;  
+Line: 1 LinePos:5]
+      : Extraneous input - expected SEMICOL ...
+  main: (DECL (int a) (float x))
+  main.
+
+- example 3: ok
+
+int a ;
+float x y;
+
+...
+
+- example 4: NOT ok, I get the same message twice for the first error  
+but nothing on the second.
+
+int a b;
+float x y;
+
+the result is:
+
+  main:
+err.notOk(1)  : error 9 : Extraneous token, at offset 5
+     near [Index: 2 (Start: 5243798-Stop: 5243798) ='b', type&lt;8&gt;  
+Line: 1 LinePos:5]
+      : Extraneous input - expected SEMICOL ...
+err.notOk(1)  : error 9 : Extraneous token, at offset 5
+     near [Index: 2 (Start: 5243798-Stop: 5243798) ='b', type&lt;8&gt;  
+Line: 1 LinePos:5]
+      : Extraneous input - expected SEMICOL ...
+  main: ast: 249856
+  main: (DECL (int a) (float x))
+  main.
+
+I use the lexer:
+
+lexer grammar Lex;
+options
+{
+	language=C;
+}
+tokens
+{
+	DECL;
+}
+INT: 'int';
+FLOAT: 'float';
+SEMICOL: ';';
+Id:	'a'..'z'+	;
+Blancs: ( ' ' | '\t' | '\n' )+ { $channel=HIDDEN; }	;
+
+With more complicated grammars, I got no error reporting at all.
+
+&#65532;
+
+
+Have a nice day,
+Jean-Claude Durand
+
+LIG, &#233;quipe GETALP
+385, rue de la Biblioth&#232;que
+BP 53
+38041 Grenoble cedex 9
+France
+
+<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">Jean-Claude.Durand at imag.fr</A>
+t&#233;l: +33 (0)4 76 51 43 81
+fax: +33 (0)4 76 51 44 05
+
+
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20080901/6e756682/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20080901/6e756682/attachment.html</A> 
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: ComposedGrammars_1.tar.gz
+Type: application/x-gzip
+Size: 4987 bytes
+Desc: not available
+Url : <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20080901/6e756682/attachment.gz">http://www.antlr.org/pipermail/antlr-interest/attachments/20080901/6e756682/attachment.gz</A> 
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20080901/6e756682/attachment-0001.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20080901/6e756682/attachment-0001.html</A> 
+</PRE>
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="030450.html">[antlr-interest] How do I generate an AST node with a given	text?
+</A></li>
+	<LI>Next message: <A HREF="030452.html">[antlr-interest] Composed grammars: small bug with	generated	files and pbs with errors reporting
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30451">[ date ]</a>
+              <a href="thread.html#30451">[ thread ]</a>
+              <a href="subject.html#30451">[ subject ]</a>
+              <a href="author.html#30451">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

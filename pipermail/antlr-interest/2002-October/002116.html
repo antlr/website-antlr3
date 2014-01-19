@@ -1,0 +1,188 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Re: AST factory / heterogeneous tree enhancement
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20AST%20factory%20/%20heterogeneous%20tree%20enhancement&In-Reply-To=93A17F82-E300-11D6-8258-0030653DE0D6%40jguru.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002115.html">
+   <LINK REL="Next"  HREF="002118.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Re: AST factory / heterogeneous tree enhancement</H1>
+    <B>micheal_jor</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20AST%20factory%20/%20heterogeneous%20tree%20enhancement&In-Reply-To=93A17F82-E300-11D6-8258-0030653DE0D6%40jguru.com"
+       TITLE="[antlr-interest] Re: AST factory / heterogeneous tree enhancement">open.zone at virgin.net
+       </A><BR>
+    <I>Mon Oct 21 17:19:56 PDT 2002</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002115.html">AST f actory / heterogeneous tree enhancement
+</A></li>
+        <LI>Next message: <A HREF="002118.html">[antlr-interest] Re: AST factory / heterogeneous tree enhancement
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2116">[ date ]</a>
+              <a href="thread.html#2116">[ thread ]</a>
+              <a href="subject.html#2116">[ subject ]</a>
+              <a href="author.html#2116">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi again,
+
+Couldn't stay away so here's a more detailed reply.
+
+--- In <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at y...</A>, Terence Parr &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">parrt at j...</A>&gt; wrote:
+&gt;<i> Ok, Loring and I have discussed the tree factory problems.  
+</I>&gt;<i> &quot;micheal_jor&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">open.zone at v...</A>&gt; brought them up regarding C# and 
+</I>&gt;<i> Ric seems to have fixed this for C++.  So, now the Java solution.
+</I>&gt;<i> 
+</I>&gt;<i> Here is the problem as I understand it.
+</I>&gt;<i> 
+</I>&gt;<i> 1. #[FOO] always builds an AST node of the default type because
+</I>&gt;<i>      the ASTFactory only knows about the default.
+</I>
+This is an accurate statement of the problem with AST construction 
+with the Java codegen and [formerly] the C# codegen.
+
+There is also a related issue when the nodetype is specified by 
+annotating a token reference in a grammar:
+      aRule
+         : TOK1&lt;AST=CustomNode.Tok1Node&gt; TOK1&lt;AST=CustomNode.Tok2Node&gt;
+         ;
+
+One additional issue that I would like to introduce relates to token 
+redefinition. How does one specify a custom ASTNodeType globally for 
+terminals such as ID and PLUS that aren't originally defined in a 
+tokens {..} section?
+
+We have tokens defined in the lexer (and therefore without 
+ASTNodeTypes) that were to be &quot;importVocab'd&quot; into the parser 
+(parsers actually). We planned to add the ASTNodeTypes (which could 
+be different for different parsers) in the token's section in the 
+parser. Can we use the tokens {...} construct to do this with 
+terminals like ID and PLUS?. Being forced to use per-TokenRef options 
+is very wasteful/verbose since it will be the same for all IDs.
+
+&gt;<i> In future if you say
+</I>&gt;<i> 
+</I>&gt;<i>      tokens {
+</I>&gt;<i>          PLUS&lt;AST=PLUSNode&gt;;
+</I>&gt;<i>          ...
+</I>&gt;<i>      }
+</I>&gt;<i> 
+</I>&gt;<i>      then I'll make action #[PLUS] create the right node.  You can
+</I>&gt;<i> also say
+</I>&gt;<i>      #[ID,&quot;foo&quot;,&quot;VarNode&quot;] (3rd arg is the type of node to create).
+</I>
+I presume you meant that _both_ #[PLUS] and #[PLUS, &quot;sometext&quot;] will 
+be fixed. 
+
+I kinda like the extended syntax - I view it (and the per-tokenRef 
+option) as a sort of local override of the global 
+TokenType==&gt;ASTNodeType mapping established with setASTNodeClass and 
+tokens {...}. 
+
+In our [informal] ANTLR coding standards, using &quot;local override&quot; 
+ASTNodeType constructs is the exception rather than the rule.
+
+&gt;<i> 2. dup methods of ASTFactory don't respect the type of the nodes; it
+</I>&gt;<i>      uses default node type.  In future, i'll use 
+</I>&gt;<i> t.getClass().newInstance()
+</I>&gt;<i>      to do the dup.
+</I>&gt;<i> 
+</I>
+The dup() methods ultimately call the factory's create() method. Once 
+the factory is able to create the right nodes based on it's type, the 
+dup() methods should just work. At least that was the experience with 
+C#.
+
+&gt;<i> 3. hetero tree construction does not call the factory.  E.g.,
+</I>&gt;<i> 
+</I>&gt;<i>      anIntRule : INT&lt;AST=INTNode&gt; ;
+</I>&gt;<i> 
+</I>&gt;<i>      generates
+</I>&gt;<i> 
+</I>&gt;<i>      INTNode v = new INTNode(LT(1));
+</I>&gt;<i> 
+</I>&gt;<i>      but we need to instead generate:
+</I>&gt;<i> 
+</I>&gt;<i>      AST v = (AST)astFactory.create(LT(1),&quot;INTNode&quot;);
+</I>&gt;<i> 
+</I>&gt;<i>      where the create(...) method is new and specifies the type to
+</I>&gt;<i>      create.  This will use newInstance() instead of &quot;new&quot; by 
+</I>&gt;<i>      default.
+</I>&gt;<i> 
+</I>
+This contradicts the &quot;Heterogeneous AST&quot; section of the reference 
+manual which states that &quot;ANTLR uses the factory to create nodes for 
+which it does not know the specific type&quot;. 
+
+My opinion is that ANTLR should always use the ASTFactory except for 
+(1) the new extended AST construction syntax and (2) the per-tokenRef 
+ASTNodeType option since they effectively &quot;override&quot; the factory's 
+global view of Token==&gt;ASTNodeType mappings specified with the 
+setASTNodeClass and the &quot;tokens {...}&quot; options.
+
+I can't actually remember what policy has been (or is to be) 
+implemented in the C# codegen but, I remember that the pre-existing 
+mechanism for reading the grammar file and loading the various 
+options removed the distinction between per-Token and per-TokenRef 
+ASTNodeType settings for grammar atoms. The GrammarAtom simply has an 
+ASTNodeType attribute. 
+
+So I guess for &quot;all non-manual tree construction requests that 
+involve per-token or per-tokenref ASTNodeType options&quot; the C# codegen 
+will (must?) always generate
+   INTNode v = new INTNode(LT(1));
+
+The specified ASTNodeType may not be the type associated with the 
+TokenType in the ASTFactory's mapping table so it's safer to just 
+bypass the factory entirely.
+
+Incidentally, the same will be true of the extended manual tree 
+construction syntax. 
+
+&gt;<i> 4. If you define ID&lt;AST=T&gt; in tokens section then all code in 
+</I>grammar 
+&gt;<i> &quot;id:ID&quot; should
+</I>&gt;<i>      define labels as &quot;T id&quot; not &quot;AST id&quot; nor labelASTType id.
+</I>
+Hmmm. Interesting. I don't think either of the C++ and the C# codegen 
+do this. What would be the benefit?
+
+Cheers,
+
+Micheal
+
+
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002115.html">AST f actory / heterogeneous tree enhancement
+</A></li>
+	<LI>Next message: <A HREF="002118.html">[antlr-interest] Re: AST factory / heterogeneous tree enhancement
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2116">[ date ]</a>
+              <a href="thread.html#2116">[ thread ]</a>
+              <a href="subject.html#2116">[ subject ]</a>
+              <a href="author.html#2116">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

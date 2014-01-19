@@ -1,0 +1,231 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Interesting problem with ANTLR and CSS 2.1
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Interesting%20problem%20with%20ANTLR%20and%20CSS%202.1&In-Reply-To=%3C93508bbe0710121323v5d382232td5453bf07ba54ef8%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="024157.html">
+   <LINK REL="Next"  HREF="024127.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Interesting problem with ANTLR and CSS 2.1</H1>
+    <B>Simon Janes</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Interesting%20problem%20with%20ANTLR%20and%20CSS%202.1&In-Reply-To=%3C93508bbe0710121323v5d382232td5453bf07ba54ef8%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Interesting problem with ANTLR and CSS 2.1">simon.janes at gmail.com
+       </A><BR>
+    <I>Fri Oct 12 13:23:04 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="024157.html">[antlr-interest] should lexical rules with identical content be treated equally?
+</A></li>
+        <LI>Next message: <A HREF="024127.html">[antlr-interest] Interesting problem with ANTLR and CSS 2.1
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24126">[ date ]</a>
+              <a href="thread.html#24126">[ thread ]</a>
+              <a href="subject.html#24126">[ subject ]</a>
+              <a href="author.html#24126">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello ANTLR hackers!
+
+I've been wrestling with a parser derived from CSS 2.1(Seen here at:
+<A HREF="http://www.w3.org/TR/CSS21/grammar.html">http://www.w3.org/TR/CSS21/grammar.html</A> ). With a little bit of work and a
+little bit of fugding, it parses most CSS files nicely, but now I want to
+build an AST from this grammar:
+
+grammar CascadingStylesheet;
+
+options {
+  output=AST;
+  ASTLabelType=CommonTree;
+}
+
+tokens {
+    CDO = '&lt;!--';
+    CDC = '--&gt;';
+    COMMA = ',';
+    LBRACE = '{';
+    PLUS = '+';
+    GREATER = '&gt;';
+    FUNCTION = 'function(';
+    HASH = '#';
+    INCLUDES = '~=';
+    DASHMATCH = '|=';
+}
+
+parse    :    stylesheet -&gt; ^(stylesheet); /* I think this sets the &quot;root&quot;
+of the AST. */
+
+/*
+stylesheet
+  : ( '@charset' STRING ';' )?
+    S*
+    ('/*' ( options { greedy=false; } : . )* '* /')*
+    (S|CDO|CDC)* ( import_css (S|CDO|CDC)* )*
+    ( ( ruleset | media | page ) (S|CDO|CDC)* )*
+  ;
+*/
+
+/* Using this rule below because the &quot;rule&quot; above is harder to follow. */
+stylesheet
+    : (comment_stylesheet|ruleset|media|page)* ;
+
+comment_stylesheet: COMMENT;
+comment_ruleset:  COMMENT;
+comment_declaration: COMMENT;
+
+COMMENT    :      '/*' (options {greedy=false;} : .)* '*/';
+
+import_css
+  : '@import' S*
+    (STRING|URI) S* ( medium ( COMMA S* medium)* )? ';' S*
+  ;
+media
+  : '@media' S* medium ( COMMA S* medium )* LBRACE! S* ruleset* '}'! S*
+  ;
+medium
+  : IDENT S*
+  ;
+page
+  : '@page' S* pseudo_page? S*
+    LBRACE! S* declaration ( ';'! S* declaration )* '}'! S*
+  ;
+pseudo_page
+  : ':' IDENT
+  ;
+operator_css
+  : '/' S* | COMMA S* | /* empty */
+  ;
+combinator
+  : PLUS S*
+  | GREATER S*
+  | S*
+  ;
+unary_operator
+  : '-' | PLUS
+  ;
+property_css
+  : IDENT S*
+  ;
+ruleset
+  : selector S* ( COMMA S* selector )* declarations -&gt; selector ( COMMA
+selector )* declarations;
+
+declarations
+    : LBRACE! S* comment_ruleset* S* declaration (  ';'! S* declaration
+comment_declaration* )* '}'! S*;
+selector
+  : simple_selector ( combinator simple_selector )*
+  ;
+simple_selector
+  : element_name ( HASH IDENT| class_css | attrib | pseudo )*
+  | ( HASH IDENT| class_css | attrib | pseudo )+
+  ;
+class_css : '.' IDENT;
+element_name
+  : IDENT | '*'
+  ;
+attrib
+  : '[' S* IDENT S* ( ( '=' | INCLUDES | DASHMATCH ) S*
+    ( IDENT | STRING ) S* )? ']'
+  ;
+pseudo
+  : ':' ( IDENT | FUNCTION S* IDENT? S* ')' )
+  ;
+declaration
+  : property_css ':' S* expr_css prio?
+  | /* empty */
+  ;
+prio
+  : '!' S*
+  ;
+expr_css
+  : term ( operator_css term )*
+  ;
+term
+  : unary_operator?
+    ( NUMBER S* | PERCENTAGE S* | LENGTH S* | EMS S* | EXS S* | ANGLE S* |
+      TIME S* | FREQ S* )
+  | STRING S* | IDENT S* | URI S* | hexcolor | function_css
+  ;
+function_css
+  : FUNCTION S* expr_css ')' S*
+  ;
+/*
+ * There is a constraint on the color that it must
+ * have either 3 or 6 hex-digits (i.e., [0-9a-fA-F])
+ * after the &quot;#&quot;; e.g., &quot;#000&quot; is OK, but &quot;#abcd&quot; is not.
+ */
+hexcolor
+  : HASH S*
+  ;
+
+NUMBER    :     '0'..'9'+
+    |    '0'..'9'* '.' '0'..'9'+;
+PERCENTAGE
+    :    NUMBER '%';
+LENGTH    :    NUMBER ('in'|'cm'|'mm'|'px'|'pt'|'pc');
+EMS    :    NUMBER 'em';
+EXS    :    NUMBER 'ex';
+ANGLE    :    NUMBER ('deg'|'rad'|'grad');
+TIME    :    NUMBER ('sec'|'msec');
+FREQ    :    NUMBER ('Hz'|'kHz');
+
+S    :    ' '|'\n'|'\t'|'\r'|'\f' {$channel=HIDDEN;};
+IDENT    :    ('a'..'z'|'A'..'Z'|'-') ('a'..'z'|'A'..'Z'|'0'..'9'|'-'|'_')*;
+STRING    :    '\'' ( options {greedy=false;} : . )* '\''
+    |    '&quot;' ( options {greedy=false;} : . )* '&quot;'
+    ;
+URI    :    'url(' ( options {greedy=false;} : . )* ')';
+
+
+/* end of CascadingStylesheet.g */
+
+What I'm running into is while the grammar validates, when it parses a
+simple stylesheet like this:
+
+DIV.example { color: green; }
+
+I'll get a runtime error:
+
+&quot;more than one node as root&quot;
+
+What about CSS is confusing ANTLR?  Why can't I get a tree that looks like
+the diagram in ANTLRworks by default?
+
+Simon
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20071012/33e33711/attachment-0001.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20071012/33e33711/attachment-0001.html</A> 
+</PRE>
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="024157.html">[antlr-interest] should lexical rules with identical content be treated equally?
+</A></li>
+	<LI>Next message: <A HREF="024127.html">[antlr-interest] Interesting problem with ANTLR and CSS 2.1
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24126">[ date ]</a>
+              <a href="thread.html#24126">[ thread ]</a>
+              <a href="subject.html#24126">[ subject ]</a>
+              <a href="author.html#24126">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,203 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Losing a character when switching parsers
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Losing%20a%20character%20when%20switching%20parsers&In-Reply-To=20051108155404.5D178DCC66%40www.antlr.org">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="014247.html">
+   <LINK REL="Next"  HREF="014249.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Losing a character when switching parsers</H1>
+    <B>Miki Watts</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Losing%20a%20character%20when%20switching%20parsers&In-Reply-To=20051108155404.5D178DCC66%40www.antlr.org"
+       TITLE="[antlr-interest] Losing a character when switching parsers">mikiw at orb-software.com
+       </A><BR>
+    <I>Tue Nov  8 08:05:08 PST 2005</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="014247.html">[stringtemplate-interest] Re: [antlr-interest] StringTemplate
+	+ preserving comments
+</A></li>
+        <LI>Next message: <A HREF="014249.html">[antlr-interest] CPP COMMENTS
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#14232">[ date ]</a>
+              <a href="thread.html#14232">[ thread ]</a>
+              <a href="subject.html#14232">[ subject ]</a>
+              <a href="author.html#14232">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I've been trying to figure this out for a few days, so I hope someone can
+help me.
+I have a situation similar to the JavaDoc example in the antlr distribution,
+of text within text that has different syntax rules.
+My problem is that when I move from each parser/lexer, I lose a character,
+so for input &quot;some text [!some other text]&quot; , the secondary parser only sees
+&quot;[!&quot;, &quot;ome other text&quot;, and &quot;]&quot; as the tokens.
+ 
+I won't post the whole parser/lexer files, but here are the important parts:
+In the main antlr file, in the parser:
+ 
+------------------
+protected pageOption returns [WikiPageOptionToken defaultToken = null]
+	:
+		StartWikiPageOption
+		{
+			WikiPageOptionParser parser = new
+WikiPageOptionParser(getInputState());
+			defaultToken = parser.pageOption();
+		}
+	;
+------------------
+
+And in the lexer:
+
+------------------
+StartWikiPageOption : &quot;[!&quot;  {
+TokenParser.selector.push(&quot;WikiPageOptionLexer&quot;); };
+------------------
+
+In the secondary antlr file, in the parser:
+
+------------------
+pageOption returns [WikiPageOptionToken defaultToken = null]
+	{TextToken pageOptionValue = null;} : 
+		w1:Word { TextToken pageOptionName = new
+TextToken(w1.getText()); }
+		(PageOptionSeperator w2:Word {pageOptionValue = new
+TextToken(w2.getText());})? 
+		EndWikiPageOption
+		{ 
+			defaultToken = new WikiPageOptionToken(); 
+			defaultToken.AddChildToken(pageOptionName);	
+			
+			if ((pageOptionValue as TextToken)!=null)
+			{
+				defaultToken.AddChildToken(pageOptionValue);
+			}
+		}
+	;
+------------------
+
+And in the lexer:
+
+------------------
+StartPageOption : &quot;[!&quot;;
+EndPageOption: &quot;]&quot; { TokenParser.selector.pop(); };
+PageOptionSeperator: &quot;:&quot;;
+
+Word: ('a'..'z' | 'A'..'Z')+;
+------------------
+
+For input &quot;[!PreserveWhiteSpace]&quot;, I get the following exception:
+
+------------------
+TestCase 'JustWikiUnitTest.HtmlTokens.TestTokenParser.TestTranslateToHtml'
+failed: System.Exception : wiki page content: [!PreserveWhiteSpace]
+  ----&gt; antlr.TokenStreamRecognitionException : unexpected char: 'P'
+	
+c:\projects\justwiki\justwikiunittest\htmltokens\testtokenparser.cs(73,0):
+at JustWikiUnitTest.HtmlTokens.TestTokenParser.TestTranslateToHtml()
+	--Exception
+	c:\projects\justwiki\justwiki_generated\justwikilexer.cs(105,0): at
+JustWiki.JustWikiLexer.nextToken()
+	at antlr.TokenStreamSelector.nextToken()
+	at antlr.TokenBuffer.fill(Int32 amount)
+	at antlr.TokenBuffer.LA(Int32 i)
+	at antlr.LLkParser.LA(Int32 i)
+	at antlr.Parser.consumeUntil(BitSet bset)
+	at antlr.Parser.recover(RecognitionException ex, BitSet tokenSet)
+	
+c:\projects\justwiki\justwiki_generated\wikipageoptionparser.cs(113,0): at
+JustWiki.WikiPageOptionParser.pageOption()
+	c:\projects\justwiki\justwiki_generated\justwikiparser.cs(129,0): at
+JustWiki.JustWikiParser.pageOption()
+	c:\projects\justwiki\justwiki_generated\justwikiparser.cs(80,0): at
+JustWiki.JustWikiParser.startRule()
+	C:\Projects\JustWiki\Tokens\TokenParser.cs(33,0): at
+JustWiki.Tokens.TokenParser.Parse(Controller controller, WikiWord wikiPage)
+	
+c:\projects\justwiki\justwikiunittest\htmltokens\testtokenparser.cs(23,0):
+at JustWikiUnitTest.HtmlTokens.TestTokenParser.ParseWikiPage(String
+mockWikiPageContent)
+	
+c:\projects\justwiki\justwikiunittest\htmltokens\testtokenparser.cs(62,0):
+at JustWikiUnitTest.HtmlTokens.TestTokenParser.TestTranslateToHtml()
+------------------
+
+And if I debug it, in the part where it looks for the Word token, it has
+this:
+------------------
+	w1 = LT(1);
+	match(Word);
+------------------
+
+It fails on the LT(1) specifically, though in the debug view it shows LT(1)
+as a token of type Word with the text &quot;reserveWhiteSpace&quot;, so it looks like
+I'm losing a character somewhere... I'm hoping someone can help me.
+
+Thanks, Miki Watts
+
+
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="014247.html">[stringtemplate-interest] Re: [antlr-interest] StringTemplate
+	+ preserving comments
+</A></li>
+	<LI>Next message: <A HREF="014249.html">[antlr-interest] CPP COMMENTS
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#14232">[ date ]</a>
+              <a href="thread.html#14232">[ thread ]</a>
+              <a href="subject.html#14232">[ subject ]</a>
+              <a href="author.html#14232">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

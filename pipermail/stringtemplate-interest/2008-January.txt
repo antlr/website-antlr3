@@ -1,0 +1,1217 @@
+From sanjay.agravat at gmail.com  Wed Jan  2 06:32:29 2008
+From: sanjay.agravat at gmail.com (Sanjay Agravat)
+Date: Wed, 2 Jan 2008 09:32:29 -0500
+Subject: [stringtemplate-interest] set attributes in two templates from one
+	rule
+Message-ID: <98b396790801020632y755cc185lfdbba058c1afd5f7@mail.gmail.com>
+
+Hi,
+
+I have a template similar to this:
+
+program (statement, instanceVars) ::= <<
+  public class Program {
+    <instanceVars:{i| private <i>;<\n>}>
+
+    <statement; separator="\n"> <! this is where the inner class is inserted
+among other possibilities !>
+  }
+>>
+
+innerClassDecl(id, attributes) ::= <<
+  private class <id; format="capital">  {
+    <attributes>
+  }
+ <! the alternative to my approach is to create the instanceVar here instead
+!>
+>>
+
+My situation is that I can't set the instanceVars attribute in the program
+template until I get to the innerClassDecl rule in my intermediate AST
+because the inner class should also be an instance variable in the enclosing
+Program class.  The instanceVars should be set every time an inner class is
+declared.  The innerClassDecl rule also has to set the statement attribute
+so I am wondering if it's possible to set two attributes in two different
+templates even after 1 of the templates has already been defined?  I thought
+a region would work for me but then had a problem of how to set two
+attributes (on two different templates) within 1 rule. I'm sure there must
+be something I'm missing here...
+
+Thanks,
+
+Sanjay
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20080102/c99613a6/attachment.html 
+
+From open.zone at virgin.net  Sat Jan  5 01:20:44 2008
+From: open.zone at virgin.net (Micheal J)
+Date: Sat, 5 Jan 2008 09:20:44 -0000
+Subject: [stringtemplate-interest] StringTemplate in C# - attribute
+	lookuprules
+In-Reply-To: <d78326310712270816mc30fb40j2f25962c33ca155b@mail.gmail.com>
+References: <d78326310712270816mc30fb40j2f25962c33ca155b@mail.gmail.com>
+Message-ID: <000301c84f7c$40df1580$0400a8c0@marion>
+
+Hi,
+ 
+Interesting comments. Perhaps the ordering of the various checks can be
+adjusted so that the less likely (for C#) getXXX, isXXX and GetXXX variants
+come last?
+ 
+Micheal
+
+
+  _____  
+
+From: stringtemplate-interest-bounces at antlr.org
+[mailto:stringtemplate-interest-bounces at antlr.org] On Behalf Of Natan Vivo
+Sent: 27 December 2007 16:16
+To: stringtemplate-interest at antlr.org
+Subject: [stringtemplate-interest] StringTemplate in C# - attribute
+lookuprules
+
+
+Why are there so many lookup rules for C# in contrast to Java or Python
+versions?
+
+In this page
+http://www.antlr.org/wiki/display/ST/Expressions#Expressions-Propertyreferen
+ces
+<http://www.antlr.org/wiki/display/ST/Expressions#Expressions-Propertyrefere
+nces> , it tells me C# version would try to get a value from 7 different
+places before trying an indexer.
+
+I ask this because an application I wrote makes extensive use of indexers to
+add custom attributes to an object, and although the performance is good
+enough, I just wonder if this lookup rules aren't too bloated. 
+
+For example, why to have rules for get_name, getname and Getname? The
+probability of someone writing like this in C# is the same of writing a
+method called Name() in java. The property X in c# is the direct equivalent
+of getX() in java. 
+
+This also makes my indexer called "type" be dropped in favor of the method
+GetType on the System.Object, making me declare a property called "type"
+calling the indexer.
+
+I would suggest that this rule to be 1. Property, 2. IsProperty, 3. indexer,
+but I guess that would cause a lot of compatibility problems by now. 
+
+
+Also I just found out that ST will look for private members too on attribute
+lookup. Shoudn't it look for public instance members only?
+
+Thanks,
+Natan Vivo
+
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20080105/ac575539/attachment.html 
+
+From nvivo.misc at gmail.com  Tue Jan  8 13:51:14 2008
+From: nvivo.misc at gmail.com (Natan Vivo)
+Date: Tue, 08 Jan 2008 19:51:14 -0200
+Subject: [stringtemplate-interest] StringTemplate in C# - attribute
+	lookuprules
+In-Reply-To: <000301c84f7c$40df1580$0400a8c0@marion>
+References: <d78326310712270816mc30fb40j2f25962c33ca155b@mail.gmail.com>
+	<000301c84f7c$40df1580$0400a8c0@marion>
+Message-ID: <4783F052.3000105@gmail.com>
+
+Hi. Sorry for the delay...
+
+I took a look at the source code (3.0.1 from the download page):
+
+On Antlr.StringTemplate.Language.ASTExpr, line 574:
+
+foreach (string prefix in new string[] { *"get_", "Get", "Is", "get", 
+"is"* })
+{
+    paramBag.lookupName = prefix + methodSuffix;
+    totalReflectionLookups++;
+    if (found = *GetMethodValueByName*(paramBag, ref val))
+        break;
+}
+
+Now, on line 1100, the method *GetMethodValueByName* uses 
+*BindingFlags.IgnoreCase*, which makes the capitalized variants useless.
+
+Another thing is that this method also uses *BindingFlags.NonPublic*. ST 
+should never look for non public members.
+
+Now, about the order changes, I would say that if there is a 
+possibility, those options should simply be excluded from the list or 
+added some compatibility option to enable this lookup rule if needed.
+C# programmers simply won't code this way, unless they are coming from 
+Java, but then, the Java version should look for methods like "Name()" 
+because a lazy C# programmer migrating to java might want to code like 
+this instead of learning the standards of the language. Makes no sense. =)
+
+C# and VB compilers will create private methods get_XXX and set_XXX for 
+properties, but if that is the case, the value will be loaded on the 
+property lookup.
+
+Changing the order of the lookup might improve performance a little if 
+removal is not an option. But they will never be called if the class 
+have an indexer.
+
+Micheal J escreveu:
+> Hi,
+>  
+> Interesting comments. Perhaps the ordering of the various checks can 
+> be adjusted so that the less likely (for C#) getXXX, isXXX and GetXXX 
+> variants come last?
+>  
+> Micheal
+>
+>     ------------------------------------------------------------------------
+>     *From:* stringtemplate-interest-bounces at antlr.org
+>     [mailto:stringtemplate-interest-bounces at antlr.org] *On Behalf Of
+>     *Natan Vivo
+>     *Sent:* 27 December 2007 16:16
+>     *To:* stringtemplate-interest at antlr.org
+>     *Subject:* [stringtemplate-interest] StringTemplate in C# -
+>     attribute lookuprules
+>
+>     Why are there so many lookup rules for C# in contrast to Java or
+>     Python versions?
+>
+>     In this page
+>     http://www.antlr.org/wiki/display/ST/Expressions#Expressions-Propertyreferences
+>     <http://www.antlr.org/wiki/display/ST/Expressions#Expressions-Propertyreferences>,
+>     it tells me C# version would try to get a value from 7 different
+>     places before trying an indexer.
+>
+>     I ask this because an application I wrote makes extensive use of
+>     indexers to add custom attributes to an object, and although the
+>     performance is good enough, I just wonder if this lookup rules
+>     aren't too bloated.
+>
+>     For example, why to have rules for get_name, getname and Getname?
+>     The probability of someone writing like this in C# is the same of
+>     writing a method called Name() in java. The property X in c# is
+>     the direct equivalent of getX() in java.
+>
+>     This also makes my indexer called "type" be dropped in favor of
+>     the method GetType on the System.Object, making me declare a
+>     property called "type" calling the indexer.
+>
+>     I would suggest that this rule to be 1. Property, 2. IsProperty,
+>     3. indexer, but I guess that would cause a lot of compatibility
+>     problems by now.
+>
+>
+>     Also I just found out that ST will look for private members too on
+>     attribute lookup. Shoudn't it look for public instance members only?
+>
+>     Thanks,
+>     Natan Vivo
+>
+> ------------------------------------------------------------------------
+>
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>   
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20080108/12880d10/attachment.html 
+
+From parrt at cs.usfca.edu  Tue Jan  8 17:46:11 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Tue, 8 Jan 2008 17:46:11 -0800
+Subject: [stringtemplate-interest] set attributes in two templates from
+	one rule
+In-Reply-To: <98b396790801020632y755cc185lfdbba058c1afd5f7@mail.gmail.com>
+References: <98b396790801020632y755cc185lfdbba058c1afd5f7@mail.gmail.com>
+Message-ID: <3385E68E-33D5-46E3-8959-1F34DBE21DF0@cs.usfca.edu>
+
+
+On Jan 2, 2008, at 6:32 AM, Sanjay Agravat wrote:
+
+> Hi,
+>
+> I have a template similar to this:
+>
+> program (statement, instanceVars) ::= <<
+>   public class Program {
+>     <instanceVars:{i| private <i>;<\n>}>
+>
+>     <statement; separator="\n"> <! this is where the inner class is  
+> inserted among other possibilities !>
+>   }
+> >>
+>
+> innerClassDecl(id, attributes) ::= <<
+>   private class <id; format="capital">  {
+>     <attributes>
+>   }
+>  <! the alternative to my approach is to create the instanceVar here  
+> instead !>
+> >>
+>
+> My situation is that I can't set the instanceVars attribute in the  
+> program template until I get to the innerClassDecl rule in my  
+> intermediate AST because the inner class should also be an instance  
+> variable in the enclosing Program class.  The instanceVars should be  
+> set every time an inner class is declared.  The innerClassDecl rule  
+> also has to set the statement attribute so I am wondering if it's  
+> possible to set two attributes in two different templates even after  
+> 1 of the templates has already been defined?  I thought a region  
+> would work for me but then had a problem of how to set two  
+> attributes (on two different templates) within 1 rule. I'm sure  
+> there must be something I'm missing here...
+
+Hi Sanjay, it's a bit unclear what exactly you're trying to do, but in  
+general ANTLR+ST decouples the order in which you have to generate  
+output.  You compute attributes when it's convenient.  For example,  
+set instanceVars last if you want right before toString().  The only  
+requirement is that all attributes are set before toString.
+
+Ter
+
+From sanjay.agravat at gmail.com  Wed Jan  9 20:05:03 2008
+From: sanjay.agravat at gmail.com (Sanjay Agravat)
+Date: Wed, 9 Jan 2008 23:05:03 -0500
+Subject: [stringtemplate-interest] set attributes in two templates from
+	one rule
+In-Reply-To: <3385E68E-33D5-46E3-8959-1F34DBE21DF0@cs.usfca.edu>
+References: <98b396790801020632y755cc185lfdbba058c1afd5f7@mail.gmail.com>
+	<3385E68E-33D5-46E3-8959-1F34DBE21DF0@cs.usfca.edu>
+Message-ID: <98b396790801092005h2d1a9a63x9007e8f8d9ca91b3@mail.gmail.com>
+
+Thanks for the reply.  I ended up creating an ArrayList to keep track of the
+instance vars and that solved the problem.
+
+As a hypothetical question - is it possible to have two StringTemplates to
+output from your tree grammar (i.e. one template like JavaBean.stg and the
+other one called Main.stg)?
+
+-Sanjay
+
+On Jan 8, 2008 8:46 PM, Terence Parr <parrt at cs.usfca.edu> wrote:
+
+>
+> On Jan 2, 2008, at 6:32 AM, Sanjay Agravat wrote:
+>
+> > Hi,
+> >
+> > I have a template similar to this:
+> >
+> > program (statement, instanceVars) ::= <<
+> >   public class Program {
+> >     <instanceVars:{i| private <i>;<\n>}>
+> >
+> >     <statement; separator="\n"> <! this is where the inner class is
+> > inserted among other possibilities !>
+> >   }
+> > >>
+> >
+> > innerClassDecl(id, attributes) ::= <<
+> >   private class <id; format="capital">  {
+> >     <attributes>
+> >   }
+> >  <! the alternative to my approach is to create the instanceVar here
+> > instead !>
+> > >>
+> >
+> > My situation is that I can't set the instanceVars attribute in the
+> > program template until I get to the innerClassDecl rule in my
+> > intermediate AST because the inner class should also be an instance
+> > variable in the enclosing Program class.  The instanceVars should be
+> > set every time an inner class is declared.  The innerClassDecl rule
+> > also has to set the statement attribute so I am wondering if it's
+> > possible to set two attributes in two different templates even after
+> > 1 of the templates has already been defined?  I thought a region
+> > would work for me but then had a problem of how to set two
+> > attributes (on two different templates) within 1 rule. I'm sure
+> > there must be something I'm missing here...
+>
+> Hi Sanjay, it's a bit unclear what exactly you're trying to do, but in
+> general ANTLR+ST decouples the order in which you have to generate
+> output.  You compute attributes when it's convenient.  For example,
+> set instanceVars last if you want right before toString().  The only
+> requirement is that all attributes are set before toString.
+>
+> Ter
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20080109/f903a971/attachment.html 
+
+From parrt at cs.usfca.edu  Thu Jan 10 17:54:28 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Thu, 10 Jan 2008 17:54:28 -0800
+Subject: [stringtemplate-interest] set attributes in two templates from
+	one rule
+In-Reply-To: <98b396790801092005h2d1a9a63x9007e8f8d9ca91b3@mail.gmail.com>
+References: <98b396790801020632y755cc185lfdbba058c1afd5f7@mail.gmail.com>
+	<3385E68E-33D5-46E3-8959-1F34DBE21DF0@cs.usfca.edu>
+	<98b396790801092005h2d1a9a63x9007e8f8d9ca91b3@mail.gmail.com>
+Message-ID: <0CAD2948-C142-4AB8-8BAD-601F5A0EB7CF@cs.usfca.edu>
+
+
+On Jan 9, 2008, at 8:05 PM, Sanjay Agravat wrote:
+
+> Thanks for the reply.  I ended up creating an ArrayList to keep  
+> track of the instance vars and that solved the problem.
+>
+> As a hypothetical question - is it possible to have two  
+> StringTemplates to output from your tree grammar ( i.e. one template  
+> like JavaBean.stg and the other one called Main.stg)?
+
+
+Sure.  ANTLR generates header files, parsers, and lexers all from the  
+same grammar file.  Of course, ANTLR's rewrite rules are just setting  
+rule return values so it is up to you to collect those templates and  
+put them in whatever files you want templates.  Each rewrite rule only  
+computes one template, if that's what you mean.
+
+Ter
+
+
+From stefan.eder at ebuconnect.de  Wed Jan 16 07:25:25 2008
+From: stefan.eder at ebuconnect.de (Stefan Eder)
+Date: Wed, 16 Jan 2008 16:25:25 +0100
+Subject: [stringtemplate-interest] Broken link: StringTemplate 3.0 Printable
+ Documentation/Conditionally Included Subtemplates (IF statements)
+Message-ID: <478E21E5.50104@ebuconnect.de>
+
+Hi,
+
+there is a broken link ("Conditionally Included Subtemplates (IF 
+statements)") within the "StringTemplate 3.0 Printable Documentation".
+And within the online documentation I have not found the the answer on 
+my question:
+Which expressions are supported in IF/ELIF statements?
+Can I compare an attribute with a constant?
+- If so, what kind of constants are supported (strings, integers, ...)?
+-- If so, how to express them?
+- If so, what kind of operators are supported (EQUAL, NOT_EQUAL, 
+LESSTHAN, ...)?
+- If so, how to express them?
+Are boolean operators (OR, NOT, PAREN, ...) supported?
+- If so, how to express them?
+
+Are answers on my questions online available?
+
+Thanks,
+Stefan
+
+
+
+From parrt at cs.usfca.edu  Wed Jan 16 12:29:20 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Wed, 16 Jan 2008 12:29:20 -0800
+Subject: [stringtemplate-interest] Broken link: StringTemplate 3.0
+	Printable Documentation/Conditionally Included Subtemplates
+	(IF statements)
+In-Reply-To: <478E21E5.50104@ebuconnect.de>
+References: <478E21E5.50104@ebuconnect.de>
+Message-ID: <72D09D84-302A-4D19-8CF8-14DECDAFE29C@cs.usfca.edu>
+
+
+On Jan 16, 2008, at 7:25 AM, Stefan Eder wrote:
+
+> Hi,
+>
+> there is a broken link ("Conditionally Included Subtemplates (IF
+> statements)") within the "StringTemplate 3.0 Printable Documentation".
+> And within the online documentation I have not found the the answer on
+> my question:
+> Which expressions are supported in IF/ELIF statements?
+> Can I compare an attribute with a constant?
+
+Hi Stefan,
+
+ST does not allow expressions except references to attributes,  
+templates, or !attribute. No comparisons.
+
+> - If so, what kind of constants are supported (strings,  
+> integers, ...)?
+> -- If so, how to express them?
+> - If so, what kind of operators are supported (EQUAL, NOT_EQUAL,
+> LESSTHAN, ...)?
+
+none, that is perhaps you confusion.  I think you should read more  
+about the philosophy of ST where I discussed the separation of logic  
+from view.  All logic must be in the model not the view.
+
+Ter
+
+From stefan.eder at ebuconnect.de  Thu Jan 17 01:20:32 2008
+From: stefan.eder at ebuconnect.de (Stefan Eder)
+Date: Thu, 17 Jan 2008 10:20:32 +0100
+Subject: [stringtemplate-interest] Broken link: StringTemplate 3.0
+ Printable Documentation/Conditionally Included Subtemplates (IF statements)
+In-Reply-To: <72D09D84-302A-4D19-8CF8-14DECDAFE29C@cs.usfca.edu>
+References: <478E21E5.50104@ebuconnect.de>
+	<72D09D84-302A-4D19-8CF8-14DECDAFE29C@cs.usfca.edu>
+Message-ID: <478F1DE0.7090507@ebuconnect.de>
+
+Thanks Ter,
+
+I am a beginner with ST and I believe strongly that you are right.
+Logic should be in the model, not in the view.
+
+My model is XML. I unmarshal it with JAXB-2 into Java Beans.
+Principally a nice way to apply attribute trees, but the model is as it 
+is not complete for use with ST. For instance I have minOccurs and 
+maxOccurs attributes and in dependency of maxOccurs I want to decide if 
+an instance variable of the child type or a list of those is generated...
+
+The solution for me is now to design another XSD perfectly fitting my 
+requirements with ST and use XSLT to transform my general purpose model 
+in such an ST attributes model.
+It easily solves my example problem by inserting another boolean 
+attribute and has much more potential.
+
+Another question:
+Exists a list of reserved words which must not be used as attribute names?
+I made the experience, that an attribute named length is not allowed in 
+ST(G)s.
+Such a list would be very helpful and could save me some time.
+
+Stefan
+
+
+
+Terence Parr schrieb:
+>
+> On Jan 16, 2008, at 7:25 AM, Stefan Eder wrote:
+>
+>> Hi,
+>>
+>> there is a broken link ("Conditionally Included Subtemplates (IF
+>> statements)") within the "StringTemplate 3.0 Printable Documentation".
+>> And within the online documentation I have not found the the answer on
+>> my question:
+>> Which expressions are supported in IF/ELIF statements?
+>> Can I compare an attribute with a constant?
+>
+> Hi Stefan,
+>
+> ST does not allow expressions except references to attributes, 
+> templates, or !attribute. No comparisons.
+>
+>> - If so, what kind of constants are supported (strings, integers, ...)?
+>> -- If so, how to express them?
+>> - If so, what kind of operators are supported (EQUAL, NOT_EQUAL,
+>> LESSTHAN, ...)?
+>
+> none, that is perhaps you confusion.  I think you should read more 
+> about the philosophy of ST where I discussed the separation of logic 
+> from view.  All logic must be in the model not the view.
+>
+> Ter
+
+
+From parrt at cs.usfca.edu  Thu Jan 17 12:42:31 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Thu, 17 Jan 2008 12:42:31 -0800
+Subject: [stringtemplate-interest] Broken link: StringTemplate 3.0
+	Printable Documentation/Conditionally Included Subtemplates
+	(IF statements)
+In-Reply-To: <478F1DE0.7090507@ebuconnect.de>
+References: <478E21E5.50104@ebuconnect.de>
+	<72D09D84-302A-4D19-8CF8-14DECDAFE29C@cs.usfca.edu>
+	<478F1DE0.7090507@ebuconnect.de>
+Message-ID: <5A6555D8-B2F5-4526-9784-BC607F350686@cs.usfca.edu>
+
+
+On Jan 17, 2008, at 1:20 AM, Stefan Eder wrote:
+
+> Thanks Ter,
+>
+> I am a beginner with ST and I believe strongly that you are right.
+> Logic should be in the model, not in the view.
+>
+> My model is XML. I unmarshal it with JAXB-2 into Java Beans.
+> Principally a nice way to apply attribute trees, but the model is as  
+> it
+> is not complete for use with ST. For instance I have minOccurs and
+> maxOccurs attributes and in dependency of maxOccurs I want to decide  
+> if
+> an instance variable of the child type or a list of those is  
+> generated...
+>
+> The solution for me is now to design another XSD perfectly fitting my
+> requirements with ST and use XSLT to transform my general purpose  
+> model
+> in such an ST attributes model.
+> It easily solves my example problem by inserting another boolean
+> attribute and has much more potential.
+>
+> Another question:
+> Exists a list of reserved words which must not be used as attribute  
+> names?
+> I made the experience, that an attribute named length is not allowed  
+> in
+> ST(G)s.
+> Such a list would be very helpful and could save me some time.
+
+yeah, it bit me the other day too ;)  Hmm...I don't have a list;  
+probably should start one in the wiki.
+
+Ter
+
+From stefan.eder at ebuconnect.de  Thu Jan 17 14:55:15 2008
+From: stefan.eder at ebuconnect.de (Stefan Eder)
+Date: Thu, 17 Jan 2008 23:55:15 +0100
+Subject: [stringtemplate-interest] Broken link: StringTemplate
+ 3.0	Printable Documentation/Conditionally Included Subtemplates	(IF
+ statements)
+In-Reply-To: <5A6555D8-B2F5-4526-9784-BC607F350686@cs.usfca.edu>
+References: <478E21E5.50104@ebuconnect.de>	<72D09D84-302A-4D19-8CF8-14DECDAFE29C@cs.usfca.edu>	<478F1DE0.7090507@ebuconnect.de>
+	<5A6555D8-B2F5-4526-9784-BC607F350686@cs.usfca.edu>
+Message-ID: <478FDCD3.7010601@ebuconnect.de>
+
+Terence Parr wrote:
+> yeah, it bit me the other day too ;)  Hmm...I don't have a list;  
+> probably should start one in the wiki.
+>
+> Ter
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>   
+for now I will avoid this ones:
+    default
+    first
+    group
+    if
+    implements
+    interface
+    last
+    length
+    optional
+    rest
+    strip
+    super
+    trunc
+
+All of them are literal tokens in at least one grammar of ST.
+:~)
+
+I am wondering why I haven't found 'else' and 'elif' within *TokenTypes.txt?
+However, I will avoid them too, together with other potential candidates 
+like 'class' or 'table'.
+;~)
+
+
+From parrt at cs.usfca.edu  Fri Jan 18 11:03:23 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Fri, 18 Jan 2008 11:03:23 -0800
+Subject: [stringtemplate-interest] Broken link: StringTemplate
+	3.0	Printable Documentation/Conditionally Included
+	Subtemplates	(IF statements)
+In-Reply-To: <478FDCD3.7010601@ebuconnect.de>
+References: <478E21E5.50104@ebuconnect.de>	<72D09D84-302A-4D19-8CF8-14DECDAFE29C@cs.usfca.edu>	<478F1DE0.7090507@ebuconnect.de>
+	<5A6555D8-B2F5-4526-9784-BC607F350686@cs.usfca.edu>
+	<478FDCD3.7010601@ebuconnect.de>
+Message-ID: <9B043288-03A0-4C80-B8AC-0FA8C844B9BC@cs.usfca.edu>
+
+updated
+
+http://www.antlr.org/wiki/display/ST/StringTemplate+cheat+sheet
+
+Ter
+On Jan 17, 2008, at 2:55 PM, Stefan Eder wrote:
+
+> Terence Parr wrote:
+>> yeah, it bit me the other day too ;)  Hmm...I don't have a list;
+>> probably should start one in the wiki.
+>>
+>> Ter
+>> _______________________________________________
+>> stringtemplate-interest mailing list
+>> stringtemplate-interest at antlr.org
+>> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>>
+> for now I will avoid this ones:
+>    default
+>    first
+>    group
+>    if
+>    implements
+>    interface
+>    last
+>    length
+>    optional
+>    rest
+>    strip
+>    super
+>    trunc
+>
+> All of them are literal tokens in at least one grammar of ST.
+> :~)
+>
+> I am wondering why I haven't found 'else' and 'elif' within  
+> *TokenTypes.txt?
+> However, I will avoid them too, together with other potential  
+> candidates
+> like 'class' or 'table'.
+> ;~)
+>
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+
+From roma at qwertty.com  Fri Jan 18 13:46:21 2008
+From: roma at qwertty.com (Roman Odaisky)
+Date: Fri, 18 Jan 2008 23:46:21 +0200
+Subject: [stringtemplate-interest] HTML escaping
+Message-ID: <200801182346.21643.roma@qwertty.com>
+
+Greetings,
+
+I?m looking for a template engine for a future Web project. I really like the 
+strict philosophy of StringTemplate, but could you please explain one thing:
+
+The manual says one should use renderers for escaping. That makes sense for 
+applications that generate SQL, or C, but how does one use ST for JS embedded 
+in HTML? <b>hello $user$</b> and alert("hello $user$") need different 
+escaping, and the possible presence of <![CDATA[ complicates things further.
+
+WBR, Roman.
+
+From parrt at cs.usfca.edu  Fri Jan 18 13:55:43 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Fri, 18 Jan 2008 13:55:43 -0800
+Subject: [stringtemplate-interest] HTML escaping
+In-Reply-To: <200801182346.21643.roma@qwertty.com>
+References: <200801182346.21643.roma@qwertty.com>
+Message-ID: <77590F25-485B-477A-B127-E72626DB88ED@cs.usfca.edu>
+
+
+On Jan 18, 2008, at 1:46 PM, Roman Odaisky wrote:
+
+> Greetings,
+>
+> I?m looking for a template engine for a future Web project. I really  
+> like the
+> strict philosophy of StringTemplate, but could you please explain  
+> one thing:
+>
+> The manual says one should use renderers for escaping. That makes  
+> sense for
+> applications that generate SQL, or C, but how does one use ST for JS  
+> embedded
+> in HTML? <b>hello $user$</b> and alert("hello $user$") need different
+> escaping, and the possible presence of <![CDATA[ complicates things  
+> further.
+
+Hi. You can use \$ to escape the $ which usually takes care of it even  
+in CDATA.  ST translates to $.
+
+Ter
+
+From roma at qwertty.com  Fri Jan 18 14:10:38 2008
+From: roma at qwertty.com (Roman Odaisky)
+Date: Sat, 19 Jan 2008 00:10:38 +0200
+Subject: [stringtemplate-interest] HTML escaping
+In-Reply-To: <77590F25-485B-477A-B127-E72626DB88ED@cs.usfca.edu>
+References: <200801182346.21643.roma@qwertty.com>
+	<77590F25-485B-477A-B127-E72626DB88ED@cs.usfca.edu>
+Message-ID: <200801190010.38074.roma@qwertty.com>
+
+On Friday, 18.01.2008 23:55:43 Terence Parr wrote:
+
+> > The manual says one should use renderers for escaping. That makes
+> > sense for
+> > applications that generate SQL, or C, but how does one use ST for JS
+> > embedded
+> > in HTML? <b>hello $user$</b> and alert("hello $user$") need different
+> > escaping, and the possible presence of <![CDATA[ complicates things
+> > further.
+>
+> Hi. You can use \$ to escape the $ which usually takes care of it even
+> in CDATA.  ST translates to $.
+
+Thanks for such a quick response, but it seems you misunderstood me. I want to 
+escape the value of the variable, which can contain quotation marks, 
+apostrophes, ampersands and such. The thing is, that has to be done 
+differently for HTML and JS. In HTML, < must become &lt; while in JS (which 
+is inside a CDATA most of time) that is incorrect, but instead " must become 
+\".
+
+Suppose I tell the designer that the ?user? variable contains the name of the 
+user. He can embed that into HTML as $user$, but has no way to reference the 
+variable safely from JS (an XSS possibility arises).
+
+How can one specify more than one rendering option for a variable?
+
+WBR, Roman.
+
+From stefan.eder at ebuconnect.de  Fri Jan 18 14:16:26 2008
+From: stefan.eder at ebuconnect.de (Stefan Eder)
+Date: Fri, 18 Jan 2008 23:16:26 +0100
+Subject: [stringtemplate-interest] Broken link: StringTemplate
+ 3.0	Printable Documentation/Conditionally Included Subtemplates	(IF
+ statements)
+In-Reply-To: <9B043288-03A0-4C80-B8AC-0FA8C844B9BC@cs.usfca.edu>
+References: <478E21E5.50104@ebuconnect.de>	<72D09D84-302A-4D19-8CF8-14DECDAFE29C@cs.usfca.edu>	<478F1DE0.7090507@ebuconnect.de>
+	<5A6555D8-B2F5-4526-9784-BC607F350686@cs.usfca.edu>
+	<478FDCD3.7010601@ebuconnect.de>
+	<9B043288-03A0-4C80-B8AC-0FA8C844B9BC@cs.usfca.edu>
+Message-ID: <4791253A.3030702@ebuconnect.de>
+
+Thanks.
+Pleased to contribute.
+
+Terence Parr wrote:
+> updated
+>
+
+
+From ccbean at gmail.com  Fri Jan 18 14:49:19 2008
+From: ccbean at gmail.com (Colin Bean)
+Date: Fri, 18 Jan 2008 14:49:19 -0800
+Subject: [stringtemplate-interest] HTML escaping
+In-Reply-To: <200801190010.38074.roma@qwertty.com>
+References: <200801182346.21643.roma@qwertty.com>
+	<77590F25-485B-477A-B127-E72626DB88ED@cs.usfca.edu>
+	<200801190010.38074.roma@qwertty.com>
+Message-ID: <29a6ca010801181449l47e89288t1b4e18dc1d5b0a1@mail.gmail.com>
+
+Hi Roman,
+
+Haven't tested this yet, but I *think* you could have your HTML
+templates in one StringTemplateGroup, your javascript templates in a
+second group, and register different renderers per group.  Might also
+work with subclassed groups?  If you don't mind this architecture for
+your templates, this is the easiest way I can think of.
+
+Colin
+
+On Jan 18, 2008 2:10 PM, Roman Odaisky <roma at qwertty.com> wrote:
+> On Friday, 18.01.2008 23:55:43 Terence Parr wrote:
+>
+> > > The manual says one should use renderers for escaping. That makes
+> > > sense for
+> > > applications that generate SQL, or C, but how does one use ST for JS
+> > > embedded
+> > > in HTML? <b>hello $user$</b> and alert("hello $user$") need different
+> > > escaping, and the possible presence of <![CDATA[ complicates things
+> > > further.
+> >
+> > Hi. You can use \$ to escape the $ which usually takes care of it even
+> > in CDATA.  ST translates to $.
+>
+> Thanks for such a quick response, but it seems you misunderstood me. I want to
+> escape the value of the variable, which can contain quotation marks,
+> apostrophes, ampersands and such. The thing is, that has to be done
+> differently for HTML and JS. In HTML, < must become &lt; while in JS (which
+> is inside a CDATA most of time) that is incorrect, but instead " must become
+> \".
+>
+> Suppose I tell the designer that the "user" variable contains the name of the
+> user. He can embed that into HTML as $user$, but has no way to reference the
+> variable safely from JS (an XSS possibility arises).
+>
+> How can one specify more than one rendering option for a variable?
+>
+> WBR, Roman.
+>
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>
+
+From parrt at cs.usfca.edu  Fri Jan 18 17:44:21 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Fri, 18 Jan 2008 17:44:21 -0800
+Subject: [stringtemplate-interest] HTML escaping
+In-Reply-To: <200801190010.38074.roma@qwertty.com>
+References: <200801182346.21643.roma@qwertty.com>
+	<77590F25-485B-477A-B127-E72626DB88ED@cs.usfca.edu>
+	<200801190010.38074.roma@qwertty.com>
+Message-ID: <47339307-54CB-408F-9591-E8E16249D089@cs.usfca.edu>
+
+
+On Jan 18, 2008, at 2:10 PM, Roman Odaisky wrote:
+
+> On Friday, 18.01.2008 23:55:43 Terence Parr wrote:
+>
+>>> The manual says one should use renderers for escaping. That makes
+>>> sense for
+>>> applications that generate SQL, or C, but how does one use ST for JS
+>>> embedded
+>>> in HTML? <b>hello $user$</b> and alert("hello $user$") need  
+>>> different
+>>> escaping, and the possible presence of <![CDATA[ complicates things
+>>> further.
+>>
+>> Hi. You can use \$ to escape the $ which usually takes care of it  
+>> even
+>> in CDATA.  ST translates to $.
+>
+> Thanks for such a quick response, but it seems you misunderstood me.  
+> I want to
+> escape the value of the variable, which can contain quotation marks,
+> apostrophes, ampersands and such. The thing is, that has to be done
+> differently for HTML and JS. In HTML, < must become &lt; while in JS  
+> (which
+> is inside a CDATA most of time) that is incorrect, but instead "  
+> must become
+> \".
+
+ah. sorry.  yep, you just need a renderer object.  Wrap all of these  
+attributes with a renderer and then use
+
+$attribute; format="escapeHTML"$
+
+or
+
+$mydata; format="verbose"$
+
+or, if all strings must be escaped, just wrap in object whose  
+toString() does right thing.
+
+See all my papers on this; e..g, ICWE paper.
+
+> Suppose I tell the designer that the ?user? variable contains the  
+> name of the
+> user. He can embed that into HTML as $user$, but has no way to  
+> reference the
+> variable safely from JS (an XSS possibility arises).
+
+you'll need the format option.
+
+> How can one specify more than one rendering option for a variable?
+
+format option :)
+
+Ter
+
+From parrt at cs.usfca.edu  Wed Jan 23 17:30:18 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Wed, 23 Jan 2008 17:30:18 -0800
+Subject: [stringtemplate-interest] BufferedReader br not closed in
+	PathGroupLoader.java?
+In-Reply-To: <1199064308.11698.1228806855@webmail.messagingengine.com>
+References: <1199064308.11698.1228806855@webmail.messagingengine.com>
+Message-ID: <74A27133-303B-41FB-9B83-1706566B13D5@cs.usfca.edu>
+
+doh!  Fixed.  you were right.
+Ter
+On Dec 30, 2007, at 5:25 PM, Mark Wharton wrote:
+
+> Hello,
+>
+> I'm looking through the StringTemplate code and don't see where  
+> BufferedReader br, in PathGroupLoader.java loadGroup and  
+> loadInterface methods, gets closed. I can't see how this isn't a  
+> bug... shouldn't br.close(); be called after instantiating the group  
+> or interface return values? I'm using the following reference:
+>
+> http://fisheye2.cenqua.com/browse/~raw,r=4335/stringtemplate/java/ 
+> main/src/org/antlr/stringtemplate/PathGroupLoader.java
+>
+> Thanks,
+>
+> Mark
+>
+> P.S. Happy New Year and All The Best for 2008!
+>
+> Mark Wharton
+> + 8190 9834 2559
+> contact at moonbase.com.au
+>
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+
+From parrt at cs.usfca.edu  Wed Jan 23 18:05:04 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Wed, 23 Jan 2008 18:05:04 -0800
+Subject: [stringtemplate-interest] problem with
+	first(attribute)	expression when attribute is a list of hashes
+In-Reply-To: <1197749882.19806.17.camel@midlight>
+References: <2236.163.206.90.215.1197661200.squirrel@mail.thataddress.com>
+	<1D58645E-356D-4D52-BFA4-9BD182480784@cs.usfca.edu>
+	<1197749882.19806.17.camel@midlight>
+Message-ID: <69CC62CC-E09D-4B57-8675-76246C79F807@cs.usfca.edu>
+
+Hi Matt,
+
+weird. I get:
+
+action parse error; template context is [anonymous]
+line 1:12: unexpected token: .
+	at  
+org 
+.antlr.stringtemplate.language.ActionParser.action(ActionParser.java: 
+130)
+	at  
+org 
+.antlr.stringtemplate.StringTemplate.parseAction(StringTemplate.java: 
+879)
+	at  
+org 
+.antlr 
+.stringtemplate.language.TemplateParser.action(TemplateParser.java:162)
+	at  
+org 
+.antlr 
+.stringtemplate.language.TemplateParser.template(TemplateParser.java: 
+127)
+
+  which means that it did not understand the syntax. here is my unit  
+test:
+
+	public void testFirstWithListOfMaps() throws Exception {
+		StringTemplate e = new StringTemplate(
+				"$first(maps).Ter$"
+			);
+		e = e.getInstanceOf();
+		Map m1 = new HashMap();
+		Map m2 = new HashMap();
+		m1.put("Ter", "x5707");
+		e.setAttribute("maps", m1);
+		m2.put("Tom", "x5332");
+		e.setAttribute("maps", m2);
+		String expecting = "x5707";
+		assertEquals(expecting, e.toString());
+	}
+
+Ok, change to the action.g grammar to allow DOT after a function and  
+now I get the right result. expanded unit test to check for actual  
+list going in:
+
+	public void testFirstWithListOfMaps() throws Exception {
+		StringTemplate e = new StringTemplate(
+				"$first(maps).Ter$"
+			);
+		e = e.getInstanceOf();
+		final Map m1 = new HashMap();
+		final Map m2 = new HashMap();
+		m1.put("Ter", "x5707");
+		e.setAttribute("maps", m1);
+		m2.put("Tom", "x5332");
+		e.setAttribute("maps", m2);
+		String expecting = "x5707";
+		assertEquals(expecting, e.toString());
+
+		e = e.getInstanceOf();
+		List list = new ArrayList() {{add(m1); add(m2);}};
+		e.setAttribute("maps", list);
+		expecting = "x5707";
+		assertEquals(expecting, e.toString());
+
+	}
+
+
+Ok, I am about ready to release 3.1 :)
+
+Ter
+
+On Dec 15, 2007, at 12:18 PM, Matt Brown wrote:
+
+> Yes, I am sure it's non-null, and hash_member isn't the actual  
+> key...I'm
+> not sure why I changed the names.  Here's the relevant part of the
+> actual template (a page that lists results of a tag search):
+>
+> $if(index)$
+> <h3>Pages matching tag '$first(index).tag_text$':</h3>
+> <ul>
+>  $index:{<li><a href="$contextRoot$/$it.section_id$/view/$it.page_id
+> $">$it.title$</a> [$it.section_id$]</li>}$
+> </ul>
+> $endif$
+>
+> And here's the value of "index" from one of my tests (obtained via
+> toDebugString):
+>
+> index=[{page_id=1296, title=music review ho!, tag_text=beer,
+> section_id=music}, {page_id=1186, title=Animation Runner Kuromi 2,
+> tag_text=beer, section_id=reviews}]
+>
+> If I remove the attribute reference from the "h3" block, the list  
+> below
+> it renders properly.
+>
+> Thanks,
+>  - Matt Brown
+>
+>
+>
+> On Fri, 2007-12-14 at 11:56 -0800, Terence Parr wrote:
+>> hmm..strange.  So you are sure that list_attribute[0] is non null?   
+>> Is
+>> "hash_member" a valid key, btw?
+>>
+>> Ter
+>> On Dec 14, 2007, at 11:40 AM, matt at thataddress.com wrote:
+>>
+>>>
+>>>
+>>> Hello list (new here),
+>>>
+>>> I have a web page where I stuff a List
+>>> of HashMap into a string template, and I want to use one of the
+>>> members of
+>>> the first hash in the list.  So I tried:
+>>>
+>>> $first(list_attribute).hash_member$
+>>>
+>>> This resulted in a
+>>> NullPointerException in ConditionalExpr.write (line 88).
+>>>
+>>> Then I
+>>> tried:
+>>>
+>>> $first(list_attribute):{ $it.hash_member$ }$
+>>>
+>>> This approach resulted in an empty string (and I verified that the
+>>> member I want to reference is in fact passed into the template).  Is
+>>> there some other way to do what I want, that I'm missing?  I'm using
+>>> StringTemplate 3.1b1.
+>>>
+>>> - Matt Brown
+>>>
+>>>
+>>> _______________________________________________
+>>> stringtemplate-interest mailing list
+>>> stringtemplate-interest at antlr.org
+>>> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>>
+>
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+
+From parrt at cs.usfca.edu  Wed Jan 23 18:09:53 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Wed, 23 Jan 2008 18:09:53 -0800
+Subject: [stringtemplate-interest] problem with first(attribute)
+	expression when attribute is a list of hashes
+In-Reply-To: <2236.163.206.90.215.1197661200.squirrel@mail.thataddress.com>
+References: <2236.163.206.90.215.1197661200.squirrel@mail.thataddress.com>
+Message-ID: <C84C3989-1F64-4644-8118-4D06DB8EB306@cs.usfca.edu>
+
+
+On Dec 14, 2007, at 11:40 AM, matt at thataddress.com wrote:
+>
+> $first(list_attribute):{ $it.hash_member$ }$
+>
+> This approach resulted in an empty string (and I verified that the
+> member I want to reference is in fact passed into the template).  Is
+> there some other way to do what I want, that I'm missing?  I'm using
+> StringTemplate 3.1b1.
+
+Oh, and the reason for this one is that the result of first is in fact  
+a map, but then it sends out a stream of its values just like
+
+$mymap$
+
+Ter
+
+From parrt at cs.usfca.edu  Wed Jan 23 18:44:51 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Wed, 23 Jan 2008 18:44:51 -0800
+Subject: [stringtemplate-interest] ST 3.1 (Java): get it while it's hot
+Message-ID: <0DE1CBFC-8677-41E4-AD21-35EF053D4D6E@cs.usfca.edu>
+
+http://www.stringtemplate.org/download.html
+
+Python and C# or not far behind.
+
+Ter
+
+From dave.rafkind at gmail.com  Thu Jan 31 07:23:08 2008
+From: dave.rafkind at gmail.com (Dave Rafkind)
+Date: Thu, 31 Jan 2008 10:23:08 -0500
+Subject: [stringtemplate-interest] proper stringtemplate loading from a
+	webapp
+Message-ID: <47A1E7DC.3030701@gmail.com>
+
+Hi list, I apologize if this question has been answered before, I'm
+having trouble getting good list search results out of google. But anyways:
+
+The normal StringTemplateGroup constructor looks like:
+
+StringTemplateGroup stg = new StringTemplateGroup(name,hard_coded_path);
+
+I'd like to avoid hardcoding that path in my web application, and
+instead create a custom template loader to get at the files the "right"
+way which would be something like (from in a servlet):
+
+  context = getServletContext();
+  URL templateRoot = context.getResource("/templates");
+  StringTemplateGroup stg =
+    new StringTemplateGroup(name, templateRoot);
+
+which would use templateRoot.getUrlConnection() to get the
+stringtemplate files instead of a File() object.
+
+How would I go about doing such a thing?
+
+
+Thanks,
+Dave
+
+From parrt at cs.usfca.edu  Thu Jan 31 10:19:22 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Thu, 31 Jan 2008 10:19:22 -0800
+Subject: [stringtemplate-interest] proper stringtemplate loading from a
+	webapp
+In-Reply-To: <47A1E7DC.3030701@gmail.com>
+References: <47A1E7DC.3030701@gmail.com>
+Message-ID: <74182CC5-DDF2-45DD-A040-9ECD6405FFB5@cs.usfca.edu>
+
+Hi. I think you can just use null as root dir.  A comment i see in  
+code says: "If there is no root directory, try to load the template  
+from the classpath."
+
+Try that...
+
+Ter
+On Jan 31, 2008, at 7:23 AM, Dave Rafkind wrote:
+
+> Hi list, I apologize if this question has been answered before, I'm
+> having trouble getting good list search results out of google. But  
+> anyways:
+>
+> The normal StringTemplateGroup constructor looks like:
+>
+> StringTemplateGroup stg = new  
+> StringTemplateGroup(name,hard_coded_path);
+>
+> I'd like to avoid hardcoding that path in my web application, and
+> instead create a custom template loader to get at the files the  
+> "right"
+> way which would be something like (from in a servlet):
+>
+>  context = getServletContext();
+>  URL templateRoot = context.getResource("/templates");
+>  StringTemplateGroup stg =
+>    new StringTemplateGroup(name, templateRoot);
+>
+> which would use templateRoot.getUrlConnection() to get the
+> stringtemplate files instead of a File() object.
+>
+> How would I go about doing such a thing?
+>
+>
+> Thanks,
+> Dave
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+

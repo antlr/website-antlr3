@@ -1,0 +1,204 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Help with pesky Lexer determinism
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Help%20with%20pesky%20Lexer%20determinism&In-Reply-To=PLENJLPIEOPEDJJNCHDHGEFOFIAA.voytechs%40yahoo.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="012655.html">
+   <LINK REL="Next"  HREF="012578.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Help with pesky Lexer determinism</H1>
+    <B>Mark Bednarczyk</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Help%20with%20pesky%20Lexer%20determinism&In-Reply-To=PLENJLPIEOPEDJJNCHDHGEFOFIAA.voytechs%40yahoo.com"
+       TITLE="[antlr-interest] Help with pesky Lexer determinism">voytechs at yahoo.com
+       </A><BR>
+    <I>Fri Jun 10 09:44:50 PDT 2005</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="012655.html">[antlr-interest] Help with pesky Lexer determinism
+</A></li>
+        <LI>Next message: <A HREF="012578.html">[antlr-interest] Found an error with UNARY_MINUS and typecast in
+	java.g
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#12661">[ date ]</a>
+              <a href="thread.html#12661">[ thread ]</a>
+              <a href="subject.html#12661">[ subject ]</a>
+              <a href="author.html#12661">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>While I'm on a roll, I added the Ethernet address matching code
+in forms:
+
+XX:XX:XX:XX:XX:XX
+dec:dec:dec:dec:dec
+XX-XX-XX-XX-XX-XX
+dec-dec-dec-dec-dec-dec
+
+
+And the code if anyone is interested:
+
+
+
+/* Disable some rules inherited from java.g */
+protected COLON :;
+protected IDENT :;
+
+protected NUM_3DIGIT: ('0'..'9') (('0'..'9') ('0'..'9')?)?
+    ;
+
+protected NUM_HEX_4DIGIT: HEX_DIGIT ((HEX_DIGIT) ((HEX_DIGIT)
+(HEX_DIGIT)?)?)?
+
+NUM_INT
+options {
+    testLiterals = true;
+}
+    {boolean isDecimal=false; Token t=null; }
+
+    // IPv4 RULE
+    :   (NUM_3DIGIT '.' NUM_3DIGIT '.')=&gt;
+        (
+            NUM_3DIGIT '.' NUM_3DIGIT '.' NUM_3DIGIT '.'
+NUM_3DIGIT
+            { $setType(IP_V4); }
+        )
+
+        //
+        // MAC ADRESS RULE - exactly 6 COLON/DASH separated ints
+        //
+    |   (NUM_HEX_4DIGIT (':'|'-') NUM_HEX_4DIGIT (':'|'-')
+         NUM_HEX_4DIGIT (':'|'-') NUM_HEX_4DIGIT (':'|'-')
+         NUM_HEX_4DIGIT (':'|'-') NUM_HEX_4DIGIT ~(':'))=&gt;
+        (
+            NUM_HEX_4DIGIT (':'|'-') NUM_HEX_4DIGIT (':'|'-')
+            NUM_HEX_4DIGIT (':'|'-') NUM_HEX_4DIGIT (':'|'-')
+            NUM_HEX_4DIGIT (':'|'-') NUM_HEX_4DIGIT
+        ) { $setType(MAC_ADDRESS); }
+
+    // IPv6 RULE
+    |   (NUM_HEX_4DIGIT ':')=&gt;
+        (
+
+            ((NUM_HEX_4DIGIT ':')+ ':')=&gt;
+            (
+                (NUM_HEX_4DIGIT ':')+ ':'
+                (NUM_HEX_4DIGIT (':' NUM_HEX_4DIGIT)*)?
+            )   { $setType(IP_V6); }
+
+            |   NUM_HEX_4DIGIT (':' NUM_HEX_4DIGIT)+
+                { $setType(IP_V6); }
+
+        )   { $setType(IP_V6); }
+
+    |   (':' ':' NUM_HEX_4DIGIT)=&gt;
+        ':' ':' NUM_HEX_4DIGIT (':' NUM_HEX_4DIGIT)*
+        { $setType(IP_V6); }
+
+    |   ':' ':'
+        { $setType(IP_V6); }
+
+    |   ':'
+        { $setType(COLON); }
+
+
+    // IDENT rule
+    |   ('a'..'z'|'A'..'Z'|'_'|'$')
+('a'..'z'|'A'..'Z'|'_'|'0'..'9'|'$')*
+            { $setType(IDENT); }
+    // Number beginning with '.' rule
+    |   '.' { $setType(DOT);}
+            (   ('0'..'9')+ (EXPONENT)? (f1:FLOAT_SUFFIX
+{t=f1;})?
+                {
+                if (t != null &amp;&amp;
+t.getText().toUpperCase().indexOf('F')&gt;=0) {
+                    _ttype = NUM_FLOAT;
+                }
+                else {
+                    _ttype = NUM_DOUBLE; // assume double
+                }
+                }
+            )?
+
+
+
+    // Number beginning with a 0 rule
+    |   (   '0' {isDecimal = true;} // special case for just '0'
+            (   ('x'|'X')
+                (                                           //
+hex
+                    // the 'e'|'E' and float suffix stuff look
+                    // like hex digits, hence the (...)+ doesn't
+                    // know when to stop: ambig.  ANTLR resolves
+                    // it correctly by matching immediately.  It
+                    // is therefor ok to hush warning.
+                    options {
+                        warnWhenFollowAmbig=false;
+                    }
+                :   HEX_DIGIT
+                )+
+
+            |   //float or double with leading zero
+                (('0'..'9')+ ('.'|EXPONENT|FLOAT_SUFFIX)) =&gt;
+('0'..'9')+
+
+            |   ('0'..'7')+                                 //
+octal
+            )?
+
+        // A regular number non-zero starting rule
+        |   ('1'..'9') ('0'..'9')*  {isDecimal=true;}       //
+non-zero decimal
+        )
+        (   ('l'|'L') { _ttype = NUM_LONG; }
+
+        // only check to see if it's a float if looks like
+decimal so far
+        |   {isDecimal}?
+            (   '.' ('0'..'9')* (EXPONENT)? (f2:FLOAT_SUFFIX
+{t=f2;})?
+            |   EXPONENT (f3:FLOAT_SUFFIX {t=f3;})?
+            |   f4:FLOAT_SUFFIX {t=f4;}
+            )
+            {
+            if (t != null &amp;&amp; t.getText().toUpperCase()
+.indexOf('F') &gt;= 0) {
+                _ttype = NUM_FLOAT;
+            }
+            else {
+                _ttype = NUM_DOUBLE; // assume double
+            }
+            }
+        )?
+    ;
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="012655.html">[antlr-interest] Help with pesky Lexer determinism
+</A></li>
+	<LI>Next message: <A HREF="012578.html">[antlr-interest] Found an error with UNARY_MINUS and typecast in
+	java.g
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#12661">[ date ]</a>
+              <a href="thread.html#12661">[ thread ]</a>
+              <a href="subject.html#12661">[ subject ]</a>
+              <a href="author.html#12661">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

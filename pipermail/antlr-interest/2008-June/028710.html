@@ -1,0 +1,169 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] [C Target] Problem with ANTLR 3.1b1 - C code	generation
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5BC%20Target%5D%20Problem%20with%20ANTLR%203.1b1%20-%20C%20code%0A%09generation&In-Reply-To=%3Cf71c56ff0806160824l15991f44n63c60b2f74620bd7%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="028708.html">
+   <LINK REL="Next"  HREF="028712.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] [C Target] Problem with ANTLR 3.1b1 - C code	generation</H1>
+    <B>Garry Iglesias</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5BC%20Target%5D%20Problem%20with%20ANTLR%203.1b1%20-%20C%20code%0A%09generation&In-Reply-To=%3Cf71c56ff0806160824l15991f44n63c60b2f74620bd7%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] [C Target] Problem with ANTLR 3.1b1 - C code	generation">garry.iglesias at gmail.com
+       </A><BR>
+    <I>Mon Jun 16 08:24:51 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="028708.html">[antlr-interest] is there any way make loop staments without a	tree?
+</A></li>
+        <LI>Next message: <A HREF="028712.html">[antlr-interest] [C Target] Problem with ANTLR 3.1b1 - C	codegeneration
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#28710">[ date ]</a>
+              <a href="thread.html#28710">[ thread ]</a>
+              <a href="subject.html#28710">[ subject ]</a>
+              <a href="author.html#28710">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>  Hi everybody,
+  Sorry to disturb you, I've been successfully using ANTLR v3 with JAVA for
+3 months now, for one client, and I'm pretty happy with it.
+
+  Now I tried to generate a C++ parser for another project, and I was quite
+disapointed by the absence of support for C++ and the very poor support for
+C... First I tried the 3.0.1, which was generated 'good' c sources, but I
+was stuck with de C/C++ interface, I needed to have more 'C++' inside my
+rules, and the 'extern &quot;C&quot; {}' was too restrictive. (Needed a lot of 'glue
+code' to interface the C++ classes).
+Then I tried to #include my generated parser files in C into some CPP file.
+It worked well except a 'cast' problem (which I localized in the C.stg code
+generation template...) that was preventing to compile things like : TFoo
+tmp = ANTL3_MALLOC(sizeof(TFoo)).
+I hesitated to patch the stg and recompile ANTLR (still 3.0.1 at that time).
+
+  When I remember about a recent beta, which I installed immediatly. Nice
+:<i>)... But... ;)
+</I>  ...But it seems things are worse !!! I still haven't noticed any cast
+problem (yet... :) ). But I found some weird bug, which seems to show the
+generated code (I assume from the current C .stgs) is buggy. Sorry, I'm
+surprised, (maybe it's on my side but I can't understand how...).
+
+  First here is a extract of my grammar source :
+
+[...]
+defIndexed
+ : INDEXED sz=bitWidth id=identifier '[' cnt=immediateInteger ']'
+access=quotedString
+ {
+  SStringPtr l_pidStr=$id.s;
+[...]
+
+[...]
+identifier returns [SStringPtr s]
+ : quoted=IDENTIFIER
+  {
+   const char* l_pString=(const char*)($quoted.text-&gt;chars);
+   $s = newStringFromLimitedString(1+l_pString,strlen(l_pString)-2);
+  }
+ ;
+[...]
+
+  This looks alright for me, I had almost the same rule in my JAVA project
+and it works well. (I remind you that this was not a problem on ANTLR
+v3.01)...
+
+  Now here is the generated code by ANTLR :
+
+// The 'buggy' rule code :
+static MyparserParser_defIndexed_return
+defIndexed(pMyparserParser ctx)
+{
+ [...]
+    id=identifier(ctx);
+    [...]
+    //Here is the generated code for the rule action :
+    {
+  SStringPtr l_pidStr=( id != NULL ? id.s : NULL ); //!! THis is NOT a
+pointer !!
+  [...]
+[...]
+// The indifier rule that seems to works well...
+static MyparserParser_identifier_return
+identifier(pMyparserParser ctx)
+{
+    MyparserParser_cpu_identifier_return retval;
+[..]
+    return retval;
+}
+  As you can see, the 'identifier' rule implementation returns its result
+into a 'by value' struct, whereas the 'defIndexed' rule implementation try
+to see if a 'by reference' (some kind of pointer) result exists...
+  I would be greatly surprise to be the first one to find this bug, it seems
+so straightforward... Did I do something wrong ? Did I miss something ? I'll
+have another note as I 'digged' into the C runtime project, the beta version
+has several 'vsrulesfiles' directory (all empty but one... :) ), and some
+other 'ghost/empties' directory. It seems far more 'work in progress' than
+the 3.0.1.
+
+  Also : I'm a 'warning killer maniac' and compile (using Visual C++ 2005),
+in warning level 4, warning as error...
+
+  Finally, as a C++ programmer I don't mind you use classes in your
+parser... It can be a C target only. Just if it can compile 'embedded' in a
+C++ file, or C++ compliant, without warnings. The most important stuff for a
+'C++ ANTLR user' (or for me :) ), is to be able to use 'C++' code inside my
+rules actions. I don't mind if ANTLR generated code or ANTLR runtime is C++
+or not. I need 'my code' to be C++ that's it. :)
+
+  Despite my first contact with the community is to report a bug, great job
+to all of you.
+  Thank you !
+
+(By the way : ANTLR is a GREAAAT tool, as a long time 'parser geek' I enjoy
+it, and it opens more new perspectives to me :) ).
+
+Garry.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20080616/38760408/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20080616/38760408/attachment.html</A> 
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="028708.html">[antlr-interest] is there any way make loop staments without a	tree?
+</A></li>
+	<LI>Next message: <A HREF="028712.html">[antlr-interest] [C Target] Problem with ANTLR 3.1b1 - C	codegeneration
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#28710">[ date ]</a>
+              <a href="thread.html#28710">[ thread ]</a>
+              <a href="subject.html#28710">[ subject ]</a>
+              <a href="author.html#28710">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

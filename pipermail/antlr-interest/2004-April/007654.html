@@ -1,0 +1,140 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] TokenStreamRewriteEngine and C++ and RefCounters
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20TokenStreamRewriteEngine%20and%20C%2B%2B%20and%20RefCounters&In-Reply-To=20040427155222.GE4398%40cs.utwente.nl">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="007664.html">
+   <LINK REL="Next"  HREF="007661.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] TokenStreamRewriteEngine and C++ and RefCounters</H1>
+    <B>Andrey R. Urazov</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20TokenStreamRewriteEngine%20and%20C%2B%2B%20and%20RefCounters&In-Reply-To=20040427155222.GE4398%40cs.utwente.nl"
+       TITLE="[antlr-interest] TokenStreamRewriteEngine and C++ and RefCounters">a_urazov at mail.ru
+       </A><BR>
+    <I>Tue Apr 27 12:43:09 PDT 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="007664.html">[antlr-interest] VB If elseif end if?
+</A></li>
+        <LI>Next message: <A HREF="007661.html">[antlr-interest] TokenStreamRewriteEngine and C++ and RefCounters
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#7654">[ date ]</a>
+              <a href="thread.html#7654">[ thread ]</a>
+              <a href="subject.html#7654">[ subject ]</a>
+              <a href="author.html#7654">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+On Tue, Apr 27, 2004 at 05:52:22PM +0200, Ric Klaren wrote:
+&gt;<i> I got the TokenStreamRewriter going mostly it seems (compared to the
+</I>&gt;<i> java version I now only see a small difference in whitespace handling
+</I>&gt;<i> probably something small somewhere).
+</I>So nice! Soon I will be able to apply and test it :)
+
+&gt;<i> It looks like the hunch was good. I reimplemented RefCount into
+</I>&gt;<i> a TokenRefCount that does the right thing and a bit more.
+</I>
+Now that I have been using the ANTLR smart pointers for some time,
+I have to admit that ASTRefCount has to be rewritten as well. The
+current implementation turned out to be a bit buggy.
+
+As I've found out, `operator=(const T*)' and `operator T*()' are unsafe
+(in Boost, for example, these aren't defined at all). When implemented
+together, not only they are unsafe, they are rather dangerous since they
+can lead to nonshared ownership of a single object and therefore to its
+premature deletion.
+
+Consider the code from BaseAST.cpp (the problems I experience now are
+caused by the implicit misuse of smart pointers in this function):
+
+void BaseAST::addChild( RefAST c )
+{
+    if( !c )
+        return;
+
+    RefBaseAST tmp = down;
+
+    if (tmp)
+    {
+        while (tmp-&gt;right)
+            tmp = tmp-&gt;right;
+        tmp-&gt;right = c;
+    }
+    else
+        down = c;
+}
+
+Here when `c' is assigned to `right' or `down', assignment of
+`ASTRefCount&lt;AST&gt;' to `ASTRefCount&lt;BaseAST&gt;' is performed and at this
+point `c' is implicitly converted to `AST*' and then the `operator=(T*)'
+is engaged, thus separating the ownership.
+
+Now I have something like the following in the grammar:
+
+rule
+{
+    RefAST ast = #[TOKEN];
+}
+:<i>
+</I>    (
+        index:expression
+        {
+            ast-&gt;addChild(#index);
+        }
+    )+
+;
+
+And as the new `expression' is assigned to `index', the reference count
+for the old falls to zero and the object is deleted instead of staying
+in memory until the reference in the tree is released as well. When I
+then call getNumberOfChildren() the program hangs :(
+
+
+Best regards,
+  Andrey Urazov
+
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+     <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+     <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+     <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="007664.html">[antlr-interest] VB If elseif end if?
+</A></li>
+	<LI>Next message: <A HREF="007661.html">[antlr-interest] TokenStreamRewriteEngine and C++ and RefCounters
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#7654">[ date ]</a>
+              <a href="thread.html#7654">[ thread ]</a>
+              <a href="subject.html#7654">[ subject ]</a>
+              <a href="author.html#7654">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

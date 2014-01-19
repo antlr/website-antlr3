@@ -1,0 +1,194 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Using semantic predicates with antlr 3 and	pythonruntime
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Using%20semantic%20predicates%20with%20antlr%203%20and%0A%09pythonruntime&In-Reply-To=%3C20071130224840.8BF2111ECBE%40www.antlr.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="025019.html">
+   <LINK REL="Next"  HREF="025021.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Using semantic predicates with antlr 3 and	pythonruntime</H1>
+    <B>Harald M. M&#252;ller</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Using%20semantic%20predicates%20with%20antlr%203%20and%0A%09pythonruntime&In-Reply-To=%3C20071130224840.8BF2111ECBE%40www.antlr.org%3E"
+       TITLE="[antlr-interest] Using semantic predicates with antlr 3 and	pythonruntime">harald_m_mueller at gmx.de
+       </A><BR>
+    <I>Fri Nov 30 14:48:45 PST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="025019.html">[antlr-interest] Wildcard in tree grammar? - was	validatingsemantic predicates
+</A></li>
+        <LI>Next message: <A HREF="025021.html">[antlr-interest] Match any unicode character
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25020">[ date ]</a>
+              <a href="thread.html#25020">[ thread ]</a>
+              <a href="subject.html#25020">[ subject ]</a>
+              <a href="author.html#25020">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Just one idea: Instead of distinguishing based on a semantic predicate,
+duplicate your grammar (nt_... is &quot;no-tick-....&quot;):
+ 
+-------------
+ 
+method
+    : methodcall
+    | '`' nt_methodcall '`'
+    ;
+ 
+methodcall
+    :
+    |   methodname '(' expression ')' (expression)*
+    |   methodname '(' expression (',' expression)+ ')' | 
+    |   methodname (expression)+ |
+    |   methodname ('('')')? 
+    ;
+ 
+expression
+    : simpleexpression 
+    | method
+    ;
+ 
+nt_methodcall
+    :
+    |   methodname '(' nt_expression ')' (nt_expression)*
+    |   methodname '(' nt_expression (',' nt_expression)+ ')' | 
+    |   methodname (nt_expression)+ |
+    |   methodname ('('')')? 
+    ;
+ 
+nt_expression
+    : simpleexpression 
+    | nt_method
+    ;
+ 
+simpleexpression: flag | number | STRING ;
+ 
+-------------
+ 
+(I have removed your methodargs; and changed the methodsargs (methodargs)*
+to (methodsargs)+ - that way, the grammar above is not so much longer than
+yours ;-) - but you might have removed certain parts which were in those
+separate rules/branches).
+ 
+Of course, this is code duplication. But it certainly makes debugging and
+adapting to that tiny difference of tick or not tick easier.
+I must say that I like this &quot;design-time nailing down&quot; of a grammar - it is
+akin to compile-time type safety which often (especially with generics) now
+helps me to make a design correct the first time it compiles!
+ 
+Regards
+Harald M.
+ 
+
+
+
+  _____  
+
+From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>
+[mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Dan Bailey
+Sent: Thursday, November 29, 2007 8:22 PM
+To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: [antlr-interest] Using semantic predicates with antlr 3 and
+pythonruntime
+
+
+Hi,
+
+I am writing a parser for mel (a language based on tcl) and am having a lot
+of problems getting the intricacies of the language to parse.
+
+One of the main problems I am having is through using the semantic
+predicates, both to make the grammar easier to read and to make a few of the
+statements conditional on variables. 
+
+Firstly, if someone could explain the difference between semantic predicates
+and gated semantic predicates that would be useful?
+
+One of the errors I have come across is when passing variables around as
+arguments, antlr does not pass the variables into the syntactic predicates
+it generates for some reason (the synpred1() type functions). However, I
+have found that I can edit this file by hand and add in the variables to the
+arguments manually, but clearly this is laborious and time-consuming. 
+
+Here is a simple example of some mel code which I have had to resort to
+semantic predicates in order to try and get round:
+
+
+(1)  function;
+(2)  function -flag;
+(3)  function(&quot;arg&quot;);
+(4)  function(3+4); 
+(5)  function (3+4) -flag;
+(6)  $a = `function`;
+(7)  $a = `function(function2)`;
+(8)  $a = `function -flag`;
+(9)  function(`function2 -flag`);
+
+
+All of the above commands are completed valid, which demonstrates the
+variety in the language in function calls alone. 
+
+This is the solution I have come up with in antlr grammar:
+
+method[ticks]:
+        { ticks == &quot;ticksallowed&quot; }? =&gt; '`' methodcall[&quot;ticksnotallowed&quot;]
+'`' |
+        methodcall[ticks] 
+    ;
+
+methodcall[ticks]:
+        methodname '(' expression[ticks] ')' (methodargs[ticks])* |
+        methodname '(' expression[ticks] (',' expression[ticks])+ ')' | 
+        methodname methodargs[ticks] (methodargs[ticks])* |
+        methodname ('('')')? 
+    ;
+
+methodargs[ticks]: expression[ticks];
+
+expression[ticks]: flag | number | STRING | method[ticks]; 
+
+I have tried to simplify this to demonstrate the problem. In (6) for
+example, in order to match the second backtick to an ending tick (rather
+than the start of a new backticked method call which is clearly not
+allowed), I pass around a variable to halt the parser from trying to execute
+the backtick strand if it is already inside a backtick. 
+
+I have had many problems trying to get this to work though. Am I going about
+this in the correct manor, or can someone suggest a better approach to this?
+
+Thanks,
+Dan
+
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20071130/0bbc10be/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20071130/0bbc10be/attachment.html</A> 
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="025019.html">[antlr-interest] Wildcard in tree grammar? - was	validatingsemantic predicates
+</A></li>
+	<LI>Next message: <A HREF="025021.html">[antlr-interest] Match any unicode character
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25020">[ date ]</a>
+              <a href="thread.html#25020">[ thread ]</a>
+              <a href="subject.html#25020">[ subject ]</a>
+              <a href="author.html#25020">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

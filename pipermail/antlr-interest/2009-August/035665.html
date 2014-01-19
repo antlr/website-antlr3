@@ -1,0 +1,265 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Strategy for mapping output to line numbers from a	tree walker
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Strategy%20for%20mapping%20output%20to%20line%20numbers%0A%20from%20a%09tree%20walker&In-Reply-To=%3C4A8B0797.7030106%40temporal-wave.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="035663.html">
+   <LINK REL="Next"  HREF="035724.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Strategy for mapping output to line numbers from a	tree walker</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Strategy%20for%20mapping%20output%20to%20line%20numbers%0A%20from%20a%09tree%20walker&In-Reply-To=%3C4A8B0797.7030106%40temporal-wave.com%3E"
+       TITLE="[antlr-interest] Strategy for mapping output to line numbers from a	tree walker">jimi at temporal-wave.com
+       </A><BR>
+    <I>Tue Aug 18 12:57:11 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="035663.html">[antlr-interest] Strategy for mapping output to line numbers from a	tree walker
+</A></li>
+        <LI>Next message: <A HREF="035724.html">[antlr-interest] Strategy for mapping output to line numbers	from a tree walker
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#35665">[ date ]</a>
+              <a href="thread.html#35665">[ thread ]</a>
+              <a href="subject.html#35665">[ subject ]</a>
+              <a href="author.html#35665">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Joe Schmoe wrote:
+&gt;<i> I have a grammar that produces an AST and a tree walker, and I am 
+</I>&gt;<i> coming up blank trying to figure out a reasonable way to track line 
+</I>&gt;<i> number information in the tree walker so that I can map my output to 
+</I>&gt;<i> source file lines.
+</I>&gt;<i>
+</I>&gt;<i> The only solution I have come up with is incredibly wordy, which is to 
+</I>&gt;<i> make sure that every time I see a token name in the walker I track the 
+</I>&gt;<i> line number. 
+</I>&gt;<i>
+</I>&gt;<i> rule : ^(TOKENNAME .... ) { TrackLine($TOKENNAME.line) }  
+</I>&gt;<i>       ;
+</I>&gt;<i>
+</I>&gt;<i> I am sure there are better solutions than this but I haven't been able 
+</I>&gt;<i> to figure out what they are.
+</I>Search the list for code to do this.
+
+Basically, create yourself some helper methods that given a tree node or 
+a token, work this out for you. Form a tree node, you can ask for the 
+starting token and ending token and use those tokens to compute the span 
+of the tree by asking for their start and end indexes (for error 
+underlining and other similar purposes). The best thing is to create a 
+little framework for handling errors, picking up information and so on - 
+you can reuse it for many grammars.
+
+Here are a few methods you might find useful for stealing ideas from 
+(they are just excerpts but show you the methods to use)
+
+Jim
+
+
+    protected int pos() {
+
+        return pos(input.LT(1));
+    }
+
+    /**
+     * Calculates the character position of the first character of the text
+     * in the input stream that the supplied token represents.
+     * @param tok The token to locate in the input stream
+     * @return The character position of the next non-whitespace token 
+in the input stream
+     */
+    protected int pos(Token tok) {
+       
+        return ((CommonToken)tok).getStartIndex();
+    }
+
+    /**
+     * Calculates the character position of the last character of the text
+     * in the input stream that the supplied token represents.
+     * @param tok The token to locate in the input stream
+     * @return The character position of the next non-whitespace token 
+in the input stream
+     */
+    protected int endPos(Token tok) {
+
+        return ((CommonToken)tok).getStopIndex();
+    }
+
+  /**
+     * Log a particular message into the message log (typically from 
+syntax errors and so on)
+     *
+     * @param msgDesc   The message we want to log
+     * @param line      The line that this message appertains to
+     * @param colPos    The column position in the line
+     * @param startPos  The start offset of the error
+     * @param endPos    The end offset of the error
+     * @param args      The arguments for formatting the message
+     */
+    public void
+    logMsg(MessageDescriptor msgDesc, int line, int colPos, int 
+startPos, int endPos, Object... args)
+    {
+        // Instantiate the message
+        //
+        Message m = new Message(msgDesc, fileName, line, colPos, 
+startPos, endPos, args);
+
+        // Store in the vector
+        //
+        messages.add(m);
+
+        // Count the severity
+        //
+        switch (msgDesc.getSeverity()) {
+
+            case ERROR:
+
+                errorCount++;
+                break;
+
+            case WARNING:
+
+                warningCount++;
+                break;
+
+            case FATAL:
+
+                errorCount++;
+                fatalCount++;
+                break;
+
+            // No default as Enum is type safe
+        }
+    }
+   
+    /**
+     * Create a message regarding a single token, taking the start and 
+end positions
+     * from the token.
+     *
+     * @param m    The type of message you want to create
+     * @param ct   The CommonToken that we are reporting against
+     * @param args The parameters for the message we are raising
+     */
+    public void logMsg(MessageDescriptor m, Token ct, Object... args) {
+
+        // Call the standard logger, using the information in the token
+        //
+        logMsg(m, ((CommonToken)ct).getLine(), 
+((CommonToken)ct).getCharPositionInLine(), 
+((CommonToken)ct).getStartIndex(), ((CommonToken)ct).getStopIndex(), args);
+
+    }
+
+    /**
+     * Create a message regarding a root node such as an expression, 
+taking the start and end positions
+     * from the tree node.
+     *
+     * @param m    The type of message you want to create
+     * @param ct   The CommonToken that we are reporting against
+     * @param args The parameters for the message we are raising
+     */
+    public void logMsg(MessageDescriptor m, CommonTree ct, Object... args) {
+
+        CommonToken st;
+        CommonToken et;
+
+        st = (CommonToken)(tokens.get(ct.getTokenStartIndex()));
+        et = (CommonToken)(tokens.get(ct.getTokenStopIndex()));
+
+        // Call the standard logger, using the information in the tokens
+        //
+        logMsg(m, st.getLine(), st.getCharPositionInLine(), 
+st.getStartIndex(), et.getStopIndex(), args);
+
+    }
+    /**
+     * Create a message regarding a single token, taking the start position
+     * from the token but the end position as specified
+     *
+     * @param m      The type of message you want to create
+     * @param ct     The CommonToken that we are reporting against
+     * @param endPos The absolute offset where the span of the error 
+message should end
+     * @param args   The parameters for the message we are raising
+     */
+    public void logMsg(MessageDescriptor m, Token ct, int endPos, 
+Object... args) {
+
+        // Call the standard logger, using the information in the token
+        //
+        logMsg(m, ((CommonToken)ct).getLine(), 
+((CommonToken)ct).getCharPositionInLine(), 
+((CommonToken)ct).getStartIndex(), endPos, args);
+
+    }
+
+    /**
+     * Create a message that appertains to a span of tokens, such as 
+when the
+     * result of an expression is incorrect and so on.
+     *
+     * @param m         The type of message you want to create
+     * @param startCt   The CommonToken that starts the message
+     * @param stopCt    The commonToken that ends the message
+     * @param args      The parameters for the message we are raising
+     *
+     */
+    public void logMsg(MessageDescriptor m, Token startCt, Token stopCt, 
+Object... args) {
+
+        // Call the standard logger, using the information in the token
+        //
+       logMsg(m, ((CommonToken)startCt).getLine(), 
+((CommonToken)startCt).getCharPositionInLine(), 
+((CommonToken)startCt).getStartIndex(), 
+((CommonToken)stopCt).getStopIndex(), args);
+    }
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="035663.html">[antlr-interest] Strategy for mapping output to line numbers from a	tree walker
+</A></li>
+	<LI>Next message: <A HREF="035724.html">[antlr-interest] Strategy for mapping output to line numbers	from a tree walker
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#35665">[ date ]</a>
+              <a href="thread.html#35665">[ thread ]</a>
+              <a href="subject.html#35665">[ subject ]</a>
+              <a href="author.html#35665">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

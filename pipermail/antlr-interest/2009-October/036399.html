@@ -1,0 +1,183 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Bug or misunderstanding?: missing attribute access on rule scope
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Bug%20or%20misunderstanding%3F%3A%20missing%20attribute%0A%20access%20on%20rule%20scope&In-Reply-To=%3C1255745291.2920.82.camel%40gecko.home.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="036474.html">
+   <LINK REL="Next"  HREF="036444.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Bug or misunderstanding?: missing attribute access on rule scope</H1>
+    <B>John B. Brodie</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Bug%20or%20misunderstanding%3F%3A%20missing%20attribute%0A%20access%20on%20rule%20scope&In-Reply-To=%3C1255745291.2920.82.camel%40gecko.home.org%3E"
+       TITLE="[antlr-interest] Bug or misunderstanding?: missing attribute access on rule scope">jbb at acm.org
+       </A><BR>
+    <I>Fri Oct 16 19:08:11 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="036474.html">[antlr-interest] &quot;No Past Experience Required&quot;
+</A></li>
+        <LI>Next message: <A HREF="036444.html">[antlr-interest] Bug or misunderstanding?: missing attribute	access on rule scope
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36399">[ date ]</a>
+              <a href="thread.html#36399">[ thread ]</a>
+              <a href="subject.html#36399">[ subject ]</a>
+              <a href="author.html#36399">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Greetings!
+
+Sorry about this message, I think I have broken any threading to the
+original message. I am replying from the mail-list archive and seem to
+be unable to figure out how to graft my reply into its proper thread.
+Sorry.
+
+On Fri Oct 16 12:21:33 PDT 2009, Kaleb Pederson asked:
+&gt;<i> I'm getting an error that doesn't make any sense, either because I've
+</I>&gt;<i> missed something fundamental or I've stumbled across a bug. I'm doing
+</I>&gt;<i> some type checking within a tree parser.  I have a plusMinusExpression
+</I>&gt;<i> which can either be a negation or a subtraction expression.  In order
+</I>&gt;<i> to to check to see which it is, I have `if ($rhs != null)` within my
+</I>&gt;<i> action.  That line, however, causes the following error:
+</I>&gt;<i> 
+</I>&gt;<i> SemanticChecker.g:163:3: missing attribute access on rule scope: rhs
+</I>&gt;<i> 
+</I>&gt;<i> The grammar fragment follows:
+</I>&gt;<i> 
+</I>&gt;<i> plusMinusExpression returns [Type type]
+</I>&gt;<i> 	:	^(PLUS lhs=baseExpression rhs=baseExpression) { /*...*/ }
+</I>&gt;<i> 		|	^(MINUS lhs=baseExpression rhs=baseExpression?)
+</I>&gt;<i> 		{
+</I>&gt;<i> 			typeChecker.assertIsNumericType($lhs.type);
+</I>&gt;<i> 			if ($rhs != null)
+</I>&gt;<i> 			{
+</I>&gt;<i> 				typeChecker.assertIsNumericType($rhs.type);
+</I>&gt;<i> 				typeChecker.assertEqualTypes($lhs.type, $rhs.type);
+</I>&gt;<i> 			}
+</I>&gt;<i> 			$type = $lhs.type;
+</I>&gt;<i> 		}
+</I>&gt;<i> 	;
+</I>
+Others in this thread have pointed out that you should use ($rhs.tree != null) in your if statement.
+
+I would like to, respectfully, suggest that you are doing the Wrong Thing(TM) in your action code.
+And it is wrong on two levels - the first mis-use is rather shallow and the second is a rather more
+deeper mis-use.
+
+I mean nothing personal nor pejorative by these comments. I am just trying to point out a couple
+of &quot;better&quot; ways to do the above. And of course &quot;better&quot; is a qualitative assessment unique to each
+reader of this message (e.g. what is &quot;better&quot; to me may not be &quot;better&quot; to you...).
+
+
+
+The first, shallow, mis-use (IMHO) is to not simply let the Tree Walker code decide for you whether
+or not the rhs tree node is present. That is, instead of
+
+   | ^(MINUS lhs=baseExpression rhs=baseExpression?) { /* figure out what to do */ }
+
+do something like this:
+
+   | ^(MINUS lhs=baseExpression) { /* handle the 1-arity '-' operator here */ }
+   | ^(MINUS lhs=baseExpression rhs=baseExpression) { /* handle the 2-arity subtraction here */ }
+
+e.g. the Tree Walker code has to already poke around in your tree in order to determine whether or 
+not the rhs is present (as part of its tree pattern matching) --- so let it control the invocation
+of your actions.
+
+
+
+The second, i think deeper, mis-use is that you have (apparently) discarded information discovered
+during parsing and AST creation that you could use to guide your subsequent AST processing.
+
+Surely in your Parser the 1-arity '-' appears in a different syntactic context from the 2-arity '-'
+operator ---- so when parsing &quot;a+-b&quot; we know that the '-' must be the 1-arity operator, but when we
+parse &quot;a-b&quot; we know that the '-' must be the 2-arity operator.
+
+So I suggest to you that your Parser should differentiate the MINUS tree --- since, I assert, that
+it already does so as part of the parse --- by creating a different (with imaginary root) node for
+the 1-arity case. So &quot;a+-b&quot; obtains the tree (PLUS a (NEGATE b)) and &quot;a-b&quot; obtains the tree
+(MINUS a b) or something similar in accord with your taste...
+
+And so, with this approach, in all of your post-processing of the AST, the 1-arity and 2-arity
+operations have already been differentiated in the tree itself and therefore can be directly
+determined --- no need to noodle around about whether or not 1 or 2 children are present.
+
+Your Mileage May Vary.
+
+
+
+Hope this helps...
+   -jbb
+(again, sorry for breaking the threading of the replies to the original message)
+
+and there is also the possibility of having ONLY the 2-arity '-' operator because in Algebra
+the 1-arity '-' is an implicit 2-arity operation involving zero. so the &quot;a+-b&quot; would become
+(PLUS a (MINUS 0 b)) --- but this just tends to break my brain so i do not do that..... ;-)
+
+and, please, can we just not discuss the whole treatment of 2-arity '-' as an addition
+with multiply by -1 ..... my brain tends to just shutdown at that prospect ;-)
+
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="036474.html">[antlr-interest] &quot;No Past Experience Required&quot;
+</A></li>
+	<LI>Next message: <A HREF="036444.html">[antlr-interest] Bug or misunderstanding?: missing attribute	access on rule scope
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36399">[ date ]</a>
+              <a href="thread.html#36399">[ thread ]</a>
+              <a href="subject.html#36399">[ subject ]</a>
+              <a href="author.html#36399">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

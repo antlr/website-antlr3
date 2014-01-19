@@ -1,0 +1,149 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Can't generate the AST I want
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Can%27t%20generate%20the%20AST%20I%20want&In-Reply-To=%3CB29111A755EFB5419E6C7BC998C6E86743AC0A%40hedwig.slc.mainstreamdata.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="042357.html">
+   <LINK REL="Next"  HREF="042360.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Can't generate the AST I want</H1>
+    <B>Scott Smith</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Can%27t%20generate%20the%20AST%20I%20want&In-Reply-To=%3CB29111A755EFB5419E6C7BC998C6E86743AC0A%40hedwig.slc.mainstreamdata.com%3E"
+       TITLE="[antlr-interest] Can't generate the AST I want">ssmith at mainstreamdata.com
+       </A><BR>
+    <I>Mon Aug  8 12:41:05 PDT 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="042357.html">[antlr-interest] ANTLRWorks 1.4.3 released
+</A></li>
+        <LI>Next message: <A HREF="042360.html">[antlr-interest] Can't generate the AST I want
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#42358">[ date ]</a>
+              <a href="thread.html#42358">[ thread ]</a>
+              <a href="subject.html#42358">[ subject ]</a>
+              <a href="author.html#42358">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I am writing a grammar to generate ASTs.  There are operators called &quot;AND&quot; and &quot;OR&quot; (defined in the lexer) in the language.  I want my parser to produce ASTs that group together all of the terms which are using the same operator.
+
+Also, there can be cases where there is no operator given.  In that case, depending on the program configuration, it may be &quot;AND&quot; or &quot;OR&quot;.  I've called it DFLT_OP for the time being.  Here are some examples:
+
+(a OR b OR c) -&gt; (OR a b c)
+a b -&gt; (DFLT_OP a b)                                                       // no operator
+a AND (b OR c) AND d -&gt;(AND a (OR b c) d)
+a AND b OR c AND d -&gt;(AND (OR (AND a b) c) d)  // I think this one is right; I don't need to reorder terms because AND was used twice
+
+The grammar I've generated (somewhat simplified) is below.  I think everything is pretty vanilla except for the definition of &quot;expression&quot;:
+
+grammar testGr;
+
+options {
+  language = Java;
+  output = AST;
+  ASTLabelType = CommonTree;
+}
+
+tokens {
+  DFLT_OP;
+}
+
+@header {
+  package a.b.c;
+}
+
+@lexer::header {
+  package a.b.c;
+}
+
+filter     :    expression EOF ;
+
+term :    IDENTIFIER
+     |    '('! expression ')'!
+     ;
+
+// parsing &quot;(a AND b AND c)&quot; (w/o quotes)
+
+// ATTEMPT 1
+// This gives (AND (AND a b) c).  This is correct, but what I
+// really want is (AND a b c)
+//expression
+//   :    term ((AND^ | OR^)? term)*
+//   ;
+
+// ATTEMPT2
+// This doesn't compile due to &quot;recursive rule invocations&quot;.  I'm
+// also not thrilled the term order changes
+//expression
+//   :    (id1=term OR)+ id2=term -&gt; ^(OR id2 id1+)
+//   |    (id1=term AND)+ id2=term -&gt; ^(AND id2 id1+)
+//   |    id1=term id2=term+  -&gt; ^(DFLT_OP id1 id2+)
+//   |    term -&gt; term
+//   ;
+
+// ATTEMPT3
+// This compiles but appears to produce (AND a c).  No &quot;b&quot;.
+// expression
+//options {
+//   backtrack=true;
+//}
+//   :    id1=term (OR id2=term)+ -&gt; ^(OR $id1 $id2+)
+//   |    id1=term (AND id2=term)+ -&gt; ^(AND $id1 $id2+)
+//   |    id1=term id2=term+  -&gt; ^(DFLT_OP $id1 $id2+)
+//   |    term -&gt; term
+//   ;
+//
+
+// This doesn't compile due to &quot;recursive rule invocations&quot;.
+expression
+     :    id1=term OR id2=term (OR id3=term)+ -&gt; ^(OR $id1 $id2 $id3+)
+     |    id1=term AND id2=term (AND id3=term)+ -&gt; ^(AND $id1 $id2 $id3+)
+     |    id1=term id2=term+  -&gt; ^(DFLT_OP $id1 $id2+)
+     |    term -&gt; term
+     ;
+
+AND  :    'AND' | '&amp;&amp;' ;
+OR   :    'OR' | '||' ;
+IDENTIFIER :    LETTER (LETTER | NUMBER)* ;
+fragment LETTER :    LOWER | UPPER ;
+fragment LOWER  :    'a'..'z' ;
+fragment UPPER  :    'A'..'Z' ;
+fragment NUMBER :    '0'..'9' ;
+WS  : (' ' | '\t' | '\n' | '\r') {$channel=HIDDEN; } ;
+
+Is there a way to tell ANTLR what I want to do?  How should I write the expression?
+
+Any thoughts about the minor problem of substituting AND or OR instead of the DFLT_OP.  I figured out how to pass a Boolean to my parser which tells it which one of these is the correct one.  Can I write something like:
+
+                ({dftlOpAND ? AND : OR} $id1 $id2)
+
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="042357.html">[antlr-interest] ANTLRWorks 1.4.3 released
+</A></li>
+	<LI>Next message: <A HREF="042360.html">[antlr-interest] Can't generate the AST I want
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#42358">[ date ]</a>
+              <a href="thread.html#42358">[ thread ]</a>
+              <a href="subject.html#42358">[ subject ]</a>
+              <a href="author.html#42358">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

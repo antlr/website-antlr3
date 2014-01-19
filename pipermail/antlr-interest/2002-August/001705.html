@@ -1,0 +1,127 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Comments and questions on a recent project
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Comments%20and%20questions%20on%20a%20recent%20project&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001704.html">
+   <LINK REL="Next"  HREF="001712.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Comments and questions on a recent project</H1>
+    <B>Tiller, Michael (M.M.)</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Comments%20and%20questions%20on%20a%20recent%20project&In-Reply-To="
+       TITLE="[antlr-interest] Comments and questions on a recent project">mtiller at ford.com
+       </A><BR>
+    <I>Mon Aug 26 06:06:15 PDT 2002</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001704.html">[antlr-interest] importVocab/exportVocab
+</A></li>
+        <LI>Next message: <A HREF="001712.html">[antlr-interest] Comments and questions on a recent project
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1705">[ date ]</a>
+              <a href="thread.html#1705">[ thread ]</a>
+              <a href="subject.html#1705">[ subject ]</a>
+              <a href="author.html#1705">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I recently used ANTLR to polish up a parser I had on the back burner and I have a few questions.  I should qualify my remarks by pointing out that I don't really have much experience with parsers (I'm a mechanical engineer) and my applications are probably relatively simple by comparison to most.  This was just a pet project of mine to help me parse Modelica modeling language ( <A HREF="http://www.modelica.org">http://www.modelica.org</A> &lt;<A HREF="http://www.modelica.org">http://www.modelica.org</A>&gt; ) files for some work related utilities.  I'm not quite sure where to start so I'll just try and cast this as a narrative and try not to ramble too much...
+ 
+The first issue that comes to mind is the fact that at the start of the project, I essentially had to choose my target language up front.  I found that quite annoying.  I saw some comments in the group about Ter not wanting to put language stuff on the command line.  I'm not sure I ever saw the exact argument against this, but as a practical matter I found it quite annoying.  The result is that I had to put a few (not many) language specific bits in my grammar (target language option, handling of newlines, comments, etc).  I would have preferred to keep it &quot;pristine&quot; for other potential users.
+ 
+As part of the parsing stage, I tried to do my best to construct a succinct AST.  I eliminated lots of punctuation and extraneous keywords from AST and I tried to introduce some high-level &quot;imaginary&quot; tokens to represent the important nodes in my AST.  I suppose I could have used the same token types that the keywords/punctuation generated but I guess I feel it is slightly cleaner to create new ones specifically for &quot;rule nodes&quot;.  I had a few difficulties with this.  The first was that there are some funny constructs in the language where some qualifiers appear in some rules and some appear above them.  Simple example:
+ 
+stored_definition
+  : (&quot;final&quot;)? class_definition
+  ;
+ 
+class_definition
+  : (&quot;encapsulated&quot;)? (&quot;partial&quot;)? restricted_class IDENT ...
+      { ## = #([DEFINITION, &quot;DEFINITION&quot;], ##); }
+  ;
+ 
+The problem here is that while the &quot;encapsulated&quot; and &quot;partial&quot; qualifiers will appear within the &quot;DEFINITION&quot; node in my AST, it is kind of hard to get the &quot;final&quot; one in there since it comes &quot;from above&quot;.  I realize I could pass it down, but that introduced more target language specific modifications to the grammar.  I could also have added it to the &quot;class_definition&quot; AST after parsing the &quot;stored_definition&quot;, but I couldn't see a way to do that without writing target language specific code.  Did I miss any built in tree construction capabilities that would have allowed me to easily do this?
+ 
+Another issue with my &quot;imaginary nodes&quot; comes on the tree parser side.  I tried to create a nice clean AST format on the parser side since this allowed for a fairly simple tree parser grammar.  One concern I have (again, I'm not a parser person so I'm probably missing something) is that I have different applications for my tree parser and I'd like to embellish the AST in different ways depending on my application.  For example, in some cases I might be interested in resolving the fully qualified names to all my data elements.  So I'd like to add associate such names with the instance names in my AST (not fully qualified).  What is the best way to do this?  I thought about using heterogeneous AST nodes, but that would make the problem quite complicated the AST nodes would be potentially in conflict from one application to another.  Using homogeneous AST nodes, I could certainly add sub-nodes with the information I want but there are two issues I'm concerned about:
+ 
+  - First, I'm not quite sure I appreciate yet how this will affect my tree parser.  Won't this essentially affect my tree grammar and then I end up with a specific tree grammar for each application or can I do some clever things to get it to &quot;ignore&quot; this extra information unless I specifically require it?
+ 
+  - Second, it seems that I need to create additional imaginary node types to include such information (i.e. a &quot;FQ_NAME&quot; node type).  In order to be sure that such a definition is mutually exclusive with all other node type definitions, it has to be done in the original parser grammar file doesn't it?
+ 
+This reminds me of another issue.  It seems to me (again, I'm probably missing something) that the tree grammar stuff makes reuse difficult.  I imagine the &quot;correct way&quot; to do things is to define a complete tree grammar and then extend it for different applications.  In this way, you can override some of the rules (only the ones you are interested in).  But, don't you have to rewrite the entire rule?  If so, that seems like a real pain if you are likely to establish actions for all rules because you end up re-typing the whole grammar anyway.  I'm comparing this to something like a &quot;visitor&quot; approach where you can just write the action and the rule it is associated with.  Am I missing something?  Also, it seems like every application considerably complicates my Makefile because I have to establish lots of new targets for the generated code from each tree grammar.
+ 
+Because of the complications with having lots of little tree grammar walkers, I took a slightly different approach.  I created a Python extension for my AST.  I tried to use SWIG ( <A HREF="http://www.swig.org">http://www.swig.org</A> &lt;<A HREF="http://www.swig.org">http://www.swig.org</A>&gt; ) to just create a general extension for the AST types used in ANTLR.  In theory, this should work but I was never able to get SWIG to properly grok all the complicated C++ header files.  So, I ended up creating a wrapper class around RefAST that was simplified.  It works great but it bothers me that I've got my &quot;Node&quot; class wrapped around &quot;RefAST&quot; which is a smart pointer wrapper around &quot;AST *&quot;.  In the end though, it worked and I was able to do really simple stuff so easily.  For example, I can count the number of different definition types in my libraries with a simple script like:
+ 
+def count(ast):
+    for i in ast.find_all(modelica.tokens.DEFINITION, 1):
+        type = i.getFirstChild();  # This is the restricted_class node
+        counts[type.getText()] = counts[type.getText()]+1;
+
+I had a problem with &quot;lexing&quot; numbers.  I looked in the FAQ and I couldn't get the solution mentioned there to work for some reason.  What I finally settled on was simple enough so perhaps someone might consider including this alternative.  The basic problem I had was in knowing whether a &quot;.&quot; was the start of &quot;.32e+5&quot; or just a &quot;.&quot;.  The rules I came up with, using a syntactic predicate, look like this:
+
+protected UINT: (DIGIT)+;
+protected EXP: (&quot;e&quot;|&quot;E&quot;) (OP_PLUS|OP_MINUS)? UINT;
+ 
+UREAL
+    : UINT ( &quot;.&quot; (UINT)? )? (EXP)?
+    | (&quot;.&quot; DIGIT) =&gt; &quot;.&quot; (UINT)? (EXP)?
+    | &quot;.&quot; { $setType(DOT); }
+    ;
+
+Another &quot;lexing&quot; issue that I ran into was that Modelica allows for nested \n's inside strings.  As a result, he line number information was thrown off so I ended having to create a slightly complicated rule for string parsing that recognized nested strings and incremented the new line.  Again, this might make a good example for an FAQ.  The solution I came up with was:
+ 
+STRING: '&quot;' (SESCAPE|'\n' { newline(); }|~'&quot;')* '&quot;';
+protected
+SESCAPE
+    : &quot;  &lt;<A HREF="file://\\'">file://\\'</A>&gt; \\'&quot;
+    | &quot;\\\&quot;&quot;
+    | &quot;\\?&quot;
+    | &quot;\\\\&quot;
+    | &quot;  &lt;<A HREF="file://\\a">file://\\a</A>&gt; \\a&quot;
+    | &quot;  &lt;<A HREF="file://\\b">file://\\b</A>&gt; \\b&quot;
+    | &quot;  &lt;<A HREF="file://\\f">file://\\f</A>&gt; \\f&quot;
+    | &quot;  &lt;<A HREF="file://\\n">file://\\n</A>&gt; \\n&quot;
+    | &quot;  &lt;<A HREF="file://\\r">file://\\r</A>&gt; \\r&quot;
+    | &quot;  &lt;<A HREF="file://\\t">file://\\t</A>&gt; \\t&quot;
+    | &quot;  &lt;<A HREF="file://\\v">file://\\v</A>&gt; \\v&quot;
+    ;
+
+Finally, one other problem I ran into that I never found a good solution for was how to deal with a keyword that can also be used as an identifier.  The fact that the word &quot;initial&quot; is both a keyword and a built-in function is one of the few warts in the Modelica specification.  I saw something in the FAQ about how to handle this for SQL but the solution seemed to leave the parser generator complaining about ambiguities.  I was hoping for a solution where I could disambiguate the problem.  I wasn't able to come up with anything simple.  I could have passed some information down through the parser, but it would have impacted a huge number of rules.  In a similar way, I could have created two different expression parsing rule sets but they would have both been huge and only different in the &quot;leaf&quot; nodes at the bottom.
+ 
+My hope in writing this all down is to pass along some ideas of how people who are not parsing experts will approach parsing applications and to document some of the problems and misconceptions they might have.  Hopefully somebody will find this useful and perhaps some of these issues can be addressed in future versions of ANTLR.  For the most part, I'm quite pleased with ANTLR and the results.
+ 
+--
+Michael Tiller
+Ford Research Laboratory
+ 
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20020826/481bcc16/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20020826/481bcc16/attachment.html</A>
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001704.html">[antlr-interest] importVocab/exportVocab
+</A></li>
+	<LI>Next message: <A HREF="001712.html">[antlr-interest] Comments and questions on a recent project
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1705">[ date ]</a>
+              <a href="thread.html#1705">[ thread ]</a>
+              <a href="subject.html#1705">[ subject ]</a>
+              <a href="author.html#1705">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

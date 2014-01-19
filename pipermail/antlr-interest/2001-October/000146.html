@@ -1,0 +1,181 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] New faq entries - import/export
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20New%20faq%20entries%20-%20import/export&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000144.html">
+   <LINK REL="Next"  HREF="000147.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] New faq entries - import/export</H1>
+    <B>Bogdan Mitu</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20New%20faq%20entries%20-%20import/export&In-Reply-To="
+       TITLE="[antlr-interest] New faq entries - import/export">bogdan at nobugconsulting.ro
+       </A><BR>
+    <I>Mon Oct 29 09:57:54 PST 2001</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000144.html">[antlr-interest] New faq entries
+</A></li>
+        <LI>Next message: <A HREF="000147.html">[antlr-interest] New faq entries - import/export
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#146">[ date ]</a>
+              <a href="thread.html#146">[ thread ]</a>
+              <a href="subject.html#146">[ subject ]</a>
+              <a href="author.html#146">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Ter,
+
+I have some comments about the 3rd entry: Why can't I get the
+exportVocab/importVocab directives to work with string literals across
+multiple files?
+
+I will argue that:
+1. The real problem with that grammar is not the import/export relation, but
+a bug in ANTLR.
+2. The approach suggested for import/export, while correct (when not problem
+1.), is not the best.
+
+1. String literals in parser are not always converted to lexer tokens. For
+instance, an occurrence of the string &quot;if&quot; in the parser grammar is
+translated to LITERAL_if, but string &quot;if0&quot; (with a digit at the end) is not
+converted to anything (just a commented line in XxxTokenTypes.txt). The same
+happens in the grammar that originated this thread, were the string was
+&quot;.accept&quot; (starting with dot), and was not converted properly. This a bug in
+ANTLR.
+
+2.  If the parser imports the lexer vocabulary, as suggested, the lexer will
+not know about the (implicit) tokens referred as strings in the parser.
+Those tokens will have to be written down in the lexer itself, a tedious and
+error prone activity.
+
+A better solution is to make the lexer import the parser vocabulary:
+
+class TestingParser extends Parser;
+options {
+  exportVocab=TestingParser;
+...
+
+class TestingLexer extends Lexer;
+options {
+  importVocab=TestingParser;
+...
+
+If the parser and lexer are in different files, the parser file has to be
+compiled first.
+
+
+Regards,
+Bogdan
+
+
+----- Original Message -----
+From: &quot;Terence Parr&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">parrt at jguru.com</A>&gt;
+Subject: [antlr-interest] New faq entries
+
+
+&gt;<i> Folks, added 3 new FAQ entries (should be the top 3 in the list). :)
+</I>&gt;<i>
+</I>&gt;<i> <A HREF="http://www.jguru.com/faq/ANTLR">http://www.jguru.com/faq/ANTLR</A>
+</I>&gt;<i>
+</I>&gt;<i> Ter
+</I>
+Christopher writes:
+The literal &quot;.accept&quot; matches using this set of import/export rules:
+class TestingParser extends Parser;
+options {
+  exportVocab=TestingParser;
+}
+
+command : &quot;.accept&quot;
+          {cout &lt;&lt; &quot;matched accept&quot; &lt;&lt; endl; }
+        ;
+
+class TestingLexer extends Lexer;
+options {
+  charVocabulary='\3'..'\377';
+  exportVocab=TestingParser;
+  caseSensitive=false;
+}
+
+ID : ( 'a' .. 'z' | '0' .. '9' | '.' )+ ;
+WS : ( ' ' | '\t' | '\n' { newline(); }
+       | '\r' | '\b' )+ { $setType(Token::SKIP); } ;
+
+but &quot;.accept&quot; does not match using this set of import/export rules
+(regardless of whether or not the parser and lexer definitions are in the
+same file):
+
+class TestingParser extends Parser;
+options {
+  importVocab=TestingLexer;
+  exportVocab=TestingParser;
+}
+
+...
+
+class TestingLexer extends Lexer;
+options {
+  ...
+  exportVocab=TestingLexer;
+  ...
+}
+
+Ric answers:
+As a rule of thumb use this scheme when using importvocab/exportvocab with
+grammars in different files (the parser/lexer in one file scheme is subtly
+different):
+First in the lexer you export the current vocabulary (say L) e.g.
+exportVocab = L.
+Then in the parser you have to get the definitions from the lexer e.g.
+importVocab = L, in the parser you can extend the vocabulary with for
+example imaginary tokens. These you might need in a treeparser so you do in
+the parser a exportVocab = P (don't use the same name as for L!!!).
+Last but not least in the treeparser you do a importVocab = P. If you
+transform the tree and add new nodetypes and want to use those in subsequent
+treewalkers, then you need to extend the chain of imports/exports similar to
+the way that is done with parser and lexer.
+Also make sure you have your build dependencies set up right. It can be very
+frustrating to debug something that comes from parser/lexer/walker differing
+in opinions on tokensets because of a incomplete build... (e.g. build in the
+order lexer, parser, treewalker)
+
+You can check for errors in this stuff by looking at the xxxTokenTypes files
+and looking for discrepancies.
+
+To come back to your question: Your last scheme is the right one.. So my
+guess is that you run your parser through antlr before you run the lexer
+through it. Best guess is to remove all antlr generated stuff then build the
+lexer and the parser in that order, then it should work.
+
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000144.html">[antlr-interest] New faq entries
+</A></li>
+	<LI>Next message: <A HREF="000147.html">[antlr-interest] New faq entries - import/export
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#146">[ date ]</a>
+              <a href="thread.html#146">[ thread ]</a>
+              <a href="subject.html#146">[ subject ]</a>
+              <a href="author.html#146">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

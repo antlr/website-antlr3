@@ -1,0 +1,232 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Allowing lexer modes
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Allowing%20lexer%20modes&In-Reply-To=%3C31e910dd0901060651m77295ff8udfb046ab8036c697%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="032222.html">
+   <LINK REL="Next"  HREF="032224.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Allowing lexer modes</H1>
+    <B>Zenzike</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Allowing%20lexer%20modes&In-Reply-To=%3C31e910dd0901060651m77295ff8udfb046ab8036c697%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Allowing lexer modes">zenzike at gmail.com
+       </A><BR>
+    <I>Tue Jan  6 06:51:03 PST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="032222.html">[antlr-interest] How to modify this rule?
+</A></li>
+        <LI>Next message: <A HREF="032224.html">[antlr-interest] Lexical code to recognize a date?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#32223">[ date ]</a>
+              <a href="thread.html#32223">[ thread ]</a>
+              <a href="subject.html#32223">[ subject ]</a>
+              <a href="author.html#32223">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Dear all,
+
+I'm trying to make a lexer that changes modes depending on semantic predicates,
+but the grammar is pretty temperamental, sometimes the
+PROSE rule is not used at all, and sometimes it is used!
+
+The idea of this grammar is to have prose that is interspersed with
+expressions.
+
+expressions are started and ended with the symbols '\[' and '\]'.
+One line expressions can be started with %%.
+Comments are started with %.
+
+The idea is that the following string is valid:
+
+&lt;&lt;&lt;
+prose that might contains operators like + and -
+followed by an expression:
+[
+a + b
+x * y - z
+
+f - g
+
+]
+and then maybe some comments that
+% are invisibile and
+cannot be seen. % (and might be in mid sentence!)
+
+Directives are the same as one line math modes
+%% [
+but they can be interspersed with prose
+%% h + j %comments are valid here too
+and are not affected at all
+%% ]
+
+This includes comments and directives in expressions:
+[
+u + v % this is just an example
+%% w + x - y % as well as directives
+
+]
+I think that covers almost everything!
+&lt;&lt;&lt;
+
+The grammar I've constructed is below -- could anybody tell me if this
+is the right approach?
+
+As an alternative, I've thought about using &quot;island grammars&quot;,
+triggered by the '\start' and '%%' tokens,
+but I'm not sure which would be better.
+
+Thanks,
+
+Zenzike
+
+
+
+grammar Modes;
+
+options {
+  language = Java;
+}
+
+@lexer::members {
+static boolean text = true;
+static boolean text0 = true;
+static boolean frag = false;
+
+public boolean check(String s) {
+  for (int i=0; i&lt;s.length(); i++) {
+    if (input.LA(i+1) != s.charAt(i))
+      return false;
+  }
+  return true;
+}
+
+public boolean isCode() {
+  String[] code = {
+    &quot;\\begin&quot;,
+    &quot;\\end&quot;,
+    &quot;&lt;&quot;
+  };
+
+
+  for (String c:code) {
+    if (check(c))
+      return true;
+  }
+  return false;
+}
+}
+
+
+
+prog
+  : stat+
+  ;
+stat
+  : BEXPR (expr)+ EEXPR
+  ;
+expr
+  : ID (binop ID)*
+  ;
+binop
+  : PLUS | MINUS | TIMES | DIV | CROSS
+  ;
+
+
+COMMENT : {input.LA(1)=='\%' &amp;&amp; input.LA(2)!='\%'}?=&gt; '%' (~NL)* NL*
+{
+if (frag) {
+    frag=false;
+    text=text0;
+}
+$channel=HIDDEN;};
+
+WS      : (' '|'\t') {$channel=HIDDEN;};
+
+
+VERBATIM: {text}?=&gt; '&lt;' .* '&gt;'  {$channel=HIDDEN;};
+
+BEXPR   : '\\begin'         {text=false;};
+EEXPR   : '\\end'         {text=true; };
+FRAGMENT: MODMOD      {text0=text;text=false;frag=true;$channel=HIDDEN;};
+
+fragment
+MODMOD  : '%%'|'^';
+
+PROSE       : {text &amp;&amp; !frag &amp;&amp; !isCode() &amp;&amp; !check(&quot;\%&quot;)}?=&gt; .
+{
+while (!isCode() &amp;&amp; !check(&quot;\%&quot;) &amp;&amp; !check(&quot;\r&quot;) &amp;&amp; !check(&quot;\n&quot;)) {
+  matchAny();
+  if (state.failed)
+    return;
+}
+}
+              NL*
+              {$channel=HIDDEN; }
+            ;
+
+// I also tried the approaches below ...
+//PROSE   : {text &amp;&amp; !frag &amp;&amp; !isCode()}?=&gt;  ({!isCode() &amp;&amp;
+!check(&quot;\r&quot;) &amp;&amp; !check(&quot;\n&quot;)}?=&gt; ~'%')+ NL* {$channel=HIDDEN;};
+/*
+PROSE       : {text &amp;&amp; !frag &amp;&amp; !isCode() &amp;&amp; !check(&quot;\%&quot;) }?=&gt; . NL*
+              {$channel=HIDDEN; }
+            ;
+*/
+
+ENDLINE : NL+
+{if (frag) {
+    frag=false;
+    text=text0;
+}
+$channel=HIDDEN;};
+
+fragment
+NL      : ('\r'|'\n')
+        ;
+
+fragment LETTER : 'a'..'z'|'A'..'Z';
+fragment DIGIT  : '0'..'9';
+
+
+PLUS    : '+';
+MINUS   : '-';
+TIMES   : '*';
+DIV     : '/';
+CROSS   : 'cross';  \\these should not be tokenized as CROSS or BANG
+when in PROSE.
+BANG    : '\bang';
+
+ID      : LETTER (LETTER|DIGIT)*
+        | '\\' (LETTER|DIGIT)+
+        ;
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="032222.html">[antlr-interest] How to modify this rule?
+</A></li>
+	<LI>Next message: <A HREF="032224.html">[antlr-interest] Lexical code to recognize a date?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#32223">[ date ]</a>
+              <a href="thread.html#32223">[ thread ]</a>
+              <a href="subject.html#32223">[ subject ]</a>
+              <a href="author.html#32223">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

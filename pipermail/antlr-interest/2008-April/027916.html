@@ -1,0 +1,132 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Optional keyword causes ambiguity  in	parser
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Optional%20keyword%20causes%20ambiguity%20%20in%09parser&In-Reply-To=%3C20080418104551.C4A3911EC21%40www.antlr.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="027909.html">
+   <LINK REL="Next"  HREF="027823.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Optional keyword causes ambiguity  in	parser</H1>
+    <B>Gavin Lambert</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Optional%20keyword%20causes%20ambiguity%20%20in%09parser&In-Reply-To=%3C20080418104551.C4A3911EC21%40www.antlr.org%3E"
+       TITLE="[antlr-interest] Optional keyword causes ambiguity  in	parser">antlr at mirality.co.nz
+       </A><BR>
+    <I>Fri Apr 18 03:45:40 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="027909.html">[antlr-interest] Optional keyword causes ambiguity in	parser
+</A></li>
+        <LI>Next message: <A HREF="027823.html">[antlr-interest] Operator tree construction in rewrite syntax
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#27916">[ date ]</a>
+              <a href="thread.html#27916">[ thread ]</a>
+              <a href="subject.html#27916">[ subject ]</a>
+              <a href="author.html#27916">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>At 21:11 18/04/2008, Ramon Verbruggen wrote:
+ &gt;Generally, if I have a largish grammar in perfect working order, 
+
+ &gt;and I want to make one keyword optional, but this causes ANTLR 
+to
+ &gt;have ambiguity in the parser (Input such as 'Identifier' can be
+ &gt;matched in multiple ways), how would you solve this?
+[...]
+ &gt;&gt; statementBody:	statementList returnStatement? EOF;
+ &gt;&gt; returnStatement:	'return' expression ';'*;
+ &gt;&gt; // &lt;= 'return' should be optional
+ &gt;&gt; statementList:	(statement ';'*)*;
+ &gt;&gt; statement:	addressable;
+ &gt;&gt; expression:	addressable( '*' addressable)*;
+ &gt;&gt; addressable:	Identifier ( '.' Identifier '()' )*;
+ &gt;&gt; Identifier:	('a'..'z')+;
+
+Think of what decisions ANTLR has to make (assuming you've made it 
+optional), and you'll see why it thinks it's ambiguous.
+
+Let's take as input &quot;foo;&quot;, which is an Identifier followed by a 
+';'.
+
+We start out with a statementBody, which then has a statementList 
+optionally followed by a returnStatement.
+
+- statementList: statement followed by ';'s.  An addressable is a 
+statement.  An Identifier is an addressable.  Valid path.
+- returnStatement: can be just an expression if 'return' is 
+optional.  An Identifier is an expression.  Valid path.
+
+statementBody is allowed to have zero or more statements followed 
+by zero or one returnStatement.  But how is it to know whether the 
+Identifier it just saw is a statement or a 
+returnStatement?  Answer: it can't.
+
+Now, you've said that you want the &quot;return&quot; keyword to be 
+optional.  One way you could do that would be to permit an 
+expression as a valid statement:
+   statementBody:	statementList returnStatement? EOF;
+   returnStatement: 'return' expression;
+   statementList:	(statement ';'*)*;
+   statement:	expression;
+   expression:	addressable( '*' addressable)*;
+   addressable:	Identifier ( '.' Identifier '()' )*;
+   Identifier:	('a'..'z')+;
+
+There are two downsides to this, of course; the first is that 
+you've widened the possible inputs (which may not be acceptable), 
+and the second is that it isn't very easy to pick off the final 
+expression statement to give it special handling, if you want to.
+
+Another thing you could do is to remove 'addressable' from the 
+list of possible statements.  So long as anything that can match 
+'expression' cannot also match 'statement', the ambiguity is gone.
+
+Yet another thing is to re-examine the parentheses in 
+'addressable'.  Is 'Identifier' really supposed to be an 
+addressable by itself?  Should the parentheses be outside the loop 
+instead (so that 'foo' isn't an addressable, but 'foo()' is)?
+
+If you can't change the input language in this way, then you'll 
+have to resolve the ambiguity with sempreds.  The main one (since 
+it's in a loop) is the 'addressable' in 'statement' -- you have to 
+add a sempred telling it to fail any addressables that should be 
+interpreted as return statements instead.  Presumably they're 
+distinct enough that you can tell the difference.  (If you can't 
+tell the difference, then you probably shouldn't be trying to 
+remove that keyword.)
+
+Beyond these suggestions, I'm not really sure.  I've usually been 
+working with DSLs that I'm in full control of, so I've tended to 
+designed languages that are easy to parse :)
+
+</PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="027909.html">[antlr-interest] Optional keyword causes ambiguity in	parser
+</A></li>
+	<LI>Next message: <A HREF="027823.html">[antlr-interest] Operator tree construction in rewrite syntax
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#27916">[ date ]</a>
+              <a href="thread.html#27916">[ thread ]</a>
+              <a href="subject.html#27916">[ subject ]</a>
+              <a href="author.html#27916">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

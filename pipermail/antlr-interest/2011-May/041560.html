@@ -1,0 +1,257 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Inserting missing nodes
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Inserting%20missing%20nodes&In-Reply-To=%3C4072ABC603C8D848BAC6B74D4D3E5CD301449DF3167F%40MAILBOXCLUSTER.wantedtech.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="041557.html">
+   <LINK REL="Next"  HREF="041549.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Inserting missing nodes</H1>
+    <B>Jean-Sebastien Vachon</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Inserting%20missing%20nodes&In-Reply-To=%3C4072ABC603C8D848BAC6B74D4D3E5CD301449DF3167F%40MAILBOXCLUSTER.wantedtech.com%3E"
+       TITLE="[antlr-interest] Inserting missing nodes">jean-sebastien.vachon at wantedtech.com
+       </A><BR>
+    <I>Thu May  5 07:08:01 PDT 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="041557.html">[antlr-interest] Inserting missing nodes
+</A></li>
+        <LI>Next message: <A HREF="041549.html">[antlr-interest] Function Expressions
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#41560">[ date ]</a>
+              <a href="thread.html#41560">[ thread ]</a>
+              <a href="subject.html#41560">[ subject ]</a>
+              <a href="author.html#41560">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+I've integrated your solution to my whole grammar and it works perfectly.
+
+Thanks for your help
+
+From: Bart Kiers [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">bkiers at gmail.com</A>]
+Sent: May-05-11 4:51 AM
+To: Jean-Sebastien Vachon
+Cc: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: Re: [antlr-interest] Inserting missing nodes
+
+How about something like this:
+
+grammar MyGrammar;
+
+options {
+  output=AST;
+}
+
+tokens {
+  DEFAULT_OP;
+}
+
+query
+  :  andExpression EOF -&gt; andExpression
+  ;
+
+andExpression
+  :  (orExpression -&gt; orExpression) ( AND e=orExpression              -&gt; ^(AND $e $andExpression)
+                                    | (orExpression)=&gt; e=orExpression -&gt; ^(DEFAULT_OP $e $andExpression)
+                                    )*
+  ;
+
+orExpression
+  :  negation (OR^ negation)*
+  ;
+
+negation
+  :  NOT operand -&gt; ^(NOT operand)
+  |  operand
+  ;
+
+operand
+  :  WORD
+  |  '(' andExpression ')' -&gt; andExpression
+  ;
+
+AND   : 'AND';
+OR    : 'OR';
+NOT   : 'NOT';
+WORD  : 'a'..'z'+;
+SPACE : (' ' | '\t' | '\r' | '\n') {skip();};
+
+Test class:
+
+import org.antlr.runtime.*;
+import org.antlr.runtime.tree.*;
+import org.antlr.stringtemplate.*;
+
+public class Main {
+    public static void main(String[] args) throws Exception {
+        ANTLRStringStream in = new ANTLRStringStream(&quot;software engineer OR java programmer&quot;);
+        MyGrammarLexer lexer = new MyGrammarLexer(in);
+        CommonTokenStream tokens = new CommonTokenStream(lexer);
+        MyGrammarParser parser = new MyGrammarParser(tokens);
+        MyGrammarParser.query_return returnValue = parser.query();
+        CommonTree tree = (CommonTree)returnValue.getTree();
+        DOTTreeGenerator gen = new DOTTreeGenerator();
+        StringTemplate st = gen.toDOT(tree);
+        System.out.println(st);
+    }
+}
+
+Regards,
+
+Bart.
+
+On Wed, May 4, 2011 at 4:51 PM, Jean-Sebastien Vachon &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">jean-sebastien.vachon at wantedtech.com</A>&lt;mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">jean-sebastien.vachon at wantedtech.com</A>&gt;&gt; wrote:
+Thanks for your input. So here is the whole thing with two use cases that are not giving me the expected results...
+(Sorry for the long post)
+
+INPUT = abc def zyx toto
+RESULT = (DEFAULT_OP abc def) (DEFAULT_OP zyx toto)
+EXPECTED = (DEFAULT_OP (DEFAULT_OP abc def) (DEFAULT_OP zyx toto))
+
+INPUT = software engineer OR java programmer
+RESULT = (DEFAULT_OP software (OR engineer java)) programmer
+EXPECTED =  (DEFAULT_OP (DEFAULT_OP software (OR engineer java)) programmer)
+
+I'm also having some trouble using the Interpreter within Eclipse.
+The same expressions are not working in the interpreter. It fails to generate the
+tree with a &quot;NoViableAltException at input 'abc' &quot; (for the first case).
+I don't think this is related to my other problem since I can't get it to generate any tree.
+
+Thanks again for your time and comments
+
+----------------------------------------------------------------------------------------------------------
+Grammar (validation by building a tree and trying to insert missing operators)
+----------------------------------------------------------------------------------------------------------
+grammar MyGrammar;
+
+options {
+ language = Java;
+ output = AST;
+ ASTLabelType = CommonTree;
+}
+// Rules to build the tree representation of our expression...
+
+query
+ : and_expr+ EOF!
+ ;
+
+// Each AND expression can contain OR expressions...
+and_expr
+ : (expr expr+) =&gt; default_op
+ | (u1=or_expr (AND^ u2=or_expr)*)
+ ;
+// A OR expression contains one or more expression
+or_expr
+ : u1=expr (OR^ u2=expr)*
+ ;
+
+default_op
+ : (e1=or_expr e2=or_expr) -&gt; ^(DEFAULT_OP $e1 $e2)
+ ;
+
+expr
+ : (NOT^)? (operand)
+ ;
+// The leafs of the tree.. Words, sentence and so on...
+// Note that an expression such as '-word' is rewritten in its 'NOT word' form
+operand
+ : (f=FIELD^)(o=operand)
+ | PREFIX
+ | WORD
+ | SENTENCE
+ | WORDLIST
+ | NEGATIVE(w=PREFIX|w=WORD|w=SENTENCE|w=WORDLIST) -&gt; ^(NOT $w)
+ | MUST
+ | LPAREN! and_expr RPAREN!
+ ;
+
+// Lexer ...
+NEGATIVE    : '-';
+LPAREN      : '(' ;
+RPAREN      : ')' ;
+DOUBLEQUOTE : '&quot;';
+STAR          : '*';
+AND         : 'AND' | '+';
+OR          : 'OR';
+NOT         : 'NOT';
+DEFAULT_OP  : 'DEF_OP';
+FIELD       : ('title'|'TITLE'|'Title')(FIELDSEPARATOR);
+WS          : (WSCHAR)+ { $channel=HIDDEN; };
+PREFIX      : WORDCHAR+(STAR);
+WORD        : WORDCHAR+(('-'|'+')WORDCHAR*)*;
+SENTENCE    : ((DOUBLEQUOTE)(~(DOUBLEQUOTE))*(DOUBLEQUOTE));
+WORDLIST    : ((PREFIX | WORD | SENTENCE)(','(WS)* (PREFIX | WORD | SENTENCE))+);
+MUST          : '+'(PREFIX|WORD|SENTENCE|WORDLIST);
+fragment WORDCHAR       : (~( WSCHAR | LPAREN | RPAREN | '-' |':' | '+' | ',' | STAR | DOUBLEQUOTE) );
+fragment FIELDSEPARATOR : ':';
+fragment WSCHAR         : ( ' ' | '\t' | '\r' | '\n');
+
+
+
+================================= END OF GRAMMAR ==========================
+
+
+
+
+
+-----Original Message-----
+From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>&lt;mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>&gt; [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>&lt;mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>&gt;] On Behalf Of Bart Kiers
+Sent: May-04-11 10:21 AM
+To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>&lt;mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>&gt;
+Subject: Re: [antlr-interest] Inserting missing nodes
+
+On Wed, May 4, 2011 at 4:12 PM, Jean-Sebastien Vachon &lt; <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">jean-sebastien.vachon at wantedtech.com</A>&lt;mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">jean-sebastien.vachon at wantedtech.com</A>&gt;&gt; wrote:
+
+&gt;<i> No one can help me with this? :S
+</I>&gt;<i> Let me know if something is not clear. I need to fix this issue as
+</I>&gt;<i> soon as I can.
+</I>&gt;<i>
+</I>&gt;<i> Thanks
+</I>
+
+The fact that you didn't provide the lexer rules (although they might be straight-forward as you mentioned), and you didn't mention what input you're specifically having problems with parsing (the following is a bit
+vague: *&quot;... but I can't get it to parse everything I'm throwing at it ...&quot;*), might be some reasons why you haven't been answered.
+
+Regards,
+
+Bart.
+List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+
+</PRE>
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="041557.html">[antlr-interest] Inserting missing nodes
+</A></li>
+	<LI>Next message: <A HREF="041549.html">[antlr-interest] Function Expressions
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#41560">[ date ]</a>
+              <a href="thread.html#41560">[ thread ]</a>
+              <a href="subject.html#41560">[ subject ]</a>
+              <a href="author.html#41560">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

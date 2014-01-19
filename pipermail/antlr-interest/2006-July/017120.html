@@ -1,0 +1,333 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Antlr v3 -- Lexing '..' and '1.'
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Antlr%20v3%20--%20Lexing%20%27..%27%20and%20%271.%27&In-Reply-To=D0BA349D-75AA-478F-9157-BFFE45C7CBE9%40cs.usfca.edu">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="017096.html">
+   <LINK REL="Next"  HREF="017097.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Antlr v3 -- Lexing '..' and '1.'</H1>
+    <B>John B. Brodie</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Antlr%20v3%20--%20Lexing%20%27..%27%20and%20%271.%27&In-Reply-To=D0BA349D-75AA-478F-9157-BFFE45C7CBE9%40cs.usfca.edu"
+       TITLE="[antlr-interest] Antlr v3 -- Lexing '..' and '1.'">jbb at acm.org
+       </A><BR>
+    <I>Sun Jul 30 16:02:25 PDT 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="017096.html">[antlr-interest] Antlr v3 -- Lexing '..' and '1.'
+</A></li>
+        <LI>Next message: <A HREF="017097.html">[antlr-interest] Fwd: antlr-interest Digest, Vol 20, Issue 46
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#17120">[ date ]</a>
+              <a href="thread.html#17120">[ thread ]</a>
+              <a href="subject.html#17120">[ subject ]</a>
+              <a href="author.html#17120">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Ter and Loring :-
+
+Thanks for your replies!
+
+I now have a working lexer fragment that handles float and '..'  tokens,
+attached below.
+
+I hope my implementation matches your intent for dealing with this....
+
+(I also attach a TestDriver should anybody want to try to reproduce my result)
+
+Thanks again!
+   -jbb
+
+Test.g follows...
+//---------------------------begin cut here---------------------------
+grammar Test;
+
+//------------------------------------------------------------------------
+// code to be incorporated into the generated lexer...
+
+@lexer::header {
+import java.util.Vector;
+}
+
+@lexer::members {
+    // maximum number of emit() calls inside any rule action
+    private static final int MAX_EMIT_COUNT = 2;
+
+    // buffer (queue) to hold the emit()'d tokens
+    private Token [] myToken = new Token[MAX_EMIT_COUNT];
+    private int add_idx = 0; // deposit emit token here
+    private int next_idx = 0; // next token to be delivered to parser
+
+    public void emit(Token t) {
+        token = t; // set flag to avoid automatic emit() at end of rule.
+        myToken[add_idx++] = t;
+    }
+
+    public Token nextToken() {
+        while (true) {
+            if ( add_idx == next_idx ) {
+                token = null;
+                add_idx = 0;
+                next_idx = 0;
+                tokenStartCharIndex = getCharIndex();
+                if ( input.LA(1)==CharStream.EOF ) {
+                    return Token.EOF_TOKEN;
+                }
+                try {
+                    mTokens();
+                }
+                catch (RecognitionException re) {
+                    reportError(re);
+                    recover(re);
+                }
+            } else {
+                Token result = myToken[next_idx++];
+                if ( result != Token.SKIP_TOKEN ) { // discard SKIP tokens
+                    return result;
+                }
+            }
+        }
+    }
+}
+
+
+//------------------------------------------------------------------------
+// next follows the (dummy) parser...
+
+test : .+ EOF;
+
+//------------------------------------------------------------------------
+// and now, we specify the lexical analyzer...
+
+DOT : '.' ;
+RANGE : '..' ;
+ELLIPSIS : '...' ;
+
+NATURAL : UINT ;
+
+FLOAT :
+        ( i=UINT d=DOT
+            ( ( UINT? EXPONENT? )
+            | ( r=DOT
+                    ( ( /*empty*/
+                            { i.setType(NATURAL);
+                              emit(i);
+                              d.setType(RANGE);
+                              d.setText(&quot;..&quot;);
+                              emit(d); } )
+                    | ( e=DOT
+                            { i.setType(NATURAL);
+                              emit(i);
+                              d.setType(ELLIPSIS);
+                              d.setText(&quot;...&quot;);
+                              emit(d); } )
+                    ) )
+            ) )
+    |   ( UINT EXPONENT )
+    |   ( DOT UINT EXPONENT? )
+    ;
+
+fragment EXPONENT : ( 'e' | 'E' ) ( '+' | '-' )? UINT ;
+
+fragment DIGIT_10 : '0'..'9' ;
+fragment UINT : DIGIT_10+ ;
+
+
+
+// Whitespace -- ignored
+WS  :   (   ' '
+        |   '\t'
+        |   '\f'
+        |   ( '\r' | '\n' ) // handle newlines
+        )+
+        { channel=99; }
+    ;
+//---------------------------end cut here-----------------------------
+
+TestDriver.java follows:
+//---------------------------begin cut here---------------------------
+import java.io.*;
+import java.util.*;
+
+import org.antlr.runtime.*;
+
+public class TestDriver {
+   
+   private static class Pair {
+      public String input;
+      public int[] expected;
+      public Pair(String i, int[]e) {
+         input = i;
+         expected = e;
+      }
+   }
+
+   private static final Pair[] x = {
+      new Pair(&quot;1&quot;,new int[]{Test.NATURAL}),
+      new Pair(&quot;.&quot;,new int[]{Test.DOT}),
+      new Pair(&quot;..&quot;,new int[]{Test.RANGE}),
+      new Pair(&quot;...&quot;,new int[]{Test.ELLIPSIS}),
+      new Pair(&quot;.0&quot;,new int[]{Test.FLOAT}),
+      new Pair(&quot;.0e+0&quot;,new int[]{Test.FLOAT}),
+      new Pair(&quot;1.0&quot;,new int[]{Test.FLOAT}),
+      new Pair(&quot;1.&quot;,new int[]{Test.FLOAT}),
+      new Pair(&quot;1.0&quot;,new int[]{Test.FLOAT}),
+      new Pair(&quot;1.0e+0&quot;,new int[]{Test.FLOAT}),
+      new Pair(&quot;1e1&quot;,new int[]{Test.FLOAT}),
+      new Pair(&quot;1e+1&quot;,new int[]{Test.FLOAT}),
+      new Pair(&quot;1e-1&quot;,new int[]{Test.FLOAT}),
+      new Pair(&quot;1 . 2&quot;,new int[]{Test.NATURAL,
+                                 Test.WS,
+                                 Test.DOT,
+                                 Test.WS,
+                                 Test.NATURAL}),
+      new Pair(&quot;1 .. 2&quot;,new int[]{Test.NATURAL,
+                                  Test.WS,
+                                  Test.RANGE,
+                                  Test.WS,
+                                  Test.NATURAL}),
+      new Pair(&quot;1 ... 2&quot;,new int[]{Test.NATURAL,
+                                   Test.WS,
+                                   Test.ELLIPSIS,
+                                   Test.WS,
+                                   Test.NATURAL}),
+      new Pair(&quot;1. . 2.&quot;,new int[]{Test.FLOAT,
+                                   Test.WS,
+                                   Test.DOT,
+                                   Test.WS,
+                                   Test.FLOAT}),
+      new Pair(&quot;1. .. 2.&quot;,new int[]{Test.FLOAT,
+                                    Test.WS,
+                                    Test.RANGE,
+                                    Test.WS,
+                                    Test.FLOAT}),
+      new Pair(&quot;1. ... 2.&quot;,new int[]{Test.FLOAT,
+                                     Test.WS,
+                                     Test.ELLIPSIS,
+                                     Test.WS,
+                                     Test.FLOAT}),
+      new Pair(&quot;1.1 . 2.2&quot;,new int[]{Test.FLOAT,
+                                     Test.WS,
+                                     Test.DOT,
+                                     Test.WS,
+                                     Test.FLOAT}),
+      new Pair(&quot;1.1 .. 2.2&quot;,new int[]{Test.FLOAT,
+                                      Test.WS,
+                                      Test.RANGE,
+                                      Test.WS,
+                                      Test.FLOAT}),
+      new Pair(&quot;1.1 ... 2.2&quot;,new int[]{Test.FLOAT,
+                                       Test.WS,
+                                       Test.ELLIPSIS,
+                                       Test.WS,
+                                       Test.FLOAT}),
+      new Pair(&quot;1.&quot;,new int[]{Test.FLOAT}),
+      new Pair(&quot;1..&quot;,new int[]{Test.NATURAL,Test.RANGE}),
+      new Pair(&quot;1...&quot;,new int[]{Test.NATURAL,Test.ELLIPSIS}),
+      new Pair(&quot;1.2&quot;,new int[]{Test.FLOAT}),
+      new Pair(&quot;1..2&quot;,new int[]{Test.NATURAL,
+                                Test.RANGE,
+                                Test.NATURAL}),
+      new Pair(&quot;1...2&quot;,new int[]{Test.NATURAL,
+                                 Test.ELLIPSIS,
+                                 Test.NATURAL})
+   };
+
+   private static void printTokens(List l) {
+
+      if( l.size() == 0 ) {
+         System.out.format(&quot;no tokens found!%n&quot;);
+
+      } else {
+         Token t = (Token)l.get(0);
+         System.out.format(&quot;([%s,%s]&quot;,
+                           Test.tokenNames[t.getType()],
+                           t.getText());
+         for(int j = 1; j &lt; l.size(); ++j) {
+            t = (Token)l.get(j);
+            System.out.format(&quot;, [%s,%s]&quot;,
+                              Test.tokenNames[t.getType()],
+                              t.getText());
+         }
+         System.out.format(&quot;)&quot;);
+      }
+   }
+
+   private static boolean checkTokens(List l, int [] p) {
+      boolean success = true;
+
+      if( l.size() == p.length ) {
+
+         for(int j = 0; j &lt; p.length; ++j) {
+            Token t = (Token)l.get(j);
+            if (t.getType() != p[j]) {
+               success = false;
+               System.out.format(&quot; token number %s, %s should be %s; &quot;,
+                                 j,
+                                 Test.tokenNames[t.getType()],
+                                 Test.tokenNames[p[j]]);
+            }
+         }
+
+      } else {
+         success = false;
+         System.out.format(&quot;...wrong number of tokens:%s should be %s; &quot;,
+                           l.size(),p.length);
+      }
+
+      return success;
+   }
+
+   public static void main(String[] args) {
+      for(int i = 0; i &lt; x.length; ++i) {
+         try {
+            System.out.format(&quot;testing `%s`: &quot;,x[i].input);
+
+            CommonTokenStream tokens = new CommonTokenStream
+               (new TestLexer
+                (new ANTLRStringStream(x[i].input)));
+
+            List l = tokens.getTokens();
+            printTokens(l);
+            if (checkTokens(l, x[i].expected)) {
+               System.out.format(&quot; --- OK%n&quot;);
+            } else {
+               System.out.format(&quot; --- FAIL%n&quot;);
+            }
+
+         } catch(Exception e) {
+            System.out.println(&quot;exception: &quot;+e);
+         }
+      }
+   }
+}
+//---------------------------end cut here-----------------------------
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="017096.html">[antlr-interest] Antlr v3 -- Lexing '..' and '1.'
+</A></li>
+	<LI>Next message: <A HREF="017097.html">[antlr-interest] Fwd: antlr-interest Digest, Vol 20, Issue 46
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#17120">[ date ]</a>
+              <a href="thread.html#17120">[ thread ]</a>
+              <a href="subject.html#17120">[ subject ]</a>
+              <a href="author.html#17120">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

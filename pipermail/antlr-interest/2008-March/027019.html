@@ -1,0 +1,206 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] A very simple grammar problem.
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20A%20very%20simple%20grammar%20problem.&In-Reply-To=%3C2ADA1544652C4F45BC33515C58A78EAE%40pc2008%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="027024.html">
+   <LINK REL="Next"  HREF="027022.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] A very simple grammar problem.</H1>
+    <B>Kenneth Domino</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20A%20very%20simple%20grammar%20problem.&In-Reply-To=%3C2ADA1544652C4F45BC33515C58A78EAE%40pc2008%3E"
+       TITLE="[antlr-interest] A very simple grammar problem.">kenneth.domino at domemtech.com
+       </A><BR>
+    <I>Fri Mar  7 10:45:51 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="027024.html">[antlr-interest] Migrating a PCCTS grammar to ANTRL 3.0
+</A></li>
+        <LI>Next message: <A HREF="027022.html">[antlr-interest] A very simple grammar problem.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#27019">[ date ]</a>
+              <a href="thread.html#27019">[ thread ]</a>
+              <a href="subject.html#27019">[ subject ]</a>
+              <a href="author.html#27019">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Gavin,
+
+Thanks for your reply.
+
+Sorry about not left-factoring my grammar; I forgot that this is an
+LL-parser generator.
+
+Well, this little example is helping to explain some problems I have
+been having.  First, I've noticed that the generated parser seems to
+accept illegal input for some grammars.  For example, the empty
+language specified in the grammar &quot;grammar does_not_match_empty; e :
+;&quot; would accept anything! I now understand that it should have been
+&quot;grammar really_matches_empty; e: EOF;&quot;.
+
+In fact, I should think that because one will need to define a grammar
+with a production &quot;S' -&gt; S EOF&quot; or some equivalent, ANTLR would do the
+construction for me.  Maybe this is part of a feature that I am
+unaware of.  But, it is so different from what I'm used to (e.g.,
+Yacc) in the LR parser world that I feel that the documentation and
+examples should explain this better.  There is no mention of this in
+Terr's book &quot;The Definitive ANTLR Reference&quot;.
+
+As a consequence, programming by example using some of the grammars in
+the ANTLR Grammar List (<A HREF="http://www.antlr.org/grammar/list">http://www.antlr.org/grammar/list</A>) has led me
+into trouble.  Three of the five highlighted grammars do not define an
+EOF-augmented grammar, including Java.g
+(<A HREF="http://www.antlr.org/grammar/1152141644268/Java.g">http://www.antlr.org/grammar/1152141644268/Java.g</A>).  Unfortunately,
+these grammars can accept illegal input without raising errors!  For
+example, with the Java.g grammar, this input is accepted but
+obviously illegal Java:
+
+/* beginning of file */
+import org.antlr.runtime.*;
+
+public class Test {
+    public static void main(String[] args) throws Exception {
+    ANTLRInputStream input = new ANTLRInputStream(System.in);
+    JavaLexer lexer = new JavaLexer(input);
+    CommonTokenStream tokens = new CommonTokenStream(lexer);
+    JavaParser parser = new JavaParser(tokens);
+    parser.compilationUnit();
+    }
+}
+
+Here is the beginning of some illegal stuff, but not flagged!
+Have a nice day!
+/* end of file */
+
+The second problem I was having was the error &quot;no rule can obviously
+be followed by EOF&quot;.  Maybe it is because of the common prefix in two
+alternatives as you suggested.  But, I think there is a problem in the
+ANTLR tool that searches for start symbols and adds end states to the
+NFA constructed for the grammar.  This check occurs in the following
+ANTLR code:
+
+(In TreeToNFAConverter.java)
+    protected void finish() {
+        List rules = new LinkedList();
+        rules.addAll(grammar.getRules());
+        int numEntryPoints = factory.build_EOFStates(rules);
+        if ( numEntryPoints==0 ) {
+            ErrorManager.grammarWarning(ErrorManager.MSG_NO_GRAMMAR_START_RULE,
+                                       grammar,
+                                       null,
+                                       grammar.name);
+        }
+    }
+
+(In NFAFactory.java)
+   /** add an EOF transition to any rule end NFAState that points to nothing
+     *  (i.e., for all those rules not invoked by another rule).  These
+     *  are start symbols then.
+     *
+     *  Return the number of grammar entry points; i.e., how many rules are
+     *  not invoked by another rule (they can only be invoked from outside).
+     *  These are the start rules.
+     */
+    public int build_EOFStates(List rules) {
+        int numberUnInvokedRules = 0;
+        for (Iterator iterator = rules.iterator(); iterator.hasNext();) {
+            Rule r = (Rule) iterator.next();
+            String ruleName = r.name;
+            NFAState endNFAState = nfa.grammar.getRuleStopState(ruleName);
+            // Is this rule a start symbol?  (no follow links)
+            if ( endNFAState.transition(0)==null ) {
+                // if so, then don't let algorithm fall off the end of
+                // the rule, make it hit EOF/EOT.
+                /*
+                if ( nfa.grammar.type==Grammar.LEXER ) {
+                    return; // 11/28/2005: try having only Tokens with EOT 
+transition
+                }
+                if ( nfa.grammar.type!=Grammar.LEXER ||
+                     ruleName.equals(Grammar.ARTIFICIAL_TOKENS_RULENAME) )
+                {
+                    build_EOFState(endNFAState);
+                }
+                */
+                build_EOFState(endNFAState);
+                // track how many rules have been invoked by another rule
+                numberUnInvokedRules++;
+            }
+        }
+        return numberUnInvokedRules;
+    }
+
+(In NFAFactory.java)
+    /** set up an NFA NFAState that will yield eof tokens or,
+     *  in the case of a lexer grammar, an EOT token when the conversion
+     *  hits the end of a rule.
+     */
+    private void build_EOFState(NFAState endNFAState) {
+        NFAState end = newState();
+        int label = Label.EOF;
+        if ( nfa.grammar.type==Grammar.LEXER ) {
+            label = Label.EOT;
+            end.setEOTTargetState(true);
+        }
+        /*
+        System.out.println(&quot;build &quot;+nfa.grammar.getTokenDisplayName(label)+
+                           &quot; loop on end of state 
+&quot;+endNFAState.getDescription()+
+                           &quot; to state &quot;+end.stateNumber);
+        */
+        Transition toEnd = new Transition(label, end);
+        endNFAState.addTransition(toEnd);
+    }
+
+Unfortunately, with the grammar &quot;grammar test; a : 'A' a | 'A' ;&quot;, the
+NFA constructed contains cycles so endNFAState.transition(0) is never
+null, numberUnInvokedRules is never incremented in build_EOFStates(),
+and the error message is printed.  One could simply add the rule &quot;xxx:
+;&quot; to almost any grammar to bypass the error!  Debugging ANTLR using
+the &quot;test&quot; grammar, it seems to me that the check isn't quite correct
+because the NFA constructed should have labeled the NFA state after
+the 'A' transition from the 2nd alternative as an &quot;end&quot; state.  But,
+then again, I'm not sure how end states are labeled in ANTLR.
+
+Ken Domino
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="027024.html">[antlr-interest] Migrating a PCCTS grammar to ANTRL 3.0
+</A></li>
+	<LI>Next message: <A HREF="027022.html">[antlr-interest] A very simple grammar problem.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#27019">[ date ]</a>
+              <a href="thread.html#27019">[ thread ]</a>
+              <a href="subject.html#27019">[ subject ]</a>
+              <a href="author.html#27019">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

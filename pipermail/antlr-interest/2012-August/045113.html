@@ -1,0 +1,160 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Performance problem with $text in ANTLR 3.1
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Performance%20problem%20with%20%24text%20in%20ANTLR%203.1&In-Reply-To=%3CCC5C1E6E.1F0D3%25rich%40dreambox.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="045112.html">
+   <LINK REL="Next"  HREF="045108.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Performance problem with $text in ANTLR 3.1</H1>
+    <B>Richard Knox</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Performance%20problem%20with%20%24text%20in%20ANTLR%203.1&In-Reply-To=%3CCC5C1E6E.1F0D3%25rich%40dreambox.com%3E"
+       TITLE="[antlr-interest] Performance problem with $text in ANTLR 3.1">rich at dreambox.com
+       </A><BR>
+    <I>Thu Aug 23 18:09:56 PDT 2012</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="045112.html">[antlr-interest] Performance problem with $text in ANTLR 3.1
+</A></li>
+        <LI>Next message: <A HREF="045108.html">[antlr-interest] Common token vocabulary
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#45113">[ date ]</a>
+              <a href="thread.html#45113">[ thread ]</a>
+              <a href="subject.html#45113">[ subject ]</a>
+              <a href="author.html#45113">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I'm not sure backtracking is the issue here. This grammar implements a C
+like preprocessor by rewriting the token input stream. The rewrite grammar
+option is true and we use a TokeRewriteStream as input. Using $text
+results in a call stack like this:
+
+  BufferedTokeStream.toString(Token, Token)
+  TokenRewriteStream.toString(int, int)
+  TokenRewriteStream.toString(String, int, int)
+
+  TokenRewriteStream.reduceToSingleOperationPerIndex(List)
+  TokenRewriteStream.getKindOfOps(List, Class, int)
+
+I haven't analyzed the code in detail, but reduceToSingleOperationPerIndex
+seems to a lot of work, although most of the time is spent in
+getKindOfOps. I found two places where $text was referenced many times in
+each input line. I found ways of getting the desired behavior without
+referencing $text. We're still not as fast as we were with 3.0.1, but
+performance is now usable and getKindOfOps is no longer a major hot spot.
+
+Thanks all for your suggestions.
+
+-rich
+  
+
+On 8/23/12 3:06 PM, &quot;Terence Parr&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">parrt at cs.usfca.edu</A>&gt; wrote:
+
+&gt;<i>hi. maybe your grammar backtracks a lot and so there's lots of template
+</I>&gt;<i>construction.
+</I>&gt;<i>Ter
+</I>&gt;<i>On Aug 23, 2012, at 10:58 AM, Richard Knox &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">rich at dreambox.com</A>&gt; wrote:
+</I>&gt;<i>
+</I>&gt;&gt;<i> I've upgraded to ANTLR 3.4, and I'm still seeing the same problem. One
+</I>&gt;&gt;<i> test with VisualVM showed us spending 126 sec. (78% of total time) in
+</I>&gt;&gt;<i> TokenRewriteStream.getKindOfOps. The big time consumers came from usages
+</I>&gt;&gt;<i> of $text. Some of this grammar is old and krufty. We may be using $text
+</I>&gt;&gt;<i> gratuitously, but I didn't see these problems with ANTLR 3.0.1.
+</I>&gt;&gt;<i> 
+</I>&gt;&gt;<i> I may be able to mitigate this problem by avoiding use of $text. For
+</I>&gt;&gt;<i> example the following code accounted for 58 seconds of the time we spent
+</I>&gt;&gt;<i> in getKindOfOps:
+</I>&gt;&gt;<i> 
+</I>&gt;&gt;<i> regular_tokens
+</I>&gt;&gt;<i> 	:	WORD -&gt; template(val={ cpp.Lookup($text) }) &quot;&lt;val&gt;&quot;
+</I>&gt;&gt;<i> 	|	INT_LITERAL
+</I>&gt;&gt;<i> 	|	STRING_LITERAL
+</I>&gt;&gt;<i> 	|	PROXY_START_LITERAL | PROXY_MIDDLE_LITERAL | PROXY_END_LITERAL
+</I>&gt;&gt;<i> 	|	punctuation
+</I>&gt;&gt;<i> 	;
+</I>&gt;&gt;<i> 
+</I>&gt;&gt;<i> I made the following change to use $WORD.text instead of text:
+</I>&gt;&gt;<i> 
+</I>&gt;&gt;<i> regular_tokens
+</I>&gt;&gt;<i> 	:	WORD -&gt; template(val={ cpp.Lookup($WORD.text) }) &quot;&lt;val&gt;&quot;
+</I>&gt;&gt;<i> 	|	INT_LITERAL
+</I>&gt;&gt;<i> 	|	STRING_LITERAL
+</I>&gt;&gt;<i> 	|	PROXY_START_LITERAL | PROXY_MIDDLE_LITERAL | PROXY_END_LITERAL
+</I>&gt;&gt;<i> 	|	punctuation
+</I>&gt;&gt;<i> 	;
+</I>&gt;&gt;<i> 
+</I>&gt;&gt;<i> This dropped total time in getKindOfOpes from 126 sec to 37 sec.
+</I>&gt;&gt;<i> 
+</I>&gt;&gt;<i> Two questions:
+</I>&gt;&gt;<i> 1) Is $text known to be badly performing? Should we avoid its use
+</I>&gt;&gt;<i>wherever
+</I>&gt;&gt;<i> possible?
+</I>&gt;&gt;<i> 2) What changed from ANTLR 3.0.1 to cause this dramatic slow down?
+</I>&gt;&gt;<i> 
+</I>&gt;&gt;<i> Thanks.
+</I>&gt;&gt;<i> 
+</I>&gt;&gt;<i> -rich
+</I>&gt;&gt;<i> 
+</I>&gt;&gt;<i> 
+</I>&gt;&gt;<i> 
+</I>&gt;&gt;<i> On 8/21/12 6:55 PM, &quot;Jim Idle&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">jimi at temporal-wave.com</A>&gt; wrote:
+</I>&gt;&gt;<i> 
+</I>&gt;&gt;&gt;<i> Move to 3.4. String template is much faster. However I am not sure
+</I>&gt;&gt;&gt;<i>about
+</I>&gt;&gt;&gt;<i> your view of the performance traits; but go to 3.4 and then you will be
+</I>&gt;&gt;&gt;<i> in a space to start analysis properly. At 3.1 no one can really help.
+</I>&gt;&gt;&gt;<i> 
+</I>&gt;&gt;&gt;<i> Jim
+</I>&gt;&gt;&gt;<i> 
+</I>&gt;&gt;&gt;<i> On Aug 21, 2012, at 6:26 PM, Richard Knox &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">rich at dreambox.com</A>&gt; wrote:
+</I>&gt;&gt;&gt;<i> 
+</I>&gt;&gt;&gt;&gt;<i> I recently upgraded an ANTLR based application from ANTLR 3.0.1 to
+</I>&gt;&gt;&gt;&gt;<i> ANTLR 3.1. Since doing this, our application has been running MUCH
+</I>&gt;&gt;&gt;&gt;<i> slower. I did some profiling with VisualVM and found that we were
+</I>&gt;&gt;&gt;&gt;<i> spending most of our time in TokenRewriteStream.getKindOfOps. We get
+</I>&gt;&gt;&gt;&gt;<i> there when we reference $text from a grammar with options
+</I>&gt;&gt;&gt;&gt;<i> output=template and rewrite=true. Are there known performance issues
+</I>&gt;&gt;&gt;&gt;<i> with this scenario in ANTRL 3.1? Would I get better perf with a later
+</I>&gt;&gt;&gt;&gt;<i> version? Any suggested work arounds? Thanks!
+</I>&gt;&gt;&gt;&gt;<i> 
+</I>&gt;&gt;&gt;&gt;<i> -rich
+</I>&gt;&gt;&gt;&gt;<i> 
+</I>&gt;&gt;&gt;&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;&gt;&gt;&gt;<i> Unsubscribe: 
+</I>&gt;&gt;&gt;&gt;<i> <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;&gt;<i> 
+</I>&gt;&gt;<i> 
+</I>&gt;&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;&gt;<i> Unsubscribe: 
+</I>&gt;&gt;<i><A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i>
+</I>
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="045112.html">[antlr-interest] Performance problem with $text in ANTLR 3.1
+</A></li>
+	<LI>Next message: <A HREF="045108.html">[antlr-interest] Common token vocabulary
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#45113">[ date ]</a>
+              <a href="thread.html#45113">[ thread ]</a>
+              <a href="subject.html#45113">[ subject ]</a>
+              <a href="author.html#45113">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

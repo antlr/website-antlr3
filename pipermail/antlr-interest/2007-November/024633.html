@@ -1,0 +1,231 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Embedding expressions in plain text -- how to?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Embedding%20expressions%20in%20plain%20text%20--%20how%20to%3F&In-Reply-To=%3C473655D4.4080102%40Yahoo.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="024631.html">
+   <LINK REL="Next"  HREF="024635.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Embedding expressions in plain text -- how to?</H1>
+    <B>Austin Hastings</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Embedding%20expressions%20in%20plain%20text%20--%20how%20to%3F&In-Reply-To=%3C473655D4.4080102%40Yahoo.com%3E"
+       TITLE="[antlr-interest] Embedding expressions in plain text -- how to?">Austin_Hastings at Yahoo.com
+       </A><BR>
+    <I>Sat Nov 10 17:07:32 PST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="024631.html">[antlr-interest] Embedding expressions in plain text -- how to?
+</A></li>
+        <LI>Next message: <A HREF="024635.html">[antlr-interest] added ST cheat sheet
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24633">[ date ]</a>
+              <a href="thread.html#24633">[ thread ]</a>
+              <a href="subject.html#24633">[ subject ]</a>
+              <a href="author.html#24633">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Create an &quot;outer&quot; lexer that tokenizes your input as STRING PROGRAM 
+STRING ...
+
+fragment OpenBrace : '${' ;
+fragment CloseBrace: '}';
+
+STRING:  ( ~('$') | ('$' ~('{')))+ ;
+PROGRAM: OpenBrace .* CloseBrace ;
+
+
+Then parse the &quot;PROGRAM&quot; text elements as you like.
+
+Note that if you want nested curly braces, you'll have to implement that 
+via a nested fragment that recurses on itself.
+
+=Austin
+
+
+Rob Greene wrote:
+&gt;<i> How should I go about embedding an expression language in plain text.  
+</I>&gt;<i> The expression is wrapped in '${' and '}' but may occur zero to many 
+</I>&gt;<i> times within plain text.  When in plain text, I want to keep the 
+</I>&gt;<i> whitespace, but within the expression, it should be ignored.
+</I>&gt;<i>
+</I>&gt;<i> I've currently placed a boolean into a ThreadLocal and check that 
+</I>&gt;<i> before calling skip() in my whitespace rule.  But, that causes issues 
+</I>&gt;<i> with the actual expressions.
+</I>&gt;<i>
+</I>&gt;<i> For instance, &quot;${true}&quot; returns Boolean.TRUE while &quot;${ true }&quot; returns 
+</I>&gt;<i> a null.  If I take out the test in WS, I can have those spaces within 
+</I>&gt;<i> an expression, but the plain text loses all white space.
+</I>&gt;<i>
+</I>&gt;<i> I'm certain this is a simple fix, but I haven't a clue what to do!
+</I>&gt;<i>
+</I>&gt;<i> I'm using ANTLR 3.0.1.
+</I>&gt;<i>
+</I>&gt;<i> Thanks!
+</I>&gt;<i> -Rob
+</I>&gt;<i>
+</I>&gt;<i> /**
+</I>&gt;<i>  * Language is the simple expression language used throughout the XML 
+</I>&gt;<i> Template Engine.
+</I>&gt;<i>  * General language constructs:
+</I>&gt;<i>  * - functionName(argument, argument, ...)
+</I>&gt;<i>  * - object.method.method
+</I>&gt;<i>  * - 'string constant'
+</I>&gt;<i>  * - &quot;string constant&quot;
+</I>&gt;<i>  * - 1234.56
+</I>&gt;<i>  * - true
+</I>&gt;<i>  * - false
+</I>&gt;<i>  * - null
+</I>&gt;<i>  * - [ array, values, ... ]
+</I>&gt;<i>  */
+</I>&gt;<i> grammar Language;
+</I>&gt;<i>
+</I>&gt;<i> /**
+</I>&gt;<i>  * Use the embeddedExpression entry for expressions that are embedded 
+</I>&gt;<i> within other
+</I>&gt;<i>  * forms of text.
+</I>&gt;<i>  * &lt;p&gt;
+</I>&gt;<i>  * Note that unknown magic occurs because the plainText is somehow
+</I>&gt;<i>  * glommed together into one string instead of character
+</I>&gt;<i>  * by character.
+</I>&gt;<i>  */
+</I>&gt;<i> embeddedExpression returns [List&lt;Object&gt; list]
+</I>&gt;<i> @init { list = new ArrayList&lt;Object&gt;(); }
+</I>&gt;<i>     :    (    '${' expression '}'    { list.add($expression.value); }
+</I>&gt;<i>         |    plainText            { list.add($plainText.value); }
+</I>&gt;<i>         )*
+</I>&gt;<i>     ;
+</I>&gt;<i>
+</I>&gt;<i> /**
+</I>&gt;<i>  * Handle plain text that wraps around the expression.
+</I>&gt;<i>  */
+</I>&gt;<i> plainText returns [String value]
+</I>&gt;<i> @init { ThreadState.current().ignoreWhitespace = false; }
+</I>&gt;<i> @after { ThreadState.current().ignoreWhitespace = true; }
+</I>&gt;<i>     :    '\\' '$'                { $value = &quot;$&quot;; }
+</I>&gt;<i>     |    '\\' b=~('$')            { $value = $b.text; }
+</I>&gt;<i>     |    a=~('$')                { $value = $a.text; }
+</I>&gt;<i>     ;
+</I>&gt;<i>
+</I>&gt;<i> /**
+</I>&gt;<i>  * This is the bare expression evaluation.  Evaluates one expression 
+</I>&gt;<i> and returns
+</I>&gt;<i>  * an Object.
+</I>&gt;<i>  */
+</I>&gt;<i> expression returns [Object value]
+</I>&gt;<i>     :    function            { $value = $function.value; }
+</I>&gt;<i>     |    constant            { $value = $constant.value; }
+</I>&gt;<i>     |    reference            { $value = $reference.value; }
+</I>&gt;<i>     ;
+</I>&gt;<i>
+</I>&gt;<i> /**
+</I>&gt;<i>  * Evaluate a function invocation, along with parameters and return 
+</I>&gt;<i> the Object result.
+</I>&gt;<i>  */
+</I>&gt;<i> function returns [Object value]
+</I>&gt;<i>     :    ID '(' arguments ')'        { $value = 
+</I>&gt;<i> Helper.invoke($ID.text,$arguments.value); }
+</I>&gt;<i>     ;
+</I>&gt;<i> catch [LanguageException le] {
+</I>&gt;<i>     emitErrorMessage(le.getMessage());
+</I>&gt;<i>     throw new RuntimeException(le);
+</I>&gt;<i> }
+</I>&gt;<i>
+</I>&gt;<i> /**
+</I>&gt;<i>  * Evaluate a constant value and return that value.
+</I>&gt;<i>  */
+</I>&gt;<i> constant returns [Object value]
+</I>&gt;<i>     :    STRING                { $value = 
+</I>&gt;<i> $STRING.text.substring(1,$STRING.text.length()-1); }
+</I>&gt;<i>     |    NUMBER                { $value = Double.valueOf($NUMBER.text); }
+</I>&gt;<i>     |    'true'                { $value = Boolean.TRUE; }
+</I>&gt;<i>     |    'false'                { $value = Boolean.FALSE; }
+</I>&gt;<i>     |    'null'                { $value = null; }
+</I>&gt;<i>     |    '[' arguments ']'        { $value = $arguments.value; }
+</I>&gt;<i>     ;
+</I>&gt;<i>
+</I>&gt;<i> /**
+</I>&gt;<i>  * Evaluate an object reference and any nested evaluations and return 
+</I>&gt;<i> that value.
+</I>&gt;<i>  */
+</I>&gt;<i> reference returns [Object value]
+</I>&gt;<i>     :    a=ID                { $value = Helper.find($a.text); }
+</I>&gt;<i>         ('.' b=ID            { $value = Helper.reflect($value,$b.text); }
+</I>&gt;<i>          )*
+</I>&gt;<i>     ;
+</I>&gt;<i> catch [LanguageException le] {
+</I>&gt;<i>     emitErrorMessage(le.getMessage());
+</I>&gt;<i>     throw new RuntimeException(le);
+</I>&gt;<i> }
+</I>&gt;<i>
+</I>&gt;<i> /**
+</I>&gt;<i>  * A comma-separated argument list.  Use for the function invocation 
+</I>&gt;<i> and array list.
+</I>&gt;<i>  */
+</I>&gt;<i> arguments returns [List&lt;Object&gt; value]
+</I>&gt;<i> @init { value = new ArrayList&lt;Object&gt;(); }
+</I>&gt;<i>     :    (a=expression            { $value.add($a.value); }
+</I>&gt;<i>         (',' b=expression        { $value.add($b.value); }
+</I>&gt;<i>          )* )?
+</I>&gt;<i>     ;
+</I>&gt;<i>
+</I>&gt;<i> ID    :    Char (Char|Digit)*
+</I>&gt;<i>     ;
+</I>&gt;<i> STRING    :    '&quot;' ~('&quot;')* '&quot;'
+</I>&gt;<i>     |    '\'' ~('\'')* '\''
+</I>&gt;<i>     ;
+</I>&gt;<i> NUMBER    :    ('-'|'+')? Digit+ ('.' Digit+)?
+</I>&gt;<i>     ;
+</I>&gt;<i> WS
+</I>&gt;<i>     :    (' '|'\t'|'\r'|'\n')+    { if 
+</I>&gt;<i> (!ThreadState.current().ignoreWhitespace) skip(); }
+</I>&gt;<i>     ;
+</I>&gt;<i>
+</I>&gt;<i> fragment Char
+</I>&gt;<i>     :    'a'..'z' | 'A'..'Z' | '_'
+</I>&gt;<i>     ;
+</I>&gt;<i> fragment Digit
+</I>&gt;<i>     :    '0'..'9'
+</I>&gt;<i>     ;
+</I>&gt;<i>
+</I>
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="024631.html">[antlr-interest] Embedding expressions in plain text -- how to?
+</A></li>
+	<LI>Next message: <A HREF="024635.html">[antlr-interest] added ST cheat sheet
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24633">[ date ]</a>
+              <a href="thread.html#24633">[ thread ]</a>
+              <a href="subject.html#24633">[ subject ]</a>
+              <a href="author.html#24633">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

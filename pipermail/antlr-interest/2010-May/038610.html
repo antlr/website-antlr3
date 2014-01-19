@@ -1,0 +1,186 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] ANTLR performance
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20ANTLR%20performance&In-Reply-To=%3C664A13B770987A4BB77A103AF4174ECC0441A818%40sglonms01.Global.ad.sabre.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="038609.html">
+   <LINK REL="Next"  HREF="038601.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] ANTLR performance</H1>
+    <B>Chrobot, Stefan</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20ANTLR%20performance&In-Reply-To=%3C664A13B770987A4BB77A103AF4174ECC0441A818%40sglonms01.Global.ad.sabre.com%3E"
+       TITLE="[antlr-interest] ANTLR performance">Stefan.Chrobot at sabre.com
+       </A><BR>
+    <I>Tue May 11 07:46:30 PDT 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="038609.html">[antlr-interest] ANTLR performance
+</A></li>
+        <LI>Next message: <A HREF="038601.html">[antlr-interest] newbie, need help!
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#38610">[ date ]</a>
+              <a href="thread.html#38610">[ thread ]</a>
+              <a href="subject.html#38610">[ subject ]</a>
+              <a href="author.html#38610">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Thanks for your response, Lorenzo!
+
+This is exactly what's happening with my code.
+I dropped the rewriting and created my own mechanism. The running time
+dropped from ~10.00sec to ~00.10sec. Below I present my solution.
+
+
+Stefan
+
+
+1) I created a custom token class:
+internal class CustomToken : CommonToken
+{
+    private string myText;
+
+    public CustomToken(ICharStream input, int type, int channel, int
+start, int stop)
+        : base(input, type, channel, start, stop)
+    {
+    }
+
+    public void ParseAs(string text)
+    {
+        myText = text;
+    }
+
+    public override string Text
+    {
+        get
+        {
+            return myText ?? base.Text;
+        }
+        set
+        {
+            base.Text = value;
+        }
+    }
+}
+
+2) Made lexer emit CustomTokens:
+public override IToken Emit()
+{
+    var token = new CustomToken(this.input, base.state.type,
+base.state.channel, base.state.tokenStartCharIndex, this.CharIndex - 1);
+    token.Line = base.state.tokenStartLine;
+    token.Text = base.state.text;
+    token.CharPositionInLine = base.state.tokenStartCharPositionInLine;
+    this.Emit(token);
+    return token;
+}	
+
+3) Added &quot;rewrite&quot; method to the parser:
+private void ParseAs(CustomToken start, string text)
+{
+    start.ParseAs(text);
+
+    var stop = (CustomToken)input.LT(-1);
+    for (int i = start.TokenIndex + 1; i &lt;= stop.TokenIndex; ++i)
+    {
+        var token = (CustomToken)input.Get(i);
+        token.ParseAs(&quot;&quot;);
+    }
+}
+
+4) Set grammar option:
+TokenLabelType = CustomToken;
+
+
+Usage:
+
+assignment
+	:	ID '=' INT	{ ParseAs($assignment.start,
+&quot;&lt;assignment&gt;&quot;); }
+	;
+
+
+
+-----Original Message-----
+From: Lorenzo de Lara [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">ldelara at affsys.com</A>] 
+Sent: Tuesday, May 11, 2010 4:35 PM
+To: Chrobot, Stefan
+Cc: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: Re: [antlr-interest] ANTLR performance
+
+I have noticed the same thing with rewrite=true and came upon this bug
+report from 2008, which is currently still open:
+
+<A HREF="http://www.antlr.org/jira/browse/ANTLR-371">http://www.antlr.org/jira/browse/ANTLR-371</A>
+
+The problem is parsers with rewrite rules run in non-linear time on any
+inputs above a few hundred rewrites. I've verified this in both Java and
+C#. You can verify this for yourself by commenting out your rewrite
+rules and running the parser and observing much closer to linear
+runtime. (5 minutes with rewrite rules on vs. 5 seconds rewrite rules
+off on a typical 1500 line input for us) The offending method is
+GetKindOfOps in TokenRewriteStream taking up to 100% of the runtime
+according to a Java profiling tool.
+
+I've implemented the proposed fix (in Java) which does away with calling
+GetKindOfOps completely and can confirm it does result in much more
+reasonable, linear-like performance, without introducing any new
+problems, as far as I can tell.
+
+-Lorenzo
+
+On 2010-05-11, at 5:17 , Chrobot, Stefan wrote:
+
+Hi,
+
+
+
+I'm using ANTLR with the C# target. The generated parser performs too
+slow for my needs. My grammar uses k = 6.
+
+Does it have a performance impact? What value should I target to get
+optimum performance - 1 or *? Would changing the grammar to 1/* give
+significant performance boost?
+
+
+
+
+
+Stefan
+
+
+List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+Unsubscribe:
+<A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+
+
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="038609.html">[antlr-interest] ANTLR performance
+</A></li>
+	<LI>Next message: <A HREF="038601.html">[antlr-interest] newbie, need help!
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#38610">[ date ]</a>
+              <a href="thread.html#38610">[ thread ]</a>
+              <a href="subject.html#38610">[ subject ]</a>
+              <a href="author.html#38610">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

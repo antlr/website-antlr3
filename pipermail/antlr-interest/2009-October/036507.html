@@ -1,0 +1,139 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] finish/stop parsing without closing reader
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20finish/stop%20parsing%20without%20closing%20reader&In-Reply-To=%3CC708C8BA.97A%25horst.dehmer%40inode.at%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="036506.html">
+   <LINK REL="Next"  HREF="036517.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] finish/stop parsing without closing reader</H1>
+    <B>Horst Dehmer</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20finish/stop%20parsing%20without%20closing%20reader&In-Reply-To=%3CC708C8BA.97A%25horst.dehmer%40inode.at%3E"
+       TITLE="[antlr-interest] finish/stop parsing without closing reader">horst.dehmer at inode.at
+       </A><BR>
+    <I>Sat Oct 24 06:07:38 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="036506.html">[antlr-interest] How to overcome Lexer generation	OutOfMemoryError?
+</A></li>
+        <LI>Next message: <A HREF="036517.html">[antlr-interest] finish/stop parsing without closing reader
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36507">[ date ]</a>
+              <a href="thread.html#36507">[ thread ]</a>
+              <a href="subject.html#36507">[ subject ]</a>
+              <a href="author.html#36507">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello!
+
+For one special parser rule in my grammar I have to stop parsing and read
+the rest of the input from the reader as (compressed) binary data. Is there
+any way to instruct the parser to stop reading further tokens when the top
+most rule was successfully recognized?
+
+Any help is highly appreciated!
+
+- Horst
+
+More details:  The rule recognizes header information for the then following
+binary data:
+
+d_data returns [D_DATA pdu]
+@init {
+  pdu = null;
+}
+  : 'D4|' oigId = oig_id '|' syncpointId = syncpoint_id '|'
+uncompressedLength = length '|'
+    {
+      SyncpointDescriptor syncpoint = ...
+      pdu = new D_DATA(syncpoint);
+    }
+  ;
+
+The size of the binary data following the last &#140;|&#185; can become quite big and
+I have to store them as a file to disk.
+After the header is recognized the parser returns but the input reader is
+closed. Without using EOF in the rule, it seems the additional bytes are
+consumed from ANTLRReaderStream:
+
+CharStream charStream = new ANTLRReaderStream(reader);
+PduLexer lexer = new PduLexer(charStream);
+TokenStream tokenStream = new CommonTokenStream(lexer);
+PduParser parser = new PduParser(tokenStream);
+...
+
+With a trailing EOF in the rule the parser naturally complains about the
+additional information: line 1:36 extraneous input '&lt;binary data&gt;' expecting
+EOF
+The test case shows proper recognition of the T2/D4 along with syncpoint
+token, but reading &#140;&lt;binary data&gt;&#185; fails due to a closed reader/stream.
+
+@Test
+public void parse_whole() throws RecognitionException, IOException {
+    final BigDecimal OIG = new BigDecimal(&quot;10903008203000000001&quot;);
+    final String SYNCPOINT = &quot;82737&quot;;
+    final long LENGTH = 40;
+    final String FORMAT = &quot;T2|D4|%20.0f|%s|%d|&lt;binary data&gt;&quot;;
+    final String MESSAGE = String.format(FORMAT, OIG, SYNCPOINT, LENGTH);
+
+    StringReader reader = new StringReader(MESSAGE);
+    T_PDU t_pdu = parserDriver.parse(reader); // OK.
+    D_PDU d_pdu = ((T_DATA) t_pdu).getPdu(); // OK.
+    D_DATA d_data = (D_DATA) d_pdu; // OK.
+    SyncpointDescriptor token = d_data.getToken();
+    
+    assertEquals(OIG, token.oigId); // OK.
+    assertEquals(SYNCPOINT, token.syncpointId); // OK.
+    assertEquals(LENGTH, token.uncompressedLength); // OK.
+
+    try {
+        // reader should be positioned at the rest of the message, i.e.
+&#140;&lt;binary data&gt;&#185;.
+        char[] buffer = new char[&quot;&lt;binary data&gt;&quot;.length()];
+        reader.read(buffer);
+    }
+    catch (IOException exception) {
+        // NOT OK:
+        // java.io.IOException: Stream closed
+    }
+}
+
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20091024/10e85b79/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20091024/10e85b79/attachment.html</A> 
+</PRE>
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="036506.html">[antlr-interest] How to overcome Lexer generation	OutOfMemoryError?
+</A></li>
+	<LI>Next message: <A HREF="036517.html">[antlr-interest] finish/stop parsing without closing reader
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36507">[ date ]</a>
+              <a href="thread.html#36507">[ thread ]</a>
+              <a href="subject.html#36507">[ subject ]</a>
+              <a href="author.html#36507">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

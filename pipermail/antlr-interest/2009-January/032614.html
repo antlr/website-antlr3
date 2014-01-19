@@ -1,0 +1,154 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] The behavior.....
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20The%20behavior.....&In-Reply-To=%3C200901271712.20311.jbb%40acm.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="032609.html">
+   <LINK REL="Next"  HREF="032632.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] The behavior.....</H1>
+    <B>John B. Brodie</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20The%20behavior.....&In-Reply-To=%3C200901271712.20311.jbb%40acm.org%3E"
+       TITLE="[antlr-interest] The behavior.....">jbb at acm.org
+       </A><BR>
+    <I>Tue Jan 27 14:12:20 PST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="032609.html">[antlr-interest] The behavior.....
+</A></li>
+        <LI>Next message: <A HREF="032632.html">[antlr-interest] The behavior.....
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#32614">[ date ]</a>
+              <a href="thread.html#32614">[ thread ]</a>
+              <a href="subject.html#32614">[ subject ]</a>
+              <a href="author.html#32614">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Meena Vinod asked:
+&gt;<i> I have a new problem now. My application's .g is as follows:
+</I>&gt;<i>
+</I>&gt;<i> &#160; &#160; CMD_CD : 'cd';
+</I>&gt;<i> &#160; &#160; CMD_SHOW: 'show';
+</I>&gt;<i> &#160; &#160; CMD_RESET: 'reset';
+</I>&gt;<i> &#160; &#160; CMD_SET: 'set';
+</I>&gt;<i> &#160; &#160; CMD_OPTION: (' -all' | ' -help' | ' -version' | ' -display')*;
+</I>&gt;<i> &#160; &#160; TSEP: ' ' { SKIP(); };
+</I>&gt;<i>
+</I>&gt;<i> The parser is defined as:
+</I>&gt;<i> cmd_validate: (cmd)(CMD_OPTION) EOF;
+</I>&gt;<i>
+</I>&gt;<i> cmd: CMD_CD | CMD_SHOW | CMD_RESET | CMD_SET;
+</I>&gt;<i>
+</I>&gt;<i> A valid input to my application is &quot;cd -help -version -display&quot;. I can
+</I>&gt;<i> achieve this with the &quot; &quot; (space) prefixed for each of the CMD_OPTION
+</I>&gt;<i> value. However, if I enter &quot;cd-help&quot;, then my application hangs on
+</I>&gt;<i> ANTLRWorks and even my C code hangs.
+</I>&gt;<i>
+</I>&gt;<i> I would want to ensure that there is a space between the &quot;cmd&quot; and the
+</I>&gt;<i> &quot;cmd_option&quot; (if there is a cmd_option value).
+</I>&gt;<i>
+</I>&gt;<i> So, my application takes values as follows:
+</I>&gt;<i> 1. cd -help -version -display
+</I>&gt;<i> 2. cd -version
+</I>&gt;<i> 3. cd
+</I>&gt;<i> 4. show -help -version -display....... et al
+</I>&gt;<i>
+</I>&gt;<i> What should I do so that it throws an exception when I enter &quot;cd-help&quot; or
+</I>&gt;<i> &quot;show-version&quot;?
+</I>
+Your CMD_OPTION lexer rule accepts the empty string as a valid possible input.
+
+This is generally a very bad thing and is the cause of your problem here.
+
+When given the input sentence &quot;cd-help&quot; your lexer will happily consume the 
+first and second characters as a CMD_CD token.
+
+Next it will encounter the hyphen ('-') character. But your lexer rules have 
+all specified that a blank (' ') must appear before any valid hyphen. So you 
+lexer realizes that this particular hyphen is an recognizable character. But 
+first, as you have specified, a CMD_OPTION token is valid as the empty string, 
+so your lexer recognizes the empty string after the 'cd' and before the '-' as 
+a CMD_OPTION token and emits it into the token stream.
+
+Now your lexer is still looking at the hyphen ('-') character that follows the 
+'cd' CMD_CD token and it realizes that this particular hyphen is an 
+recognizable character. But first, as you have specified, a CMD_OPTION token 
+is valid as the empty string, so your lexer recognizes the empty string after 
+the 'cd' and before the '-' as a CMD_OPTION token and emits it into the token 
+stream.
+
+Now your lexer is still looking at the hyphen ('-') character that follows the 
+'cd' CMD_CD token and it realizes that this particular hyphen is an 
+recognizable character. But first, as you have specified, a CMD_OPTION token 
+is valid as the empty string, so your lexer recognizes the empty string after 
+the 'cd' and before the '-' as a CMD_OPTION token and emits it into the token 
+stream.
+
+Now your lexer is still looking at the hyphen ('-') character that follows the 
+'cd' CMD_CD token and it realizes that this particular hyphen is an 
+recognizable character. But first, as you have specified, a CMD_OPTION token 
+is valid as the empty string, so your lexer recognizes the empty string after 
+the 'cd' and before the '-' as a CMD_OPTION token and emits it into the token 
+stream.
+
+and as you can tell from the above discussion, your lexer is stuck in an 
+infinite (e.g. hung) emitting empty CMD_OPTION tokens trying to handle all 
+valid lexer rules before throwing an unrecognizable character error. 
+(Actually, in my test rig it runs out of memory fairly quickly and dies)
+
+As a temporary fix: remove the * operator from the CMD_OPTION lexer rule and 
+put it on the CMD_OPTION phrase in the parser cmd_validate rule. Thus:
+
+CMD_OPTION: ' -all' | ' -help' | ' -version' | ' -display';
+cmd_validate: cmd CMD_OPTION* EOF;
+
+I think this change solves this specific problem (at least is does in my test 
+rig). But I believe you have a deeper issue(s) here because your TSEP lexer 
+rule says that blanks should be ignored and yet you insist on having blanks 
+between elements of your command; so blanks are significant. Which way is it 
+supposed to be? I think by trying to skip blanks sometimes and require blanks 
+other times by adding a blank to the text of each of the options is, in the 
+long run, a big mistake. Just my 2 cents.
+
+Hope this helps...
+---
+   -jbb
+
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20090127/7d9c7283/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20090127/7d9c7283/attachment.html</A> 
+</PRE>
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="032609.html">[antlr-interest] The behavior.....
+</A></li>
+	<LI>Next message: <A HREF="032632.html">[antlr-interest] The behavior.....
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#32614">[ date ]</a>
+              <a href="thread.html#32614">[ thread ]</a>
+              <a href="subject.html#32614">[ subject ]</a>
+              <a href="author.html#32614">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,157 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Lexing problem - range of ints vs float
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Lexing%20problem%20-%20range%20of%20ints%20vs%20float&In-Reply-To=%3C983CFC53-4C68-4409-8EA5-E5761A6080DA%40grimoire.ca%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="045205.html">
+   <LINK REL="Next"  HREF="045207.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Lexing problem - range of ints vs float</H1>
+    <B>Owen Jacobson</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Lexing%20problem%20-%20range%20of%20ints%20vs%20float&In-Reply-To=%3C983CFC53-4C68-4409-8EA5-E5761A6080DA%40grimoire.ca%3E"
+       TITLE="[antlr-interest] Lexing problem - range of ints vs float">owen.jacobson at grimoire.ca
+       </A><BR>
+    <I>Tue Sep 11 09:01:48 PDT 2012</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="045205.html">[antlr-interest] Lexing problem - range of ints vs float
+</A></li>
+        <LI>Next message: <A HREF="045207.html">[antlr-interest] Lexing problem - range of ints vs float
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#45206">[ date ]</a>
+              <a href="thread.html#45206">[ thread ]</a>
+              <a href="subject.html#45206">[ subject ]</a>
+              <a href="author.html#45206">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Your rules for FLOAT are more restrictive than mine, but I had a similar problem not long ago: <A HREF="http://www.antlr.org/pipermail/antlr-interest/2012-August/045132.html">http://www.antlr.org/pipermail/antlr-interest/2012-August/045132.html</A>
+
+Jim Idle pointed out this FAQ entry (<A HREF="http://tinyurl.com/8t4pnhv">http://tinyurl.com/8t4pnhv</A>), which lead me to the following lexer rules:
+
+// Matching for DOT tokens is handled in FLOAT, below.
+// Notionally: DOT: '.';
+fragment DOT: ;
+// Matching for TO tokens is handled in FLOAT, below.
+// Notionally: TO: '..';
+fragment TO: ;
+
+fragment DIGIT: '0'..'9';
+fragment SIGN: '-'?;
+
+// Matching for INT tokens is handled in FLOAT, below.
+// Notionally: INT: SIGN DIGIT+;
+fragment INT: ;
+
+fragment FLOAT_EXPONENT
+    :   'e' ('+'|'-')? DIGIT+
+    ;
+
+// Complex rule tree deciding several logical lexer rules: INT, FLOAT, DOT,
+// and TO. See <A HREF="http://www.antlr.org/wiki/display/ANTLR3/Lexer+grammar+for+floating+point%2C+dot%2C+range%2C+time+specs">http://www.antlr.org/wiki/display/ANTLR3/Lexer+grammar+for+floating+point%2C+dot%2C+range%2C+time+specs</A>
+// for the origin of the idea. This is required because of the ambiguity of
+// inputs like &quot;1..3&quot; -- in some contexts, it can be a range; in others, it's
+// two floats. We always parse it as a range, which is consistent with the C
+// implementation.
+FLOAT
+    :   SIGN DIGIT+ ( // Leading sign and digits: might be FLOAT, might be INT.
+            // Two dots means an INT followed by a TO.
+            { self.input.LA(2) != ord('.') }?=&gt; '.' (
+                DIGIT* FLOAT_EXPONENT? { $type = FLOAT; }
+            )
+            | FLOAT_EXPONENT { $type = FLOAT; }
+            | { $type = INT; }
+        )
+        | '-' '.' ( // Leading sign and dot, must be float.
+            DIGIT+ FLOAT_EXPONENT? { $type = FLOAT; }
+        )
+        | '.' ( // Leading dot: might be FLOAT, DOT, or TO.
+            '.' { $type = TO; }
+            | DIGIT+ FLOAT_EXPONENT? { $type = FLOAT; }
+            | { $type = DOT; }
+        )
+    ;
+
+Hope that helps,
+
+-o
+
+On 2012-09-11, at 11:55 AM, kjam &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">pohilets at gmail.com</A>&gt; wrote:
+
+&gt;<i> Hi, All!
+</I>&gt;<i> 
+</I>&gt;<i> I want lexer to interpret input '0..5' as sequence of tokens INT, '..', INT.
+</I>&gt;<i> But instead it sees '0.' and tries to continue parsing float and fails. I
+</I>&gt;<i> have '..' token implicitly defined in parser grammar and following lexer
+</I>&gt;<i> rules for INT and FLOAT:
+</I>&gt;<i> 
+</I>&gt;<i> INT
+</I>&gt;<i>    : ('0d')? '0'..'9'+
+</I>&gt;<i>    | '0b' '0'..'1'+
+</I>&gt;<i>    | '0c' '0'..'7'+
+</I>&gt;<i>    | '0x' HEX_DIGIT+
+</I>&gt;<i>    ;
+</I>&gt;<i> 
+</I>&gt;<i> FLOAT
+</I>&gt;<i>    : ('0'..'9')+ '.' ('0'..'9')+ EXPONENT?
+</I>&gt;<i>    | ('0'..'9')+ EXPONENT
+</I>&gt;<i>    ;
+</I>&gt;<i> 
+</I>&gt;<i> fragment
+</I>&gt;<i> EXPONENT : ('e'|'E') ('+'|'-')? ('0'..'9')+ ;
+</I>&gt;<i> 
+</I>&gt;<i> fragment
+</I>&gt;<i> HEX_DIGIT : ('0'..'9'|'a'..'f'|'A'..'F') ;
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> --
+</I>&gt;<i> View this message in context: <A HREF="http://antlr.1301665.n2.nabble.com/Lexing-problem-range-of-ints-vs-float-tp7578705.html">http://antlr.1301665.n2.nabble.com/Lexing-problem-range-of-ints-vs-float-tp7578705.html</A>
+</I>&gt;<i> Sent from the ANTLR mailing list archive at Nabble.com.
+</I>&gt;<i> 
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="045205.html">[antlr-interest] Lexing problem - range of ints vs float
+</A></li>
+	<LI>Next message: <A HREF="045207.html">[antlr-interest] Lexing problem - range of ints vs float
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#45206">[ date ]</a>
+              <a href="thread.html#45206">[ thread ]</a>
+              <a href="subject.html#45206">[ subject ]</a>
+              <a href="author.html#45206">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

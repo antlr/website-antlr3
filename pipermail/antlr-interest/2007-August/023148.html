@@ -1,0 +1,175 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] need help with predicates
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20need%20help%20with%20predicates&In-Reply-To=%3Cebc876d70708090945u60d13caelb1871d174d4f9f35%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="023168.html">
+   <LINK REL="Next"  HREF="023157.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] need help with predicates</H1>
+    <B>Thomas Brandon</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20need%20help%20with%20predicates&In-Reply-To=%3Cebc876d70708090945u60d13caelb1871d174d4f9f35%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] need help with predicates">tbrandonau at gmail.com
+       </A><BR>
+    <I>Thu Aug  9 09:45:43 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="023168.html">[antlr-interest] need help with predicates
+</A></li>
+        <LI>Next message: <A HREF="023157.html">[antlr-interest] need help with predicates
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#23148">[ date ]</a>
+              <a href="thread.html#23148">[ thread ]</a>
+              <a href="subject.html#23148">[ subject ]</a>
+              <a href="author.html#23148">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 8/10/07, Andy Tripp &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr at jazillian.com</A>&gt; wrote:
+&gt;<i> The language I'm parsing, visual basic, lets an identifier have a '!'
+</I>&gt;<i> suffix:
+</I>&gt;<i>
+</I>&gt;<i> Identifier:
+</I>&gt;<i>     '['? LETTER (LETTER| DECIMAL_LITERAL)* ('%'|'#'|'$'|'&amp;'|'!')? ']'?
+</I>&gt;<i>     ;
+</I>&gt;<i>
+</I>&gt;<i> But it also lets you use '!' as a &quot;separator&quot; the way C/C++/Java/etc.
+</I>&gt;<i> use '.'
+</I>&gt;<i> In the midst of a hierarchy of rules dealing with expressions, I have
+</I>&gt;<i> this rule:
+</I>&gt;<i>
+</I>&gt;<i> dotOpExpression:
+</I>&gt;<i>     unaryOps (
+</I>&gt;<i>           DOT^ dotOperand?
+</I>&gt;<i>         | BANG^ anyName?
+</I>&gt;<i>         )*
+</I>&gt;<i>     ;
+</I>&gt;<i>
+</I>&gt;<i> Here, the unaryOps, dotOperand, and anyName rules all eventually refer
+</I>&gt;<i> to Identifier.
+</I>&gt;<i> So the problem is that during the dotOpExpression processing, the
+</I>&gt;<i> unaryOps consumes
+</I>&gt;<i> the Identifier, including the '!'. So in trying to match &quot;a!b&quot;, it
+</I>&gt;<i> fails, because it took &quot;a!&quot;
+</I>&gt;<i> as the Identifier and couldn't match the rest.
+</I>&gt;<i>
+</I>&gt;<i> So one solution is to take the '!' out of the Identifier rule, perhaps
+</I>&gt;<i> now calling it IdentifierNoBang,
+</I>&gt;<i> and then have alternative versions of other rules (unaryOpsNoBang,
+</I>&gt;<i> dotOperandNoBang, anyNameNoBang, etc).
+</I>&gt;<i> But that would be a huge mess.
+</I>&gt;<i>
+</I>&gt;<i> It seems like a syntactic predicate with &quot;backtrack=true&quot; should work
+</I>&gt;<i> here, but I can't quite see how.
+</I>&gt;<i> I want to say, in dotOpExpression, &quot;try to match this pattern, but if
+</I>&gt;<i> that doesn't work, try again, but this
+</I>&gt;<i> time don't allow a '!' at the end of unaryOps&quot;. I can't see how to do
+</I>&gt;<i> that without all that rework to
+</I>&gt;<i> remove the '!' from Identifier.
+</I>Syntactic predicates only help ANTLR decide between alternatives, so
+you still need to be able to specify the alternates as standard rules.
+So you need some way to a specify an identifier with or without bang.
+Apart from duplicated rules the option is a gated semantic predicate
+with either a field or a rule parameters or a scope.
+I think with a field you might run into nesting issues, though not sure there.
+With parameters:
+dotOpExpression
+    :    (identifier[false] BANG identifier[true])=&gt;identifier BANG
+dotOpExpression
+    |    unaryOps (DOT^ dotOperand?)
+    ;
+
+identifier[boolean allowBang]
+    :    'a'..'z'+
+        (    {allowBang}?=&gt;BANG
+        |    // Epsilon
+        )
+    ;
+
+Though then you have to always pass allowBang to your identifier rule,
+and will need to pass it down through various rules to get to
+identifier.
+
+You might be able to use scopes, but I think then you'd need to put
+them in a rule that all calls to identifier went through or else they
+wouldn't exist. So, I don't think dynamic scopes are suitable (I
+assume there is access to identifier not through dotOpExpression).
+Maybe you could add:
+scope IdentiferBang {
+boolean allow;
+}
+Then do:
+start
+scope identifierBang;
+@init {
+    identifierBang::allow = true;
+}
+    :    ...
+    ;
+
+dotOpExprssion
+scope identifierBang;
+    :   { identifierBang::allow = false; }
+        (unaryOps BANG anyName)=&gt;unaryOps BANG^ dotOpExpression
+    |   { identifierBang::allow = true; }
+        unaryOps (DOT^ dotOperand?)
+    ;
+
+identifier
+    :    'a'..'z'+
+        (    { identifierBang::allow }?=&gt;BANG
+        |    // Epsilon
+        )
+So if there's a call to dotOpExpression on the way to identifier it
+will get that copy of the scope, otherwise it will get the default
+copy of the scope from the start rule.
+Not especially clean, but it might work in lieu of a nicer solution.
+
+Tom.
+&gt;<i>
+</I>&gt;<i> Any ideas?
+</I>&gt;<i> Thanks,
+</I>&gt;<i> Andy
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I></PRE>
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="023168.html">[antlr-interest] need help with predicates
+</A></li>
+	<LI>Next message: <A HREF="023157.html">[antlr-interest] need help with predicates
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#23148">[ date ]</a>
+              <a href="thread.html#23148">[ thread ]</a>
+              <a href="subject.html#23148">[ subject ]</a>
+              <a href="author.html#23148">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

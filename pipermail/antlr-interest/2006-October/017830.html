@@ -1,0 +1,219 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] philosophy about translation
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20philosophy%20about%20translation&In-Reply-To=EEBED01A-3297-4E17-A4E1-6459427D06ED%40cs.usfca.edu">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="017818.html">
+   <LINK REL="Next"  HREF="017822.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] philosophy about translation</H1>
+    <B>Andy Tripp</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20philosophy%20about%20translation&In-Reply-To=EEBED01A-3297-4E17-A4E1-6459427D06ED%40cs.usfca.edu"
+       TITLE="[antlr-interest] philosophy about translation">antlr at jazillian.com
+       </A><BR>
+    <I>Sat Oct  7 10:32:58 PDT 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="017818.html">[antlr-interest] philosophy about translation
+</A></li>
+        <LI>Next message: <A HREF="017822.html">[antlr-interest] philosophy about translation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#17830">[ date ]</a>
+              <a href="thread.html#17830">[ thread ]</a>
+              <a href="subject.html#17830">[ subject ]</a>
+              <a href="author.html#17830">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Terence Parr wrote:
+
+&gt;<i>
+</I>&gt;<i> On Oct 6, 2006, at 7:29 AM, Andy Tripp wrote:
+</I>&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> An interesting and difficult problem..thanks for bringing this  
+</I>&gt;&gt;&gt;<i> up.   I'd have to think more.  Clearly some kind of non-text data  
+</I>&gt;&gt;&gt;<i> structure  is needed for this.  I guess you'd build the Java  
+</I>&gt;&gt;&gt;<i> template or AST and  then add the bits as you find them while  
+</I>&gt;&gt;&gt;<i> traversing the COBOL.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> This is the key to the difference in the two approaches. Using an  
+</I>&gt;&gt;<i> AST, I kept finding myself gathering bits of information from
+</I>&gt;&gt;<i> around the AST. For example, say we're doing C to Java and I see  &quot;if 
+</I>&gt;&gt;<i> (a)&quot;. We first look for the declaration of a to see whether
+</I>&gt;&gt;<i> it's an int or not (it may not be because our &quot;goto removal&quot; phase  
+</I>&gt;&gt;<i> already ran, and it injects booleans). Next, we look at
+</I>&gt;&gt;<i> all references to &quot;a&quot;, to see if it will be possible to change all  
+</I>&gt;&gt;<i> of them from &quot;int&quot; usages to &quot;boolean&quot; usages. If not, just change it
+</I>&gt;&gt;<i> to &quot;if (a != 0)&quot;, but if so, go ahead and change the type to  
+</I>&gt;&gt;<i> boolean, and make whatever changes are needed at each reference.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> If you try to do that sort of thing in a tree-walking way, it will  
+</I>&gt;&gt;<i> be a mess, I think.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>   Aren't these standard operations and data structures?    Symbol  
+</I>&gt;<i> table, use-def chains, flow analysis.  The tree walk can simply ask  
+</I>&gt;<i> questions of these data structures.
+</I>
+Yes. Sorry. My mistake. I shouldn't have said the treewalker way would
+be a mess, just
+that I don't think it's helping. So the treewalk approach looks
+something like:
+
+void doTheCheck() {
+// here I am at the conditional node of an &quot;if&quot;, &quot;while&quot;, or &quot;for&quot;
+if (symbolTable.getType(varName) != &quot;boolean&quot;) {
+   boolean canBeChanged = true;
+   for (Use use: UseDefChains.getAllUsagesOf(varName)) {
+         if (!use.canBeChangedToBoolean()) {
+             canBeChanged = false;
+        }
+    }
+   if (canBeChanged) {
+      SymbolTable.changeType(varName, &quot;boolean&quot;);
+      for (Use use: UseDefChains.getAllUsagesOf(varName)) {
+           use.change();
+     }
+   }
+}
+}
+
+The thing is, you'll need to write this code whether you're doing
+treewalking or &quot;token-stream-matching&quot;.
+All the treewalking does for you is to have this code kick-in in the
+right place. And that's just as easy to
+do with &quot;token-stream-matching&quot;. In my case, it looks something like:
+
+public boolean match(Source source) {
+    if (source.currentToken.getText().equals(&quot;if&quot;) ||
+source.currentToken.getText().equals(&quot;while&quot;)) {
+       doTheCheck(source.getTokenAt(+2));
+  } else if (source.currentToken.getText().equals(&quot;for&quot;)) {
+       Token semi = source.findToken(&quot;;&quot;);
+       doTheCheck(source.getTokenAt(semi, +1));
+  }
+}
+
+
+&gt;<i>
+</I>&gt;&gt;&gt;<i> My main point is that it's ok to have multiple tree structures, L  
+</I>&gt;&gt;&gt;<i> and  L', but the union and/or slow morphing of one to the other is  
+</I>&gt;&gt;&gt;<i> a total  pain I've found.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Yes, it's a royal pain, but if you start with the requirement that  
+</I>&gt;&gt;<i> you will produce &quot;natural&quot; code, there's no choice.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>   Well, I suppose anything is possible, it's just a matter of how  
+</I>&gt;<i> convenient.  And you are saying it's inconvenient really not impossible.
+</I>
+
+Right. I found I just couldn't get cranking on writing transformation
+&quot;rules&quot; because I was spending all my time
+trying to picture AST mappings in my head. Spending all my time on &quot;how&quot;
+to do it, not &quot;what&quot; do to.
+
+&gt;<i>
+</I>&gt;&gt;<i> I think just this simple example that I brought up before actually  
+</I>&gt;&gt;<i> brings the problem to the surface:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> String hello = &quot;hello&quot;;
+</I>&gt;&gt;<i> String world = &quot;world&quot;;
+</I>&gt;&gt;<i> printf(&quot;%s %s\n&quot;, hello, world);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> ...becomes...
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> System.out.println(&quot;Hello World&quot;);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I can't see how that can be done by treewalking. By the time the  
+</I>&gt;&gt;<i> code is actually written to implement &quot;printf to System.out.println&quot;,
+</I>&gt;&gt;<i> there will be almost no &quot;tree-transformation&quot; or even &quot;tree  walking&quot; 
+</I>&gt;&gt;<i> logic.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>   The logic is identifying that you have entered a list of  statements 
+</I>&gt;<i> and you see a print statement.  The translation logic is a  simple 
+</I>&gt;<i> one-to-one mapping from printf to println just as you would do  in a 
+</I>&gt;<i> rule right?  
+</I>
+It may map to println() or print(), and I don't recall whether I
+actually may combine several printf() calls into a single println() call,
+but that's certainly the type of thing that I do.
+
+&gt;<i> The only problem is discovering what should be the  expression.  
+</I>&gt;<i> Either in a previous phase I would have done constant  propagation or 
+</I>&gt;<i> in your case you ask the question or something in one  of your 
+</I>&gt;<i> declaration rules.  Do you insert actions in your rules to go  check 
+</I>&gt;<i> data structures?  Surely you don't write a rule that has a   
+</I>&gt;<i> context-sensitive pattern  asking if there have been all possible  
+</I>&gt;<i> variable declarations before the print, right?
+</I>
+Right, I just &quot;write code&quot; to go ahead and parse the format string,
+match it up with the printf() arguments, and replace it
+all with a single &quot;+&quot;-separated Java expression.
+
+&gt;<i>
+</I>&gt;&gt;<i> As for the try/catch, all the work is in finding a good &quot;level&quot; to  
+</I>&gt;&gt;<i> insert the try/catch. For example, if we have three consecutive
+</I>&gt;&gt;<i> read() calls, best to put them into a single try/catch. If we need  
+</I>&gt;&gt;<i> to catch both FileNotFoundException and IOException
+</I>&gt;&gt;<i> for one statement, and just IOException for the following  statement, 
+</I>&gt;&gt;<i> what do we do?
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>  how do you handle that?  I very is to to learn more about your  
+</I>&gt;<i> approach; I see you talking about how the tree walking won't work,  
+</I>&gt;<i> but I don't see how yours will work.  It is very interesting and I  
+</I>&gt;<i> want to learn more.
+</I>
+I just decide what the most &quot;natural&quot; thing to do is, and then &quot;just
+write code&quot; to do it. I can't remember exactly how I
+do it for exceptions, but I'd do something like &quot;If two consecutive
+calls throw exactly the same set of exceptions, put
+them both in the same try block, otherwise, each call is in its own try
+block&quot;. Then, if that produces fairly ugly code in
+lots of cases, I might make it more complicated.
+
+&gt;<i>
+</I>&gt;&gt;<i> Thanks for your patience - guess I'm a natural contrarian :)
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>   Always good for an excellent discussion and to shake things up...
+</I>&gt;<i> Ter
+</I>&gt;<i>
+</I>Thanks,
+Andy
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="017818.html">[antlr-interest] philosophy about translation
+</A></li>
+	<LI>Next message: <A HREF="017822.html">[antlr-interest] philosophy about translation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#17830">[ date ]</a>
+              <a href="thread.html#17830">[ thread ]</a>
+              <a href="subject.html#17830">[ subject ]</a>
+              <a href="author.html#17830">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

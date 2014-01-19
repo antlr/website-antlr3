@@ -1,0 +1,616 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Newbie problem with line-oriented parsing
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Newbie%20problem%20with%20line-oriented%20parsing&In-Reply-To=%3C05108B1D7AEA1145B0A03759AA39FB2205481053%40de01exm70.ds.mot.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="037888.html">
+   <LINK REL="Next"  HREF="037897.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Newbie problem with line-oriented parsing</H1>
+    <B>Crocker Ron-QA1007</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Newbie%20problem%20with%20line-oriented%20parsing&In-Reply-To=%3C05108B1D7AEA1145B0A03759AA39FB2205481053%40de01exm70.ds.mot.com%3E"
+       TITLE="[antlr-interest] Newbie problem with line-oriented parsing">Ron.Crocker at motorola.com
+       </A><BR>
+    <I>Mon Mar  8 11:48:32 PST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="037888.html">[antlr-interest] I wrote a Java Lexer for Cobol and need your	suggestions
+</A></li>
+        <LI>Next message: <A HREF="037897.html">[antlr-interest] Unexpected behavior - Error?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37891">[ date ]</a>
+              <a href="thread.html#37891">[ thread ]</a>
+              <a href="subject.html#37891">[ subject ]</a>
+              <a href="author.html#37891">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Thanks for the help.  
+
+Here's my newest grammar for flowgen, meeting the intent of what I
+posted before but handling MOST of the previous flowgen language. I
+still have some work to do on expressions and others, but it's getting
+there... Running in ANTLRworks, I can see parse trees and debug, and it
+will parse an entire flowgen file that was supported by the previous
+tool.
+
+There are a couple of things I don't like in my ANTLR grammar, and I
+could use your help:
+
+Consider this input:
+  &lt;&gt;&lt;&gt; cut here &lt;&gt;&lt;&gt;
+  $DEFINE SDL
+  
+  HSS_requested_PDN_discon_ISD_Success_F15102
+  $DEF FOO
+  &lt;&gt;&lt;&gt; end cut &lt;&gt;&lt;&gt;
+
+Here's a parse tree from this grammar for that input.
+  transaction
+  - xdefine
+  - tran_name
+    - word: HSS_requested_PDN_discon_ISD_Success_F
+    - word
+      - float_number: 15102
+    - \n
+  - tran_item
+    - xdefine_inline
+      - $DEF
+      - FOO
+      - rest_of_line: \n
+
+
+A) I would like word to treat
+&quot;HSS_requested_PDN_discon_ISD_Success_F15102&quot; as one word, not 2. 
+B) I don't like rest_of_line as it contains too many parts if a line
+contains something like &quot;_____&quot;. The current rule returns 5 things, one
+for each _. If that same thing said &quot;FRED&quot;, it would return 1 thing. I'm
+sure it's a token definition that it doesn't like, I just don't know how
+to fix it.
+
+It's possible these two things are the same problem.
+	
+Here's the grammar file. I'm running in both eclipse and ANTLRworks, but
+the output above came from the ANTLRworks debug environment. I did a
+little manual editing to give it some structure.
+
+Ron
+&lt;&gt;&lt;&gt;&lt;&gt;&lt;&gt; cut here - flowgen.g &lt;&gt;&lt;&gt;&lt;&gt;&lt;&gt;
+grammar flowgen;
+
+options {
+  language = Java;
+}
+
+WS:	(WHITE)+ {skip();};
+
+/* *********** */
+/* TRANSACTION */
+/* *********** */
+//
+// A transaction file is the main kind of flowgen file. It is the one
+// that results in arrows on paper.
+//
+// A transaction file comprises a title and at least one message.
+Further,
+// a transaction file can begin with a set of variable definitions that
+// are valid while that file is &quot;in context.&quot; (* more on that later)
+//
+transaction:  xdefine* tran_name tran_item+ ;
+
+//===
+// DEFINE handling
+// - There are 3 kinds of define actions:
+//   a) Defines that happen at the beginning of the file
+//   b) Defines that occur DURING the message flow.
+//   c) Undefines can occur with $INCLUDE statements
+//===
+xdefine:  DEFINE_k COL_NAME rest_of_line;
+xdefine_inline: DEF_k COL_NAME rest_of_line;
+undef_inline: UNDEF_k COL_NAME rest_of_line;
+
+defval: COL_NAME;
+undefid: COL_NAME;
+
+//===
+// TRANSACTION ITEM handling
+// A transaction item is the principal structure of a transaction.
+//===
+
+tran_item:  ( mn_pair 
+    | if_stmt 
+    | free_comment 
+    | inc_stmt 
+//    | par_block
+    | opt_msg 
+//    | opt_block
+    | xdefine_inline
+    | undef_inline
+    | box_msg
+//    | twoway_msg
+//    | oneway_msg
+    | return_stmt
+    );
+
+//===
+// IF handling
+//===
+if_stmt:  ifpart tran_item+ elseifpart* elsepart? ENDIF_k;
+
+ifpart:   ifkind new_line;
+ifkind:   IFDEF_k id
+        | IFNDEF_k id
+        | IF_k expr
+        ;
+        
+elseifpart: elseifkind new_line tran_item+;
+elseifkind: ELIFDEF_k id
+          | ELIFNDEF_k id
+          | ELIF_k expr
+          ;
+elsepart: ELSE_k new_line tran_item+;
+
+new_line:	NEW_LINE;
+id	:	word;
+expr	:	word;
+//===
+// OPTIONAL handling
+// - 2 kinds: optional message and optional blocks
+//===
+opt_msg:        OPTMSG_k optmsg_content;
+optmsg_content: box_msg 
+              | mn_pair 
+//              | twoway_msg 
+//              | oneway_msg 
+              ;
+
+
+//===
+// 
+//===
+//===
+// RETURN handling
+//===
+return_stmt:  RETURN_k NEW_LINE;
+
+//===
+// Transaction Name. 
+// TODO: Add notes for title page?
+//===
+tran_name: word+ NEW_LINE;
+
+//===
+// FREE COMMENT handling
+//===
+free_comment: FC_KEY COL_NAME? (Lbrack)=&gt;fc_params? rest_of_line 
+              noteline+;
+fc_params:  Lbrack fc_par  Rbrack ;
+fc_par:   inc_box;
+//===
+// BOX handling
+//===
+box_msg: BOX_k mn_pair;
+
+//===
+// INCLUDE handling
+//===
+
+inc_stmt: INCLUDE_k path inc_params? new_line ; 
+/*
+      revflag:INT = FALSE;
+      nsubs:INT = 0;
+      defs:SYMTAB_PTR = 0;
+      ndefs:INT = 0;)
+*/
+inc_params: Lbrack inc_par (';' inc_par)* Rbrack;
+
+inc_par:   inc_def 
+         | inc_undef 
+         | inc_sub 
+         | inc_box 
+         | inc_arrow 
+         | inc_opt 
+         ;
+inc_def:   DEF_k defval (COMMA defval)*;
+inc_undef: UNDEF_k undefid (COMMA undefid)*;
+inc_sub:   old_name=COL_NAME EQUALS new_name=COL_NAME;
+inc_box:   BOX_k;
+inc_arrow: TWOWAY_k | ONEWAY_k;
+inc_opt:   OPT_k | OPTMSG_k;
+
+path: SLASH? relative_path ;
+
+relative_path: path_word (SLASH path_word)*;
+
+path_word: (up_directory)=&gt;up_directory
+         | word+
+         ;
+    
+//===
+// Message handling
+// - A message is one of the building blocks of the flow. It describes
+//   information flow from one point to another (or both directions).
+// - There are 
+//===
+
+mn_pair:  message noteline*;
+message:  num1? from_name num2? to_name rest_of_line;
+
+noteline: NOTE_KEY rest_of_line;
+
+rest_of_line: (options {greedy=false;}:.*) NEW_LINE;
+
+num1: float_number;
+num2: float_number;
+
+float_number: INTnumber (DOT INTnumber)?;
+
+from_name: COL_NAME;
+to_name:   COL_NAME;
+
+word: COL_NAME
+    | float_number
+    | randomPrintable+;
+
+// Tokens - operators
+fragment KEY_START:  '$';
+fragment DOT_:       '.';
+fragment STAR_:      '*';
+fragment FC_START:   '&amp;';
+fragment NP_START:   '%';
+fragment NOTE_START: '#';
+fragment COMMA_:     ',';
+fragment EQUALS_:    '=';
+fragment SLASH_:     '/';
+fragment L_BRACK_:   '[';
+fragment R_BRACK_:   ']';
+fragment UNDERBAR_:  '_';
+fragment MINUS_:     '-';
+
+Lbrack: L_BRACK_;
+Rbrack: R_BRACK_;
+
+up_directory: DOT DOT;	
+
+DOT:      DOT_;
+NOTE_KEY: NOTE_START;
+FC_KEY:   FC_START;
+COMMA:    COMMA_;
+EQUALS:   EQUALS_;
+SLASH:    SLASH_;
+UNDERBAR:	UNDERBAR_;
+MINUS	:	MINUS_;
+
+// Tokens - keywords (hint: keywords end with '_k')
+BLOCK_k:    '$BLOCK';
+BOX_k:      '$BOX';
+
+DEF_k:      '$DEF';
+DEFINE_k:   '$DEFINE';
+
+ELIF_k:     '$ELIF';
+ELIFDEF_k:  '$ELIFDEF';
+ELIFNDEF_k: '$ELIFNDEF';
+ELSE_k:     '$ELSE';
+ENDIF_k:    '$ENDIF';
+ENDPAR_k:   '$ENDPAR';
+
+IF_k:       '$IF';
+IFDEF_k:    '$IFDEF';
+IFNDEF_k:   '$IFNDEF';
+INCLUDE_k:  '$INCLUDE';
+
+ONEWAY_k:   '$1WAY';
+OPT_k:      '$OPTIONAL';
+OPTEND_k:   '$ENDOPTIONAL';
+OPTMSG_k:   '$OPT';
+
+PAR_k:      '$PAR';
+
+RETURN_k:   '$RETURN';
+
+TWOWAY_k:   '$2WAY';
+
+UNDEF_k:    '$UNDEF';
+
+// Tokens - names and numbers
+fragment NUMBER:    '0'..'9';
+fragment UPPERCASE: 'A'..'Z';
+fragment LOWERCASE: 'a'..'z';
+fragment PRINTABLE: ' '..'~';
+
+NON_ALPHANUM: 	  '!'|'&quot;'|'\''..')'|'+'..','  	// ! &quot; ' ( ) + ,
+		| ':'..'@'			// : ; &lt; = &gt; ? @
+		| '\\'|'`'|'^'  		// [ \ ] ^ `
+		| '{'..'~';  			// { | } ~
+randomPrintable: 
+            ( DOT | KEY_START | FC_START | NOTE_START | Lbrack | Rbrack
+            | NON_ALPHANUM | SLASH | UNDERBAR | MINUS
+            )+;
+
+INTnumber: NUMBER+;
+COL_NAME: (UPPERCASE|LOWERCASE) (UPPERCASE|LOWERCASE|UNDERBAR_|MINUS_)*;
+
+// Tokens - Whitespace
+fragment WHITE:     ' '|'\t';
+fragment NEWLINE_:  '\r'| '\n';
+
+NEW_LINE: NEWLINE_+; /* probably needs to include CR and CRLF */
+NON_PRINTING_COMMENT: NP_START .* NEW_LINE {skip();};
+&lt;&gt;&lt;&gt;&lt;&gt;&lt;&gt; end &lt;&gt;&lt;&gt;&lt;&gt;&lt;&gt;
+
+-----Original Message-----
+From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>
+[mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Jim Idle
+Sent: Monday, February 15, 2010 2:14 PM
+To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: Re: [antlr-interest] Newbie problem with line-oriented parsing
+
+You can't use .* in the lexer, only .  The . rule should be the last one
+in the lexer and is just used to catch any character tha you have not
+otherwise matched (usually indicates a spurious character).
+
+Make sure that your lexer rules are not ambiguous - they must not
+overlap :-)
+
+Jim
+
+
+
+&gt;<i> -----Original Message-----
+</I>&gt;<i> From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:antlr-interest-
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">bounces at antlr.org</A>] On Behalf Of Crocker Ron-QA1007
+</I>&gt;<i> Sent: Monday, February 15, 2010 12:05 PM
+</I>&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> Subject: [antlr-interest] Newbie problem with line-oriented parsing
+</I>&gt;<i> 
+</I>&gt;<i> Hi all -
+</I>&gt;<i> 
+</I>&gt;<i> I'm new here, so be nice to me. Further, let me start by apologizing
+</I>&gt;<i> for
+</I>&gt;<i> such a verbose first message.
+</I>&gt;<i> I have started porting a DSL, one that I've been supporting for 15+
+</I>&gt;<i> years, from lex/yacc based toolset (via a tool called MetaTool) to
+</I>&gt;<i> ANTLR.
+</I>&gt;<i> 
+</I>&gt;<i> I've been looking through the various materials available on the net
+</I>&gt;<i> and
+</I>&gt;<i> have a copy of The Definitive ANTLR Reference. As I started porting
+</I>the
+&gt;<i> grammar (EBNF ish) I've run into something I don't know how to deal
+</I>&gt;<i> with. Unfortunately I need to drag everyone through some background to
+</I>&gt;<i> get to the question, however I can start with the grammar I'm
+</I>&gt;<i> struggling
+</I>&gt;<i> with and the immediate problem.
+</I>&gt;<i> 
+</I>&gt;<i> &lt;&gt;&lt;&gt;&lt;&gt;&lt;&gt; cut here - flowgen.g &lt;&gt;&lt;&gt;&lt;&gt;&lt;&gt;
+</I>&gt;<i> grammar flowgen;
+</I>&gt;<i> 
+</I>&gt;<i> options {
+</I>&gt;<i>   language = Java;
+</I>&gt;<i> }
+</I>&gt;<i> 
+</I>&gt;<i> /* *********** */
+</I>&gt;<i> /* TRANSACTION */
+</I>&gt;<i> /* *********** */
+</I>&gt;<i> transaction:  ( ((KEY_START DEFINE_k) =&gt; xdefine*) tran_name message+
+</I>&gt;<i> );
+</I>&gt;<i> 
+</I>&gt;<i> xdefine: KEY_START DEFINE_k ID_name NEW_LINE;
+</I>&gt;<i> 
+</I>&gt;<i> tran_name: ~(KEY_START|NP_START|NEWLINE_) .* NEW_LINE;
+</I>&gt;<i> 
+</I>&gt;<i> message:  num1? from_name num2? to_name ((~(NP_START|WHITE|NEWLINE_))
+</I>&gt;<i> =&gt;
+</I>&gt;<i> msg_name?) NEW_LINE;
+</I>&gt;<i> 
+</I>&gt;<i> num1: FLOATnumber;
+</I>&gt;<i> num2: FLOATnumber;
+</I>&gt;<i> 
+</I>&gt;<i> from_name: COLUMN_name;
+</I>&gt;<i> to_name:   COLUMN_name;
+</I>&gt;<i> 
+</I>&gt;<i> msg_name: MSG_name;
+</I>&gt;<i> 
+</I>&gt;<i> // Tokens - keywords
+</I>&gt;<i> DEFINE_k:       'DEFINE';
+</I>&gt;<i> 
+</I>&gt;<i> // Tokens - operators
+</I>&gt;<i> fragment KEY_START: '$';
+</I>&gt;<i> fragment NP_START:  '%';
+</I>&gt;<i> NEW_LINE: NEWLINE_;
+</I>&gt;<i> 
+</I>&gt;<i> // Tokens - names and numbers
+</I>&gt;<i> fragment NUMBER:    '0'..'9';
+</I>&gt;<i> fragment UPPERCASE: 'A'..'Z';
+</I>&gt;<i> fragment VARBASE:   UPPERCASE (UPPERCASE|NUMBER|'_')*;
+</I>&gt;<i> fragment VARNAME:   '$' VARBASE;
+</I>&gt;<i> fragment WHITE:     ' '|'\t';
+</I>&gt;<i> fragment NEWLINE_:  '\n'|'\r';
+</I>&gt;<i> 
+</I>&gt;<i> FLOATnumber: NUMBER+ ('.' NUMBER+)?;
+</I>&gt;<i> 
+</I>&gt;<i> ID_name:  VARBASE;
+</I>&gt;<i> VAR_name: VARNAME;
+</I>&gt;<i> 
+</I>&gt;<i> COLUMN_name: ( (ALPHA|NUMBER) (ALPHA|NUMBER|'_'|'&amp;'|'-')*
+</I>&gt;<i>              | VARNAME
+</I>&gt;<i>              );
+</I>&gt;<i> //  name:   &lt;([A-Za-z0-9][A-Za-z0-9_&amp;-]*)?(\$[A-Z][A-Z0-9_]*)*&gt;
+</I>&gt;<i> 
+</I>&gt;<i> WS:	(WHITE|NEWLINE_)+ {skip();};
+</I>&gt;<i> NON_PRINTING_COMMENT: NP_START .* NEWLINE_ {skip();};
+</I>&gt;<i> 
+</I>&gt;<i> MSG_name:  .*;
+</I>&gt;<i> &lt;&gt;&lt;&gt;&lt;&gt;&lt;&gt; end &lt;&gt;&lt;&gt;&lt;&gt;&lt;&gt;
+</I>&gt;<i> 
+</I>&gt;<i> When I run this through antlr I get the following error:
+</I>&gt;<i> Grammar: src/flowgen.g
+</I>&gt;<i> error(201): src/flowgen.g:57:12: The following alternatives can never
+</I>&gt;<i> be
+</I>&gt;<i> matched: 1
+</I>&gt;<i>  |---&gt; MSG_name:  .*;
+</I>&gt;<i> 
+</I>&gt;<i> 1 error
+</I>&gt;<i> 
+</I>&gt;<i> BUILD FAIL
+</I>&gt;<i> (this is compliments of antlrv3ide plugin for eclipse; similar results
+</I>&gt;<i> occur with ANTLRworks)
+</I>&gt;<i> 
+</I>&gt;<i> ************ BEGIN BACKGROUND ************
+</I>&gt;<i> This language, flowgen, is used to specify Message Sequence Charts. We
+</I>&gt;<i> could be using ITU Z.120 for this, but since our local DSL predates
+</I>&gt;<i> Z.120 we have some interest in maintaining this language. The flowgen
+</I>&gt;<i> language is a simplified version of Z.120 in that the input language
+</I>is
+&gt;<i> simple and direct, and using the flowgen tools one can create the
+</I>&gt;<i> corresponding picture (and even the corresponding Z.120 input). [After
+</I>&gt;<i> re-reading that, I'm not sure the background helps OTHER than to note
+</I>&gt;<i> that it's an old DSL and there is a solid user base not interested in
+</I>&gt;<i> moving to another DSL that is overly-complicated for the particular
+</I>job
+&gt;<i> at hand.]
+</I>&gt;<i> 
+</I>&gt;<i> The format of a flowgen input file is simple: The first non-commented
+</I>&gt;<i> line is the &quot;title&quot; of the flow, and all subsequent lines represent
+</I>&gt;<i> messages in the flow. Newline's separate the constructs.
+</I>&gt;<i> 
+</I>&gt;<i> Here is an example flowgen input file:
+</I>&gt;<i> 
+</I>&gt;<i> 	 1. % Here is a comment
+</I>&gt;<i> 	 2. Simple flowgen flow
+</I>&gt;<i> 	 3. % Show a message going from A to B to C and back.
+</I>&gt;<i> 	 4. A	B	Message 1
+</I>&gt;<i> 	 5. # This is the first message in the sequence
+</I>&gt;<i> 	 6. B	C	Message 2
+</I>&gt;<i> 	 7. # This is the next message
+</I>&gt;<i> 	 8. C	B
+</I>&gt;<i> 	 9. % Note how the above message has no message name
+</I>&gt;<i> 	10. B	A	End
+</I>&gt;<i> 
+</I>&gt;<i> And this is the output of &quot;classic&quot; flowgen.
+</I>&gt;<i> 
+</I>&gt;<i> Simple flowgen flow    Page: 1
+</I>&gt;<i> 
+</I>&gt;<i>            A              B              C
+</I>&gt;<i>            |              |              |
+</I>&gt;<i>            | [1] Message 1|              |
+</I>&gt;<i>            |o------------&gt;|              |
+</I>&gt;<i>            |              |              |
+</I>&gt;<i>            | This is the first message in the sequence
+</I>&gt;<i>            |              |              |
+</I>&gt;<i>            |              | [2] Message 2|
+</I>&gt;<i>            |              |o------------&gt;|
+</I>&gt;<i>            |              |              |
+</I>&gt;<i>            |              | This is the next message
+</I>&gt;<i>            |              |              |
+</I>&gt;<i>            |              | [3]          |
+</I>&gt;<i>            |              |&lt;------------o|
+</I>&gt;<i>            |              |              |
+</I>&gt;<i>            | [4] End      |              |
+</I>&gt;<i>            |&lt;------------o|              |
+</I>&gt;<i>            |              |              |
+</I>&gt;<i> 
+</I>&gt;<i> Some notes:
+</I>&gt;<i> Lines 1 and 9 are &quot;comment&quot; lines and are ignored.
+</I>&gt;<i> 
+</I>&gt;<i> In this language, there are several constructs that map well to
+</I>&gt;<i> grammar-based solutions.
+</I>&gt;<i> * A title is the text associated with the first non-commented line
+</I>&gt;<i> * A message is the pair (arrow,comment) where an arrow represents the
+</I>&gt;<i> message moving from one place to another and a comment is optional
+</I>text
+&gt;<i> used to describe something about the message.
+</I>&gt;<i> * An arrow is the triple (from,to,message_text) where from and to are
+</I>&gt;<i> required and represent column names (equivalent to IDs in other
+</I>&gt;<i> pedagogic grammars), while message_text is optional and represents the
+</I>&gt;<i> &quot;name&quot; of the message.
+</I>&gt;<i> * A note is associated with an arrow and is a multi-line construct.
+</I>&gt;<i> Each
+</I>&gt;<i> of these lines begins with any number of '#' characters, but it is
+</I>only
+&gt;<i> the text after the '#'s that comprise the note.
+</I>&gt;<i> * A comment starts with the % character and continues to the end of
+</I>the
+&gt;<i> line [akin to the C++/Java '//' operator]
+</I>&gt;<i> * Blank lines are ignored, independent of context.
+</I>&gt;<i> 
+</I>&gt;<i> ************ END BACKGROUND ************
+</I>&gt;<i> 
+</I>&gt;<i> Given this understanding, I created the grammar above. I'm not sure a)
+</I>&gt;<i> what to do about the error, but more importantly, b) I'm much more
+</I>&gt;<i> concerned about HOW to convince an ANTLR grammar to do what I want it
+</I>&gt;<i> to
+</I>&gt;<i> do. In comparison with the prior toolset, the LL vs. LR question
+</I>&gt;<i> doesn't
+</I>&gt;<i> bother me. However, the way MetaTool handled restrictions on the
+</I>&gt;<i> lexical
+</I>&gt;<i> space was to take advantage of lex's &quot;start states&quot;. The flowgen
+</I>&gt;<i> grammar
+</I>&gt;<i> has become so complicated [I've only given a snapshot; it is much more
+</I>&gt;<i> substantial] that we've broken lex and are about to break flex.
+</I>Similar
+&gt;<i> problem with yacc/bison, hence the desire to migrate to something more
+</I>&gt;<i> robust.
+</I>&gt;<i> 
+</I>&gt;<i> Thanks for hearing me out and I look forward to your
+</I>&gt;<i> recommendations/suggestions.
+</I>&gt;<i> 
+</I>&gt;<i> Ron Crocker
+</I>&gt;<i> Fellow of the Technical Staff
+</I>&gt;<i> Motorola
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-">http://www.antlr.org/mailman/options/antlr-interest/your-</A>
+</I>&gt;<i> email-address
+</I>
+
+
+
+List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+Unsubscribe:
+<A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="037888.html">[antlr-interest] I wrote a Java Lexer for Cobol and need your	suggestions
+</A></li>
+	<LI>Next message: <A HREF="037897.html">[antlr-interest] Unexpected behavior - Error?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37891">[ date ]</a>
+              <a href="thread.html#37891">[ thread ]</a>
+              <a href="subject.html#37891">[ subject ]</a>
+              <a href="author.html#37891">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

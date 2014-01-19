@@ -1,0 +1,259 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] ANTLR running out of memory during generation
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20ANTLR%20running%20out%20of%20memory%20during%20generation&In-Reply-To=%3C288ae5d25cf2fd4397a44648b57eff32%40temporal-wave.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="037574.html">
+   <LINK REL="Next"  HREF="037576.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] ANTLR running out of memory during generation</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20ANTLR%20running%20out%20of%20memory%20during%20generation&In-Reply-To=%3C288ae5d25cf2fd4397a44648b57eff32%40temporal-wave.com%3E"
+       TITLE="[antlr-interest] ANTLR running out of memory during generation">jimi at temporal-wave.com
+       </A><BR>
+    <I>Wed Feb 10 11:27:44 PST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="037574.html">[antlr-interest] ANTLR running out of memory during generation
+</A></li>
+        <LI>Next message: <A HREF="037576.html">[antlr-interest] Antlr Bug: Failed semantic predicate in lexer	triggers endless loop
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37577">[ date ]</a>
+              <a href="thread.html#37577">[ thread ]</a>
+              <a href="subject.html#37577">[ subject ]</a>
+              <a href="author.html#37577">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Yes, the things you mention are necessary to parse SQL. However I don't have much in the way of predicates and definitely nothing complicated. Using the rule:
+ 
+keywId: ID | k=keywords {$k.setType(ID);};
+keywords : KEYW | KEYW |....etc ;
+ 
+and no backtracking, as well as writing the grammars incrementally, then you find you occasionally need:
+ 
+ ((keywId)=&gt;keywId)?
+ 
+Or similar for some optional clauses:
+ 
+((KEYW)=&gt;optKEYW)? keywId
+ 
+But that should be about it really. SQL grammars are just bloody big is all and you cannot write them from the 'specs', which use pseudo BNF written around LALR parsers ;-)
+ 
+You already discovered the trick of making sure that all your reserved words are listed together (they will be in sequence then) followed by listing all the non-reserved keywords in the same way (so they will be in sequence).
+ 
+Jim
+ 
+PS: There isn't any danger of you giving away these parser grammars is there? If there is, then there was not much point me writing commercial versions ;-(
+ 
+From: Ron Hunter-Duvar [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">ron.hunter-duvar at oracle.com</A>] 
+Sent: Wednesday, February 10, 2010 11:12 AM
+To: Jim Idle
+Cc: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: Re: [antlr-interest] ANTLR running out of memory during generation
+ 
+Just as a follow-up, you're right about backtracking, Jim. By allowing me to be lazy and not fix ambiguites, I eventually created such an exponentially growing set of possibilities to be considered that it just becomes impossible for Antlr to analyze it (I thought that backtracking would turn off much of the lookahead analysis and leave it to run-time, but apparently not). My temporary work-around didn't get me very far, and neither did those switch settings. I had to turn off backtracking and handle the ambiguities properly. 
+
+I had a few left factoring issues and some incorrectly written rules, but also some real ambiguities in the language that require syntactic (and occasionally semantic) predicates to resolve. I also split the keywords into reserved ones (80) and non-reserved (136 and counting) sets, which helped.
+
+But the ambiguities from non-reserved keywords having nothing to do with left factoring. Basically everywhere that a token can be interpreted as either a keyword or an id, Antlr correctly warns about an ambiguity, because the keyword can be a keyword or it can be an id. And there are hundreds of such places in a complex grammar with non-reserved keywords. It turns out that neither of the approaches outlines in the wiki work as they are, but I came up with a hybrid approach that works and scales without introducing ambiguities everywhere. I'll write it up in a separate email when I get time.
+
+Ron
+
+
+Ron Hunter-Duvar wrote: 
+Jim,
+ 
+Thanks for the response. Yeah, the target language is kind of obvious 
+isn't it? What else could have that many keywords?
+ 
+I might try turning off backtracking later on and see what all I have to 
+fix. Right now it's turning out to be a lot easier, and hasn't created 
+any performance problems. Also, I'm not concerned with rejecting invalid 
+code, only with successfully parsing all valid code, which simplifies 
+things.
+ 
+But the problem I'm having doesn't relate to any specific keyword. I 
+even try inserting garbage keywords, with the same result. To me, the 
+fact that it runs perfectly fine (and fast) with 631, and apparently 
+hits some endless loop/recursion at 632 that makes it run 10x longer and 
+run out of memory indicates a bug or implementation limitation. The fact 
+that 3.1 and 3.2 behave exactly the same way indicates it's code that 
+hasn't changed in the latest release. Unfortunately, I don't know enough 
+of ANTLR's internals to be able to track it down, and don't have the 
+time now to learn what I need to.
+ 
+I have run it with 2G heap space. I bumped it up from 512M to 1G then 
+2G, and all it accomplished was to make it run a few seconds longer 
+before running out of memory. A clear symptom of endless loop/recursion. 
+There shouldn't be anything I can do in my grammar that would cause 
+ANTLR to act this way.
+ 
+I'll try those switches and see if they help. For the moment I've been 
+able to side step the problem by cutting it down to the set of keywords 
+for currently implemented parts of the language, bringing it down to 
+about 150 (I had started with the full keyword list that's available, 
+and then kept adding all the omissions from that list, of which there 
+are many). But ultimately I'll have to find a way to deal with it. I'm 
+hoping maybe Terry will have a bug fix for me before that 8^).
+ 
+Ron
+ 
+ 
+Jim Idle wrote:
+  
+Ron,
+ 
+First you really need to switch off backtracking unless the objective of your parser is to analyze SQL (you gave it away when you mentioned 632 keywords that can be identifiers). There are not as many predicates required as you think so long as you left factor everything.
+ 
+Your tokens should be consecutive so long as you list them that way in the lexer. 
+ 
+The problem might well be that although SQL sort of allows all keywords to be identifiers, it does not allow all because some of them would be to ambiguous even for a syntax directed hand crafted parser. If you turn on backtracking then try to allow one of these reserved words to be an identifier, then you will probably mask the issue because all warnings and errors are turned off. 
+ 
+It is entirely feasible to create a full SQL parser without backtracking, very little look ahead and few predicates (all of the one or two token lookahead type). I have an online demo of T-SQL for instance on my web site at www.temporal-wave.com  (select 'online demos' link), and Oracle SQL/PLSQL will be up there before long too.
+ 
+So, I think you will need to do the following to have a chance of generating the code:
+ 
+1) Use -Xconversiontimeout 10000
+2) Cause switches to be generated rather than ifs: -Xmaxswitchcaselabels 32000 -Xminswitchalts 1-xmaxinlineddfastates 65534
+3) Use -Xmx2G when invoking the java command (assuming your jvm allows that)
+ 
+But if you cannot get it going that way, then basically you are masking a bigger problem in your grammar that you are not seeing because of global backtracking. 
+ 
+Jim
+ 
+  
+    
+-----Original Message-----
+From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:antlr-interest-
+<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">bounces at antlr.org</A>] On Behalf Of Ron Hunter-Duvar
+Sent: Friday, January 29, 2010 8:52 PM
+To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: [antlr-interest] ANTLR running out of memory during generation
+ 
+I'm having a strange problem with ANTLR. I'm building a grammar for a
+language with a huge number (hundreds) of non-reserved keywords. I'm
+using the approach of having the lexer return a different token type
+for
+each keyword, and then having a parser rule of the form:
+ 
+    id : ( ID | QUOTED_ID | KW_A | KW_B | ... | KW_ZZZ );
+ 
+This was working great until today. In fact, ANTLR 3.2 generates
+surprisingly clever code for this - all the keywords are assigned
+consecutive token numbers, and generated code just says:
+ 
+    if ( (input.LA(1)&gt;=KW_A &amp;&amp; input.LA(1)&lt;=KW_ZZZ)||(input.LA(1)&gt;=ID
+&amp;&amp;
+input.LA(1)&lt;=QUOTED_ID) ) {
+        input.consume();
+        ...
+ 
+This works all the way up to 631 keywords. ANTLR runs in about 20
+seconds, and never uses more than 269MB of memory. When I add a 632nd
+keyword (doesn't matter what the keyword is), and change nothing else,
+ANTLR runs for 2 minutes and runs out of heap space. I kept bumping the
+max space up, but even going to 2GB doesn't make any difference.
+ 
+What's really interesting is that I was using ANTLR 3.1 until now. When
+I ran into this I upgraded to 3.2, but both of them fail at exactly the
+same spot, 632 keywords. Not surprisingly, the stack trace varies from
+one run to the next, depending on the exact point it runs out of
+memory,
+but it always has deeply nested calls to these and other methods:
+ 
+ 
+org.antlr.stringtemplate.language.ASTExpr.writeTemplate(ASTExpr.java:75
+0)
+    org.antlr.stringtemplate.language.ASTExpr.write(ASTExpr.java:680)
+ 
+org.antlr.stringtemplate.language.ASTExpr.writeAttribute(ASTExpr.java:6
+60)
+ 
+org.antlr.stringtemplate.language.ActionEvaluator.action(ActionEvaluato
+r.java:86)
+    org.antlr.stringtemplate.language.ASTExpr.write(ASTExpr.java:149)
+ 
+org.antlr.stringtemplate.StringTemplate.write(StringTemplate.java:705)
+ 
+I don't know if it makes a difference, but I'm using backtracking
+(otherwise, this approach to non-reserved keywords doesn't work without
+a lot of synpreds), and outputting ASTs.
+ 
+Since this is size related, it's hard to narrow it down to a simple
+example. I could try to duplicate it with just the id rule and nothing
+else.
+ 
+Any ideas what might be happening here, and whether a fix might be
+possible?
+ 
+Thanks,
+Ron
+ 
+--
+Ron Hunter-Duvar | Software Developer V | 403-272-6580
+Oracle Service Engineering
+Gulf Canada Square 401 - 9th Avenue S.W., Calgary, AB, Canada T2P 3C5
+ 
+All opinions expressed here are mine, and do not necessarily represent
+those of my employer.
+ 
+ 
+List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-">http://www.antlr.org/mailman/options/antlr-interest/your-</A>
+email-address
+    
+      
+ 
+ 
+ 
+List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+ 
+  
+    
+ 
+  
+
+
+
+-- 
+Ron Hunter-Duvar | Software Developer V | 403-272-6580
+Oracle Service Engineering
+Gulf Canada Square 401 - 9th Avenue S.W., Calgary, AB, Canada T2P 3C5
+ 
+All opinions expressed here are mine, and do not necessarily represent
+those of my employer.
+
+
+</PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="037574.html">[antlr-interest] ANTLR running out of memory during generation
+</A></li>
+	<LI>Next message: <A HREF="037576.html">[antlr-interest] Antlr Bug: Failed semantic predicate in lexer	triggers endless loop
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37577">[ date ]</a>
+              <a href="thread.html#37577">[ thread ]</a>
+              <a href="subject.html#37577">[ subject ]</a>
+              <a href="author.html#37577">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,292 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [stringtemplate-interest] Performance improvement in	AutoIndentWriter
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20Performance%20improvement%20in%0A%09AutoIndentWriter&In-Reply-To=%3C86403CA0939415448BCCB83855EFE09AA67B7E%40Bloodymary.ironwillgames.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001817.html">
+   <LINK REL="Next"  HREF="001826.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[stringtemplate-interest] Performance improvement in	AutoIndentWriter</H1>
+    <B>Sam Harwell</B> 
+    <A HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20Performance%20improvement%20in%0A%09AutoIndentWriter&In-Reply-To=%3C86403CA0939415448BCCB83855EFE09AA67B7E%40Bloodymary.ironwillgames.com%3E"
+       TITLE="[stringtemplate-interest] Performance improvement in	AutoIndentWriter">sharwell at pixelminegames.com
+       </A><BR>
+    <I>Tue Mar 17 11:24:18 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001817.html">[stringtemplate-interest] StringTemplate Compiler for .NET
+</A></li>
+        <LI>Next message: <A HREF="001826.html">[stringtemplate-interest] Performance improvement in	AutoIndentWriter
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1813">[ date ]</a>
+              <a href="thread.html#1813">[ thread ]</a>
+              <a href="subject.html#1813">[ subject ]</a>
+              <a href="author.html#1813">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>In repeated profiling, I found that AutoIndentWriter.Write(string)
+consumed just over 10% of the processing time. It was the most expensive
+terminal function inside StringTemplate. I was able to cut that better
+than in half by using faster string operations, and only when necessary.
+Here is my code before and after the change.
+
+ 
+
+Before:
+
+ 
+
+public virtual int Write( string str )
+
+{
+
+    int n = 0;
+
+    int strLength = str.Length;
+
+    int newlineLength = _newline.Length;
+
+    for ( int i = 0; i &lt; strLength; i++ )
+
+    {
+
+        char c = str[i];
+
+        // found \n or \r\n newline?
+
+        if ( c == '\r' || c == '\n' )
+
+        {
+
+            _atStartOfLine = true;
+
+            n += newlineLength; // wrote n more char
+
+            _writer.Write( _newline );
+
+            _charPosition = 0; 
+
+            // skip an extra char upon \r\n
+
+            if ( ( c == '\r' &amp;&amp; ( i + 1 ) &lt; strLength &amp;&amp; str[i+1] ==
+'\n' ) )
+
+            {
+
+                i++; // loop iteration i++ takes care of skipping 2nd
+char
+
+            }
+
+            continue;
+
+        }
+
+        // normal character
+
+        // check to see if we are at the start of a line; need indent if
+so
+
+        if ( _atStartOfLine )
+
+        {
+
+            n += Indent();
+
+            _atStartOfLine = false;
+
+        }
+
+        n++;
+
+        _writer.Write( c );
+
+        _charPosition++;
+
+    }
+
+    return n;
+
+}
+
+ 
+
+ 
+
+After:
+
+ 
+
+public virtual int Write( string str )
+
+{
+
+    if ( string.IsNullOrEmpty( str ) )
+
+    {
+
+        return 0;
+
+    }
+
+    else if ( str.Contains( '\n' ) || str.Contains( '\r' ) )
+
+    {
+
+        str = str.Replace( &quot;\r\n&quot;, &quot;\n&quot; );
+
+        str = str.Replace( '\r', '\n' );
+
+        if ( _indents.Count &gt; 1 )
+
+        {
+
+            string[] lines = str.Split( '\n' );
+
+            string indent = null;
+
+            for ( int i = 0; i &lt; lines.Length; i++ )
+
+            {
+
+                if ( ( i &gt; 0 || _charPosition == 0 ) &amp;&amp; lines[i].Length
+&gt;<i> 0 )
+</I>
+                {
+
+                    if ( indent == null )
+
+                    {
+
+                        indent = string.Join( string.Empty,
+_indents.ToArray() );
+
+                        if ( indent.Length == 0 )
+
+                            break;
+
+                    }
+
+ 
+
+                    lines[i] = indent + lines[i];
+
+                }
+
+            }
+
+ 
+
+            if ( lines.Length == 1 )
+
+            {
+
+                str = lines[0];
+
+                _charPosition += str.Length;
+
+            }
+
+            else
+
+            {
+
+                str = string.Join( _newline, lines );
+
+                _charPosition = lines[lines.Length - 1].Length;
+
+            }
+
+        }
+
+        else
+
+        {
+
+            if ( _newline != &quot;\n&quot; )
+
+                str = str.Replace( &quot;\n&quot;, _newline );
+
+            _charPosition = str.Length - str.LastIndexOf(
+_newline[_newline.Length - 1] ) - 1;
+
+        }
+
+    }
+
+    else
+
+    {
+
+        if ( _charPosition == 0 &amp;&amp; _indents.Count &gt; 1 )
+
+        {
+
+            string indent = string.Join( string.Empty,
+_indents.ToArray() );
+
+            str = indent + str;
+
+        }
+
+ 
+
+        _charPosition += str.Length;
+
+    }
+
+ 
+
+    Writer.Write( str );
+
+ 
+
+    _atStartOfLine = ( _charPosition == 0 );
+
+    return str.Length;
+
+}
+
+ 
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/stringtemplate-interest/attachments/20090317/661158de/attachment-0001.html">http://www.antlr.org/pipermail/stringtemplate-interest/attachments/20090317/661158de/attachment-0001.html</A> 
+</PRE>
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001817.html">[stringtemplate-interest] StringTemplate Compiler for .NET
+</A></li>
+	<LI>Next message: <A HREF="001826.html">[stringtemplate-interest] Performance improvement in	AutoIndentWriter
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1813">[ date ]</a>
+              <a href="thread.html#1813">[ thread ]</a>
+              <a href="subject.html#1813">[ subject ]</a>
+              <a href="author.html#1813">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">More information about the stringtemplate-interest
+mailing list</a><br>
+</body></html>

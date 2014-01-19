@@ -1,0 +1,719 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] &quot;Contextual lexing&quot;: Ideas on &quot;nested parsers&quot; and	&quot;lexing parsers.&quot;
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%22Contextual%20lexing%22%3A%20Ideas%20on%20%22nested%20parsers%22%20and%0A%09%22lexing%20parsers.%22&In-Reply-To=%3C20071126143904.232250%40gmx.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="024917.html">
+   <LINK REL="Next"  HREF="024931.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] &quot;Contextual lexing&quot;: Ideas on &quot;nested parsers&quot; and	&quot;lexing parsers.&quot;</H1>
+    <B>Harald Mueller</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%22Contextual%20lexing%22%3A%20Ideas%20on%20%22nested%20parsers%22%20and%0A%09%22lexing%20parsers.%22&In-Reply-To=%3C20071126143904.232250%40gmx.net%3E"
+       TITLE="[antlr-interest] &quot;Contextual lexing&quot;: Ideas on &quot;nested parsers&quot; and	&quot;lexing parsers.&quot;">harald_m_mueller at gmx.de
+       </A><BR>
+    <I>Mon Nov 26 06:39:04 PST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="024917.html">[antlr-interest] Able to emulate java.text.ChoiceFormat ?
+</A></li>
+        <LI>Next message: <A HREF="024931.html">[antlr-interest] &quot;Contextual lexing&quot;: Ideas on &quot;nested parsers&quot;	and &quot;lexing parsers.&quot;
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24918">[ date ]</a>
+              <a href="thread.html#24918">[ thread ]</a>
+              <a href="subject.html#24918">[ subject ]</a>
+              <a href="author.html#24918">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi -
+
+even in the short time where I'm on this list, there have been a few postings about problems with &quot;complex symbols&quot; or &quot;context-dependent symbols&quot;. As far as I can see, three solution concepts have been proposed - I want to add two more which I consider quite powerful and clean at the same time. I do not know whether anyone has already written about these new concepts - if someone has, I certainly give credit to her or him (and would like to know where it is documented); otherwise, this posting maybe helps someone - and, at the same time, may draw critique because my ideas are maybe not that good, after all ...
+
+The three solutions proposed up to now are:
+
+* using semantic conditions to look ahead more than the ANTLR-generated lexer does;
+* using semantic conditions on a &quot;context variable&quot; (see posting with subject &quot;ANTLR Lexer Contexts&quot;)
+* using manual rule tweaking (e.g., left-factoring) to get the right rules;
+
+The two concepts I'd like to call attention to are:
+
+* nested parser: If there is a &quot;significant&quot; sub-language, define a separate lexer and parser to handle this.
+
+* &quot;lexing parser:&quot; Use the fact that a parser always reacts according to a local context to get context-dependent (sort of) tokens.
+
+Nested parsers
+==============
+
+In ANTLR 2, there was the concept of mutiple lexers on the same input stream. One could then have parsers that would draw symbols from these different lexers, and hence the input could be tokenized with totally different lexer grammars at different places. An example of this is given in the ANTLR 2 documentation, e.g. at <A HREF="http://www.antlr2.org/doc/streams.html.">http://www.antlr2.org/doc/streams.html.</A>
+
+In ANTLR 3, we do not have multi-lexer streams (as far as I know; the main reason is that lexing happens - at least conceptually - in one big swoosh before parsing starts). However, in many cases, it is still possible to use a solution akin to the ANTLR 2 version as follows: Very often, when a document is in some &quot;outer language,&quot; which contains segments written in some other language (&quot;inner language&quot;), the segments can be read as complete tokens in the outer language.
+
+Examples:
+-- formatting languages inside strings (e.g. printf formats, C# formatting)
+-- other languages inside strings (e.g. SQL in Java/C#/... programs, regular expressions in Regex constructors)
+-- languages inside special comments (e.g. Javadoc, XML documentation in source code; /*...*/-delimited option hints in ANSI SQL)
+
+(Not an example at first glance: Plain &quot;line languages&quot; mixed into free-format languages - e.g. #directive languages in C, C++, C#; such directives can occur at arbitrary points in the outer language and hence are not wrapped in an outer language symbol :-( See below for possible solutions for such beasts).
+
+At the place where you stumble over the token in your outer language, you fire up an inner lexer+parser and handle the token as a complete &quot;program&quot; of the inner language - and that's it!
+There is one issue with this approach: Usually, the token containing the inner language segment may also be used at other places without the semantics of that inner language - e.g., strings might at one place contain a regular expression which you want to parse with the inner language, whereas they might be &quot;normal strings&quot; at many other places. There are two ways how to handle this:
+* Either you run the inner lexer+parser always and decide that unsuccessful runs are discarded;
+* Or you pass in some information from the outer language parser that you are at a place where the inner language should be parsed:
+
+cstmt
+    : 'printf'
+      '('
+      s=STRING {
+           // we are now in a printf statment -&gt; parse inner language
+           CPrintfLexer innerLexer = ...($s.getText());
+           CPrintfParser innerParser = ...;
+           ... result = innerParser.format();
+           ...
+      }
+      ')'
+    | ...
+    ;
+
+Both approaches have obvious disadvantages - the first one will probably find too many instances of the inner language, the latter one too few. Still, this approach allows for a very clean separation of languages without any tricks whatsoever (only at the final semantic level - e.g. an AST - will it be necessary to merge the parsing results; but this is probably intended anyway, otherwise you would not parse both languages in detail).
+
+It is straightforward to extend this to more than two nested languages - however, I yet have to see an example of a language nested in a language in a language ...
+
+Unfortunately, this does not yet solve the problem of the directove languages. The following, for example, is a legitimate C# program snippet:
+
+   if (3 &lt;
+#pragma warning disable 0619
+           4) { i = 0; }
+
+Given the fact that #pragma and newline are defined delimiters of such a &quot;pragma comment,&quot; it doesn't seem too hard to write a nested lexer+parser in this case. However, it might be hard to find a place where to call the inner parser!
+* During lexing, it is still to early (if all lexing happens up-front). 
+* In the parser rules, on the other hand, there is no place where the &quot;pragma comment&quot; could be handled - after all, it should be in the HIDDEN channel so that it does not disturb e.g. the parsing of expressions like 3 &lt; 4.
+
+A solution to this problem might come as a windfall of the next section ...
+
+Lexing parsers
+==============
+
+A &quot;lexing parser&quot; (term invented by me) solves the problem that in a *single* language, a few character sequences might be tokenized differently depending on the situation. One famous example is the right-shift operator in modern languages with generics (Java, C#): In the sequence
+
+    int x = ...;
+    int s = ...;
+    int y = t&gt;&gt; s;
+
+&quot;&gt;&gt;&quot; should be the right-shift operator. However, in
+
+    List&lt;List&lt;t&gt;&gt; s;
+
+&quot;&gt;&gt;&quot; should be *two* closing angle brackets. A lexer is hard-pressed to distinguish these situations (note that in my examples, the characters following the &quot;&gt;&gt;&quot; are always &quot; s;&quot; - so there is no easy &quot;look-ahead&quot; solution here).
+A (the) parser, on the other hand, would know exactly in which situation it is - so it could easily know which symbol is expected.
+So if we use a parser for lexing(!), we might solve this issue. This yields a design which uses 3 layers (instead of the standard 2) for parsing:
+
+1. A lexer does simple tokenization into primitive tokens;
+2. a lexing parser aggregates the primitive tokens into actual tokens if necessary (in most cases, it will still pass through the primitive tokens);
+3. the parser finally does parsing as usual.
+
+For the example above, the relevant rules are roughly (I'll explain in a moment why this is not completely correct - it's only a stepping stone to the final solution):
+
+===================================
+
+// The order of the grammars is reversed to customary usage to allow linear reading - so the lexer is first, parser is last.
+
+// lexer - returns primitve tokens:
+
+WHITESPACE
+    : ...as usual... { $channel=HIDDEN; }
+    ;
+
+IDENT
+    : ...as usual...
+    ;
+
+LESS
+    : '&lt;'
+    ;
+
+LSHIFT
+    : '&lt;&lt;'
+    ;
+
+GREATER
+    : '&gt;'
+    ;
+
+// But NO RSHIFT: '&gt;&gt;' rule!! - lexer must not aggregate two &gt;'s into &gt;&gt; unconditionally!
+
+------------------------------------
+
+// lexing parser - by (my) convention, the aggregated tokens start with a lowercase letter and then continue with uppercase letters:
+
+gREATER  : GREATER;
+
+iDENT    : IDENT;
+
+lESS     : LESS;
+
+lSHIFT   : LSHIFT;
+
+rSHIFT   : GREATER GREATER { return ...RSHIFT AST node...; } ; // !!
+
+------------------------------------
+
+// parser:
+
+type
+   : iDENT
+     ( lESS
+       type
+       gREATER
+     )?
+   ;
+
+expression
+   : subexpression
+     rSHIFT
+     subexpression
+   ;
+
+===================================
+
+* Passing &quot;t&gt;&gt; s&quot; to expression will correctly yield &quot;IDENT RSHIFT IDENT&quot; (the RSHIFT must be tweaked in by the lexing parser, as indicated above).
+
+* Passing &quot;List&lt;List&lt;t&gt;&gt; s&quot; to type will correctly yield &quot;IDENT LESS IDENT LESS IDENT GREATER GREATER IDENT&quot;.
+
+(The term &quot;lexing parser&quot; is somewhat misleading: There is no separate parser that helps with the lexing; rather, certain simple and standardized rules in the parser do some work which coudl arguably still be called lexing. Still, the 3-level architecture is so important that I wanted to have a somewhat catchy name for that intermediate layer.)
+
+However, there is one problem with the solution above: Also the expression &quot;t &gt;    &gt; s&quot; will parse as &quot;IDENT RSHIFT IDENT&quot;, because the whitespace has been completely wiped out on the lexer level and hence cannot be used to decide anything on the (lexing) parser level (except with nasty(?) accesses to the token stream below ... maybe an alternative to be checked out!).
+
+With a &quot;lexing parser,&quot; there is no other solution than to make whitespace (and comments) first-level citizens again, i.e. make them visible to the (lexing) parser. One can argue that this is correct, after all: The language specification when talking about &gt;&gt; actually does talk about white-space - &quot;&gt;&gt; is a rshift operator if there are no spaces in between; except at the end of a generic type declaration, where it is to be read as separate &gt; tokens.&quot; or the like.
+
+Ok - let's repair the grammar to handle whitespace in the lexing parser:
+
+===================================
+
+// lexer - returns primitve tokens:
+
+WHITESPACE
+    : ...as usual...                   // $channel=HIDDEN removed!!
+    ;
+
+...rest as before...
+
+------------------------------------
+
+// lexing parser:
+
+ignoredtail : (WHITESPACE | COMMENT)* ; // new
+
+gREATER  : GREATER ignoredtail;  // all rules get a trailing ignoredtail 
+                                 // (information from which may or may 
+                                 // not be added to the resulting AST).
+
+iDENT    : IDENT ignoredtail;
+
+lESS     : LESS ignoredtail;
+
+lSHIFT   : LSHIFT ignoredtail;
+
+rSHIFT   : GREATER GREATER { return ...RSHIFT AST node...; } ignoredtail;
+         // but there is no ignoredtail or WHITESPACE between the two &gt; !!
+
+------------------------------------
+
+// parser:
+
+...exactly as before...
+
+===================================
+
+This will now correctly throw an error on &quot;t &gt;   &gt; s&quot;, yet parse the other examples.
+
+The &quot;ignoredtail,&quot; BTW, is a strategic place where to put &quot;everywhere actions.&quot; One example is the &quot;#pragma lexer+parser&quot; discussed at the end of the previous section on &quot;nested parsers:&quot; Here, it can find its place where it can evaluate #pragmas at exactly the right point of time during parsing (maybe a little bit too early, because we do it in the &quot;ignoredTAIL.&quot; Rewriting the lexing parser to use an &quot;ignoredPREFIX&quot; *before* each symbol might produce an even more logical execution sequence; with ANTLR 3's LL(*) analysis, parsing should survive the huge ambiguities arising from such a generic prefix for each and every symbol - but I confess I did not yet try this ...).
+
+-----------------------------------
+
+An example of the &quot;complete grammar for a subset&quot; of C# 2.0 is at the end of this posting. It shows a second usage of this concept: namely when words are sometimes interpreted as keywords, sometimes as identifiers. Here is a concrete example: C# 2.0 has a new (in contrast to 1.0) command
+
+        yield return &lt;expression&gt;;
+
+However, so that older programs don't break, Microsoft follows the philosophy that new keywords are &quot;keywordy&quot; only in certain contexts. Therefore, &quot;yield&quot; can be used as an identifier everywhere except before return (and break). The following is therefore legitimate:
+
+        int yield = 4;
+        yield return yield;
+
+With a 3-level grammar, there is first a primitive lexer which will always recognize yield as a keyword. Based on that, the lexing parser can then merge &quot;yield&quot; into the &quot;iDENT&quot; actual token, which is then used by the grammar parser.
+
+-----------------------------------
+
+Similarly, the &lt; vs. &lt;HTML&gt; vs. &lt;whatever&gt; problem can be solved along this lines - a corresponding grammar is shown below the C#-subset grammar.
+
+-----------------------------------
+
+I hope these ideas help some of you to overcome those nasty &quot;contextual lexing&quot; problems in real languages; if you want to discuss this with me, drop me an email (e.g. if you want running [C#] code for the two grammars below!).
+
+Best regards
+Harald M.
+
+===================================
+===================================
+
+grammar CSharpSubset;
+
+options {
+    language     = CSharp;
+}
+
+// --------------------- parser --------------------
+
+file
+    : ignoredtail
+      ( using_
+      )*
+      ( declaration
+      )*
+      EOF
+    ;
+
+using_
+   : uSING
+     name
+     sEMICOLON
+   ;
+
+name
+   : iDENT
+     ( pERIOD
+       iDENT
+     )*
+   ;
+
+declaration
+   : cLASS
+     iDENT
+     lBRACE
+     ( classmember
+     )*
+     rBRACE
+   ;
+
+classmember
+   : method
+   ;
+
+method
+   : type
+     iDENT
+     formalparameterlist
+     block
+   ;
+
+type
+   : iDENT
+     ( lESS
+       type
+       gREATER
+     )?
+   ;
+
+formalparameterlist
+   : lPAR
+     rPAR
+   ;
+
+block
+   : lBRACE
+     ( statement
+     )*
+     rBRACE
+   ;
+
+statement
+   : vardeclaration
+   | yieldreturn
+   | foreach_
+   ;
+
+vardeclaration
+   : type
+     iDENT
+     ( eQUALS
+       expression
+     )?
+     sEMICOLON
+   ;
+
+expression
+   : expression1
+     ( ( lSHIFT
+       | rSHIFT
+       )
+       expression1
+     )?
+   ;
+
+expression1
+   : expression2
+     ( lESS
+       expression2
+     )?
+   ;
+
+expression2
+   : name
+     ( actualparlist
+     )?
+   | nUMBER
+   ;
+
+actualparlist
+   : lPAR
+     rPAR
+   ;
+
+yieldreturn
+   : yIELD
+     rETURN
+     expression
+     sEMICOLON
+   ;
+
+foreach_
+   : fOREACH
+     lPAR
+     type
+     iDENT
+     iN
+     expression
+     rPAR
+     block
+   ;
+
+// --------------------- lexing parser ---------------------
+
+cLASS    : CLASS   ignoredtail;
+
+pERIOD   : PERIOD  ignoredtail;
+
+eQUALS   : EQUALS  ignoredtail;
+
+fOREACH  : FOREACH ignoredtail;
+
+gREATER  : GREATER ignoredtail;
+
+iDENT    : (IDENT | YIELD) ignoredtail; // yield is a valid identifier ...
+
+iN       : IN      ignoredtail;
+
+lBRACE   : LBRACE  ignoredtail;
+
+lESS     : LESS    ignoredtail;
+
+lPAR     : LPAR    ignoredtail;
+
+lSHIFT   : LSHIFT  ignoredtail;         // &lt;&lt; is never &lt; &lt; - this is not needed
+                                        // for genercis; therefore, we keep
+                                        // the symbol LSHIFT='&lt;&lt;' in the lexer!
+
+nUMBER   : NUMBER  ignoredtail;
+
+rBRACE   : RBRACE  ignoredtail;
+
+rETURN   : RETURN  ignoredtail;
+
+rPAR     : RPAR    ignoredtail;
+
+rSHIFT   : GREATER GREATER ignoredtail; // &gt;&gt; is sometimes &gt; &gt;, sometimes a single
+                                        // symbol. The lexer cannot know this - so
+                                        // it always returns single &gt; symbols. Only
+                                        // the lexing parser, when called via rSHIFT,
+                                        // will return this as a single pseudo-symbol.
+
+sEMICOLON: SEMICOLON ignoredtail;
+
+uSING    : USING   ignoredtail;
+
+yIELD    : YIELD   ignoredtail;         // ... but yield is also a keyword at places(!).
+                                        // Again, the lexer does no guessing, but returns
+                                        // things with a fine granularily; the lexing
+                                        // parser then assembles these to pseudo-symbols
+                                        // - YIELD can also be grabbed by the iDENT rule.
+
+ignoredtail : ( WHITESPACE | SINGLE_LINE_COMMENT)* ;
+
+// --------------------- lexer ---------------------
+
+fragment
+NEW_LINE
+    :    (    // carriage return character followed by possible line feed character
+            { input.LA(2)=='\u000A' }? =&gt; '\u000D' '\u000A'
+        |    '\u000D'            // line feed character
+        |    '\u000A'            // line feed character
+        |    '\u2028'            // line separator character
+        |    '\u2029'            // paragraph separator character
+        )
+    ;
+
+fragment
+NEW_LINE_CHAR
+    :    ('\u000D' | '\u000A' | '\u2028' | '\u2029')
+    ;
+
+fragment
+NOT_NEW_LINE
+    :    ~( '\u000D' | '\u000A' | '\u2028' | '\u2029')
+    ;
+
+
+WHITESPACE
+    :    (    ' '
+        |    '\u0009' // horizontal tab character
+        |    '\u000B' // vertical tab character
+        |    '\u000C' // form feed character
+        |    NEW_LINE
+        )+
+    ;
+
+SINGLE_LINE_COMMENT
+    :    '//'
+        (NOT_NEW_LINE)*
+        (NEW_LINE)? // may be eof
+    ;
+
+fragment
+IDENT_CHAR
+    : IDENT_START_CHAR
+    | DIGIT
+    ;
+
+fragment
+IDENT_START_CHAR
+    : 'a'..'z'
+    | 'A'..'Z'
+    | '_'
+    // and many more, according to the C# spec ...
+    | '@'
+    ;
+
+fragment
+DIGIT
+    : '0'..'9'
+    ;
+
+
+CLASS : 'class';
+
+FOREACH : 'foreach';
+
+IN : 'in';
+
+RETURN : 'return';
+
+STATIC : 'static';
+
+USING : 'using';
+
+YIELD : 'yield';
+
+IDENT
+    : IDENT_START_CHAR (IDENT_CHAR)*
+    ;
+
+NUMBER
+    : (DIGIT)+
+    ;
+
+LBRACE
+    : '{'
+    ;
+
+RBRACE
+    : '}'
+    ;
+
+LPAR
+    : '('
+    ;
+
+RPAR
+    : ')'
+    ;
+
+SEMICOLON
+    : ';'
+    ;
+
+PERIOD
+    : '.'
+    ;
+
+LESS
+    : '&lt;'
+    ;
+
+LSHIFT
+    : '&lt;&lt;'
+    ;
+
+GREATER
+    : '&gt;'
+    ;
+
+EQUALS
+    : '='
+    ;
+
+===================================
+===================================
+
+grammar Tags;
+
+options {
+    language     = CSharp;
+}
+
+// --------------------- parser --------------------
+
+file
+    : ignoredtail
+      ( element
+      )*
+    ;
+
+element
+    : begintag
+      ( element
+      )*
+      endtag
+    ;
+
+begintag
+    : hTML                { Console.Out.WriteLine(&quot;Handling HTML&quot;); }
+    | lESS
+      w=iDENT             { Console.Out.WriteLine(&quot;Ignoring &quot; + w); }
+      gREATER
+    ;
+
+endtag
+    : eNDHTML             { Console.Out.WriteLine(&quot;Handling /HTML&quot;); }
+    | lESS
+      sLASH
+      w=iDENT             { Console.Out.WriteLine(&quot;Ignoring /&quot; + w); }
+      gREATER
+    ;
+
+// --------------------- lexing parser ---------------------
+
+hTML
+    : LESS
+      HTML
+      GREATER    ignoredtail
+    ;
+
+eNDHTML
+    : LESS
+      SLASH
+      HTML
+      GREATER    ignoredtail
+    ;
+
+lESS
+    : LESS       ignoredtail
+    ;
+
+sLASH
+    : SLASH      ignoredtail
+    ;
+
+iDENT returns [IToken r]
+    : i=IDENT { $r = $i; }
+      ignoredtail
+    ;
+
+gREATER
+    : GREATER    ignoredtail
+    ;
+
+ignoredtail : ( WHITESPACE )* ;
+
+
+// --------------------- lexer ---------------------
+
+fragment
+NEW_LINE
+    :    (    // carriage return character followed by possible line feed character
+            { input.LA(2)=='\u000A' }? =&gt; '\u000D' '\u000A'
+        |    '\u000D'            // line feed character
+        |    '\u000A'            // line feed character
+        |    '\u2028'            // line separator character
+        |    '\u2029'            // paragraph separator character
+        )
+    ;
+
+WHITESPACE
+    :    (    ' '
+        |    '\u0009' // horizontal tab character
+        |    '\u000B' // vertical tab character
+        |    '\u000C' // form feed character
+        |    NEW_LINE
+        )+
+    ;
+
+fragment
+IDENT_CHAR
+    : 'a'..'z'
+    | 'A'..'Z'
+    | '_'
+    ;
+
+HTML : 'html';
+
+IDENT
+    : ( IDENT_CHAR
+      )+
+    ;
+
+LESS
+    : '&lt;'
+    ;
+
+GREATER
+    : '&gt;'
+    ;
+
+SLASH
+    : '/'
+    ;
+
+-- 
+GMX FreeMail: 1 GB Postfach, 5 E-Mail-Adressen, 10 Free SMS.
+Alle Infos und kostenlose Anmeldung: <A HREF="http://www.gmx.net/de/go/freemail">http://www.gmx.net/de/go/freemail</A>
+</PRE>
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="024917.html">[antlr-interest] Able to emulate java.text.ChoiceFormat ?
+</A></li>
+	<LI>Next message: <A HREF="024931.html">[antlr-interest] &quot;Contextual lexing&quot;: Ideas on &quot;nested parsers&quot;	and &quot;lexing parsers.&quot;
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24918">[ date ]</a>
+              <a href="thread.html#24918">[ thread ]</a>
+              <a href="subject.html#24918">[ subject ]</a>
+              <a href="author.html#24918">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

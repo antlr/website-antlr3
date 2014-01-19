@@ -1,0 +1,204 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Example code-generation target that outputs a state machine
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Example%20code-generation%20target%20that%20outputs%20a%0A%20state%20machine&In-Reply-To=%3C4AD9584C.40703%40jacaranda.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="036401.html">
+   <LINK REL="Next"  HREF="036420.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Example code-generation target that outputs a state machine</H1>
+    <B>David-Sarah Hopwood</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Example%20code-generation%20target%20that%20outputs%20a%0A%20state%20machine&In-Reply-To=%3C4AD9584C.40703%40jacaranda.org%3E"
+       TITLE="[antlr-interest] Example code-generation target that outputs a state machine">david-sarah at jacaranda.org
+       </A><BR>
+    <I>Fri Oct 16 22:38:20 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="036401.html">[antlr-interest] Example code-generation target that outputs a	state machine
+</A></li>
+        <LI>Next message: <A HREF="036420.html">[antlr-interest] How to make a syntactic predicate exit a rule	completely
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36402">[ date ]</a>
+              <a href="thread.html#36402">[ thread ]</a>
+              <a href="subject.html#36402">[ subject ]</a>
+              <a href="author.html#36402">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Mike Samuel wrote:
+&gt;&gt;<i> Mike Samuel wrote:
+</I>&gt;&gt;&gt;<i> For background, my end goal is to bolt string interpolation onto
+</I>&gt;&gt;&gt;<i> javascript, but in a way that doesn't introduce XSS problems as
+</I>&gt;&gt;&gt;<i> described at
+</I>&gt;&gt;&gt;<i> <A HREF="http://google-caja.googlecode.com/svn/changes/mikesamuel/string-interpolation-29-Jan-2008/trunk/src/js/com/google/caja/interp/index.html">http://google-caja.googlecode.com/svn/changes/mikesamuel/string-interpolation-29-Jan-2008/trunk/src/js/com/google/caja/interp/index.html</A>
+</I>&gt;<i> 
+</I>&gt;<i> David-Sarah Hopwood wrote:
+</I>&gt;&gt;<i> Sounds like a fun project.
+</I>&gt;<i> 
+</I>&gt;&gt;<i> ANTLR normally only generates explicit DFAs when there is a nontrivial
+</I>&gt;&gt;<i> decision between alternatives of a rule. In the case of the ECMAScript 5
+</I>&gt;&gt;<i> lexical grammar I'm using, it only generates two DFAs, one for the main
+</I>&gt;&gt;<i> tokens rule, and one for DecimalLiteral.
+</I>&gt;<i> 
+</I>&gt;&gt;<i> You can get ANTLRWorks to show a state machine diagram for any particular
+</I>&gt;&gt;<i> decision, or for the tokens rule, but they're not particularly
+</I>&gt;&gt;<i> enlightening. In principle, ANTLR computes all the information needed to
+</I>&gt;&gt;<i> produce a pure FSM lexer, but I don't think it provides any way to actually
+</I>&gt;&gt;<i> generate one, at least not without a lot of work. If that's definitely
+</I>&gt;&gt;<i> what you need, ANTLR is probably not the right tool.
+</I>&gt;<i> 
+</I>&gt;<i> Thanks for the response, David-Sarah.  Fancy running into you here.  I
+</I>&gt;<i> guess you're using ANTLR for Jacaranda then?
+</I>
+Yes. Should be released fairly soon.
+
+&gt;<i> How do you get a lexical grammar to distinguish division
+</I>&gt;<i> operators/regex literal using ES5 rules, or are you using the lexical
+</I>&gt;<i> grammar from Waldemar's JS 1.9 then?
+</I>
+I'm using feedback from the parser to the lexer. I looked carefully at
+trying to use a finite state machine for this, but that approach can't
+work if you want to parse full ES5 in all corner cases. The problematic
+cases are things like &quot;while (expr) /regexp/;&quot;, because it's impossible
+to tell whether the '/' is part of a regexp literal without counting
+whether the parentheses in 'expr' are balanced. Since expressions are
+obviously not a regular language, that would require an infinite state
+machine; parser -&gt; lexer feedback turns out to be simpler.
+
+Actually, if I had known how much complexity parsing regexp literals
+correctly was going to add, I wouldn't have bothered; it's horrendous.
+But that part is done now and seems to work.
+
+Here's the comment I wrote about it:
+
+====
+ES5 says,
+
+# There are two goal symbols for the lexical grammar. The InputElementDiv
+# symbol is used in those syntactic grammar contexts where a leading
+# division (/) or division-assignment (/=) operator is permitted. The
+# InputElementRegExp symbol is used in other syntactic grammar contexts.
+
+(&quot;Permitted&quot; means syntactically valid in the *ES5* grammar.)
+
+We don't quite follow this specification literally: we lex as a
+RegularExpressionLiteral only in expression contexts, where a
+regexp literal is permitted, rather than in all contexts where a
+DivisionPunctuator is *not* permitted. This is equivalent for
+syntactically valid input, since there are no contexts in which
+both are permitted (the ES3 spec suggested otherwise, but see
+&lt;<A HREF="http://bugs.ecmascript.org/ticket/463">http://bugs.ecmascript.org/ticket/463</A>&gt;).
+
+This has the advantage that for error recovery it is more sensible to
+lex a misplaced '/' or '/=' as a misplaced DivPunctuator, rather than
+as part of a RegularExpressionLiteral, since the latter are less
+common (and would result in code up to the next '/' being ignored).
+
+Implementation:
+
+The lexer first lexes '/' as part of a DIV or DIVASSIGN token
+(see the DIV rule in Punctuators above). If the parser finds such a
+token in an expression context, then it resets the lexer and its
+input stream so that the '/' will be the next char to be consumed.
+A flag is also set in the lexer so that the next invocation of the
+DIV rule will expect a regular expression literal. Then, the token
+stream is reset to before the DIV or DIVASSIGN, discarding that
+token and any following tokens read due to lookahead. This ensures
+that when rewriting, the rewritten token stream does not contain
+spurious tokens.
+
+To support this functionality we must use a custom LazyTokenRewriteStream.
+If the usual CommonTokenStream or TokenRewriteStream were used, the
+lexer would lex all tokens on the first call to it (see the fillBuffer()
+method of CommonTokenStream). Even if that were not the case, the lexer
+necessarily runs ahead of the parser, due to token lookahead in the
+parser. If the lexer may be reset, then lexing too far ahead is
+inefficient, and more importantly causes spurious errors to be reported.
+
+To solve this problem, LazyTokenRewriteStream only lexes tokens that
+have been requested (typically by consume() or LA(k)). Each JacarandaToken
+object records the errors associated with that token, so that these errors
+can be reported only if the token remains part of the final token stream.
+This also has the advantage of reporting all errors in the order of their
+associated token position, which is a deterministic order independent of
+lookahead depth.
+====
+
+&gt;<i> I poked about a bit more, and when I generate a lexer, I get code that
+</I>&gt;<i> looks like the below which sees to create instances of
+</I>&gt;<i> org.antlr.runtime.DFA as described at
+</I>&gt;<i> <A HREF="http://www.antlr.org/api/Java/classorg_1_1antlr_1_1runtime_1_1_d_f_a.html">http://www.antlr.org/api/Java/classorg_1_1antlr_1_1runtime_1_1_d_f_a.html</A>
+</I>&gt;<i> .  I think I can probably poke at those to produce both (1) an
+</I>&gt;<i> alphabet reduction, and (2) a transition table.
+</I>
+Probably -- but as I said, only two (of about 42) of the decisions in an
+ES5 lexer (written straightforwardly following the spec) generate DFAs;
+the rest generate 'if' and 'switch' statements. Both of these DFAs are
+just about exactly what you would write by hand, so I don't think you're
+gaining much by using ANTLR to generate them.
+
+-- 
+David-Sarah Hopwood  &#9893;  <A HREF="http://davidsarah.livejournal.com">http://davidsarah.livejournal.com</A>
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="036401.html">[antlr-interest] Example code-generation target that outputs a	state machine
+</A></li>
+	<LI>Next message: <A HREF="036420.html">[antlr-interest] How to make a syntactic predicate exit a rule	completely
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36402">[ date ]</a>
+              <a href="thread.html#36402">[ thread ]</a>
+              <a href="subject.html#36402">[ subject ]</a>
+              <a href="author.html#36402">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

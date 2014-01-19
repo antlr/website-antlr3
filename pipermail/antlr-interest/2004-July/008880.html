@@ -1,0 +1,163 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] another way to preserve token order in ASTs
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20another%20way%20to%20preserve%20token%20order%20in%20ASTs&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="008879.html">
+   <LINK REL="Next"  HREF="008882.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] another way to preserve token order in ASTs</H1>
+    <B>thrutchy</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20another%20way%20to%20preserve%20token%20order%20in%20ASTs&In-Reply-To="
+       TITLE="[antlr-interest] another way to preserve token order in ASTs">eric_mahurin at yahoo.com
+       </A><BR>
+    <I>Sat Jul 31 15:50:52 PDT 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="008879.html">[antlr-interest] &quot;continue tryAgain&quot; and Multi-lexing
+</A></li>
+        <LI>Next message: <A HREF="008882.html">[antlr-interest] another way to preserve token order in ASTs
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#8880">[ date ]</a>
+              <a href="thread.html#8880">[ thread ]</a>
+              <a href="subject.html#8880">[ subject ]</a>
+              <a href="author.html#8880">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I just coded up a very simple way to preserve token order in the AST's
+- put in a dummy node where the root would have gone.  What you do is
+override the AST addChild method (used while making a root) to put the
+child at the front with a null node behind it, instead of just adding
+it in at the end (roots don't have any children initially).  You can
+do this to any of the BaseAST classes, but I did it to
+CommonASTWithHiddenTokens:
+
+import antlr.collections.AST;
+
+public class CommonAST2WithHiddenTokens extends
+CommonASTWithHiddenTokens {
+    protected AST left = null;
+    public void addChild(AST node) {
+        AST rootMarker = new CommonAST(); // Token.INVALID_TYPE
+        rootMarker.setNextSibling(this.down);
+        if (node != null) {
+            this.down = (BaseAST)node;
+            while (node.getNextSibling() != null) {
+                node = node.getNextSibling();
+            }
+            node.setNextSibling((BaseAST)rootMarker);
+        } else {
+            this.down = (BaseAST)rootMarker;
+        }
+    }
+}
+
+
+Then my AST print routines looked like this:
+
+    public static void printHiddenBefore(AST a) {
+        if (a==null) return;
+        AST leftChild = a.getFirstChild();
+        if (leftChild!=null &amp;&amp; leftChild.getType()!=Token.INVALID_TYPE) {
+            a = leftChild;
+        }
+        java.util.List before = new ArrayList();
+        for (
+            CommonHiddenStreamToken t =
+((CommonAST2WithHiddenTokens)a).getHiddenBefore() ;
+            t!=null ;
+            t = t.getHiddenBefore() )
+        {
+            before.add(t.getText());
+        }
+        for (int i=before.size()-1;i&gt;=0;--i) {
+            System.out.print(before.get(i));
+        }
+    }
+
+    public static AST printAST(AST a) {
+        while (a!=null) {
+            if (a.getType()==Token.INVALID_TYPE) {
+                a = a.getNextSibling();
+                return a;
+            }
+            AST leftChild = a.getFirstChild();
+            AST rightChild = printAST(leftChild);
+            String s = a.toString();
+            if (s!=null) System.out.print(s);
+            for (
+                CommonHiddenStreamToken t =
+((CommonAST2WithHiddenTokens)a).getHiddenAfter() ;
+                t!=null ;
+                t = t.getHiddenAfter() )
+            {
+                System.out.print(t.getText());
+            }
+            printAST(rightChild);
+            a = a.getNextSibling();
+        }
+        return null;
+    }
+
+I toyed around with a few other ideas (add a &quot;left&quot; AST pointer, add a
+dummy root node for the children to the left of the root), but those
+required changing one line the ASTFactory class (or extending it and
+overriding stuff).  For those interested, it was line 361 in the
+makeASTRoot method.  It would have been nice to have this:
+
+            currentAST.child = root.getFirstChild();
+
+instead of:
+
+            currentAST.child = currentAST.root;
+
+I don't believe this would have broken compatability, but it would
+have allowed something very different to be done in AST addChild method.
+
+Eric
+
+
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+    <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+    <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+    <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="008879.html">[antlr-interest] &quot;continue tryAgain&quot; and Multi-lexing
+</A></li>
+	<LI>Next message: <A HREF="008882.html">[antlr-interest] another way to preserve token order in ASTs
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#8880">[ date ]</a>
+              <a href="thread.html#8880">[ thread ]</a>
+              <a href="subject.html#8880">[ subject ]</a>
+              <a href="author.html#8880">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,165 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Preserving ALL comments!
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Preserving%20ALL%20comments%21&In-Reply-To=46762.127.0.0.1.1140542005.squirrel%40taggedtype.net">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="015467.html">
+   <LINK REL="Next"  HREF="015471.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Preserving ALL comments!</H1>
+    <B>Andy Tripp</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Preserving%20ALL%20comments%21&In-Reply-To=46762.127.0.0.1.1140542005.squirrel%40taggedtype.net"
+       TITLE="[antlr-interest] Preserving ALL comments!">antlr at jazillian.com
+       </A><BR>
+    <I>Fri Feb 24 07:11:02 PST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="015467.html">Making part of representation WAS RE: [antlr-interest] Preserving ALL
+	comments!
+</A></li>
+        <LI>Next message: <A HREF="015471.html">[antlr-interest] Preserving ALL comments!
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#15506">[ date ]</a>
+              <a href="thread.html#15506">[ thread ]</a>
+              <a href="subject.html#15506">[ subject ]</a>
+              <a href="author.html#15506">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Well, it turns out I guess I haven't written much concrete about how to 
+preserve whitespace.
+
+I'd like to write a paper with more details in the next few weeks. I'm 
+actually working on this
+stuff now, too. For a good chuckle, take a look at this:
+/* a multiline
+* comment
+*/
+
+Imagine that's in C, indented as shown, as your input. And now, it needs 
+to be indented
+in your Java output because it's inside a class:
+class whatever {
+   /* a multiline
+    * comment
+    */
+}
+
+...so you actually have to add indenting to the comment token's text 
+itself. So you have to
+say &quot;after every newline in a multiline comment, add indentation based 
+on the current indentation
+level&quot;.
+
+Below is what I did write (Dick Cheney gave me permission to declassify 
+it :) , but as you
+can see, it give no real specifics, other than describe the general 
+placement technique
+Andy
+
+-----------------------------------------
+The CommentSaver &lt;cid:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">part1.09050001.09010202 at jazillian.com</A>&gt; class is 
+responsible for saving comment information. The 
+|<i>CommentSaver.removeWhitespace()| method, in addition to actually 
+</I>removing whitespace, splits each file up into separate lines. The 
+Source.addFile() method is called to read in each C file, and as it's 
+removing whitespace, it also builds up a list of line descriptions if 
+comments are being saved. So the code in |Source.addFile()| looks like 
+this:
+
+        List&lt;List&lt;Token&gt;&gt; linesInFile = 
+CommentSaver.getInstance().removeWhitespace(this, javaFileName);
+        //System.out.println(&quot;addFile: fileName=&quot; + fileName + &quot; size=&quot; 
++ linesInFile.size());
+        // saveComments == false indicates that the file doesn't have 
+any comments, because
+        // we generated it ourselves.
+        // keepComments == false indicates that the user asked not to 
+keep the comments.
+        // Combine the two:
+        if (Parameters.keepComments &amp;&amp; saveComments) {
+            List&lt;LineDescription&gt; list = lineDescriptions.create(this, 
+linesInFile);
+            lineDescriptions.add(this, javaFileName, list);
+        }
+
+Thus, we keep a single LineDescriptions 
+&lt;cid:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">part2.02040508.02070506 at jazillian.com</A>&gt; object around, which 
+contains a set of &quot;loose descriptions&quot; for each of the lines of the 
+input C files. The |LineDescriptions.create()| method processes an 
+entire C file and returns a List of LineDescription objects. The 
+constructor for the LineDescription 
+&lt;cid:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">part3.03080806.01000808 at jazillian.com</A>&gt; class takes a list of tokens 
+on the line, and creates a &quot;loose description&quot; of the line from that.
+
+Most lines are simply described by their first token. For example, if 
+the line starts with &quot;if&quot;, we set |LineDescription.LineType| to 
+|<i>LineType.IF|. Sometimes, we have to examine the whole line a little 
+</I>closer in order to categorize it. For example, suppose we have the line 
+&quot;int a = 3;&quot;. The |LineDescription.lookForDeclaration()| method is smart 
+enough to look through that line and see that it looks like a 
+declaration, and then a call to |source.isVariableDeclaration()| tells 
+us that it's a variable declaration (as opposed to a function declaration).
+
+So the main information that a LineDescription contains is the LineType 
+&lt;cid:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">part4.05010509.07040507 at jazillian.com</A>&gt;. One of the types of lines 
+is |MultiLineComment|, and another is |SingleLineComment|.
+
+
+     Restoring Comments
+
+Even though the storing of comments was not done by a rule, the 
+restoring of comments is done by rule CommentRestoreRule. Comments are 
+restored on a file-by-file basis, so CommentRestoreRule 
+&lt;cid:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">part5.06000101.02020009 at jazillian.com</A>&gt; extends OncePerFileRule 
+&lt;cid:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">part6.05070104.03030302 at jazillian.com</A>&gt; and has an applyToFile() 
+method that's called for each file. It creates a single LineDescriptions 
+&lt;cid:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">part2.02040508.02070506 at jazillian.com</A>&gt; object called &quot;current&quot;, and 
+adds LineDescription &lt;cid:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">part3.03080806.01000808 at jazillian.com</A>&gt; objects 
+to it. So we now have loose line descriptions of both the original C 
+code and the translated Java code. The |CommentRestoreRule.cleanup()| 
+method, which is called just once, calls |align()| to match up the two 
+sets of lines, and |addComments()| to add the comments into the Java 
+code. The &quot;alignment&quot; algorithm basically loops through both sets of 
+line descriptions together, keeping track of which file and function we 
+are in. So a comment that comes before the third variable declaration in 
+function f() in file myfile.c will get placed before the third variable 
+declaration in function f() in file Myfile.java.
+
+&gt;<i>
+</I>&gt;<i>
+</I>
+&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>  
+</I>&gt;<i>
+</I>
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="015467.html">Making part of representation WAS RE: [antlr-interest] Preserving ALL
+	comments!
+</A></li>
+	<LI>Next message: <A HREF="015471.html">[antlr-interest] Preserving ALL comments!
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#15506">[ date ]</a>
+              <a href="thread.html#15506">[ thread ]</a>
+              <a href="subject.html#15506">[ subject ]</a>
+              <a href="author.html#15506">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

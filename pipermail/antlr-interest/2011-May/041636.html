@@ -1,0 +1,223 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Problem with tree parser using ANTLR 3.x
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Problem%20with%20tree%20parser%20using%20ANTLR%203.x&In-Reply-To=%3C1305767475797-6380250.post%40n2.nabble.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="041635.html">
+   <LINK REL="Next"  HREF="041640.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Problem with tree parser using ANTLR 3.x</H1>
+    <B>iamhere</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Problem%20with%20tree%20parser%20using%20ANTLR%203.x&In-Reply-To=%3C1305767475797-6380250.post%40n2.nabble.com%3E"
+       TITLE="[antlr-interest] Problem with tree parser using ANTLR 3.x">hongyan99 at yahoo.com
+       </A><BR>
+    <I>Wed May 18 18:11:15 PDT 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="041635.html">[antlr-interest] Antlr2 -&gt; antlr 3 tree creation with rule argument as root
+</A></li>
+        <LI>Next message: <A HREF="041640.html">[antlr-interest] Problem with tree parser using ANTLR 3.x
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#41636">[ date ]</a>
+              <a href="thread.html#41636">[ thread ]</a>
+              <a href="subject.html#41636">[ subject ]</a>
+              <a href="author.html#41636">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+I'm newbie with ANTLR and is currently working on a ANTLR parser. The parser
+grammar worked just fine. It created a tree that looked right. But when I
+tried to walk the tree with my tree grammar, it failed. I hope that someone
+here could help. Any help is appreciated!
+
+The script language I'm working on has the following structure:
+
+assignment or expression&lt;new line&gt;
+assignment or expression&lt;new line&gt;
+assignment or expression&lt;new line&gt;
+....
+
+where assignment is like
+identifier = expression
+
+My parser grammar is:
+
+-----------------------------------------------------------------------------
+grammar myscript;
+
+options {
+language = Java;
+output = AST;
+ASTLabelType = CommonTree;
+}
+
+tokens {
+NEGATION;
+NEXT;
+}
+
+@header {
+package a.b.c;
+}
+
+@lexer::header {
+package a.b.c;
+}
+
+codeFragment
+:<i> (next!)? statement (next! statement)* EOF
+</I>;
+
+
+next
+:<i> ('\r' | '\n' )+ -&gt; NEXT 
+</I>;
+
+statement
+:<i> expression
+</I>|<i> assignment;
+</I>
+assignment
+:<i> IDENT '='^ expression
+</I>;
+
+term
+:<i> INTEGER
+</I>|<i> IDENT
+</I>|<i> '('! expression ')'!
+</I>;
+
+negate
+:<i> '!'^* term
+</I>;
+
+unary
+:<i> ('+'! | negation^)* negate
+</I>;
+
+negation
+:<i> '-' -&gt; NEGATION
+</I>;
+
+mult
+:<i> unary (('*'^ | '/'^) unary)*
+</I>;
+
+add
+:<i> mult (('+'^ | '-'^) mult)*
+</I>;
+
+relation
+:<i> add (('=='^ | '&lt;'^ | '&lt;='^ | '&gt;'^ | '&gt;='^) add)*
+</I>;
+
+expression
+:<i> relation (('&amp;'^ | '&amp;&amp;'^ | '|'^ | '||'^) relation)*
+</I>;
+
+INTEGER: '0' | '1'..'9' DIGIT* 'L'? | '0x' DIGIT+ 'L'?;
+IDENT: LETTER (LETTER | DIGIT)*;
+WS: (' ' | '\t' | '\f')+ {$channel = HIDDEN;};
+COMMENT: '#' .* ('\n'|'r') {$channel=HIDDEN;};
+
+fragment DIGIT: '0'..'9';
+fragment LETTER: ('a'..'z' | 'A'..'Z');
+-----------------------------------------------------------------------------
+
+The tree walker grammar is:
+-----------------------------------------------------------------------------
+tree grammar CodeFragWalker;
+
+options {
+language = Java;
+tokenVocab = myscript;
+ASTLabelType = CommonTree;
+output = AST;
+}
+
+@header {
+package a.b.c;
+}
+
+evaluator returns [String result]
+:<i> (assignment | expression)* EOF!
+</I>;
+
+assignment returns [int result]
+:<i> ^('=' IDENT expression)
+</I>;
+
+expression returns [int result]
+:<i> ^('+' expression expression)
+</I>|<i> ^('-' expression expression)
+</I>|<i> ^('*' expression expression)
+</I>|<i> ^('/' expression expression)
+</I>|<i> ^(NEGATION expression)
+</I>|<i> IDENT
+</I>|<i> INTEGER
+</I>;
+-----------------------------------------------------------------------------
+
+The tree output from the parser is:
+(= a (* (* 3 (+ 2 3)) 2)) (= b (+ 3 5)) (+ a b) (+ 1 2) &lt;EOF&gt;
+
+The error I'm getting when running the following is :
+
+node from line 2:1 mismatched tree node: = expecting EOF
+
+The code:
+-----------------------------------------------------------------------------
+CharStream charStream = new ANTLRStringStream(&quot;\na=3*(2+3)*2\r\n\r\n&quot; + 
+&quot;b=3+5\r&quot; + 
+&quot;a+b\n&quot; +
+&quot;1+2&quot;);
+myscriptLexer lexer = new myscriptLexer(charStream);
+TokenStream tokenStream = new CommonTokenStream(lexer);
+myscriptParser parser = new myscriptParser(tokenStream);
+codeFragment_return fragment = parser.codeFragment();
+CommonTree tree = fragment.tree;
+System.out.println(tree.toStringTree());
+CommonTreeNodeStream nodeStream = new CommonTreeNodeStream(tree);
+CodeFragWalker walker = new CodeFragWalker(nodeStream);
+walker.evaluator();
+-----------------------------------------------------------------------------
+
+
+--
+View this message in context: <A HREF="http://antlr.1301665.n2.nabble.com/Problem-with-tree-parser-using-ANTLR-3-x-tp6380250p6380250.html">http://antlr.1301665.n2.nabble.com/Problem-with-tree-parser-using-ANTLR-3-x-tp6380250p6380250.html</A>
+Sent from the ANTLR mailing list archive at Nabble.com.
+</PRE>
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="041635.html">[antlr-interest] Antlr2 -&gt; antlr 3 tree creation with rule argument as root
+</A></li>
+	<LI>Next message: <A HREF="041640.html">[antlr-interest] Problem with tree parser using ANTLR 3.x
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#41636">[ date ]</a>
+              <a href="thread.html#41636">[ thread ]</a>
+              <a href="subject.html#41636">[ subject ]</a>
+              <a href="author.html#41636">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

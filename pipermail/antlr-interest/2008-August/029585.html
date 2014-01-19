@@ -1,0 +1,205 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] [antlr-dev] Altering static FOLLOW bitsets!	fixed
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5Bantlr-dev%5D%20Altering%20static%20FOLLOW%20bitsets%21%0A%09fixed&In-Reply-To=%3C543531490808041227u6d6bf3cbi7e89b22e4e50de0a%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="029584.html">
+   <LINK REL="Next"  HREF="029586.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] [antlr-dev] Altering static FOLLOW bitsets!	fixed</H1>
+    <B>Benjamin Niemann</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5Bantlr-dev%5D%20Altering%20static%20FOLLOW%20bitsets%21%0A%09fixed&In-Reply-To=%3C543531490808041227u6d6bf3cbi7e89b22e4e50de0a%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] [antlr-dev] Altering static FOLLOW bitsets!	fixed">pink at odahoda.de
+       </A><BR>
+    <I>Mon Aug  4 12:27:05 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="029584.html">[antlr-interest] Altering static FOLLOW bitsets! fixed
+</A></li>
+        <LI>Next message: <A HREF="029586.html">[antlr-interest] Another parsing question
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#29585">[ date ]</a>
+              <a href="thread.html#29585">[ thread ]</a>
+              <a href="subject.html#29585">[ subject ]</a>
+              <a href="author.html#29585">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>If I understand this correctly, then the Python target shouldn't be
+effected (the FOLLOW sets are immutable). Can someone provide a
+testcase to verify this?
+
+-Ben
+
+On Mon, Aug 4, 2008 at 7:49 PM, Terence Parr &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">parrt at cs.usfca.edu</A>&gt; wrote:
+&gt;<i> Hi Guys, yes looks like a problem. I do a remove in 1 place that's
+</I>&gt;<i> incorrect:
+</I>&gt;<i>
+</I>&gt;<i>        public boolean mismatchIsMissingToken(IntStream input, BitSet follow) {
+</I>&gt;<i>
+</I>&gt;<i>                if ( follow.member(Token.EOR_TOKEN_TYPE) ) {
+</I>&gt;<i>                        if ( state._fsp&gt;=0 ) { // remove EOR if we're not the start symbol
+</I>&gt;<i>  &gt;&gt;&gt;&gt;&gt;                  follow.remove(Token.EOR_TOKEN_TYPE);
+</I>&gt;<i>                        }
+</I>&gt;<i>                        BitSet viableTokensFollowingThisRule =
+</I>&gt;<i> computeContextSensitiveRuleFOLLOW();
+</I>&gt;<i>                        follow = follow.or(viableTokensFollowingThisRule);
+</I>&gt;<i>                }
+</I>&gt;<i>
+</I>&gt;<i> Easiest thing is to just move the IF below the
+</I>&gt;<i> computeContextSensitiveRuleFOLLOW which calls combineFollows which does:
+</I>&gt;<i>
+</I>&gt;<i>                BitSet followSet = new BitSet();
+</I>&gt;<i>
+</I>&gt;<i> so it's a set we can modify.
+</I>&gt;<i>
+</I>&gt;<i> So now it looks like:
+</I>&gt;<i>
+</I>&gt;<i>                if ( follow.member(Token.EOR_TOKEN_TYPE) ) {
+</I>&gt;<i>                        BitSet viableTokensFollowingThisRule =
+</I>&gt;<i> computeContextSensitiveRuleFOLLOW();
+</I>&gt;<i>                        follow = follow.or(viableTokensFollowingThisRule);
+</I>&gt;<i>             if ( state._fsp&gt;=0 ) { // remove EOR if we're not the
+</I>&gt;<i> start symbol
+</I>&gt;<i>                 follow.remove(Token.EOR_TOKEN_TYPE);
+</I>&gt;<i>             }
+</I>&gt;<i>                }
+</I>&gt;<i>
+</I>&gt;<i> edit //depot/code/antlr/main/CHANGES.txt#82
+</I>&gt;<i> edit //depot/code/antlr/main/runtime/Java/src/org/antlr/runtime/
+</I>&gt;<i> BaseRecognizer.java#17
+</I>&gt;<i> Change 5156 submitted.
+</I>&gt;<i> Ter
+</I>&gt;<i> On Jul 17, 2008, at 5:51 AM, Johannes Luber wrote:
+</I>&gt;<i>
+</I>&gt;&gt;<i> Cameron Skinner schrieb:
+</I>&gt;&gt;&gt;<i> Hello,
+</I>&gt;&gt;&gt;<i> I'm using the 3.1 beta release, CSharp2 target grammar.
+</I>&gt;&gt;&gt;<i> I'm seeing different behavior running my parser with a syntax error
+</I>&gt;&gt;&gt;<i> the second time run. I've tracked it down to where I believe the
+</I>&gt;&gt;&gt;<i> problem is, located in BaseRecognizer.cs. The
+</I>&gt;&gt;&gt;<i> &quot;follow.Remove( Token.EOR_TOKEN_TYPE )&quot; logic is being called,
+</I>&gt;&gt;&gt;<i> which modifies the state of the static readonly BitSet object found
+</I>&gt;&gt;&gt;<i> on the parser. The problem with that is that even though I am
+</I>&gt;&gt;&gt;<i> creating a completely different parser instance, the static
+</I>&gt;&gt;&gt;<i> variable has been altered for as long as the assembly is in memory.
+</I>&gt;&gt;&gt;<i> I've copied a simple program to illustrate the problem at the
+</I>&gt;&gt;&gt;<i> bottom of this mail.
+</I>&gt;&gt;&gt;<i> Is this a known problem?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I haven't heard of it yet, but it's a Java target problem, too, so
+</I>&gt;&gt;<i> Ter has to say, if removing the static modifier for the BitSet
+</I>&gt;&gt;<i> variables in the parser is enough and doesn't affect anything else.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Johannes
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> Regards,
+</I>&gt;&gt;&gt;<i> Cameron
+</I>&gt;&gt;&gt;<i> public bool MismatchIsMissingToken(IIntStream input, BitSet follow) {
+</I>&gt;&gt;&gt;<i>                  if (follow == null) {
+</I>&gt;&gt;&gt;<i>                        // we have no information about the follow;
+</I>&gt;&gt;&gt;<i> we can only consume
+</I>&gt;&gt;&gt;<i>                        // a single token and hope for the best
+</I>&gt;&gt;&gt;<i>                        return false;
+</I>&gt;&gt;&gt;<i>                  }
+</I>&gt;&gt;&gt;<i>                   // compute what can follow this grammar element
+</I>&gt;&gt;&gt;<i> reference
+</I>&gt;&gt;&gt;<i>                  if (follow.Member(Token.EOR_TOKEN_TYPE)) {
+</I>&gt;&gt;&gt;<i>                        if (state.followingStackPointer &gt;= 0) { //
+</I>&gt;&gt;&gt;<i> remove EOR if we're not the start symbol
+</I>&gt;&gt;&gt;<i>                              follow.Remove(Token.EOR_TOKEN_TYPE);
+</I>&gt;&gt;&gt;<i> *&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt; THIS IS THE PROBLEM, modifies static variable*
+</I>&gt;&gt;&gt;<i>                        }
+</I>&gt;&gt;&gt;<i>                        BitSet viableTokensFollowingThisRule =
+</I>&gt;&gt;&gt;<i> ComputeContextSensitiveRuleFOLLOW();
+</I>&gt;&gt;&gt;<i>                        follow =
+</I>&gt;&gt;&gt;<i> follow.Or(viableTokensFollowingThisRule);
+</I>&gt;&gt;&gt;<i>                  }
+</I>&gt;&gt;&gt;<i>                   // if current token is consistent with what could
+</I>&gt;&gt;&gt;<i> come after set
+</I>&gt;&gt;&gt;<i>                  // then we know we're missing a token; error
+</I>&gt;&gt;&gt;<i> recovery is free to
+</I>&gt;&gt;&gt;<i>                  // &quot;insert&quot; the missing token
+</I>&gt;&gt;&gt;<i>                   // BitSet cannot handle negative numbers like -1
+</I>&gt;&gt;&gt;<i> (EOF) so I leave EOR
+</I>&gt;&gt;&gt;<i>                  // in follow set to indicate that the fall of the
+</I>&gt;&gt;&gt;<i> start symbol is
+</I>&gt;&gt;&gt;<i>                  // in the set (EOF can follow).
+</I>&gt;&gt;&gt;<i>                  if ( follow.Member(input.LA(1)) ||
+</I>&gt;&gt;&gt;<i> follow.Member(Token.EOR_TOKEN_TYPE) ) {
+</I>&gt;&gt;&gt;<i>                        return true;
+</I>&gt;&gt;&gt;<i>                  }
+</I>&gt;&gt;&gt;<i>                  return false;
+</I>&gt;&gt;&gt;<i>            }
+</I>&gt;&gt;&gt;<i> Simple program that exhibits the fundamental problem of trying to
+</I>&gt;&gt;&gt;<i> use a static  readonly member. The state of that member can change,
+</I>&gt;&gt;&gt;<i> just not the instance itself:
+</I>&gt;&gt;&gt;<i> using System;
+</I>&gt;&gt;&gt;<i> using System.Collections.Generic;
+</I>&gt;&gt;&gt;<i> using System.Linq;
+</I>&gt;&gt;&gt;<i> using System.Text;
+</I>&gt;&gt;&gt;<i> namespace ConsoleApplication2
+</I>&gt;&gt;&gt;<i> {
+</I>&gt;&gt;&gt;<i>   class Program
+</I>&gt;&gt;&gt;<i>   {
+</I>&gt;&gt;&gt;<i>      static void Main( string[] args )
+</I>&gt;&gt;&gt;<i>      {
+</I>&gt;&gt;&gt;<i>         Testing t = new Testing();
+</I>&gt;&gt;&gt;<i>         Console.WriteLine( Testing.test.isSet );
+</I>&gt;&gt;&gt;<i>          Testing.test.isSet = true;
+</I>&gt;&gt;&gt;<i>         Testing x = new Testing();
+</I>&gt;&gt;&gt;<i>          Console.WriteLine( Testing.test.isSet );
+</I>&gt;&gt;&gt;<i>      }
+</I>&gt;&gt;&gt;<i>   }
+</I>&gt;&gt;&gt;<i>    public class Testing
+</I>&gt;&gt;&gt;<i>   {
+</I>&gt;&gt;&gt;<i>      public static readonly Test test = new Test();
+</I>&gt;&gt;&gt;<i>   }
+</I>&gt;&gt;&gt;<i>    public class Test
+</I>&gt;&gt;&gt;<i>   {
+</I>&gt;&gt;&gt;<i>      public bool isSet = false;
+</I>&gt;&gt;&gt;<i>   }
+</I>&gt;&gt;&gt;<i> }
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> _______________________________________________
+</I>&gt;<i> antlr-dev mailing list
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-dev at antlr.org</A>
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-dev">http://www.antlr.org/mailman/listinfo/antlr-dev</A>
+</I>&gt;<i>
+</I></PRE>
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="029584.html">[antlr-interest] Altering static FOLLOW bitsets! fixed
+</A></li>
+	<LI>Next message: <A HREF="029586.html">[antlr-interest] Another parsing question
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#29585">[ date ]</a>
+              <a href="thread.html#29585">[ thread ]</a>
+              <a href="subject.html#29585">[ subject ]</a>
+              <a href="author.html#29585">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

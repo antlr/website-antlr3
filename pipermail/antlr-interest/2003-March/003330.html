@@ -1,0 +1,1872 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] java.g grammar for JSR14 (generic java)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20java.g%20grammar%20for%20JSR14%20%28generic%20java%29&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003328.html">
+   <LINK REL="Next"  HREF="003333.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] java.g grammar for JSR14 (generic java)</H1>
+    <B>Matt Quail</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20java.g%20grammar%20for%20JSR14%20%28generic%20java%29&In-Reply-To="
+       TITLE="[antlr-interest] java.g grammar for JSR14 (generic java)">matt at cortexebusiness.com.au
+       </A><BR>
+    <I>Thu Mar 13 21:22:23 PST 2003</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003328.html">[antlr-interest] xsd:all issue
+</A></li>
+        <LI>Next message: <A HREF="003333.html">[antlr-interest] IBM MVS JCL recognition
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3330">[ date ]</a>
+              <a href="thread.html#3330">[ thread ]</a>
+              <a href="subject.html#3330">[ subject ]</a>
+              <a href="author.html#3330">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>This is my first attempt at a JSR14 grammar. It parses successfully
+over some tests of my construction, plus successfully parses a large
+existing JDK1.3 source base.
+
+I couldn't find any bugs in this grammar; but if there are, I will
+report them to this list.
+
+FYI: An interesting discussion on &quot;context-free LR(k) parsing of
+generics&quot; here:
+<A HREF="http://forum.java.sun.com/thread.jsp?forum=316&amp;thread=320787&amp;tstart=30&amp;trange=15">http://forum.java.sun.com/thread.jsp?forum=316&amp;thread=320787&amp;tstart=30&amp;trange=15</A>
+
+My implementation differs in that I went the &quot;count LT tokens and use
+semantic predicates&quot; route. This route has the benefit of simpler
+rules (no referenceTypeList1, referenceTypeList2, etc. productions) at
+the expense of using semantic predicates (considered &quot;inelegant&quot; perhaps?).
+
+I have attached the following files:
+javaG.g: the java grammar supporting generics
+javaG.patch.txt: a patch from the java.g in ANTLR-2.7.2 to javaG.g
+G2.java: my test for parsing. This should parse with javaG.g as well
+          as compile with the JSR14 early access compiler.
+
+Caveats:
+1) I have probably broken some &quot;tree&quot; stuff... I don't use the
+    tree/AST functionality in java.g so I am unlikely to fix it myself.
+2) It is possible that generics in JDK1.5 will differ slightly from
+    JSR14. If so, I will update and re-post my grammar.
+
+
+Any comments are welcome! I am happy to have my patch applied to the
+version that comes with ANTLR, I release my patch and grammar into the
+Public Domain. However, it is probably best to wait until JDK1.5 is
+out before doing so. We would also have to add support for JSR201 at
+the same time.
+
+=Matt
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+-------------- next part --------------
+/** Java 1.5/JSR14 Recognizer
+ *
+ * Run 'java Main [-showtree] directory-full-of-java-files'
+ *
+ * [The -showtree option pops up a Swing frame that shows
+ *  the AST constructed from the parser.]
+ *
+ * Run 'java Main &lt;directory full of java files&gt;'
+ *
+ * Contributing authors:
+ *		John Mitchell		<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">johnm at non.net</A>
+ *		Terence Parr		<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">parrt at magelang.com</A>
+ *		John Lilley			<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">jlilley at empathy.com</A>
+ *		Scott Stanchfield	<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">thetick at magelang.com</A>
+ *		Markus Mohnen       <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">mohnen at informatik.rwth-aachen.de</A>
+ *      Peter Williams      <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">pete.williams at sun.com</A>
+ *      Allan Jacobs        <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">Allan.Jacobs at eng.sun.com</A>
+ *      Steve Messick       <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">messick at redhills.com</A>
+ *      John Pybus			<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">john at pybus.org</A>
+ *
+ * Version 1.00 December 9, 1997 -- initial release
+ * Version 1.01 December 10, 1997
+ *		fixed bug in octal def (0..7 not 0..8)
+ * Version 1.10 August 1998 (parrt)
+ *		added tree construction
+ *		fixed definition of WS,comments for mac,pc,unix newlines
+ *		added unary plus
+ * Version 1.11 (Nov 20, 1998)
+ *		Added &quot;shutup&quot; option to turn off last ambig warning.
+ *		Fixed inner class def to allow named class defs as statements
+ *		synchronized requires compound not simple statement
+ *		add [] after builtInType DOT class in primaryExpression
+ *		&quot;const&quot; is reserved but not valid..removed from modifiers
+ * Version 1.12 (Feb 2, 1999)
+ *		Changed LITERAL_xxx to xxx in tree grammar.
+ *		Updated java.g to use tokens {...} now for 2.6.0 (new feature).
+ *
+ * Version 1.13 (Apr 23, 1999)
+ *		Didn't have (stat)? for else clause in tree parser.
+ *		Didn't gen ASTs for interface extends.  Updated tree parser too.
+ *		Updated to 2.6.0.
+ * Version 1.14 (Jun 20, 1999)
+ *		Allowed final/abstract on local classes.
+ *		Removed local interfaces from methods
+ *		Put instanceof precedence where it belongs...in relationalExpr
+ *			It also had expr not type as arg; fixed it.
+ *		Missing ! on SEMI in classBlock
+ *		fixed: (expr) + &quot;string&quot; was parsed incorrectly (+ as unary plus).
+ *		fixed: didn't like Object[].class in parser or tree parser
+ * Version 1.15 (Jun 26, 1999)
+ *		Screwed up rule with instanceof in it. :(  Fixed.
+ *		Tree parser didn't like (expr).something; fixed.
+ *		Allowed multiple inheritance in tree grammar. oops.
+ * Version 1.16 (August 22, 1999)
+ *		Extending an interface built a wacky tree: had extra EXTENDS.
+ *		Tree grammar didn't allow multiple superinterfaces.
+ *		Tree grammar didn't allow empty var initializer: {}
+ * Version 1.17 (October 12, 1999)
+ *		ESC lexer rule allowed 399 max not 377 max.
+ *		java.tree.g didn't handle the expression of synchronized
+ *		statements.
+ * Version 1.18 (August 12, 2001)
+ *      	Terence updated to Java 2 Version 1.3 by
+ *		observing/combining work of Allan Jacobs and Steve
+ *		Messick.  Handles 1.3 src.  Summary:
+ *		o  primary didn't include boolean.class kind of thing
+ *      	o  constructor calls parsed explicitly now:
+ * 		   see explicitConstructorInvocation
+ *		o  add strictfp modifier
+ *      	o  missing objBlock after new expression in tree grammar
+ *		o  merged local class definition alternatives, moved after declaration
+ *		o  fixed problem with ClassName.super.field
+ *      	o  reordered some alternatives to make things more efficient
+ *		o  long and double constants were not differentiated from int/float
+ *		o  whitespace rule was inefficient: matched only one char
+ *		o  add an examples directory with some nasty 1.3 cases
+ *		o  made Main.java use buffered IO and a Reader for Unicode support
+ *		o  supports UNICODE?
+ *		   Using Unicode charVocabulay makes code file big, but only
+ *		   in the bitsets at the end. I need to make ANTLR generate
+ *		   unicode bitsets more efficiently.
+ * Version 1.19 (April 25, 2002)
+ *		Terence added in nice fixes by John Pybus concerning floating
+ *		constants and problems with super() calls.  John did a nice
+ *		reorg of the primary/postfix expression stuff to read better
+ *		and makes f.g.super() parse properly (it was METHOD_CALL not
+ *		a SUPER_CTOR_CALL).  Also:
+ *
+ *		o  &quot;finally&quot; clause was a root...made it a child of &quot;try&quot;
+ *		o  Added stuff for asserts too for Java 1.4, but *commented out*
+ *		   as it is not backward compatible.
+ *
+ * Version 1.20 (October 27, 2002)
+ *
+ *      Terence ended up reorging John Pybus' stuff to
+ *      remove some nondeterminisms and some syntactic predicates.
+ *      Note that the grammar is stricter now; e.g., this(...) must
+ *	be the first statement.
+ *
+ *      Trinary ?: operator wasn't working as array name:
+ *          (isBig ? bigDigits : digits)[i];
+ *
+ *      Checked parser/tree parser on source for
+ *          Resin-2.0.5, jive-2.1.1, jdk 1.3.1, Lucene, antlr 2.7.2a4,
+ *	    and the 110k-line jGuru server source.
+ *
+ * Version 1.21 (March, 2003)
+ *      Changes by Matt Quail to support generics (as per JDK1.5/JSR14)
+ *      Notes:
+ *      o We only allow the &quot;extends&quot; keyword and not the &quot;implements&quot;
+ *        keyword, since thats what JSR14 seems to imply.
+ *      o Thanks to Monty Zukowski for his help on the antlr-interest
+ *        mail list.
+ *
+ *
+ * This grammar is in the PUBLIC DOMAIN
+ */
+class JavaRecognizer extends Parser;
+options {
+	k = 2;                           // two token lookahead
+	exportVocab=Java;                // Call its vocabulary &quot;Java&quot;
+	codeGenMakeSwitchThreshold = 2;  // Some optimizations
+	codeGenBitsetTestThreshold = 3;
+	defaultErrorHandler = false;     // Don't generate parser error handlers
+	buildAST = true;
+}
+
+tokens {
+	BLOCK; MODIFIERS; OBJBLOCK; SLIST; CTOR_DEF; METHOD_DEF; VARIABLE_DEF;
+	INSTANCE_INIT; STATIC_INIT; TYPE; CLASS_DEF; INTERFACE_DEF;
+	PACKAGE_DEF; ARRAY_DECLARATOR; EXTENDS_CLAUSE; IMPLEMENTS_CLAUSE;
+	PARAMETERS; PARAMETER_DEF; LABELED_STAT; TYPECAST; INDEX_OP;
+	POST_INC; POST_DEC; METHOD_CALL; EXPR; ARRAY_INIT;
+	IMPORT; UNARY_MINUS; UNARY_PLUS; CASE_GROUP; ELIST; FOR_INIT; FOR_CONDITION;
+	FOR_ITERATOR; EMPTY_STAT; FINAL=&quot;final&quot;; ABSTRACT=&quot;abstract&quot;;
+	STRICTFP=&quot;strictfp&quot;; SUPER_CTOR_CALL; CTOR_CALL;
+}
+
+{
+    /**
+     * Counts the number of LT seen in the typeArguments production.
+     * It is used in semantic predicates to ensure we have seen
+     * enough closing '&gt;' characters; which actually may have been
+     * either GT, SR or BSR tokens.
+     */
+    private int ltCounter = 0;
+
+}      
+// Compilation Unit: In Java, this is a single file.  This is the start
+//   rule for this parser
+compilationUnit
+	:	// A compilation unit starts with an optional package definition
+		(	packageDefinition
+		|	/* nothing */
+		)
+
+		// Next we have a series of zero or more import statements
+		( importDefinition )*
+
+		// Wrapping things up with any number of class or interface
+		//    definitions
+		( typeDefinition )*
+
+		EOF!
+	;
+
+
+// Package statement: &quot;package&quot; followed by an identifier.
+packageDefinition
+	options {defaultErrorHandler = true;} // let ANTLR handle errors
+	:	p:&quot;package&quot;^ {#p.setType(PACKAGE_DEF);} identifier SEMI!
+	;
+
+
+// Import statement: import followed by a package or class name
+importDefinition
+	options {defaultErrorHandler = true;}
+	:	i:&quot;import&quot;^ {#i.setType(IMPORT);} identifierStar SEMI!
+	;
+
+// A type definition in a file is either a class or interface definition.
+typeDefinition
+	options {defaultErrorHandler = true;}
+	:	m:modifiers!
+		( classDefinition[#m]
+		| interfaceDefinition[#m]
+		)
+	|	SEMI!
+	;
+
+/** A declaration is the creation of a reference or primitive-type variable
+ *  Create a separate Type/Var tree for each var in the var list.
+ */
+declaration!
+	:	m:modifiers t:typeSpec[false] v:variableDefinitions[#m,#t]
+		{#declaration = #v;}
+	;
+
+// A type specification is a type name with possible brackets afterwards
+//   (which would make it an array type).
+typeSpec[boolean addImagNode]
+	: classTypeSpec[addImagNode]
+	| builtInTypeSpec[addImagNode]
+	;
+
+arraySpecOpt:
+        (options{greedy=true;}: // match as many as possible
+            lb:LBRACK^ {#lb.setType(ARRAY_DECLARATOR);} RBRACK!
+        )*
+    ;
+
+// A class type specification is a class type with either:
+// - possible brackets afterwards
+//   (which would make it an array type).
+// - generic type arguments after
+classTypeSpec[boolean addImagNode]
+	:   classOrInterfaceType[addImagNode]
+        arraySpecOpt
+		{
+			if ( addImagNode ) {
+				#classTypeSpec = #(#[TYPE,&quot;TYPE&quot;], #classTypeSpec);
+			}
+		}
+	;
+classOrInterfaceType[boolean addImagNode]
+	:   IDENT (typeArguments[addImagNode])?
+        (options{greedy=true;}: // match as many as possible
+            DOT
+            IDENT (typeArguments[addImagNode])?
+        )*
+    ;
+typeArguments[boolean addImagNode]
+{int currentLtLevel = 0;}
+    :
+        {currentLtLevel = ltCounter;}
+        LT {ltCounter++;}
+        classTypeSpec[addImagNode]
+        (options{greedy=true;}: // match as many as possible
+            COMMA classTypeSpec [addImagNode]
+        )*
+        
+        (   // turn warning off since Antlr generates the right code,
+            // plus we have our semantic predicate below
+            options{generateAmbigWarnings=false;}:
+            typeArgumentsEnd
+        )?
+        
+        // make sure we have gobbled up enough '&gt;' characters
+        // if we are at the &quot;top level&quot; of nested typeArgument productions
+        {(currentLtLevel != 0) || ltCounter == currentLtLevel}?
+    ;
+
+// this gobbles up *some* amount of '&gt;' characters, and counts how many
+// it gobbled.
+protected typeArgumentsEnd:
+        GT {ltCounter-=1;}
+    |   SR {ltCounter-=2;}
+    |   BSR {ltCounter-=3;}
+    ;
+
+// A builtin type specification is a builtin type with possible brackets
+// afterwards (which would make it an array type).
+builtInTypeSpec[boolean addImagNode]
+	:	builtInType arraySpecOpt
+		{
+			if ( addImagNode ) {
+				#builtInTypeSpec = #(#[TYPE,&quot;TYPE&quot;], #builtInTypeSpec);
+			}
+		}
+	;
+
+// A type name. which is either a (possibly qualified and parameterized)
+// class name or a primitive (builtin) type
+type
+	:	classOrInterfaceType[false]
+	|	builtInType
+	;
+
+// The primitive types.
+builtInType
+	:	&quot;void&quot;
+	|	&quot;boolean&quot;
+	|	&quot;byte&quot;
+	|	&quot;char&quot;
+	|	&quot;short&quot;
+	|	&quot;int&quot;
+	|	&quot;float&quot;
+	|	&quot;long&quot;
+	|	&quot;double&quot;
+	;
+
+// A (possibly-qualified) java identifier.  We start with the first IDENT
+//   and expand its name by adding dots and following IDENTS
+identifier
+	:	IDENT  ( DOT^ IDENT )*
+	;
+
+identifierStar
+	:	IDENT
+		( DOT^ IDENT )*
+		( DOT^ STAR  )?
+	;
+
+// A list of zero or more modifiers.  We could have used (modifier)* in
+//   place of a call to modifiers, but I thought it was a good idea to keep
+//   this rule separate so they can easily be collected in a Vector if
+//   someone so desires
+modifiers
+	:	( modifier )*
+		{#modifiers = #([MODIFIERS, &quot;MODIFIERS&quot;], #modifiers);}
+	;
+
+// modifiers for Java classes, interfaces, class/instance vars and methods
+modifier
+	:	&quot;private&quot;
+	|	&quot;public&quot;
+	|	&quot;protected&quot;
+	|	&quot;static&quot;
+	|	&quot;transient&quot;
+	|	&quot;final&quot;
+	|	&quot;abstract&quot;
+	|	&quot;native&quot;
+	|	&quot;threadsafe&quot;
+	|	&quot;synchronized&quot;
+//	|	&quot;const&quot;			// reserved word, but not valid
+	|	&quot;volatile&quot;
+	|	&quot;strictfp&quot;
+	;
+
+// Definition of a Java class
+classDefinition![AST modifiers]
+	:	&quot;class&quot; IDENT
+        // it _might_ have type paramaters
+        (typeParameters)?
+		// it _might_ have a superclass...
+		sc:superClassClause
+		// it might implement some interfaces...
+		ic:implementsClause
+		// now parse the body of the class
+		cb:classBlock
+		{#classDefinition = #(#[CLASS_DEF,&quot;CLASS_DEF&quot;],
+							   modifiers,IDENT,sc,ic,cb);}
+	;
+
+superClassClause!
+	:	( &quot;extends&quot; id:identifier )?
+		{#superClassClause = #(#[EXTENDS_CLAUSE,&quot;EXTENDS_CLAUSE&quot;],id);}
+	;
+
+// Definition of a Java Interface
+interfaceDefinition![AST modifiers]
+	:	&quot;interface&quot; IDENT
+        // it _might_ have type paramaters
+        (typeParameters)?
+		// it might extend some other interfaces
+		ie:interfaceExtends
+		// now parse the body of the interface (looks like a class...)
+		cb:classBlock
+		{#interfaceDefinition = #(#[INTERFACE_DEF,&quot;INTERFACE_DEF&quot;],
+									modifiers,IDENT,ie,cb);}
+	;
+
+typeParameters
+{int currentLtLevel = 0;}
+    :
+        {currentLtLevel = ltCounter;}
+        LT {ltCounter++;}
+        typeParameter (COMMA typeParameter)*
+        (typeArgumentsEnd)?
+        // make sure we have gobbled up enough '&gt;' characters
+        // if we are at the &quot;top level&quot; of nested typeArgument productions
+        {(currentLtLevel != 0) || ltCounter == currentLtLevel}?
+    ;
+
+typeParameter:
+        IDENT
+        (   // I'm pretty sure Antlr generates the right thing here:
+            options{generateAmbigWarnings=false;}:
+            &quot;extends&quot; classOrInterfaceType[false]
+            (BAND classOrInterfaceType[false])*
+        )?
+    ;
+// This is the body of a class.  You can have fields and extra semicolons,
+// That's about it (until you see what a field is...)
+classBlock
+	:	LCURLY!
+			( field | SEMI! )*
+		RCURLY!
+		{#classBlock = #([OBJBLOCK, &quot;OBJBLOCK&quot;], #classBlock);}
+	;
+
+// An interface can extend several other interfaces...
+interfaceExtends
+	:	(
+		e:&quot;extends&quot;!
+		identifier ( COMMA! identifier )*
+		)?
+		{#interfaceExtends = #(#[EXTENDS_CLAUSE,&quot;EXTENDS_CLAUSE&quot;],
+							#interfaceExtends);}
+	;
+
+// A class can implement several interfaces...
+implementsClause
+	:	(
+			i:&quot;implements&quot;! identifier ( COMMA! identifier )*
+		)?
+		{#implementsClause = #(#[IMPLEMENTS_CLAUSE,&quot;IMPLEMENTS_CLAUSE&quot;],
+								 #implementsClause);}
+	;
+
+// Now the various things that can be defined inside a class or interface...
+// Note that not all of these are really valid in an interface (constructors,
+//   for example), and if this grammar were used for a compiler there would
+//   need to be some semantic checks to make sure we're doing the right thing...
+field!
+	:	// method, constructor, or variable declaration
+		mods:modifiers
+		(	h:ctorHead s:constructorBody // constructor
+			{#field = #(#[CTOR_DEF,&quot;CTOR_DEF&quot;], mods, h, s);}
+
+		|	cd:classDefinition[#mods]       // inner class
+			{#field = #cd;}
+
+		|	id:interfaceDefinition[#mods]   // inner interface
+			{#field = #id;}
+
+		|	// A generic method has the typeParameters before the return type.
+            // This is not allowed for variable definitions, but this production
+            // allows it, a semantic check could be used if you wanted.
+            (typeParameters)? t:typeSpec[false]  // method or variable declaration(s)
+			(	IDENT  // the name of the method
+
+				// parse the formal parameter declarations.
+				LPAREN! param:parameterDeclarationList RPAREN!
+
+				rt:declaratorBrackets[#t]
+
+				// get the list of exceptions that this method is
+				// declared to throw
+				(tc:throwsClause)?
+
+				( s2:compoundStatement | SEMI )
+				{#field = #(#[METHOD_DEF,&quot;METHOD_DEF&quot;],
+						     mods,
+							 #(#[TYPE,&quot;TYPE&quot;],rt),
+							 IDENT,
+							 param,
+							 tc,
+							 s2);}
+			|	v:variableDefinitions[#mods,#t] SEMI
+//				{#field = #(#[VARIABLE_DEF,&quot;VARIABLE_DEF&quot;], v);}
+				{#field = #v;}
+			)
+		)
+
+    // &quot;static { ... }&quot; class initializer
+	|	&quot;static&quot; s3:compoundStatement
+		{#field = #(#[STATIC_INIT,&quot;STATIC_INIT&quot;], s3);}
+
+    // &quot;{ ... }&quot; instance initializer
+	|	s4:compoundStatement
+		{#field = #(#[INSTANCE_INIT,&quot;INSTANCE_INIT&quot;], s4);}
+	;
+
+constructorBody
+    :   lc:LCURLY^ {#lc.setType(SLIST);}
+            ( options { greedy=true; } : explicitConstructorInvocation)?
+            (statement)*
+        RCURLY!
+    ;
+
+/** Catch obvious constructor calls, but not the expr.super(...) calls */
+explicitConstructorInvocation
+    :   &quot;this&quot;! lp1:LPAREN^ argList RPAREN! SEMI!
+		{#lp1.setType(CTOR_CALL);}
+    |   &quot;super&quot;! lp2:LPAREN^ argList RPAREN! SEMI!
+		{#lp2.setType(SUPER_CTOR_CALL);}
+    ;
+
+variableDefinitions[AST mods, AST t]
+	:	variableDeclarator[getASTFactory().dupTree(mods),
+						   getASTFactory().dupTree(t)]
+		(	COMMA!
+			variableDeclarator[getASTFactory().dupTree(mods),
+							   getASTFactory().dupTree(t)]
+		)*
+	;
+
+/** Declaration of a variable.  This can be a class/instance variable,
+ *   or a local variable in a method
+ * It can also include possible initialization.
+ */
+variableDeclarator![AST mods, AST t]
+	:	id:IDENT d:declaratorBrackets[t] v:varInitializer
+		{#variableDeclarator = #(#[VARIABLE_DEF,&quot;VARIABLE_DEF&quot;], mods, #(#[TYPE,&quot;TYPE&quot;],d), id, v);}
+	;
+
+declaratorBrackets[AST typ]
+	:	{#declaratorBrackets=typ;}
+		(lb:LBRACK^ {#lb.setType(ARRAY_DECLARATOR);} RBRACK!)*
+	;
+
+varInitializer
+	:	( ASSIGN^ initializer )?
+	;
+
+// This is an initializer used to set up an array.
+arrayInitializer
+	:	lc:LCURLY^ {#lc.setType(ARRAY_INIT);}
+			(	initializer
+				(
+					// CONFLICT: does a COMMA after an initializer start a new
+					//           initializer or start the option ',' at end?
+					//           ANTLR generates proper code by matching
+					//			 the comma as soon as possible.
+					options {
+						warnWhenFollowAmbig = false;
+					}
+				:
+					COMMA! initializer
+				)*
+				(COMMA!)?
+			)?
+		RCURLY!
+	;
+
+
+// The two &quot;things&quot; that can initialize an array element are an expression
+//   and another (nested) array initializer.
+initializer
+	:	expression
+	|	arrayInitializer
+	;
+
+// This is the header of a method.  It includes the name and parameters
+//   for the method.
+//   This also watches for a list of exception classes in a &quot;throws&quot; clause.
+ctorHead
+	:	IDENT  // the name of the method
+
+		// parse the formal parameter declarations.
+		LPAREN! parameterDeclarationList RPAREN!
+
+		// get the list of exceptions that this method is declared to throw
+		(throwsClause)?
+	;
+
+// This is a list of exception classes that the method is declared to throw
+throwsClause
+	:	&quot;throws&quot;^ identifier ( COMMA! identifier )*
+	;
+
+
+// A list of formal parameters
+parameterDeclarationList
+	:	( parameterDeclaration ( COMMA! parameterDeclaration )* )?
+		{#parameterDeclarationList = #(#[PARAMETERS,&quot;PARAMETERS&quot;],
+									#parameterDeclarationList);}
+	;
+
+// A formal parameter.
+parameterDeclaration!
+	:	pm:parameterModifier t:typeSpec[false] id:IDENT
+		pd:declaratorBrackets[#t]
+		{#parameterDeclaration = #(#[PARAMETER_DEF,&quot;PARAMETER_DEF&quot;],
+									pm, #([TYPE,&quot;TYPE&quot;],pd), id);}
+	;
+
+parameterModifier
+	:	(f:&quot;final&quot;)?
+		{#parameterModifier = #(#[MODIFIERS,&quot;MODIFIERS&quot;], f);}
+	;
+
+// Compound statement.  This is used in many contexts:
+//   Inside a class definition prefixed with &quot;static&quot;:
+//      it is a class initializer
+//   Inside a class definition without &quot;static&quot;:
+//      it is an instance initializer
+//   As the body of a method
+//   As a completely indepdent braced block of code inside a method
+//      it starts a new scope for variable definitions
+
+compoundStatement
+	:	lc:LCURLY^ {#lc.setType(SLIST);}
+			// include the (possibly-empty) list of statements
+			(statement)*
+		RCURLY!
+	;
+
+
+statement
+	// A list of statements in curly braces -- start a new scope!
+	:	compoundStatement
+
+	// declarations are ambiguous with &quot;ID DOT&quot; relative to expression
+	// statements.  Must backtrack to be sure.  Could use a semantic
+	// predicate to test symbol table to see what the type was coming
+	// up, but that's pretty hard without a symbol table ;)
+	|	(declaration)=&gt; declaration SEMI!
+
+	// An expression statement.  This could be a method call,
+	// assignment statement, or any other expression evaluated for
+	// side-effects.
+	|	expression SEMI!
+
+	// class definition
+	|	m:modifiers! classDefinition[#m]
+
+	// Attach a label to the front of a statement
+	|	IDENT c:COLON^ {#c.setType(LABELED_STAT);} statement
+
+	// If-else statement
+	|	&quot;if&quot;^ LPAREN! expression RPAREN! statement
+		(
+			// CONFLICT: the old &quot;dangling-else&quot; problem...
+			//           ANTLR generates proper code matching
+			//			 as soon as possible.  Hush warning.
+			options {
+				warnWhenFollowAmbig = false;
+			}
+		:
+			&quot;else&quot;! statement
+		)?
+
+	// For statement
+	|	&quot;for&quot;^
+			LPAREN!
+				forInit SEMI!   // initializer
+				forCond	SEMI!   // condition test
+				forIter         // updater
+			RPAREN!
+			statement                     // statement to loop over
+
+	// While statement
+	|	&quot;while&quot;^ LPAREN! expression RPAREN! statement
+
+	// do-while statement
+	|	&quot;do&quot;^ statement &quot;while&quot;! LPAREN! expression RPAREN! SEMI!
+
+	// get out of a loop (or switch)
+	|	&quot;break&quot;^ (IDENT)? SEMI!
+
+	// do next iteration of a loop
+	|	&quot;continue&quot;^ (IDENT)? SEMI!
+
+	// Return an expression
+	|	&quot;return&quot;^ (expression)? SEMI!
+
+	// switch/case statement
+	|	&quot;switch&quot;^ LPAREN! expression RPAREN! LCURLY!
+			( casesGroup )*
+		RCURLY!
+
+	// exception try-catch block
+	|	tryBlock
+
+	// throw an exception
+	|	&quot;throw&quot;^ expression SEMI!
+
+	// synchronize a statement
+	|	&quot;synchronized&quot;^ LPAREN! expression RPAREN! compoundStatement
+
+	// asserts (uncomment if you want 1.4 compatibility)
+	//|	&quot;assert&quot;^ expression ( COLON! expression )? SEMI!
+
+	// empty statement
+	|	s:SEMI {#s.setType(EMPTY_STAT);}
+	;
+
+casesGroup
+	:	(	// CONFLICT: to which case group do the statements bind?
+			//           ANTLR generates proper code: it groups the
+			//           many &quot;case&quot;/&quot;default&quot; labels together then
+			//           follows them with the statements
+			options {
+				greedy = true;
+			}
+			:
+			aCase
+		)+
+		caseSList
+		{#casesGroup = #([CASE_GROUP, &quot;CASE_GROUP&quot;], #casesGroup);}
+	;
+
+aCase
+	:	(&quot;case&quot;^ expression | &quot;default&quot;) COLON!
+	;
+
+caseSList
+	:	(statement)*
+		{#caseSList = #(#[SLIST,&quot;SLIST&quot;],#caseSList);}
+	;
+
+// The initializer for a for loop
+forInit
+		// if it looks like a declaration, it is
+	:	(	(declaration)=&gt; declaration
+		// otherwise it could be an expression list...
+		|	expressionList
+		)?
+		{#forInit = #(#[FOR_INIT,&quot;FOR_INIT&quot;],#forInit);}
+	;
+
+forCond
+	:	(expression)?
+		{#forCond = #(#[FOR_CONDITION,&quot;FOR_CONDITION&quot;],#forCond);}
+	;
+
+forIter
+	:	(expressionList)?
+		{#forIter = #(#[FOR_ITERATOR,&quot;FOR_ITERATOR&quot;],#forIter);}
+	;
+
+// an exception handler try/catch block
+tryBlock
+	:	&quot;try&quot;^ compoundStatement
+		(handler)*
+		( finallyClause )?
+	;
+
+finallyClause
+	:	&quot;finally&quot;^ compoundStatement
+	;
+
+// an exception handler
+handler
+	:	&quot;catch&quot;^ LPAREN! parameterDeclaration RPAREN! compoundStatement
+	;
+
+
+// expressions
+// Note that most of these expressions follow the pattern
+//   thisLevelExpression :
+//       nextHigherPrecedenceExpression
+//           (OPERATOR nextHigherPrecedenceExpression)*
+// which is a standard recursive definition for a parsing an expression.
+// The operators in java have the following precedences:
+//    lowest  (13)  = *= /= %= += -= &lt;&lt;= &gt;&gt;= &gt;&gt;&gt;= &amp;= ^= |=
+//            (12)  ?:
+//            (11)  ||
+//            (10)  &amp;&amp;
+//            ( 9)  |
+//            ( 8)  ^
+//            ( 7)  &amp;
+//            ( 6)  == !=
+//            ( 5)  &lt; &lt;= &gt; &gt;=
+//            ( 4)  &lt;&lt; &gt;&gt;
+//            ( 3)  +(binary) -(binary)
+//            ( 2)  * / %
+//            ( 1)  ++ -- +(unary) -(unary)  ~  !  (type)
+//                  []   () (method call)  . (dot -- identifier qualification)
+//                  new   ()  (explicit parenthesis)
+//
+// the last two are not usually on a precedence chart; I put them in
+// to point out that new has a higher precedence than '.', so you
+// can validy use
+//     new Frame().show()
+//
+// Note that the above precedence levels map to the rules below...
+// Once you have a precedence chart, writing the appropriate rules as below
+//   is usually very straightfoward
+
+
+
+// the mother of all expressions
+expression
+	:	assignmentExpression
+		{#expression = #(#[EXPR,&quot;EXPR&quot;],#expression);}
+	;
+
+
+// This is a list of expressions.
+expressionList
+	:	expression (COMMA! expression)*
+		{#expressionList = #(#[ELIST,&quot;ELIST&quot;], expressionList);}
+	;
+
+
+// assignment expression (level 13)
+assignmentExpression
+	:	conditionalExpression
+		(	(	ASSIGN^
+            |   PLUS_ASSIGN^
+            |   MINUS_ASSIGN^
+            |   STAR_ASSIGN^
+            |   DIV_ASSIGN^
+            |   MOD_ASSIGN^
+            |   SR_ASSIGN^
+            |   BSR_ASSIGN^
+            |   SL_ASSIGN^
+            |   BAND_ASSIGN^
+            |   BXOR_ASSIGN^
+            |   BOR_ASSIGN^
+            )
+			assignmentExpression
+		)?
+	;
+
+
+// conditional test (level 12)
+conditionalExpression
+	:	logicalOrExpression
+		( QUESTION^ assignmentExpression COLON! conditionalExpression )?
+	;
+
+
+// logical or (||)  (level 11)
+logicalOrExpression
+	:	logicalAndExpression (LOR^ logicalAndExpression)*
+	;
+
+
+// logical and (&amp;&amp;)  (level 10)
+logicalAndExpression
+	:	inclusiveOrExpression (LAND^ inclusiveOrExpression)*
+	;
+
+
+// bitwise or non-short-circuiting or (|)  (level 9)
+inclusiveOrExpression
+	:	exclusiveOrExpression (BOR^ exclusiveOrExpression)*
+	;
+
+
+// exclusive or (^)  (level 8)
+exclusiveOrExpression
+	:	andExpression (BXOR^ andExpression)*
+	;
+
+
+// bitwise or non-short-circuiting and (&amp;)  (level 7)
+andExpression
+	:	equalityExpression (BAND^ equalityExpression)*
+	;
+
+
+// equality/inequality (==/!=) (level 6)
+equalityExpression
+	:	relationalExpression ((NOT_EQUAL^ | EQUAL^) relationalExpression)*
+	;
+
+
+// boolean relational expressions (level 5)
+relationalExpression
+	:	shiftExpression
+		(	(	(	LT^
+				|	GT^
+				|	LE^
+				|	GE^
+				)
+				shiftExpression
+			)*
+		|	&quot;instanceof&quot;^ typeSpec[true]
+		)
+	;
+
+
+// bit shift expressions (level 4)
+shiftExpression
+	:	additiveExpression ((SL^ | SR^ | BSR^) additiveExpression)*
+	;
+
+
+// binary addition/subtraction (level 3)
+additiveExpression
+	:	multiplicativeExpression ((PLUS^ | MINUS^) multiplicativeExpression)*
+	;
+
+
+// multiplication/division/modulo (level 2)
+multiplicativeExpression
+	:	unaryExpression ((STAR^ | DIV^ | MOD^ ) unaryExpression)*
+	;
+
+unaryExpression
+	:	INC^ unaryExpression
+	|	DEC^ unaryExpression
+	|	MINUS^ {#MINUS.setType(UNARY_MINUS);} unaryExpression
+	|	PLUS^  {#PLUS.setType(UNARY_PLUS);} unaryExpression
+	|	unaryExpressionNotPlusMinus
+	;
+
+unaryExpressionNotPlusMinus
+	:	BNOT^ unaryExpression
+	|	LNOT^ unaryExpression
+
+	|	(	// subrule allows option to shut off warnings
+			options {
+				// &quot;(int&quot; ambig with postfixExpr due to lack of sequence
+				// info in linear approximate LL(k).  It's ok.  Shut up.
+				generateAmbigWarnings=false;
+			}
+		:	// If typecast is built in type, must be numeric operand
+			// Also, no reason to backtrack if type keyword like int, float...
+			lpb:LPAREN^ {#lpb.setType(TYPECAST);} builtInTypeSpec[true] RPAREN!
+			unaryExpression
+
+			// Have to backtrack to see if operator follows.  If no operator
+			// follows, it's a typecast.  No semantic checking needed to parse.
+			// if it _looks_ like a cast, it _is_ a cast; else it's a &quot;(expr)&quot;
+		|	(LPAREN classTypeSpec[true] RPAREN unaryExpressionNotPlusMinus)=&gt;
+			lp:LPAREN^ {#lp.setType(TYPECAST);} classTypeSpec[true] RPAREN!
+			unaryExpressionNotPlusMinus
+
+		|	postfixExpression
+		)
+	;
+
+// qualified names, array expressions, method invocation, post inc/dec
+postfixExpression
+	:
+    /*
+    &quot;this&quot;! lp1:LPAREN^ argList RPAREN!
+		{#lp1.setType(CTOR_CALL);}
+
+    |   &quot;super&quot;! lp2:LPAREN^ argList RPAREN!
+		{#lp2.setType(SUPER_CTOR_CALL);}
+    |
+    */
+        primaryExpression
+
+		(
+            /*
+            options {
+				// the use of postfixExpression in SUPER_CTOR_CALL adds DOT
+				// to the lookahead set, and gives loads of false non-det
+				// warnings.
+				// shut them off.
+				generateAmbigWarnings=false;
+			}
+		:	*/
+            DOT^ IDENT
+			(	lp:LPAREN^ {#lp.setType(METHOD_CALL);}
+				argList
+				RPAREN!
+			)?
+		|	DOT^ &quot;this&quot;
+
+		|	DOT^ &quot;super&quot;
+            (   // (new Outer()).super()  (create enclosing instance)
+                lp3:LPAREN^ argList RPAREN!
+                {#lp3.setType(SUPER_CTOR_CALL);}
+			|   DOT^ IDENT
+                (	lps:LPAREN^ {#lps.setType(METHOD_CALL);}
+                    argList
+                    RPAREN!
+                )?
+            )
+		|	DOT^ newExpression
+		|	lb:LBRACK^ {#lb.setType(INDEX_OP);} expression RBRACK!
+		)*
+
+		(   // possibly add on a post-increment or post-decrement.
+            // allows INC/DEC on too much, but semantics can check
+			in:INC^ {#in.setType(POST_INC);}
+	 	|	de:DEC^ {#de.setType(POST_DEC);}
+		)?
+ 	;
+
+// the basic element of an expression
+primaryExpression
+	:	identPrimary ( options {greedy=true;} : DOT^ &quot;class&quot; )?
+    |   constant
+	|	&quot;true&quot;
+	|	&quot;false&quot;
+	|	&quot;null&quot;
+    |   newExpression
+	|	&quot;this&quot;
+	|	&quot;super&quot;
+	|	LPAREN! assignmentExpression RPAREN!
+		// look for int.class and int[].class
+	|	builtInType
+		( lbt:LBRACK^ {#lbt.setType(ARRAY_DECLARATOR);} RBRACK! )*
+		DOT^ &quot;class&quot;
+	;
+
+/** Match a, a.b.c refs, a.b.c(...) refs, a.b.c[], a.b.c[].class,
+ *  and a.b.c.class refs.  Also this(...) and super(...).  Match
+ *  this or super.
+ */
+identPrimary
+	:	IDENT
+		(
+            options {
+				// .ident could match here or in postfixExpression.
+				// We do want to match here.  Turn off warning.
+				greedy=true;
+			}
+		:	DOT^ IDENT
+		)*
+		(
+            options {
+				// ARRAY_DECLARATOR here conflicts with INDEX_OP in
+				// postfixExpression on LBRACK RBRACK.
+				// We want to match [] here, so greedy.  This overcomes
+                // limitation of linear approximate lookahead.
+				greedy=true;
+		    }
+		:   ( lp:LPAREN^ {#lp.setType(METHOD_CALL);} argList RPAREN! )
+		|	( options {greedy=true;} :
+              lbc:LBRACK^ {#lbc.setType(ARRAY_DECLARATOR);} RBRACK!
+            )+
+		)?
+    ;
+
+/** object instantiation.
+ *  Trees are built as illustrated by the following input/tree pairs:
+ *
+ *  new T()
+ *
+ *  new
+ *   |
+ *   T --  ELIST
+ *           |
+ *          arg1 -- arg2 -- .. -- argn
+ *
+ *  new int[]
+ *
+ *  new
+ *   |
+ *  int -- ARRAY_DECLARATOR
+ *
+ *  new int[] {1,2}
+ *
+ *  new
+ *   |
+ *  int -- ARRAY_DECLARATOR -- ARRAY_INIT
+ *                                  |
+ *                                EXPR -- EXPR
+ *                                  |      |
+ *                                  1      2
+ *
+ *  new int[3]
+ *  new
+ *   |
+ *  int -- ARRAY_DECLARATOR
+ *                |
+ *              EXPR
+ *                |
+ *                3
+ *
+ *  new int[1][2]
+ *
+ *  new
+ *   |
+ *  int -- ARRAY_DECLARATOR
+ *               |
+ *         ARRAY_DECLARATOR -- EXPR
+ *               |              |
+ *             EXPR             1
+ *               |
+ *               2
+ *
+ */
+newExpression
+	:	&quot;new&quot;^ type
+		(	LPAREN! argList RPAREN! (classBlock)?
+
+			//java 1.1
+			// Note: This will allow bad constructs like
+			//    new int[4][][3] {exp,exp}.
+			//    There needs to be a semantic check here...
+			// to make sure:
+			//   a) [ expr ] and [ ] are not mixed
+			//   b) [ expr ] and an init are not used together
+
+		|	newArrayDeclarator (arrayInitializer)?
+		)
+	;
+
+argList
+	:	(	expressionList
+		|	/*nothing*/
+			{#argList = #[ELIST,&quot;ELIST&quot;];}
+		)
+	;
+
+newArrayDeclarator
+	:	(
+			// CONFLICT:
+			// newExpression is a primaryExpression which can be
+			// followed by an array index reference.  This is ok,
+			// as the generated code will stay in this loop as
+			// long as it sees an LBRACK (proper behavior)
+			options {
+				warnWhenFollowAmbig = false;
+			}
+		:
+			lb:LBRACK^ {#lb.setType(ARRAY_DECLARATOR);}
+				(expression)?
+			RBRACK!
+		)+
+	;
+
+constant
+	:	NUM_INT
+	|	CHAR_LITERAL
+	|	STRING_LITERAL
+	|	NUM_FLOAT
+	|	NUM_LONG
+	|	NUM_DOUBLE
+	;
+
+
+//----------------------------------------------------------------------------
+// The Java scanner
+//----------------------------------------------------------------------------
+class JavaLexer extends Lexer;
+
+options {
+	exportVocab=Java;      // call the vocabulary &quot;Java&quot;
+	testLiterals=false;    // don't automatically test for literals
+	k=4;                   // four characters of lookahead
+	charVocabulary='\u0003'..'\uFFFF';
+	// without inlining some bitset tests, couldn't do unicode;
+	// I need to make ANTLR generate smaller bitsets; see
+	// bottom of JavaLexer.java
+	codeGenBitsetTestThreshold=20;
+}
+
+
+
+// OPERATORS
+QUESTION		:	'?'		;
+LPAREN			:	'('		;
+RPAREN			:	')'		;
+LBRACK			:	'['		;
+RBRACK			:	']'		;
+LCURLY			:	'{'		;
+RCURLY			:	'}'		;
+COLON			:	':'		;
+COMMA			:	','		;
+//DOT			:	'.'		;
+ASSIGN			:	'='		;
+EQUAL			:	&quot;==&quot;	;
+LNOT			:	'!'		;
+BNOT			:	'~'		;
+NOT_EQUAL		:	&quot;!=&quot;	;
+DIV				:	'/'		;
+DIV_ASSIGN		:	&quot;/=&quot;	;
+PLUS			:	'+'		;
+PLUS_ASSIGN		:	&quot;+=&quot;	;
+INC				:	&quot;++&quot;	;
+MINUS			:	'-'		;
+MINUS_ASSIGN	:	&quot;-=&quot;	;
+DEC				:	&quot;--&quot;	;
+STAR			:	'*'		;
+STAR_ASSIGN		:	&quot;*=&quot;	;
+MOD				:	'%'		;
+MOD_ASSIGN		:	&quot;%=&quot;	;
+SR				:	&quot;&gt;&gt;&quot;	;
+SR_ASSIGN		:	&quot;&gt;&gt;=&quot;	;
+BSR				:	&quot;&gt;&gt;&gt;&quot;	;
+BSR_ASSIGN		:	&quot;&gt;&gt;&gt;=&quot;	;
+GE				:	&quot;&gt;=&quot;	;
+GT				:	&quot;&gt;&quot;		;
+SL				:	&quot;&lt;&lt;&quot;	;
+SL_ASSIGN		:	&quot;&lt;&lt;=&quot;	;
+LE				:	&quot;&lt;=&quot;	;
+LT				:	'&lt;'		;
+BXOR			:	'^'		;
+BXOR_ASSIGN		:	&quot;^=&quot;	;
+BOR				:	'|'		;
+BOR_ASSIGN		:	&quot;|=&quot;	;
+LOR				:	&quot;||&quot;	;
+BAND			:	'&amp;'		;
+BAND_ASSIGN		:	&quot;&amp;=&quot;	;
+LAND			:	&quot;&amp;&amp;&quot;	;
+SEMI			:	';'		;
+
+
+// Whitespace -- ignored
+WS	:	(	' '
+		|	'\t'
+		|	'\f'
+			// handle newlines
+		|	(	options {generateAmbigWarnings=false;}
+			:	&quot;\r\n&quot;  // Evil DOS
+			|	'\r'    // Macintosh
+			|	'\n'    // Unix (the right way)
+			)
+			{ newline(); }
+		)+
+		{ _ttype = Token.SKIP; }
+	;
+
+// Single-line comments
+SL_COMMENT
+	:	&quot;//&quot;
+		(~('\n'|'\r'))* ('\n'|'\r'('\n')?)
+		{$setType(Token.SKIP); newline();}
+	;
+
+// multiple-line comments
+ML_COMMENT
+	:	&quot;/*&quot;
+		(	/*	'\r' '\n' can be matched in one alternative or by matching
+				'\r' in one iteration and '\n' in another.  I am trying to
+				handle any flavor of newline that comes in, but the language
+				that allows both &quot;\r\n&quot; and &quot;\r&quot; and &quot;\n&quot; to all be valid
+				newline is ambiguous.  Consequently, the resulting grammar
+				must be ambiguous.  I'm shutting this warning off.
+			 */
+			options {
+				generateAmbigWarnings=false;
+			}
+		:
+			{ LA(2)!='/' }? '*'
+		|	'\r' '\n'		{newline();}
+		|	'\r'			{newline();}
+		|	'\n'			{newline();}
+		|	~('*'|'\n'|'\r')
+		)*
+		&quot;*/&quot;
+		{$setType(Token.SKIP);}
+	;
+
+
+// character literals
+CHAR_LITERAL
+	:	'\'' ( ESC | ~'\'' ) '\''
+	;
+
+// string literals
+STRING_LITERAL
+	:	'&quot;' (ESC|~('&quot;'|'\\'))* '&quot;'
+	;
+
+
+// escape sequence -- note that this is protected; it can only be called
+//   from another lexer rule -- it will not ever directly return a token to
+//   the parser
+// There are various ambiguities hushed in this rule.  The optional
+// '0'...'9' digit matches should be matched here rather than letting
+// them go back to STRING_LITERAL to be matched.  ANTLR does the
+// right thing by matching immediately; hence, it's ok to shut off
+// the FOLLOW ambig warnings.
+protected
+ESC
+	:	'\\'
+		(	'n'
+		|	'r'
+		|	't'
+		|	'b'
+		|	'f'
+		|	'&quot;'
+		|	'\''
+		|	'\\'
+		|	('u')+ HEX_DIGIT HEX_DIGIT HEX_DIGIT HEX_DIGIT
+		|	'0'..'3'
+			(
+				options {
+					warnWhenFollowAmbig = false;
+				}
+			:	'0'..'7'
+				(
+					options {
+						warnWhenFollowAmbig = false;
+					}
+				:	'0'..'7'
+				)?
+			)?
+		|	'4'..'7'
+			(
+				options {
+					warnWhenFollowAmbig = false;
+				}
+			:	'0'..'7'
+			)?
+		)
+	;
+
+
+// hexadecimal digit (again, note it's protected!)
+protected
+HEX_DIGIT
+	:	('0'..'9'|'A'..'F'|'a'..'f')
+	;
+
+
+// a dummy rule to force vocabulary to be all characters (except special
+//   ones that ANTLR uses internally (0 to 2)
+protected
+VOCAB
+	:	'\3'..'\377'
+	;
+
+
+// an identifier.  Note that testLiterals is set to true!  This means
+// that after we match the rule, we look in the literals table to see
+// if it's a literal or really an identifer
+IDENT
+	options {testLiterals=true;}
+	:	('a'..'z'|'A'..'Z'|'_'|'$') ('a'..'z'|'A'..'Z'|'_'|'0'..'9'|'$')*
+	;
+
+
+// a numeric literal
+NUM_INT
+	{boolean isDecimal=false; Token t=null;}
+    :   '.' {_ttype = DOT;}
+            (	('0'..'9')+ (EXPONENT)? (f1:FLOAT_SUFFIX {t=f1;})?
+                {
+				if (t != null &amp;&amp; t.getText().toUpperCase().indexOf('F')&gt;=0) {
+                	_ttype = NUM_FLOAT;
+				}
+				else {
+                	_ttype = NUM_DOUBLE; // assume double
+				}
+				}
+            )?
+
+	|	(	'0' {isDecimal = true;} // special case for just '0'
+			(	('x'|'X')
+				(											// hex
+					// the 'e'|'E' and float suffix stuff look
+					// like hex digits, hence the (...)+ doesn't
+					// know when to stop: ambig.  ANTLR resolves
+					// it correctly by matching immediately.  It
+					// is therefor ok to hush warning.
+					options {
+						warnWhenFollowAmbig=false;
+					}
+				:	HEX_DIGIT
+				)+
+			|	('0'..'7')+									// octal
+			)?
+		|	('1'..'9') ('0'..'9')*  {isDecimal=true;}		// non-zero decimal
+		)
+		(	('l'|'L') { _ttype = NUM_LONG; }
+
+		// only check to see if it's a float if looks like decimal so far
+		|	{isDecimal}?
+            (   '.' ('0'..'9')* (EXPONENT)? (f2:FLOAT_SUFFIX {t=f2;})?
+            |   EXPONENT (f3:FLOAT_SUFFIX {t=f3;})?
+            |   f4:FLOAT_SUFFIX {t=f4;}
+            )
+            {
+			if (t != null &amp;&amp; t.getText().toUpperCase() .indexOf('F') &gt;= 0) {
+                _ttype = NUM_FLOAT;
+			}
+            else {
+	           	_ttype = NUM_DOUBLE; // assume double
+			}
+			}
+        )?
+	;
+
+
+// a couple protected methods to assist in matching floating point numbers
+protected
+EXPONENT
+	:	('e'|'E') ('+'|'-')? ('0'..'9')+
+	;
+
+
+protected
+FLOAT_SUFFIX
+	:	'f'|'F'|'d'|'D'
+	;
+
+-------------- next part --------------
+--- java272.g	2003-01-19 16:38:02.000000000 +1100
++++ javaG.g	2003-03-14 15:50:50.000000000 +1100
+@@ -1,4 +1,4 @@
+-/** Java 1.3 Recognizer
++/** Java 1.5/JSR14 Recognizer
+  *
+  * Run 'java Main [-showtree] directory-full-of-java-files'
+  *
+@@ -104,6 +104,15 @@
+  *          Resin-2.0.5, jive-2.1.1, jdk 1.3.1, Lucene, antlr 2.7.2a4,
+  *	    and the 110k-line jGuru server source.
+  *
++ * Version 1.21 (March, 2003)
++ *      Changes by Matt Quail to support generics (as per JDK1.5/JSR14)
++ *      Notes:
++ *      o We only allow the &quot;extends&quot; keyword and not the &quot;implements&quot;
++ *        keyword, since thats what JSR14 seems to imply.
++ *      o Thanks to Monty Zukowski for his help on the antlr-interest
++ *        mail list.
++ *
++ *
+  * This grammar is in the PUBLIC DOMAIN
+  */
+ class JavaRecognizer extends Parser;
+@@ -127,6 +136,16 @@
+ 	STRICTFP=&quot;strictfp&quot;; SUPER_CTOR_CALL; CTOR_CALL;
+ }
+ 
++{
++    /**
++     * Counts the number of LT seen in the typeArguments production.
++     * It is used in semantic predicates to ensure we have seen
++     * enough closing '&gt;' characters; which actually may have been
++     * either GT, SR or BSR tokens.
++     */
++    private int ltCounter = 0;
++
++}      
+ // Compilation Unit: In Java, this is a single file.  This is the start
+ //   rule for this parser
+ compilationUnit
+@@ -184,21 +203,65 @@
+ 	| builtInTypeSpec[addImagNode]
+ 	;
+ 
+-// A class type specification is a class type with possible brackets afterwards
++arraySpecOpt:
++        (options{greedy=true;}: // match as many as possible
++            lb:LBRACK^ {#lb.setType(ARRAY_DECLARATOR);} RBRACK!
++        )*
++    ;
++
++// A class type specification is a class type with either:
++// - possible brackets afterwards
+ //   (which would make it an array type).
++// - generic type arguments after
+ classTypeSpec[boolean addImagNode]
+-	:	identifier (lb:LBRACK^ {#lb.setType(ARRAY_DECLARATOR);} RBRACK!)*
++	:   classOrInterfaceType[addImagNode]
++        arraySpecOpt
+ 		{
+ 			if ( addImagNode ) {
+ 				#classTypeSpec = #(#[TYPE,&quot;TYPE&quot;], #classTypeSpec);
+ 			}
+ 		}
+ 	;
++classOrInterfaceType[boolean addImagNode]
++	:   IDENT (typeArguments[addImagNode])?
++        (options{greedy=true;}: // match as many as possible
++            DOT
++            IDENT (typeArguments[addImagNode])?
++        )*
++    ;
++typeArguments[boolean addImagNode]
++{int currentLtLevel = 0;}
++    :
++        {currentLtLevel = ltCounter;}
++        LT {ltCounter++;}
++        classTypeSpec[addImagNode]
++        (options{greedy=true;}: // match as many as possible
++            COMMA classTypeSpec [addImagNode]
++        )*
++        
++        (   // turn warning off since Antlr generates the right code,
++            // plus we have our semantic predicate below
++            options{generateAmbigWarnings=false;}:
++            typeArgumentsEnd
++        )?
++        
++        // make sure we have gobbled up enough '&gt;' characters
++        // if we are at the &quot;top level&quot; of nested typeArgument productions
++        {(currentLtLevel != 0) || ltCounter == currentLtLevel}?
++    ;
++
++// this gobbles up *some* amount of '&gt;' characters, and counts how many
++// it gobbled.
++protected typeArgumentsEnd:
++        GT {ltCounter-=1;}
++    |   SR {ltCounter-=2;}
++    |   BSR {ltCounter-=3;}
++    ;
+ 
+ // A builtin type specification is a builtin type with possible brackets
+ // afterwards (which would make it an array type).
+ builtInTypeSpec[boolean addImagNode]
+-	:	builtInType (lb:LBRACK^ {#lb.setType(ARRAY_DECLARATOR);} RBRACK!)*
++	:	builtInType arraySpecOpt
+ 		{
+ 			if ( addImagNode ) {
+ 				#builtInTypeSpec = #(#[TYPE,&quot;TYPE&quot;], #builtInTypeSpec);
+@@ -206,10 +269,10 @@
+ 		}
+ 	;
+ 
+-// A type name. which is either a (possibly qualified) class name or
+-//   a primitive (builtin) type
++// A type name. which is either a (possibly qualified and parameterized)
++// class name or a primitive (builtin) type
+ type
+-	:	identifier
++	:	classOrInterfaceType[false]
+ 	|	builtInType
+ 	;
+ 
+@@ -267,6 +330,8 @@
+ // Definition of a Java class
+ classDefinition![AST modifiers]
+ 	:	&quot;class&quot; IDENT
++        // it _might_ have type paramaters
++        (typeParameters)?
+ 		// it _might_ have a superclass...
+ 		sc:superClassClause
+ 		// it might implement some interfaces...
+@@ -285,6 +350,8 @@
+ // Definition of a Java Interface
+ interfaceDefinition![AST modifiers]
+ 	:	&quot;interface&quot; IDENT
++        // it _might_ have type paramaters
++        (typeParameters)?
+ 		// it might extend some other interfaces
+ 		ie:interfaceExtends
+ 		// now parse the body of the interface (looks like a class...)
+@@ -293,7 +360,26 @@
+ 									modifiers,IDENT,ie,cb);}
+ 	;
+ 
++typeParameters
++{int currentLtLevel = 0;}
++    :
++        {currentLtLevel = ltCounter;}
++        LT {ltCounter++;}
++        typeParameter (COMMA typeParameter)*
++        (typeArgumentsEnd)?
++        // make sure we have gobbled up enough '&gt;' characters
++        // if we are at the &quot;top level&quot; of nested typeArgument productions
++        {(currentLtLevel != 0) || ltCounter == currentLtLevel}?
++    ;
+ 
++typeParameter:
++        IDENT
++        (   // I'm pretty sure Antlr generates the right thing here:
++            options{generateAmbigWarnings=false;}:
++            &quot;extends&quot; classOrInterfaceType[false]
++            (BAND classOrInterfaceType[false])*
++        )?
++    ;
+ // This is the body of a class.  You can have fields and extra semicolons,
+ // That's about it (until you see what a field is...)
+ classBlock
+@@ -338,7 +424,10 @@
+ 		|	id:interfaceDefinition[#mods]   // inner interface
+ 			{#field = #id;}
+ 
+-		|	t:typeSpec[false]  // method or variable declaration(s)
++		|	// A generic method has the typeParameters before the return type.
++            // This is not allowed for variable definitions, but this production
++            // allows it, a semantic check could be used if you wanted.
++            (typeParameters)? t:typeSpec[false]  // method or variable declaration(s)
+ 			(	IDENT  // the name of the method
+ 
+ 				// parse the formal parameter declarations.
+@@ -572,7 +661,7 @@
+ 	|	&quot;synchronized&quot;^ LPAREN! expression RPAREN! compoundStatement
+ 
+ 	// asserts (uncomment if you want 1.4 compatibility)
+-	// |	&quot;assert&quot;^ expression ( COLON! expression )? SEMI!
++	//|	&quot;assert&quot;^ expression ( COLON! expression )? SEMI!
+ 
+ 	// empty statement
+ 	|	s:SEMI {#s.setType(EMPTY_STAT);}
+-------------- next part --------------
+import java.util.*;
+import java.io.Serializable;
+import java.io.Externalizable;
+
+public class G2
+{
+    public void testDecls()
+    {
+        String v1;
+        java.lang.String v2;
+        int v3;
+        float v4;
+        int[] v5;
+        String[] v6;
+        float[][][] v7;
+        
+        // no nesting
+        List&lt;String&gt; v8;
+        Map&lt;String,Integer&gt; v9;
+        Map3&lt;String,Integer,Float&gt; v10;
+        
+        Map3&lt;java.lang.String,java.lang.Integer,java.lang.Float&gt; v11;
+        
+        // two nestings
+        List&lt;List&lt;String&gt; &gt; v12;
+        List&lt;List&lt;String&gt;&gt; v13;
+        Map&lt;List&lt;String&gt;,Integer&gt; v14;
+        Map&lt;Integer,List&lt;String&gt; &gt; v15;
+        Map&lt;Integer,List&lt;String&gt;&gt; v16;
+        Map3&lt;List&lt;String&gt;,Integer,Float&gt; v17;
+        Map3&lt;Integer,List&lt;String&gt;,Float&gt; v18;
+        Map3&lt;Integer,Float,List&lt;String&gt; &gt; v19;
+        Map3&lt;Integer,Float,List&lt;String&gt;&gt; v20;
+        
+        // three nestings
+        List&lt;List&lt;List&lt;String&gt; &gt; &gt; v21;
+        List&lt;List&lt;List&lt;String&gt;&gt; &gt; v22;
+        List&lt;List&lt;List&lt;String&gt; &gt;&gt; v23;
+        List&lt;List&lt;List&lt;String&gt;&gt;&gt; v24;
+        Map&lt;List&lt;List&lt;String&gt; &gt;,Integer&gt; v25;
+        Map&lt;List&lt;List&lt;String&gt;&gt;,Integer&gt; v26;
+        Map&lt;Integer,List&lt;List&lt;String&gt; &gt; &gt; v27;
+        Map&lt;Integer,List&lt;List&lt;String&gt; &gt;&gt; v28;
+        Map&lt;Integer,List&lt;List&lt;String&gt;&gt; &gt; v29;
+        Map&lt;Integer,List&lt;List&lt;String&gt;&gt;&gt; v30;
+        Map3&lt;List&lt;List&lt;String&gt;&gt;,Integer,Float&gt; v31;
+        Map3&lt;Integer,List&lt;List&lt;String&gt;&gt;,Float&gt; v32;
+        Map3&lt;Integer,Float,List&lt;List&lt;String&gt; &gt; &gt; v33;
+        Map3&lt;Integer,Float,List&lt;List&lt;String&gt;&gt; &gt; v34;
+        Map3&lt;Integer,Float,List&lt;List&lt;String&gt; &gt;&gt; v35;
+        Map3&lt;Integer,Float,List&lt;List&lt;String&gt;&gt;&gt; v36;
+        
+        // four nestings
+        List&lt;List&lt;List&lt;List&lt;String&gt; &gt; &gt; &gt; v37;
+        List&lt;List&lt;List&lt;List&lt;String&gt;&gt; &gt;&gt; v38;
+        List&lt;List&lt;List&lt;List&lt;String&gt;&gt; &gt; &gt; v39;
+        List&lt;List&lt;List&lt;List&lt;String&gt; &gt; &gt;&gt; v40;
+        List&lt;List&lt;List&lt;List&lt;String&gt; &gt;&gt;&gt; v41;
+        List&lt;List&lt;List&lt;List&lt;String&gt;&gt;&gt; &gt; v42;
+        List&lt;List&lt;List&lt;List&lt;String&gt;&gt;&gt;&gt; v43;
+        
+        Map&lt;List&lt;List&lt;List&lt;String&gt;&gt;&gt;,Integer&gt; v44;
+        Map&lt;Integer,List&lt;List&lt;List&lt;String&gt; &gt; &gt; &gt; v45;
+        Map&lt;Integer,List&lt;List&lt;List&lt;String&gt;&gt; &gt;&gt; v46;
+        Map&lt;Integer,List&lt;List&lt;List&lt;String&gt;&gt; &gt; &gt; v47;
+        Map&lt;Integer,List&lt;List&lt;List&lt;String&gt; &gt; &gt;&gt; v48;
+        Map&lt;Integer,List&lt;List&lt;List&lt;String&gt;&gt;&gt; &gt; v49;
+        Map&lt;Integer,List&lt;List&lt;List&lt;String&gt; &gt;&gt;&gt; v50;
+        
+        // make sure more complicatd reference types can be
+        // type arguments
+        List&lt;String[]&gt; v51;
+        List&lt;List&lt;String[]&gt; &gt; v52;
+        List&lt;List&lt;String[]&gt;&gt; v53;
+        
+        Map&lt;String,Integer&gt; v54;
+        Map&lt;String,List&lt;Integer&gt; &gt; v55;
+        Map&lt;String,List&lt;Integer&gt;&gt; v56;
+        Map&lt;List&lt;Integer&gt;,String&gt; v57;
+        Map&lt;List&lt;Integer&gt;,List&lt;String&gt;&gt; v58;
+        
+        Map3&lt;String,Integer,Float&gt; v59;
+        Map3&lt;String,List&lt;Integer&gt;,Float&gt; v60;
+        
+        Map&lt;Map&lt;String,String&gt;,Map3&lt;String,Integer,Float&gt;&gt; v61;
+        Map&lt;List&lt;String&gt;,List&lt;Integer&gt;&gt; v62;
+        Map3&lt;List&lt;String&gt;,List&lt;Integer&gt;,List&lt;Float&gt;&gt; v63;
+        
+        List&lt;Object&gt;[] v64;
+        Map&lt;String,List&lt;Object&gt;[]&gt; v65;
+
+        // composite names; generic classes that have inner classes
+        Seq&lt;String&gt;.Zipper&lt;Integer&gt; v68;
+        Seq&lt;String[]&gt;.Zipper&lt;Integer[][]&gt;[] v69;
+    }
+
+    public void testExpressions() 
+    {
+        Object o = null;
+        List&lt;Integer&gt; l1 = (ArrayList&lt;Integer&gt;)null;
+        l1 = new ArrayList&lt;Integer&gt;();
+        Map&lt;Integer,String&gt; l2 = null;
+        
+        List&lt;Integer&gt;[] a1 = new List&lt;Integer&gt;[1];
+        a1[0] = l1;
+
+        //
+        // double end-angle-brackets
+        //
+        
+        Map&lt;String,List&lt;Integer&gt; &gt; m1 = new HashMap&lt;String,List&lt;Integer&gt; &gt; ();
+        Map&lt;String,List&lt;Integer&gt;&gt;m2 = new HashMap&lt;String,List&lt;Integer&gt;&gt;();
+
+        Pair&lt;Seq&lt;Integer&gt;,Seq&lt;String&gt;&gt; p1 =
+            new Pair&lt;Seq&lt;Integer&gt;,Seq&lt;String&gt;&gt;(
+                new Seq&lt;Integer&gt;(new Integer(0), new Seq&lt;Integer&gt;()),
+                new Seq&lt;String&gt;(&quot;abc&quot;, new Seq&lt;String&gt;()));
+
+        Seq&lt;Character&gt;[][][] sa1 = new Seq&lt;Character&gt;[10][20][];
+
+        // casting
+        l2 = (Map&lt;Integer,String&gt;) null;
+
+        // instanceof
+        boolean b1 = l2 instanceof Map&lt;Integer,String&gt;;
+
+        // cast or less-than operator:
+        {
+            class a&lt;T&gt;{};
+            class b{};
+            Object x = ( a &lt; b &gt; ) null;
+        }
+        {
+            int a = 0;
+            int b = 0;
+            String x = ( a &lt; b ) + &quot;&quot;;
+        }
+    }
+    
+    /** a generic method */
+    &lt;Elem extends Comparable&lt;Elem&gt;&gt; void sort(Elem[] a) {
+        for (int i = 0; i &lt; a.length; i++)
+            for (int j = 0; j &lt; i; j++)
+                if (a[j].compareTo(a[i]) &lt; 0) swap(a, i, j);
+    }
+
+    static &lt;Elem&gt; void swap(Elem[] a, int i, int j) {
+        Elem temp = a[i]; a[i] = a[j]; a[j] = temp;
+    }
+
+    void foo()
+    {
+        // call a generic method
+        String[] strings = {&quot;a&quot;,&quot;c&quot;,&quot;d&quot;,&quot;z&quot;,&quot;b&quot;};
+        sort(strings);
+    }
+    
+}
+
+
+class Pair&lt;TA, TB&gt;
+{
+    Pair(TA a, TB b) {}
+    
+}
+
+class Pair1&lt;TA extends java.lang.Number &amp; Serializable,
+           TB extends Serializable &amp; Externalizable &amp; Comparable&lt;TA&gt; &gt; 
+{
+    TA a;
+    TB b;
+
+    static &lt;E&gt; void foo1(E x) {}
+    static &lt;E&gt; E foo2(E x, E y) {return null;}
+    static &lt;E extends Exception&gt; E foo2(E x, E y) throws E {return null;}
+    
+}
+
+class Pair2&lt;TA extends java.lang.Object &amp; Serializable,
+                       TB extends Serializable &amp; Externalizable &amp; Comparable&lt;TA&gt;&gt;
+{}
+
+// two ending '&gt;'
+class Class1a&lt;T1, T2 extends Comparator&lt;T1&gt;&gt;{}
+class Class1b&lt;T1, T2 extends Comparator&lt;T1&gt; &gt;{}
+// three ending '&gt;'
+class Class2a&lt;T1, T2 extends Comparator&lt;List&lt;T1&gt;&gt;&gt;{}
+class Class2b&lt;T1, T2 extends Comparator&lt;List&lt;T1&gt; &gt;&gt;{}
+class Class2c&lt;T1, T2 extends Comparator&lt;List&lt;T1&gt;&gt; &gt;{}
+class Class2d&lt;T1, T2 extends Comparator&lt;List&lt;T1&gt; &gt; &gt;{}
+// four ending '&gt;'
+class Class3a&lt;T1, T2 extends Comparator&lt;Pair&lt;String[],List&lt;T1&gt;&gt;&gt;&gt;{}
+class Class3b&lt;T1, T2 extends Comparator&lt;Pair&lt;String[],List&lt;T1&gt;&gt; &gt;&gt;{}
+class Class3c&lt;T1, T2 extends Comparator&lt;Pair&lt;String[],List&lt;T1&gt;&gt; &gt; &gt;{}
+class Class3d&lt;T1, T2 extends Comparator&lt;Pair&lt;String[],List&lt;T1&gt; &gt; &gt;&gt;{}
+class Class3e&lt;T1, T2 extends Comparator&lt;Pair&lt;String[],List&lt;T1&gt; &gt;&gt; &gt;{}
+class Class3f&lt;T1, T2 extends Comparator&lt;Pair&lt;String[],List&lt;T1&gt;&gt;&gt; &gt;{}
+class Class3g&lt;T1, T2 extends Comparator&lt;Pair&lt;String[],List&lt;T1&gt; &gt;&gt;&gt;{}
+
+// a class with three params (used in examples above)
+class Map3&lt;T1,T2,T3&gt; {}
+
+
+// copied from JSR14 document (but syntax errors fixed!
+// those &quot;this.&quot; expressions did not compile with ea compiler )
+class Seq&lt;A&gt; {
+    A head;
+    Seq&lt;A&gt; tail;
+    Seq() { this(null, null); }
+    boolean isEmpty() { return tail == null; }
+    Seq(A head, Seq&lt;A&gt; tail) { this.head = head; this.tail = tail; }
+    class Zipper&lt;B&gt; {
+        Seq&lt;Pair&lt;A,B&gt;&gt; zip(Seq&lt;B&gt; that) {
+            if (isEmpty() || that.isEmpty())
+                return new Seq&lt;Pair&lt;A,B&gt;&gt;();
+            else
+                return new Seq&lt;Pair&lt;A,B&gt;&gt;(
+                    new Pair&lt;A,B&gt;(head, that.head),
+                    zip(that.tail));
+        }
+    }
+}
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003328.html">[antlr-interest] xsd:all issue
+</A></li>
+	<LI>Next message: <A HREF="003333.html">[antlr-interest] IBM MVS JCL recognition
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3330">[ date ]</a>
+              <a href="thread.html#3330">[ thread ]</a>
+              <a href="subject.html#3330">[ subject ]</a>
+              <a href="author.html#3330">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

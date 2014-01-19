@@ -1,0 +1,203 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [stringtemplate-interest] ST4: Bug: Selecting the root template in	STVis will not select the complete output
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20ST4%3A%20Bug%3A%20Selecting%20the%20root%20template%20in%0A%09STVis%20will%20not%20select%20the%20complete%20output&In-Reply-To=%3C8CD7A282-A26C-41BE-88E8-DAFE5ED90954%40abego-software.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003348.html">
+   <LINK REL="Next"  HREF="003355.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[stringtemplate-interest] ST4: Bug: Selecting the root template in	STVis will not select the complete output</H1>
+    <B>Udo Borkowski</B> 
+    <A HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20ST4%3A%20Bug%3A%20Selecting%20the%20root%20template%20in%0A%09STVis%20will%20not%20select%20the%20complete%20output&In-Reply-To=%3C8CD7A282-A26C-41BE-88E8-DAFE5ED90954%40abego-software.de%3E"
+       TITLE="[stringtemplate-interest] ST4: Bug: Selecting the root template in	STVis will not select the complete output">ub at abego-software.de
+       </A><BR>
+    <I>Thu Mar 31 03:27:08 PDT 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003348.html">[stringtemplate-interest] ST4: Possible NullPointerException or	redundant check in CompiledST.getTemplateRange
+</A></li>
+        <LI>Next message: <A HREF="003355.html">[stringtemplate-interest] ST4: Bug: Selecting the root template	in STVis will not select the complete output
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3352">[ date ]</a>
+              <a href="thread.html#3352">[ thread ]</a>
+              <a href="subject.html#3352">[ subject ]</a>
+              <a href="author.html#3352">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Selecting the root template in STVis  (i.e. the first one in the left tree) will not select the complete output but just as many characters as the root template text is long:
+
+
+
+This can be fixed by changing the last else int STVis.updateCurrentST:
+
+
+	private void updateCurrentST(STViewFrame m) {
+		updateStack(currentST, m);
+		updateAttributes(currentST, m);
+        m.bytecode.setText(currentST.impl.disasm());
+		JTreeASTModel astModel = new JTreeASTModel(new CommonTreeAdaptor(), currentST.impl.ast);
+		m.ast.setModel(astModel);
+
+		List&lt;ST&gt; pathST = currentST.getEnclosingInstanceStack(true);
+		Object[] path = new Object[pathST.size()];
+		int j = 0;
+		for (ST s : pathST) path[j++] = new JTreeSTModel.Wrapper((DebugST)s);
+
+		m.tree.setSelectionPath(new TreePath(path));
+
+		m.template.setText(currentST.impl.template);
+		Interval r = currentST.impl.getTemplateRange();
+		if ( currentST.enclosingInstance!=null ) {
+			int i = tmodel.getIndexOfChild((DebugST)currentST.enclosingInstance, currentST);
+			InterpEvent e = interp.getEvents(currentST.enclosingInstance).get(i);
+			if ( e instanceof EvalTemplateEvent) {
+				if ( currentST.isAnonSubtemplate() ) {
+					highlight(m.template, r.a, r.b);
+				}
+				highlight(m.output, e.outputStartChar, e.outputStopChar);
+			}
+		}
+		else {
+			// The last event is the EvalTemplateEvent for the root ST
+			int nEvents = allEvents.size();
+			if (nEvents &gt; 0 &amp;&amp; allEvents.get(nEvents-1) instanceof EvalTemplateEvent) {
+				EvalTemplateEvent e = (EvalTemplateEvent)allEvents.get(nEvents-1);
+				highlight(m.output, e.outputStartChar, e.outputStopChar);
+			}
+		}
+	}
+
+
+
+
+Udo
+
+P.S.: here some test code:
+
+&gt;<i> package org.stringtemplate.v4.debug;
+</I>&gt;<i> 
+</I>&gt;<i> import java.awt.Window;
+</I>&gt;<i> 
+</I>&gt;<i> import org.junit.Test;
+</I>&gt;<i> import org.stringtemplate.v4.ST;
+</I>&gt;<i> import org.stringtemplate.v4.STGroup;
+</I>&gt;<i> import org.stringtemplate.v4.STGroupFile;
+</I>&gt;<i> 
+</I>&gt;<i> public class InspectTest extends BaseTest {
+</I>&gt;<i> 
+</I>&gt;<i> 	/**
+</I>&gt;<i> 	 * @return true if at least one Window is visible
+</I>&gt;<i> 	 */
+</I>&gt;<i> 	public static boolean isAnyWindowVisible() {
+</I>&gt;<i> 		for (Window w : Window.getWindows()) {
+</I>&gt;<i> 			if (w.isVisible())
+</I>&gt;<i> 				return true;
+</I>&gt;<i> 		}
+</I>&gt;<i> 		return false;
+</I>&gt;<i> 	}
+</I>&gt;<i> 
+</I>&gt;<i> 	public static void waitUntilAnyWindowIsVisible() {
+</I>&gt;<i> 		while (!isAnyWindowVisible()) {
+</I>&gt;<i> 			try {
+</I>&gt;<i> 				Thread.sleep(100);
+</I>&gt;<i> 			} catch (InterruptedException e) {
+</I>&gt;<i> 				// Ignore
+</I>&gt;<i> 			}
+</I>&gt;<i> 		}
+</I>&gt;<i> 	}
+</I>&gt;<i> 
+</I>&gt;<i> 	/**
+</I>&gt;<i> 	 * 
+</I>&gt;<i> 	 * @param someWindowMustBeVisible
+</I>&gt;<i> 	 *            [default: true] when true wait for at least one visible window
+</I>&gt;<i> 	 *            before waiting for all to close
+</I>&gt;<i> 	 */
+</I>&gt;<i> 	public static void waitUntilAllWindowsAreClosed(
+</I>&gt;<i> 			boolean someWindowMustBeVisible) {
+</I>&gt;<i> 		if (someWindowMustBeVisible) {
+</I>&gt;<i> 			waitUntilAnyWindowIsVisible();
+</I>&gt;<i> 		}
+</I>&gt;<i> 		while (isAnyWindowVisible()) {
+</I>&gt;<i> 			try {
+</I>&gt;<i> 				Thread.sleep(100);
+</I>&gt;<i> 			} catch (InterruptedException e) {
+</I>&gt;<i> 				// ignore
+</I>&gt;<i> 			}
+</I>&gt;<i> 		}
+</I>&gt;<i> 	}
+</I>&gt;<i> 
+</I>&gt;<i> 	public static void waitUntilAllWindowsAreClosed() {
+</I>&gt;<i> 		waitUntilAllWindowsAreClosed(true);
+</I>&gt;<i> 	}
+</I>&gt;<i> 
+</I>&gt;<i> 	@Test
+</I>&gt;<i> 	public void testOutputSelectionWhenSelectingRootTemplate() throws Exception {
+</I>&gt;<i> 		STGroup.debug = true;
+</I>&gt;<i> 
+</I>&gt;<i> 		String templates = &quot;t(q) ::= &lt;&lt;\n-&lt;q&gt;-\n&gt;&gt;\n\nmain(p) ::= &lt;&lt;\n&lt;p&gt;&lt;t(p)&gt;&lt;p&gt;\n&gt;&gt;&quot;;
+</I>&gt;<i> 		writeFile(tmpdir, &quot;t.stg&quot;, templates);
+</I>&gt;<i> 
+</I>&gt;<i> 		STGroup group = new STGroupFile(tmpdir + &quot;/t.stg&quot;);
+</I>&gt;<i> 
+</I>&gt;<i> 		ST st = group.getInstanceOf(&quot;main&quot;);
+</I>&gt;<i> 		st.add(&quot;p&quot;, &quot;LongText&quot;);
+</I>&gt;<i> 		((DebugST) st).inspect();
+</I>&gt;<i> 
+</I>&gt;<i> 		waitUntilAllWindowsAreClosed();
+</I>&gt;<i> 	}
+</I>&gt;<i> }
+</I>
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/stringtemplate-interest/attachments/20110331/367a1343/attachment-0003.html">http://www.antlr.org/pipermail/stringtemplate-interest/attachments/20110331/367a1343/attachment-0003.html</A> 
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: PastedGraphic-1.pdf
+Type: application/pdf
+Size: 38233 bytes
+Desc: not available
+Url : <A HREF="http://www.antlr.org/pipermail/stringtemplate-interest/attachments/20110331/367a1343/attachment-0002.pdf">http://www.antlr.org/pipermail/stringtemplate-interest/attachments/20110331/367a1343/attachment-0002.pdf</A> 
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/stringtemplate-interest/attachments/20110331/367a1343/attachment-0004.html">http://www.antlr.org/pipermail/stringtemplate-interest/attachments/20110331/367a1343/attachment-0004.html</A> 
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: PastedGraphic-2.pdf
+Type: application/pdf
+Size: 36681 bytes
+Desc: not available
+Url : <A HREF="http://www.antlr.org/pipermail/stringtemplate-interest/attachments/20110331/367a1343/attachment-0003.pdf">http://www.antlr.org/pipermail/stringtemplate-interest/attachments/20110331/367a1343/attachment-0003.pdf</A> 
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/stringtemplate-interest/attachments/20110331/367a1343/attachment-0005.html">http://www.antlr.org/pipermail/stringtemplate-interest/attachments/20110331/367a1343/attachment-0005.html</A> 
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003348.html">[stringtemplate-interest] ST4: Possible NullPointerException or	redundant check in CompiledST.getTemplateRange
+</A></li>
+	<LI>Next message: <A HREF="003355.html">[stringtemplate-interest] ST4: Bug: Selecting the root template	in STVis will not select the complete output
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3352">[ date ]</a>
+              <a href="thread.html#3352">[ thread ]</a>
+              <a href="subject.html#3352">[ subject ]</a>
+              <a href="author.html#3352">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">More information about the stringtemplate-interest
+mailing list</a><br>
+</body></html>

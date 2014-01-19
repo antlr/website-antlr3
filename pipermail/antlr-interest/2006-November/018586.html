@@ -1,0 +1,266 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Config file parsing grammar
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Config%20file%20parsing%20grammar&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="018608.html">
+   <LINK REL="Next"  HREF="018595.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Config file parsing grammar</H1>
+    <B>James Cook</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Config%20file%20parsing%20grammar&In-Reply-To="
+       TITLE="[antlr-interest] Config file parsing grammar">bonkabonka at gmail.com
+       </A><BR>
+    <I>Sat Nov 25 02:21:11 PST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="018608.html">[antlr-interest] new &quot;tutorial&quot; for v3
+</A></li>
+        <LI>Next message: <A HREF="018595.html">[antlr-interest] Config file parsing grammar
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#18586">[ date ]</a>
+              <a href="thread.html#18586">[ thread ]</a>
+              <a href="subject.html#18586">[ subject ]</a>
+              <a href="author.html#18586">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Howdy
+
+I've been banging on a grammar to parse Unix-style config files
+(notably /etc/hosts, /etc/ethers and dhcpd's leases file) but haven't
+had much luck.  I'm sure it's a simple fix but I've been at it for
+almost three days now and have just about reached the throwing-stuff
+stage.  =P  Anyway, here's the lexer bits:
+
+lexer grammar CommonUnixConfig;
+
+// ---------------------------------------------------------------------
+// Base
+// ---------------------------------------------------------------------
+
+WHITESPACE
+        :       (' ' | '\t')+
+        ;
+
+NEWLINE
+        :       ('\r\n' | '\n' | '\r')
+        ;
+
+COLON
+        :       ':'
+        ;
+
+DOT
+        :       '.'
+        ;
+
+STAR
+        :       '*'
+        ;
+
+DASH
+        :       '-'
+        ;
+
+HASH
+        :       '#'
+        ;
+
+SLASH
+        :       '/'
+        ;
+
+DIGIT
+        :       '0'..'9'
+        ;
+
+HEXDIGIT
+        :       DIGIT | 'a'..'f' | 'A'..'F'
+        ;
+
+LETTER
+        :       'a'..'z' | 'A'..'Z'
+        ;
+
+// ----------------------------------------------------------------------------
+// Configuration Cruft
+// ----------------------------------------------------------------------------
+
+COMMENT
+        :       HASH ~NEWLINE*
+//              { $channel=HIDDEN; System.out.println(&quot;comment&quot;); }
+                { System.out.println(&quot;comment&quot;); skip(); }
+        ;
+
+BLANKLINE
+        :       WHITESPACE? NEWLINE
+                { System.out.println(&quot;blankline&quot;); skip(); }
+        ;
+
+// ----------------------------------------------------------------------------
+// Ethernet
+// ----------------------------------------------------------------------------
+
+CLIENTID
+        :       HEXPAIR COLON MACADDRESS
+        ;
+
+MACADDRESS
+        :       HEXPAIR COLON HEXPAIR COLON HEXPAIR COLON HEXPAIR
+COLON HEXPAIR COLON HEXPAIR
+        ;
+
+fragment
+HEXPAIR
+        :       HEXDIGIT HEXDIGIT
+        ;
+
+// ----------------------------------------------------------------------------
+// Internet Address (DNS and Bare IP)
+// ----------------------------------------------------------------------------
+
+IPADDRESS
+        :       IPV4ADDRESS | IPV6ADDRESS
+        ;
+
+IPV4ADDRESS
+        :       BYTE DOT BYTE DOT BYTE DOT BYTE
+        ;
+
+// RFC 2373 Appendix B is evil
+IPV6ADDRESS
+        :       HEXPART (COLON IPV4ADDRESS)?
+        ;
+
+HOSTNAME
+        :       DNSCHAR+ (DOT DNSCHAR+)* DOT?
+        ;
+
+// RFC 2373 Appendix B says the four parts of an IPv4address can have only one
+// to three digits
+fragment
+BYTE
+        :       DIGIT (DIGIT DIGIT?)?
+        ;
+
+fragment
+HEXPART
+        :       HEXSEQ | HEXSEQ COLON COLON HEXSEQ? | COLON COLON HEXSEQ?
+        ;
+
+fragment
+HEXSEQ
+        :       HEX4 (COLON HEX4)*
+        ;
+
+fragment
+HEX4
+        :       HEXDIGIT (HEXDIGIT (HEXDIGIT HEXDIGIT?)?)?
+        ;
+
+// As defined in RFC 1034
+fragment
+DNSCHAR
+        :       LETTER | DIGIT | DASH
+        ;
+
+======
+
+Next up is the particular parser I've been focusing on:
+
+parser grammar Hosts;
+
+options {
+        tokenVocab = CommonUnixConfig;
+}
+
+go
+        :       hostline*
+        ;
+
+hostline
+        :       ip=IPADDRESS WHITESPACE hostname=HOSTNAME (WHITESPACE
+alias=HOSTNAME{System.out.println(&quot;alias: &quot; + $alias);})* NEWLINE
+                {
+                        System.out.println(&quot;ip addr  : &quot; + $ip);
+                        System.out.println(&quot;hostname : &quot; + $hostname);
+                }
+        ;
+
+======
+
+And then, finally, the test harness:
+
+import org.antlr.runtime.*;
+
+public class hosts
+{
+        public static void main(String args[])
+                throws Throwable
+        {
+                ANTLRFileStream in = new ANTLRFileStream(args[0]);
+                CommonUnixConfigLexer lexer = new CommonUnixConfigLexer(in);
+
+                CommonTokenStream tokens = new CommonTokenStream(lexer);
+
+                HostsParser parser = new HostsParser(tokens);
+                parser.go();
+        }
+}
+
+======
+
+In the event that there aren't any blank lines or comments, the file
+parses properly.  However, add in a blank line or a comment and
+parsing seems to abort without throwing an exception.  =(  Also, the
+print statements never execute but I suspect I'm using them wrong.
+
+I didn't have any luck finding examples to pattern my efforts after -
+most often newlines and whitespace are ignorable whereas they're
+delimiters here.  Any help would be appreciated.  Thanks!
+
+-- 
+James
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="018608.html">[antlr-interest] new &quot;tutorial&quot; for v3
+</A></li>
+	<LI>Next message: <A HREF="018595.html">[antlr-interest] Config file parsing grammar
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#18586">[ date ]</a>
+              <a href="thread.html#18586">[ thread ]</a>
+              <a href="subject.html#18586">[ subject ]</a>
+              <a href="author.html#18586">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

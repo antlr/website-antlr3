@@ -1,0 +1,146 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Problems with Pre-processing instructions of C#
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Problems%20with%20Pre-processing%20instructions%20of%20C%23&In-Reply-To=%3CAE575413-EFEF-4B7A-A651-8DE3E259E397%40temporal-wave.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="036032.html">
+   <LINK REL="Next"  HREF="036031.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Problems with Pre-processing instructions of C#</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Problems%20with%20Pre-processing%20instructions%20of%20C%23&In-Reply-To=%3CAE575413-EFEF-4B7A-A651-8DE3E259E397%40temporal-wave.com%3E"
+       TITLE="[antlr-interest] Problems with Pre-processing instructions of C#">jimi at temporal-wave.com
+       </A><BR>
+    <I>Sun Sep 20 17:03:06 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="036032.html">[antlr-interest] Problems with Pre-processing instructions of C#
+</A></li>
+        <LI>Next message: <A HREF="036031.html">[antlr-interest] Debugging help please
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36033">[ date ]</a>
+              <a href="thread.html#36033">[ thread ]</a>
+              <a href="subject.html#36033">[ subject ]</a>
+              <a href="author.html#36033">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Yeah. But the # character is overloaded in the lexer and so you need  
+to keepbstate for that and then you must keep on/off state for pass  
+through, which you must implement as a stack. You need gated  
+predicates for directives etc. It took me good few days of wrangling  
+to get this correct. Best approach is to get #if working, them add  
+#else and so on.
+
+Jim
+
+On Sep 20, 2009, at 4:54 PM, David-Sarah Hopwood &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">david-sarah at jacaranda.org</A> 
+ &gt; wrote:
+
+&gt;<i> Eduard Ralph wrote:
+</I>&gt;&gt;<i> Hi community,
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I'm fighting with the processing of pre-processing instructions  
+</I>&gt;&gt;<i> according to C# specs. The BNF is:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Whitespace(opt) '#' Whitespace(opt) 'error' input-characters
+</I>&gt;&gt;<i> Whitespace(opt) '#' Whitespace(opt) 'warning' input-characters
+</I>&gt;&gt;<i> Whitespace(opt) '#' Whitespace(opt) 'line'  ...
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> where
+</I>&gt;&gt;<i> Whitespace(opt) can be optionally one or more spaces  
+</I>&gt;&gt;<i> ('\u0020','\u00A0', and a few more)
+</I>&gt;&gt;<i> Input-characters is anything except newline ('\n', and a few more)
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I wrote in the Lexer, where the other rules are fragments
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> PP_DIAGNOSTIC      :        (WHITESPACE* HASH WHITESPACE* 'error') 
+</I>&gt;&gt;<i> =&gt;WHITESPACE* HASH WHITESPACE* ERROR INPUT_CHARACTER*
+</I>&gt;&gt;<i>                            |        (WHITESPACE* HASH WHITESPACE*  
+</I>&gt;&gt;<i> 'warning')=&gt;WHITESPACE* HASH WHITESPACE* WARNING INPUT_CHARACTER*
+</I>&gt;&gt;<i>                            ;
+</I>&gt;<i>
+</I>&gt;<i> These probably need NEWLINEs at the end.
+</I>&gt;<i>
+</I>&gt;&gt;<i> PP_LINE                 :        (WHITESPACE* HASH WHITESPACE*  
+</I>&gt;&gt;<i> 'line')=&gt; WHITESPACE* HASH WHITESPACE* LINE PP_LINE_INDICATOR NEWLINE
+</I>&gt;&gt;<i>                            ;
+</I>&gt;<i>
+</I>&gt;<i> This will not skip whitespace between LINE and PP_LINE_INDICATOR or
+</I>&gt;<i> between PP_LINE_INDICATOR and NEWLINE.
+</I>&gt;<i>
+</I>&gt;<i> I think you probably want
+</I>&gt;<i>  ... =&gt; WHITESPACE* HASH WHITESPACE* LINE WHITESPACE*  
+</I>&gt;<i> PP_LINE_INDICATOR
+</I>&gt;<i>           WHITESPACE* NEWLINE
+</I>&gt;<i>
+</I>&gt;<i> but that is likely independent of your problem with the lexer not
+</I>&gt;<i> recognising which rule applies.
+</I>&gt;<i>
+</I>&gt;&gt;<i> fragment PP_LINE_INDICATOR      :        INTEGER_LITERAL  
+</I>&gt;&gt;<i> PP_FILE_NAME?
+</I>&gt;&gt;<i>                                               |         
+</I>&gt;&gt;<i> IDENTIFIER_OR_KEYWORD
+</I>&gt;&gt;<i>                                               ;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> fragment PP_FILE_NAME              :        STRING_LITERAL
+</I>&gt;&gt;<i>                                               ;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> fragment HASH                          :        '#';
+</I>&gt;<i>
+</I>&gt;<i> I would suggest left-factoring and using actions to change the token  
+</I>&gt;<i> type:
+</I>&gt;<i>
+</I>&gt;<i>  fragment PP_DIAGNOSTIC : ;
+</I>&gt;<i>  fragment PP_LINE : ;
+</I>&gt;<i>
+</I>&gt;<i>  PP_UNRECOGNIZED
+</I>&gt;<i>    : WHITESPACE* HASH WHITESPACE*
+</I>&gt;<i>      ( (ERROR | WARNING)=&gt; INPUT_CHARACTER* { $type = PP_DIAGNOSTIC; }
+</I>&gt;<i>      | (LINE)=&gt; LINE WHITESPACE* PP_LINE_INDICATOR WHITESPACE*
+</I>&gt;<i>                                             { $type = PP_LINE; }
+</I>&gt;<i>      | INPUT_CHARACTER* // leave as type PP_UNRECOGNIZED [1]
+</I>&gt;<i>      )? NEWLINE
+</I>&gt;<i>    ;
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> [1] omit this line if you want an unrecognized instruction to be a  
+</I>&gt;<i> lexer
+</I>&gt;<i>    mismatch, but I would suggest leaving it for better error recovery.
+</I>&gt;<i>
+</I>&gt;<i> -- 
+</I>&gt;<i> David-Sarah Hopwood  &#9893;  <A HREF="http://davidsarah.livejournal.com">http://davidsarah.livejournal.com</A>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I></PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="036032.html">[antlr-interest] Problems with Pre-processing instructions of C#
+</A></li>
+	<LI>Next message: <A HREF="036031.html">[antlr-interest] Debugging help please
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36033">[ date ]</a>
+              <a href="thread.html#36033">[ thread ]</a>
+              <a href="subject.html#36033">[ subject ]</a>
+              <a href="author.html#36033">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

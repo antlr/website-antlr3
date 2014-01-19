@@ -1,0 +1,213 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] ANTLR 3.0.1: invalid character column in a mismatch character error message.
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20ANTLR%203.0.1%3A%20invalid%20character%20column%20in%20a%0A%20mismatch%20character%20error%20message.&In-Reply-To=%3C20080816074153.6726411ED8B%40www.antlr.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="029992.html">
+   <LINK REL="Next"  HREF="029944.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] ANTLR 3.0.1: invalid character column in a mismatch character error message.</H1>
+    <B>Gavin Lambert</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20ANTLR%203.0.1%3A%20invalid%20character%20column%20in%20a%0A%20mismatch%20character%20error%20message.&In-Reply-To=%3C20080816074153.6726411ED8B%40www.antlr.org%3E"
+       TITLE="[antlr-interest] ANTLR 3.0.1: invalid character column in a mismatch character error message.">antlr at mirality.co.nz
+       </A><BR>
+    <I>Sat Aug 16 00:41:46 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="029992.html">[antlr-interest] ANTLR 3.0.1: invalid character column in a	mismatch character error message.
+</A></li>
+        <LI>Next message: <A HREF="029944.html">[antlr-interest] BUG: Constant (literal) token is incorrectly assumed to be present in AST rewrite
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30047">[ date ]</a>
+              <a href="thread.html#30047">[ thread ]</a>
+              <a href="subject.html#30047">[ subject ]</a>
+              <a href="author.html#30047">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>At 10:46 15/08/2008, Kay R&#246;pke wrote:
+ &gt;I totally see your point. However, what would you intend to
+ &gt;report as a column number in that case? Assume 8 char wide
+ &gt;tabs? (I'm asking this out of interest, not spite.)
+
+Yes, since that's the standard tab width (and the 
+one expected by gcc).  But probably also have a 
+command-line parameter in the generated tool to 
+override this if needed.  (If a plugin is used to 
+manage the build instead of just a build rule, 
+then it could pass in the editor's current tab 
+setting, if that works better.  Of course, a 
+plugin would probably implement the parser inline 
+rather than calling a helper tool, so that point might be moot.)
+
+ &gt;Ok, I can't give you assurance of course, but I'd like to
+ &gt;improve at least ANTLR's Tool messages (probably not
+ &gt;changing the charPositionLine to mean column, but presenting
+ &gt;it a bit differently so it's clear). The main goal would be
+ &gt;to print the offending place with a bit of context in a nice
+ &gt;manner.
+
+Definitely, charPositionInLine should stay as is, 
+yes :)  And some additional context would be 
+wonderful -- for humans, anyway.  But the 
+line/column printout is also useful for automated tools.
+
+ &gt;Again, my vote is strongly for keeping charPositionInLine
+ &gt;as _the_ definitive source of horizontal locations, because
+ &gt;that's the most useful thing for anything else than printing
+ &gt;(esp when communicating with other tools, since it's really
+ &gt;the logical character offset not meddled with in any way).
+
+Agreed.
+
+ &gt;I'm strongly against adding any memory 
+footprint to CommonToken,
+ &gt;as that's the one most people use. It might 
+sound silly to argue
+ &gt;about adding a couple of bytes, but it really does make a
+ &gt;difference for large input text. This is a 
+question of trading a
+ &gt;little time for potentially large amounts of memory and I think
+ &gt;it's worth the effort.
+
+I'm not sure I agree there.  I think it keeps 
+things simpler if you work it out at lexing time 
+-- simply watch for '\t's in the incoming char 
+stream in a similar manner to how ANTLR 
+automatically recognises '\r's and '\n's now.
+
+But then again, I usually tend to work with small 
+input sets (although I do have a couple of 
+grammars that operate on input files of 20-30MB 
+or so), so it doesn't seem like a big deal to me 
+to add 2-4 bytes extra per token.
+
+Getting the column number is fairly 
+straightforward -- set it to 1 at the start of 
+the line, then for each non-tab character simply 
+increment it by 1.  If you hit a tab, then 
+increment it by (tabSize - ((column-1) % 
+tabSize)) instead; alternatively set it to 
+((trunc((column-1) / tabSize) * tabSize) + 1), 
+whichever's easiest/fastest.
+
+If this is done during the initial lexing pass, 
+it might reduce speed infinitestimally, but the 
+column numbers can then be saved to each token 
+for whatever purpose desired -- most probably for 
+error messages, but it could be useful for 
+diagnostics or logging or something as well.
+
+If it's deferred until later, then you have to be 
+able to locate the character position of the 
+start of the line containing a token, given only 
+whatever data is in the token itself, then scan 
+forward and make the calculations as above -- 
+which might mean you're going over the same 
+ground multiple times, if you're doing this for 
+multiple tokens on the same line.
+
+So... well, I don't know.  If the start of line 
+positions are available in the runtime, and if 
+this sort of thing is only likely to ever be used 
+for error reporting, then I guess calculating it 
+after the fact makes a certain amount of 
+sense.  But I just really want to have it handy anyway ;)
+
+Trying to work it out after the fact gets 
+complicated though when there are modified tokens 
+(eg. imaginary tokens or tokens that have been 
+'setText'ed)...  mind you, I guess the same issue 
+exists with the line and charPositionInLine members now.
+
+ &gt;The reason I wouldn't like it to be the default 
+in BaseRecognizer
+ &gt;(or whatever overrides displayError) is that we don't know the
+ &gt;token type to look for. This is another thing that needs to be
+ &gt;configured by the developer.
+
+I'm not sure I follow that argument.  You have to 
+deal with things at the character level, not the 
+token level.  In fact you have to go all the way 
+back to the original character stream, since 
+there's no guarantee that tokens have been 
+generated that contain all the characters, nor 
+what order they're in.  (And of course the lexer 
+has to be able to obtain column numbers for its 
+current position in order to report errors, 
+without even having a token.)
+
+ &gt;OTOH I suppose we could be mean and expand \t in _every_ token
+ &gt;we encounter, by getting its text.
+
+No, that wouldn't work, since its text may have 
+been modified.  The only way to get the real 
+column number is to look at the original input directly.
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="029992.html">[antlr-interest] ANTLR 3.0.1: invalid character column in a	mismatch character error message.
+</A></li>
+	<LI>Next message: <A HREF="029944.html">[antlr-interest] BUG: Constant (literal) token is incorrectly assumed to be present in AST rewrite
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30047">[ date ]</a>
+              <a href="thread.html#30047">[ thread ]</a>
+              <a href="subject.html#30047">[ subject ]</a>
+              <a href="author.html#30047">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

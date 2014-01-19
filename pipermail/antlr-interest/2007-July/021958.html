@@ -1,0 +1,210 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] PEG-style &quot;and&quot; predicates
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20PEG-style%20%22and%22%20predicates&In-Reply-To=%3CCA85AA9E-34CE-4FD7-A314-7F46D42166DA%40wincent.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="021961.html">
+   <LINK REL="Next"  HREF="021960.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] PEG-style &quot;and&quot; predicates</H1>
+    <B>Wincent Colaiuta</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20PEG-style%20%22and%22%20predicates&In-Reply-To=%3CCA85AA9E-34CE-4FD7-A314-7F46D42166DA%40wincent.com%3E"
+       TITLE="[antlr-interest] PEG-style &quot;and&quot; predicates">win at wincent.com
+       </A><BR>
+    <I>Mon Jul  2 08:14:36 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="021961.html">[antlr-interest] Problem using my own AST class
+</A></li>
+        <LI>Next message: <A HREF="021960.html">[antlr-interest] PEG-style &quot;and&quot; predicates
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#21958">[ date ]</a>
+              <a href="thread.html#21958">[ thread ]</a>
+              <a href="subject.html#21958">[ subject ]</a>
+              <a href="author.html#21958">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>In my lexer I am trying to use PEG-style &quot;and&quot; predicates (&quot;match X  
+if it is followed by Y&quot;) so that I can take a rule like this:
+
+   FOO : 'bar' ;
+
+And make it so that it will &quot;match 'bar' only if it is the last non- 
+whitespace thing on the line&quot;.
+
+So, based on the 11 May 2006 notes on this page:
+
+   &lt;<A HREF="http://www.antlr.org/blog/antlr3/lookahead.tml">http://www.antlr.org/blog/antlr3/lookahead.tml</A>&gt;
+
+I tried making a rule like this:
+
+   FOO : ('bar' ' '* ('\n' | '\r' | EOF))=&gt; 'bar' ;
+
+But it doesn't work. Looking at the generated code, I can see that  
+the syntactic predicate is broken; on lookahead of 'b', the lexer  
+fires off a syntactic predicate which tries to match only 'bar' (and  
+not the whitespace etc in the predicate). As a result, this rule will  
+match for any occurrence of 'bar', not just for 'bar' when it is the  
+last non-whitespace thing on the line. This is happening in a  
+filtering lexer, but a quick test suggests that exactly the same  
+thing happens in non-filtering lexers as well.
+
+My understanding of predicates (notes at &lt;<A HREF="http://wincent.com/">http://wincent.com/</A> 
+knowledge-base/ANTLR_predicates&gt;) leads me to believe that this is  
+failing because in ANTLR, syntactic predicates are used to order a  
+rule's alternatives. They are not like gated semantic predicates  
+which can be used to turn an entire rule off depending on context. It  
+seems that syntactic predicates only make sense when a rule has more  
+than one alternative, and so they can't be used for the purposes of  
+writing PEG-style &quot;and&quot; predicates.
+
+I could change my rule to this:
+
+   FOO : 'bar' ' '* ('\n' | '\r' | EOF) ;
+
+But that isn't what I want; I want a 'bar' token and I don't want the  
+trailing whitespace and newline to be included in the token.
+
+So it seems the only workaround is to do a (very ugly) manual  
+lookahead inside a gated semantic predicate:
+
+   FOO : { foo_helper(ctx) }?=&gt; 'bar' ;
+
+The helper method is needed because you can only put a single  
+expression inside a semantic predicate and I need to loop... It would  
+go something like this (in C):
+
+   ANTLR3_BOOLEAN foo_helper(pMyLexer ctx)
+   {
+       ANTLR3_UCHAR c;
+       int i = 4;
+
+       // check for presence of 'bar'
+       if (LA(1) == 'b' &amp;&amp; LA(2) == 'a' &amp;&amp; LA(3) == 'r')
+       {
+          // skip over any spaces
+          while (c = LA(i++), c == ' ');
+
+          // check for newline or EOF
+          if (c == '\n' || c == '\r' || c == ANTLR3_CHARSTREAM_EOF)
+             return ANTLR3_TRUE;
+       }
+       return ANTLR3_FALSE;
+   }
+
+That was typed directly (untested) into the mail program so it might  
+need some tweaks to get it to work, but you get the idea...
+
+I guess the other alternative is to use a validating semantic  
+predicate after 'bar' is matched:
+
+   FOO: 'bar' { last_thing_on_line(ctx) }? ;
+
+But that once again requires an ugly helper method, although not  
+quite as ugly (again, untested but you get the idea):
+
+   ANTLR3_BOOLEAN foo_helper(pMyLexer ctx)
+   {
+       ANTLR3_UCHAR c;
+       int i = 1;
+
+       // skip over any spaces
+       while (c = LA(i++), c == ' ');
+
+       // check for newline or EOF
+       if (c == '\n' || c == '\r' || c == ANTLR3_CHARSTREAM_EOF)
+             return ANTLR3_TRUE;
+
+       return ANTLR3_FALSE;
+   }
+
+So my questions are really threefold:
+
+1. Is there a better way of doing this than using an ugly helper method?
+
+2. Could ANTLR be changed so that an explicitly-specified syntactic  
+predicate is executed in rules for which there is only one alternative?
+
+3. Better still, could ANTLR be extended to accept a PEG-style &quot;&amp;&quot;  
+notation for situations like this?
+
+The latter would allow you to write rules like:
+
+   FOO : 'bar' &amp;(' '* ('\n' | '\r' | EOF));
+
+If an &quot;&amp;&quot; notation were to be added then it would be good to add a  
+&quot;!&quot; notation for completeness as well. I know that you can use &quot;~&quot; in  
+ANTLR but I don't think it's exactly equivalent to the PEG &quot;not&quot;.
+
+Cheers,
+Wincent
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="021961.html">[antlr-interest] Problem using my own AST class
+</A></li>
+	<LI>Next message: <A HREF="021960.html">[antlr-interest] PEG-style &quot;and&quot; predicates
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#21958">[ date ]</a>
+              <a href="thread.html#21958">[ thread ]</a>
+              <a href="subject.html#21958">[ subject ]</a>
+              <a href="author.html#21958">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

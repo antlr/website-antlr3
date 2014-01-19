@@ -1,0 +1,227 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Using a Parser as a TokenFilter
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Using%20a%20Parser%20as%20a%20TokenFilter&In-Reply-To=bc607a4e05051201175140b5e1%40mail.gmail.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="012138.html">
+   <LINK REL="Next"  HREF="012125.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Using a Parser as a TokenFilter</H1>
+    <B>Chris Black</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Using%20a%20Parser%20as%20a%20TokenFilter&In-Reply-To=bc607a4e05051201175140b5e1%40mail.gmail.com"
+       TITLE="[antlr-interest] Using a Parser as a TokenFilter">chris at lotuscat.com
+       </A><BR>
+    <I>Thu May 12 07:52:46 PDT 2005</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="012138.html">[antlr-interest] Using a Parser as a TokenFilter
+</A></li>
+        <LI>Next message: <A HREF="012125.html">[antlr-interest] yaml and antlr
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#12142">[ date ]</a>
+              <a href="thread.html#12142">[ thread ]</a>
+              <a href="subject.html#12142">[ subject ]</a>
+              <a href="author.html#12142">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Ric Klaren wrote:
+
+&gt;<i>Hi,
+</I>&gt;<i>
+</I>&gt;<i>On 5/11/05, Chris Black &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">chris at lotuscat.com</A>&gt; wrote:
+</I>&gt;<i>  
+</I>&gt;<i>
+</I>&gt;<i> [stuff deleted]
+</I>&gt;<i>
+</I>&gt;&gt;<i>line:
+</I>&gt;&gt;<i>    (NEWLINE) =&gt; emptyLine
+</I>&gt;&gt;<i>    | ((FIELD | DELIM)+ NEWLINE) =&gt; contentLine
+</I>&gt;&gt;<i>    ;
+</I>&gt;&gt;<i>    
+</I>&gt;&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>I'd get rid of these predicates. They serve no purpose. My rule of
+</I>&gt;<i>thumb: when you got a rule with every alternative guarded with a
+</I>&gt;<i>syntactic predicate then you're probably doing something wrong (you
+</I>&gt;<i>get rules that might not consume input and that's usually good for
+</I>&gt;<i>strange stuff).
+</I>&gt;<i>
+</I>&gt;<i>  
+</I>&gt;<i>
+</I>Good point. I have changed it to just use | alternatives.
+
+&gt;<i>The lookahead you're looking at is not ambiguous and in the case of
+</I>&gt;<i>erroneous input the rule might not consume anything. Also you're not
+</I>&gt;<i>handling EOF... e.g. in case of EOF you'll get an RecognitionException
+</I>&gt;<i>that gets eaten by nextToken (silently as well) (try adding a few
+</I>&gt;<i>println's to the bits that eat exceptions, for a filter I wrote a
+</I>&gt;<i>while back some of them needed extra handling).
+</I>&gt;<i>
+</I>&gt;<i>  
+</I>&gt;<i>
+</I>Added some printlns in nextToken exception handlers, never printed 
+anything. probably not a bad idea to have them in there though.
+
+&gt;<i>The following rule is a lot simpler. Try to differentiate between the
+</I>&gt;<i>things you want with some attributes in this filter (e.g. when you
+</I>&gt;<i>call the line rule from nextToken set an attribute that you started a
+</I>&gt;<i>line and reset a counter for the fields then update the counter in the
+</I>&gt;<i>closure below. You might also want to set a flag in the (NEWLINE|EOF)
+</I>&gt;<i>bit. So you can detect better how the line rule ended (and when the
+</I>&gt;<i>next line will start!). I also miss the code that inserts the marker
+</I>&gt;<i>at the start of the line.
+</I>&gt;<i>
+</I>&gt;<i>line:
+</I>&gt;<i>    (FIELD | DELIM)* ( NEWLINE | EOF )
+</I>&gt;<i>    ;
+</I>&gt;<i>
+</I>&gt;<i>Or something like:
+</I>&gt;<i>
+</I>&gt;<i>line:
+</I>&gt;|<i>  FIELD (DELIM FIELD)* (DELIM)* eol
+</I>&gt;|<i>  (DELIM)* eol
+</I>&gt;<i>;
+</I>&gt;<i>
+</I>&gt;<i>eol:( NEWLINE | EOF );
+</I>&gt;<i>
+</I>&gt;<i>  
+</I>&gt;<i>
+</I>I switched to having the eol rule, this actually turned out to stop the 
+spurrious unexpected null token errors I was seeing from the downline 
+parser as well.
+
+&gt;<i>Also first get things to work with the marking of the stanza's then
+</I>&gt;<i>add the comma eating. When a filter starts eating input it might eat
+</I>&gt;<i>all the input and that takes some extra handling if I recall right.
+</I>&gt;<i>It's probably a good idea to let the line rule finish in nextToken
+</I>&gt;<i>then check the tail of the queue for trailing comma's and nuke them
+</I>&gt;<i>from the queue.
+</I>&gt;<i>
+</I>&gt;<i>  
+</I>&gt;<i>
+</I>Probably a better approach, before getting your reply I gave up on the 
+trailing DELIM eating for a bit and switched focus to adding imaginary 
+tokens. This solved my downline problems on its own. I may do further 
+work to kill the trailing delims to clean up the downstream parser 
+anyway in the future.
+
+&gt;<i>Tip: Read the code generated for the line rule and get a feel for how
+</I>&gt;<i>it interacts with your consume &amp; nextToken method. In this case it is
+</I>&gt;<i>also feasible to handcode the filter since it's not that complex
+</I>&gt;<i>parsing wise.
+</I>&gt;<i>
+</I>&gt;<i>I'm afraid I might not be too coherent/clear in this post but there
+</I>&gt;<i>should be some tips in it that might get you going again. I'll look
+</I>&gt;<i>again at it when I'm at home again.
+</I>&gt;<i>
+</I>&gt;<i>Cheers,
+</I>&gt;<i>
+</I>&gt;<i>Ric
+</I>&gt;<i>  
+</I>&gt;<i>
+</I>I appreciate all the help! For the curious, here is what I have now:
+header {
+    package mypackage;
+    import antlr.*;
+}
+
+class StanzaParser extends Parser;
+options {
+    importVocab=CSV;
+    k=2;
+}
+
+tokens {
+    STANZASEPARATOR;
+}
+
+{
+    MyTokenQueue queue = new MyTokenQueue(8);
+   
+    public void consume() {
+        try {
+            queue.append(LT(1));
+        } catch(TokenStreamException e) {
+            System.err.println(&quot;error in consume&quot;);
+            System.err.println(e);
+            e.printStackTrace();
+        }
+      super.consume();
+    }
+   
+    public Token nextToken() throws TokenStreamException {
+        Token ret;
+        if(queue.length() &lt;= 0) {
+            try {
+                line();
+            } catch(RecognitionException e) {
+                System.err.println(&quot;recog exception in nextToken&quot;);
+                System.err.println(e);
+                e.printStackTrace();
+            }
+            catch(TokenStreamException e) {
+                System.err.println(&quot;tokenstream exception in nextToken&quot;);
+                System.err.println(e);
+                e.printStackTrace();
+            }
+        }
+        if(queue.length() &gt; 0) {
+            ret = queue.elementAt(0);
+            queue.removeFirst();
+            return ret;
+        }
+        System.out.println(&quot;no more queue, returning EOF&quot;);
+        return new Token(Token.EOF_TYPE,&quot;end of file&quot;);
+    }
+}
+
+line: (emptyLine | contentLine | delim1stLine) ;
+
+emptyLine: eol ;
+
+delim1stLine: DELIM (FIELD | DELIM)+ eol ;
+
+contentLine: firstTok:FIELD
+    {
+        String firstText = firstTok.getText();
+        if(firstText.startsWith(&quot;Data Type&quot;) || 
+firstText.startsWith(&quot;DataType&quot;)
+            || firstText.equals(&quot;Count&quot;) || firstText.equals(&quot;Result&quot;)) {
+            queue.append(new Token(STANZASEPARATOR,&quot;stanza sep&quot;));
+        }
+    }
+    (FIELD | DELIM)* eol
+    ;
+   
+eol: (NEWLINE | EOF) ;
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="012138.html">[antlr-interest] Using a Parser as a TokenFilter
+</A></li>
+	<LI>Next message: <A HREF="012125.html">[antlr-interest] yaml and antlr
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#12142">[ date ]</a>
+              <a href="thread.html#12142">[ thread ]</a>
+              <a href="subject.html#12142">[ subject ]</a>
+              <a href="author.html#12142">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

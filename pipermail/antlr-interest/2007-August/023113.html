@@ -1,0 +1,188 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] AST to Rewrite and StringTemplate Example needs	enlightenment
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20AST%20to%20Rewrite%20and%20StringTemplate%20Example%20needs%0A%09enlightenment&In-Reply-To=%3Cbc4938830708080809uf87f574ia44811a73943c4a2%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="023114.html">
+   <LINK REL="Next"  HREF="023116.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] AST to Rewrite and StringTemplate Example needs	enlightenment</H1>
+    <B>Cameron Palmer</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20AST%20to%20Rewrite%20and%20StringTemplate%20Example%20needs%0A%09enlightenment&In-Reply-To=%3Cbc4938830708080809uf87f574ia44811a73943c4a2%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] AST to Rewrite and StringTemplate Example needs	enlightenment">cameron.palmer at gmail.com
+       </A><BR>
+    <I>Wed Aug  8 08:09:57 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="023114.html">[antlr-interest] problem with semantic predicates,	local declarations, and hoisting
+</A></li>
+        <LI>Next message: <A HREF="023116.html">[antlr-interest] ANTLR.org RSS Feed
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#23113">[ date ]</a>
+              <a href="thread.html#23113">[ thread ]</a>
+              <a href="subject.html#23113">[ subject ]</a>
+              <a href="author.html#23113">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I have contrived an example of what I guess illustrates a
+misconception about how ANTLR works and would like to ask others how
+they would cope with such a grammar?
+
+Here is my sample input file:
+
+begin main
+statement: foo bar
+statement: coffee mug
+end
+begin sub
+statement: jelly bean
+statement: jumping jack
+end
+
+The lexing and parsing are straight forward. The grammar outputs an
+AST like this:
+(PROGRAM (BLOCK main (statement bar foo) (statement mug coffee))
+(BLOCK sub (statement bean jelly) (statement jack jumping)))
+
+The parameters to statement were reversed for the fun of it.
+
+Now let's say you walk the tree and want to output text in the format of:
+main
+stmt bar foo
+stmt mug coffee
+sub
+stmt bean jelly
+stmt jack jumping
+
+Generating the output for the stmt lines is quite easy with a
+StringTemplate. What is tricky is how to eliminate the begin and end's
+from the input stream and output just the name of the code block.
+
+if your grammar looks like:
+grammar SampleAST;
+options { output=AST; }
+tokens { PROGRAM; BLOCK; }
+program : block+ -&gt; ^(PROGRAM block+);
+block   : lc='begin' blockTag NL stat+ 'end' NL -&gt; ^(BLOCK[$lc,
+&quot;BLOCK&quot;] blockTag stat+);
+blockTag : ID;
+stat    : 'statement' COLON a=ID b=ID NL -&gt; ^('statement' $b $a);
+ID      : 'a'..'z' ('a'..'z')*;
+COLON   : ':';
+NL      : '\n';
+WS      : (' ' | '\t') {$channel = HIDDEN;};
+
+and your tree walker looks like:
+tree grammar SampleASTWalker;
+options { tokenVocab=SampleAST; ASTLabelType=CommonTree; rewrite=true;
+output=template; }
+program : ^(PROGRAM block+);
+block   : ^(BLOCK blockTag stat+);
+blockTag : ID -&gt; block(a={$ID.text});
+stat    : ^('statement' a=ID b=ID) -&gt; stmt(a={$a.text},b={$b.text});
+
+My original thinking was that the AST output from the first meant that
+dropped tokens were gone, but that just isn't the case. It is clear
+that the output AST still references the original token stream (duh)
+and that when you make your final call to toString, you will get a mix
+of the original input and the rewriting done in the walker.
+
+See that the stmt lines and the blockTags were rewritten. However the
+begin and end tag have reappeared after disappearing in the AST
+construction.
+begin rw: main
+
+stmt bar foo
+stmt mug coffee
+end
+begin rw: sub
+
+stmt bean jelly
+stmt jack jumping
+end
+
+So now how do you get rid of the tokens from the original stream that
+were more or less syntactic sugar? I have found two ways to do this,
+pass the unwanted tokens in the AST and rewrite them in the walker, or
+keep track of the unwanted tokens index position and delete them for
+TokenStream before calling toString(). The latter is evil, and the
+former is just ugly. What is the pretty way to do this?
+
+Thank you,
+
+Cameron Palmer
+University of North Texas
+
+PS This is the test harness:
+import org.antlr.runtime.*;
+import org.antlr.runtime.tree.*;
+import org.antlr.stringtemplate.*;
+import java.io.*;
+
+public class Main {
+        public static void main(String args[]) throws Exception {
+                FileReader SampleFileR = new FileReader(&quot;SampleAST.stg&quot;);
+                StringTemplateGroup templates = new
+StringTemplateGroup(SampleFileR);
+                SampleFileR.close();
+
+                // Parse input and build AST
+                ANTLRInputStream input = new ANTLRInputStream(System.in);
+                SampleASTLexer lexer = new SampleASTLexer(input);
+                TokenRewriteStream tokens = new TokenRewriteStream(lexer);
+                SampleASTParser parser = new SampleASTParser(tokens);
+                SampleASTParser.program_return r = parser.program();
+                System.out.println(tokens.toString());
+
+                // Walk AST
+                CommonTree t = (CommonTree)r.getTree();
+
+                System.out.println(t.toStringTree());
+
+                CommonTreeNodeStream nodes = new CommonTreeNodeStream(t);
+                nodes.setTokenStream(tokens);
+                SampleASTWalker walker = new SampleASTWalker(nodes);
+                walker.setTemplateLib(templates);
+                SampleASTWalker.program_return r2 = walker.program();
+                System.out.println(tokens.toString());
+        }
+}
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="023114.html">[antlr-interest] problem with semantic predicates,	local declarations, and hoisting
+</A></li>
+	<LI>Next message: <A HREF="023116.html">[antlr-interest] ANTLR.org RSS Feed
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#23113">[ date ]</a>
+              <a href="thread.html#23113">[ thread ]</a>
+              <a href="subject.html#23113">[ subject ]</a>
+              <a href="author.html#23113">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

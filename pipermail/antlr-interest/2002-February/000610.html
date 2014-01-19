@@ -1,0 +1,588 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Heterogeneous AST - simple calculator parser
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Heterogeneous%20AST%20-%20simple%20calculator%20parser&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000609.html">
+   <LINK REL="Next"  HREF="000611.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Heterogeneous AST - simple calculator parser</H1>
+    <B>koud0002</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Heterogeneous%20AST%20-%20simple%20calculator%20parser&In-Reply-To="
+       TITLE="[antlr-interest] Heterogeneous AST - simple calculator parser">robertkoudelka at power-solutions.com.au
+       </A><BR>
+    <I>Thu Feb  7 16:03:07 PST 2002</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000609.html">[antlr-interest] how to store  parser result
+</A></li>
+        <LI>Next message: <A HREF="000611.html">[antlr-interest] Heterogeneous AST - simple calculator parser
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#610">[ date ]</a>
+              <a href="thread.html#610">[ thread ]</a>
+              <a href="subject.html#610">[ subject ]</a>
+              <a href="author.html#610">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I am building a parser and an interpreter for a tool to validate data 
+in a database.
+I want to be able to specify validation rules for table columns (eg. 
+&gt;<i> TODAY AND &lt; #7-FEB-2002#)
+</I> 
+I would like to use ANTLR to help me build the parser so I have 
+started off with a simple grammar for a calculator.
+I got (+, -, *, /) operators working. However, I have a difficulty 
+incorporating unary minus into the grammar.
+I tried to use actions to build parts of the AST but my attempt were 
+unsuccessful.
+Would you be able to point me in the right direction? Thank you.
+ 
+I am using heterogeneous ASTs because I want to become familiar with 
+this concept as I feel that I will need to use them later in the 
+validator tool.
+ 
+My grammar (calc.g), the AST node classes, a test program and a batch 
+file to build the parser, compile it and run the Calc test program 
+follow this message.
+ 
+Sorry about bothering you with my problems but I would really 
+appreciate your help.
+ 
+Robert Koudelka
+
+
+
+// File: calc.g
+class CalcParser extends Parser;
+options {
+  k = 4;                           // four token lookahead
+  codeGenMakeSwitchThreshold = 2;  // Some optimizations
+  codeGenBitsetTestThreshold = 3;
+  defaultErrorHandler = false;     // Don't generate parser error 
+handlers
+  ASTLabelType = &quot;CalcAST&quot;;
+	buildAST = true;
+}
+
+tokens {
+  UNARY_MINUS&lt;AST=UnaryMinusNode&gt;;
+
+  PLUS&lt;AST=PlusNode&gt;;
+  MINUS&lt;AST=MinusNode&gt;;
+  STAR&lt;AST=MultNode&gt;;
+  DIV&lt;AST=DivNode&gt;;
+  INT&lt;AST=IntNode&gt;;
+}
+
+
+expression
+  : logicalExpression SEMI!
+  ;
+
+logicalExpression
+  : relExpression ((AND^ | OR^) relExpression)*
+  ;
+
+relExpression
+  : simpleExpression ((LT^ | LE^ | EQ^ | GE^ | GT^ | NEQ^) 
+simpleExpression)*
+  ;
+
+simpleExpression
+  : MINUS t:term!
+     {
+       System.out.println(&quot;Got unary&quot;);
+       #simpleExpression = #([UNARY_MINUS, &quot;-&quot;], #t);
+
+//       #simpleExpression = antlr.ASTFactory.create(new 
+UnaryMinusNode(LT(1))), #t);
+//       #simpleExpression = new UnaryMinusNode(t);
+     }
+  | term ( (PLUS^ | MINUS^) term )*
+  ;
+
+term
+  : factor ( (STAR^ | DIV^) factor )*
+  ;
+
+factor
+  : INT
+  | LPAREN! logicalExpression RPAREN!
+  ;
+
+
+class CalcTreeWalker extends TreeParser;
+
+expression returns [float r]
+{
+	float a,b;
+	r=0;
+}
+	:	#(PLUS a=expression b=expression)	 { r = a+b; }
+	|	#(MINUS a=expression b=expression) { r = a-b; }
+	|	#(UNARY_MINUS a=expression)
+    {
+      r = (-1) * a;
+    }
+	|	#(STAR a=expression b=expression)  { r = a*b; }
+	|	#(DIV a=expression b=expression)   { r = a/b; }
+	|	#(LT a=expression b=expression)    { if (a &lt; b) r = 
+1; else r = 0; }
+	|	#(LE a=expression b=expression)    { if (a &lt;= b) r = 
+1; else r = 0; }
+	|	#(EQ a=expression b=expression)    { if (a == b) r = 
+1; else r = 0; }
+	|	#(GE a=expression b=expression)    { if (a &gt;= b) r = 
+1; else r = 0; }
+	|	#(GT a=expression b=expression)    { if (a &gt; b) r = 
+1; else r = 0; }
+	|	#(NEQ a=expression b=expression)   { if (a != b) r = 
+1; else r = 0; }
+	|	#(AND a=expression b=expression)   { if ((a &gt; 0) &amp;&amp; 
+(b &gt; 0))  r = 1; else r = 0; }
+	|	#(OR a=expression b=expression)    { if ((a &gt; 0) || 
+(b &gt; 0))  r = 1; else r = 0; }
+	|	i:INT                              { r = (float)
+Integer.parseInt(i.getText()); }
+	;
+
+
+class CalcLexer extends Lexer;
+options {
+  charVocabulary = '\0'..'\377';
+  testLiterals = false;   // don't automatically test for literals
+  k = 4;                  // four characters of lookahead
+  caseSensitive = true;
+  caseSensitiveLiterals = true;
+}
+
+
+WS
+	:	(' '
+	|	'\t'
+	|	'\n'
+	|	'\r')
+		{ _ttype = Token.SKIP; }
+	;
+
+SEMI         options {paraphrase = &quot;;&quot;;}     : ';'   ;
+STAR         options {paraphrase = &quot;*&quot;;}     : '*'   ;
+PLUS         options {paraphrase = &quot;+&quot;;}     : '+'   ;
+MINUS        options {paraphrase = &quot;-&quot;;}     : '-'   ;
+DIV          options {paraphrase = &quot;/&quot;;}     : '/'   ;
+AND          options {paraphrase = &quot;AND&quot;;}   : &quot;AND&quot; ;
+OR           options {paraphrase = &quot;OR&quot;;}    : &quot;OR&quot;  ;
+EQ           options {paraphrase = &quot;=&quot;;}     : '='   ;
+NEQ          options {paraphrase = &quot;&lt;&gt;&quot;;}    : &quot;&lt;&gt;&quot;  ;
+LT           options {paraphrase = &quot;&lt;&quot;;}     : '&lt;'   ;
+LE           options {paraphrase = &quot;&lt;=&quot;;}    : &quot;&lt;=&quot;  ;
+GE           options {paraphrase = &quot;&gt;=&quot;;}    : &quot;&gt;=&quot;  ;
+GT           options {paraphrase = &quot;&gt;&quot;;}     : '&gt;'   ;
+LPAREN       options {paraphrase = &quot;(&quot;;}     : '('   ;
+RPAREN       options {paraphrase = &quot;)&quot;;}     : ')'   ;
+
+
+protected
+DIGIT : '0'..'9';
+INT   : (DIGIT)+;
+
+
+
+
+// File: Calc.java
+import java.io.*;
+import antlr.CommonAST;
+import antlr.collections.AST;
+import antlr.RecognitionException;
+import antlr.TokenStreamException;
+
+class Calc {
+
+	public static void main(String[] args) throws Exception {
+		boolean b = true;
+
+    try {
+      if (args.length &gt; 0) {
+        String filename = args[0];
+        if (processEquationFile(filename)) {
+          return;
+        }
+      }
+
+      float value = 0;
+      BufferedReader reader = null;
+      while (true) {
+        System.out.print(&quot;Enter an expression: &quot;);
+        reader = new BufferedReader(new InputStreamReader(System.in));
+        value = parseExpression(reader, &quot;&lt;stdin&gt;&quot;);
+        System.out.println(&quot;value is &quot; + value);
+      }
+		}
+		catch (TokenStreamException e) {
+			System.err.println(&quot;exception: &quot; + e);
+		}
+		catch (RecognitionException e) {
+			System.err.println(&quot;exception: &quot; + e);
+		}
+	}
+
+
+  private static float parseExpression(Reader reader, String 
+filename) {
+    float r = 0;
+    try {
+      CalcLexer lexer = new CalcLexer(reader);
+      lexer.setFilename(filename);
+      CalcParser parser = new CalcParser(lexer);
+      parser.setFilename(filename);
+      parser.setASTNodeType(&quot;CalcAST&quot;);
+      parser.setASTNodeClass(&quot;CalcAST&quot;);
+
+      parser.expression(); // Parse the input expression
+//      AST t = parser.getAST();
+      CalcAST t = (CalcAST)parser.getAST();
+
+      System.out.println(&quot;Tree in LIST notation: &quot; + t.toStringTree
+());
+      CalcTreeWalker walker = new CalcTreeWalker();
+
+      // Traverse the tree created by the parser
+      r = walker.expression(t);
+
+		} catch (TokenStreamException e) {
+			System.err.println(&quot;exception: &quot; + e);
+		} catch (RecognitionException e) {
+			System.err.println(&quot;exception: &quot; + e);
+		}
+
+    return r;
+  } // method parseExpression
+
+
+  private static boolean processEquationFile(String filename) throws 
+Exception {
+    File f = new File(filename);
+    if (f.exists() == false) {
+      System.out.println(&quot;File: &quot; + f.getAbsoluteFile() + &quot; does not 
+exist!&quot;);
+      return false;
+    }
+    BufferedReader fileReader = new BufferedReader(new FileReader(f));
+    StringReader reader = null;
+    String line = null;
+    float value = 0;
+    while ((line = fileReader.readLine()) != null) {
+      if (line.startsWith(&quot;//&quot;) || (line.length() == 0)) {
+        continue;
+      }
+      System.out.println(&quot;\nProcessing equation: &quot; + line);
+      reader = new StringReader(line);
+      value = parseExpression(reader, &quot;&lt;stdin&gt;&quot;);
+      System.out.println(&quot;value is &quot; + value);
+    }
+
+    return true;
+  } // method processEquationFile
+
+} // class Calc
+
+
+
+// File: CalcAST.java
+import antlr.*;
+import antlr.collections.AST;
+
+public class CalcAST extends BaseAST {
+  protected Token token;
+
+  public CalcAST() {
+  } // constructor
+
+  public CalcAST(Token token) {
+    this.token = token;
+//    System.out.println(&quot;CalcAST(&quot; + token + &quot;) constructor&quot;);
+  } // constructor
+
+  public String getText() {
+    if (this.token == null) {
+      System.out.println(&quot;null token in CalcAST.getText()&quot;);
+      return &quot;&quot;;
+    }
+    return token.getText();
+  }
+
+  // satisfy abstract methods from BaseAST
+  public void initialize(int parm1, String parm2) { }
+  public void initialize(Token parm1) { }
+  public void initialize(AST parm1) { }
+
+  public int value() { return 0; }
+
+} // class CalcAST
+
+
+
+// File: BinaryOperatorAST.java
+import antlr.*;
+import antlr.collections.AST;
+
+public abstract class BinaryOperatorAST extends CalcAST {
+
+  public BinaryOperatorAST(Token token) {
+    super(token);
+  }
+
+  public CalcAST left() {
+    return (CalcAST) getFirstChild();
+  }
+
+  public CalcAST right() {
+    CalcAST t = left();
+    if (t == null) {
+      return null;
+    }
+    return (CalcAST) t.getNextSibling();
+  }
+
+} // class BinaryOperatorAST
+
+
+
+// File: IntNode
+import antlr.*;
+import antlr.collections.AST;
+
+public class IntNode extends CalcAST {
+
+  public IntNode(Token token) {
+    super(token);
+  }
+
+  public int getType() {
+    return CalcParserTokenTypes.INT;
+  }
+
+  public String toString() {
+    return &quot; &quot; + value();
+  }
+
+  public int value() {
+    return Integer.parseInt(token.getText());
+  }
+
+} // class IntNode
+
+
+
+// File: PlusNode.java
+import antlr.*;
+import antlr.collections.AST;
+
+public class PlusNode extends BinaryOperatorAST {
+
+  public PlusNode(Token token) {
+    super(token);
+  }
+
+  public int getType() {
+    return CalcParserTokenTypes.PLUS;
+  }
+
+  public String toString() {
+    return &quot; +&quot;;
+  }
+
+  public int value() {
+    if (left() == null) {
+      System.out.println(&quot;Error: PlusNode (no operands)!&quot;);
+      return 0;
+    }
+
+    int val = left().value();
+    if (right() != null) { // binary plus
+      val += right().value();
+    }
+    return val;
+  }
+
+} // class PlusNode
+
+
+
+// File: MinusNode.java
+import antlr.*;
+import antlr.collections.AST;
+
+public class MinusNode extends BinaryOperatorAST {
+
+  public MinusNode(Token token) {
+    super(token);
+  }
+
+  public int getType() {
+    return CalcParserTokenTypes.MINUS;
+  }
+
+  public String toString() {
+    return &quot; -&quot;;
+  }
+
+  public int value() {
+    if (left() == null) {
+      System.out.println(&quot;Error: MinusNode (no operands)!&quot;);
+      return 0;
+    }
+
+    int val = left().value();
+    if (right() != null) { // binary plus
+      val -= right().value();
+    } else { // unary minus
+      val = -val;
+    }
+    return val;
+  }
+
+} // class MinusNode
+
+
+
+// File: MultNode.java
+import antlr.*;
+import antlr.collections.AST;
+
+public class MultNode extends BinaryOperatorAST {
+
+  public MultNode(Token token) {
+    super(token);
+  }
+
+  public int getType() {
+    return CalcParserTokenTypes.STAR;
+  }
+
+  public String toString() {
+    return &quot; *&quot;;
+  }
+
+  public int value() {
+    return left().value() * right().value();
+  }
+
+} // class MultNode
+
+
+
+// File: DivNode.java
+import antlr.*;
+import antlr.collections.AST;
+
+public class DivNode extends BinaryOperatorAST {
+
+  public DivNode(Token token) {
+    super(token);
+  }
+
+  public int getType() {
+    return CalcParserTokenTypes.DIV;
+  }
+
+  public String toString() {
+    return &quot; /&quot;;
+  }
+
+  public int value() {
+    return left().value() / right().value();
+  }
+
+} // class DivNode
+
+
+
+// File: UnaryMinusNode.java
+import antlr.*;
+import antlr.collections.AST;
+
+public class UnaryMinusNode extends CalcAST {
+
+  public UnaryMinusNode(Token token) {
+    super(token);
+    System.out.println(&quot;UnaryMinusNode(&quot; + token + &quot;) constructor&quot;);
+  }
+
+  public int getType() {
+    return CalcParserTokenTypes.UNARY_MINUS;
+  }
+
+  public String toString() {
+    return &quot; - &quot; + ((CalcAST) getFirstChild()).toString();
+  }
+
+  public int value() {
+    System.out.println(&quot;UnaryMinusNode.value()&quot;);
+
+    int val = ((CalcAST) getFirstChild()).value();
+    System.out.println(&quot;UnaryMinusNode.value(): &quot; + -val);
+    return -val;
+  }
+
+} // class UnaryMinusNode
+
+
+
+// File: 1.expr
+ 1;
+ 3 + 2;
+ 4 * 3 + 10 / 5;
+ 4 * ( 3 + 10 ) / 5;
+ 8 + 7 * 2;
+ -1;
+// (- 8) + 7 * 2;
+// - ( 8 + 7 * 2);
+
+
+
+
+// File: run.bat
+set CLASSPATH=.;f:\java\antlr\antlr-2.7.1
+java antlr.Tool calc.g
+
+javac *.java
+
+rem 1.expr is a file containing expressions
+java Calc 1.expr
+
+
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000609.html">[antlr-interest] how to store  parser result
+</A></li>
+	<LI>Next message: <A HREF="000611.html">[antlr-interest] Heterogeneous AST - simple calculator parser
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#610">[ date ]</a>
+              <a href="thread.html#610">[ thread ]</a>
+              <a href="subject.html#610">[ subject ]</a>
+              <a href="author.html#610">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

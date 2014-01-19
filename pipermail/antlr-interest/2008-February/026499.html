@@ -1,0 +1,155 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Lexical error recovery by manual symbol (character) insertion/deletion?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Lexical%20error%20recovery%20by%20manual%20symbol%0A%20%28character%29%20insertion/deletion%3F&In-Reply-To=%3C20080215231918.C111611EC41%40www.antlr.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="026492.html">
+   <LINK REL="Next"  HREF="026493.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Lexical error recovery by manual symbol (character) insertion/deletion?</H1>
+    <B>Gavin Lambert</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Lexical%20error%20recovery%20by%20manual%20symbol%0A%20%28character%29%20insertion/deletion%3F&In-Reply-To=%3C20080215231918.C111611EC41%40www.antlr.org%3E"
+       TITLE="[antlr-interest] Lexical error recovery by manual symbol (character) insertion/deletion?">antlr at mirality.co.nz
+       </A><BR>
+    <I>Fri Feb 15 15:19:00 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="026492.html">[antlr-interest] Lexical error recovery by manual symbol	(character) insertion/deletion?
+</A></li>
+        <LI>Next message: <A HREF="026493.html">[antlr-interest] case-insensitivity not in v3?!
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#26499">[ date ]</a>
+              <a href="thread.html#26499">[ thread ]</a>
+              <a href="subject.html#26499">[ subject ]</a>
+              <a href="author.html#26499">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>At 10:17 16/02/2008, Darach Ennis wrote:
+&gt;<i>However the dummy-fragment approach is counter-intuitive at best 
+</I>&gt;<i>because the
+</I>&gt;<i>lexer rules FLOAT and NUMBER are what I'm using in my parser 
+</I>&gt;<i>rules section. But these
+</I>&gt;<i>are fragment rules... so this is bad practice!
+</I>&gt;<i>
+</I>&gt;<i>The fact that 'top-level' lexer rules can emit types and fragment 
+</I>&gt;<i>rules cannot isn't
+</I>&gt;<i>mentioned in that section of the book. The 'fragment' keyword 
+</I>&gt;<i>merely infers the
+</I>&gt;<i>intended (ie: not mandated) visibility of the rule. So the 
+</I>&gt;<i>'dummy-fragment approach'
+</I>&gt;<i>is more of a lucky side-effect adopted as a feature? Thankfully, 
+</I>&gt;<i>ANTLR doesn't
+</I>&gt;<i>complain when fragment rules are referred to directly in parser 
+</I>&gt;<i>rules...
+</I>
+Well, not quite.  What actually happens is that every named lexer 
+rule (including those listed in the &quot;tokens&quot; block) gets assigned 
+a token type id -- you can see this in the .tokens file that it 
+generates.
+
+At the parser level, you are not referring to rules as such, you 
+are just saying &quot;I am expecting a token with this type id&quot;.
+
+Every lexer has a single automatic rule (&quot;Tokens&quot;, with the 
+generated code in the mTokens method) which is what really gets 
+called to generate the token stream.  This rule automatically 
+refers to all lexer rules (and non-empty &quot;tokens&quot; block entries), 
+except for those marked as being &quot;fragment&quot;s.  The rules called by 
+the Tokens rule are usually called &quot;top level rules&quot;.
+
+Each call to the mTokens method is expected to generate exactly 
+one token; while by default the token type will match that of the 
+top-level rule being called, but that rule can assign a different 
+type if it wants to.  That's what is in play here.  Since all 
+lexer rules (including fragments) have type ids, any of them are 
+possible values.
+
+&gt;<i>fragment DIGIT: '0'..'9'; // this is a genuine fragment rule
+</I>&gt;<i>imaginary NUMBER: DIGIT+; // this is an imaginary / special token
+</I>&gt;<i>imaginary FLOAT: NUMBER DOT NUMBER; // this is an imaginary / 
+</I>&gt;<i>special token
+</I>&gt;<i>generator INT_OR_FLOAT
+</I>&gt;<i>   :  NUMBER // =&gt; NUMBER is implicit here?
+</I>&gt;<i>      ( (DOT DIGIT) =&gt; DOT NUMBER { $type = FLOAT; } )?
+</I>&gt;<i>   ;
+</I>
+I agree.  I find it a bit irritating that I can't say &quot;I'm 
+creating this rule just for convenience; it doesn't need a token 
+type id&quot;.  Although I'd probably be happier with something like 
+this:
+
+tokens { FLOAT; }          // imaginary: type id generated but no 
+warning
+fragment DIGIT: '0'..'9';  // fragment: no type id generated
+fragment NUMBER: DIGIT+;   // again, no type id
+INT                        // type id generated
+   : NUMBER
+     ( (DOT DIGIT) =&gt; DOT NUMBER { $type = FLOAT; } )?
+   ;
+
+This actually *is* valid syntax right now, but for some weird 
+reason the use of purely imaginary tokens (those in the tokens 
+block without bodies) started generating warnings for no apparent 
+reason a while ago, and fragments have always generated type ids 
+(and I don't think they should).
+
+&gt;<i>       Because ANTLR assumes that all lexer rules are valid 
+</I>&gt;<i> tokens, you must prefix
+</I>&gt;<i>       factored &quot;helper rules&quot; with the fragment keyword. This 
+</I>&gt;<i> keyword tells ANTLR
+</I>&gt;<i>       that you intend for this rule to be called only by other 
+</I>&gt;<i> rules and that it
+</I>&gt;<i>       should not yield a token to the parser.
+</I>[...]
+&gt;<i>       The token type (nonzero positive integer) of the token 
+</I>&gt;<i> such as INT;
+</I>&gt;<i>       translates to a call to getType().
+</I>&gt;<i>
+</I>&gt;<i>No mention of a restriction for fragment rules there, so one 
+</I>&gt;<i>should be able to manipulate the type information in this case.
+</I>
+No, I think you're misinterpreting.  The first paragraph basically 
+says &quot;rules marked with 'fragment' don't generate tokens&quot;, while 
+the second says &quot;$type holds the type id for the token that will 
+be generated&quot;.  From the combination it should be evident that 
+$type is not valid in fragment rules.
+
+&gt;<i>So when I see the keyword 'fragment' it is explicitly 
+</I>&gt;<i>communicating 'do not refer to me in a parser rule'.
+</I>
+No, it's saying &quot;I don't automatically generate a token&quot;, which is 
+not quite the same thing.
+
+</PRE>
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="026492.html">[antlr-interest] Lexical error recovery by manual symbol	(character) insertion/deletion?
+</A></li>
+	<LI>Next message: <A HREF="026493.html">[antlr-interest] case-insensitivity not in v3?!
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#26499">[ date ]</a>
+              <a href="thread.html#26499">[ thread ]</a>
+              <a href="subject.html#26499">[ subject ]</a>
+              <a href="author.html#26499">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

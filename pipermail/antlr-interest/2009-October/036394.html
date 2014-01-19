@@ -1,0 +1,160 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Bug or misunderstanding?: missing attribute access on rule scope
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Bug%20or%20misunderstanding%3F%3A%20missing%20attribute%0A%20access%20on%20rule%20scope&In-Reply-To=%3C4AD8FA8B.8080503%40jacaranda.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="036392.html">
+   <LINK REL="Next"  HREF="036396.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Bug or misunderstanding?: missing attribute access on rule scope</H1>
+    <B>David-Sarah Hopwood</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Bug%20or%20misunderstanding%3F%3A%20missing%20attribute%0A%20access%20on%20rule%20scope&In-Reply-To=%3C4AD8FA8B.8080503%40jacaranda.org%3E"
+       TITLE="[antlr-interest] Bug or misunderstanding?: missing attribute access on rule scope">david-sarah at jacaranda.org
+       </A><BR>
+    <I>Fri Oct 16 15:58:19 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="036392.html">[antlr-interest] Bug or misunderstanding?: missing attribute	access on rule scope
+</A></li>
+        <LI>Next message: <A HREF="036396.html">[antlr-interest] Bug or misunderstanding?: missing attribute	access on rule scope
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36394">[ date ]</a>
+              <a href="thread.html#36394">[ thread ]</a>
+              <a href="subject.html#36394">[ subject ]</a>
+              <a href="author.html#36394">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Kaleb Pederson wrote:
+&gt;<i> On Fri, Oct 16, 2009 at 2:15 PM, David-Sarah Hopwood
+</I>&gt;<i> &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">david-sarah at jacaranda.org</A>&gt; wrote:
+</I>&gt;&gt;<i> Kaleb Pederson wrote:
+</I>&gt;&gt;&gt;<i> I'm getting an error that doesn't make any sense, either because I've
+</I>&gt;&gt;&gt;<i> missed something fundamental or I've stumbled across a bug. I'm doing
+</I>&gt;&gt;&gt;<i> some type checking within a tree parser.  I have a plusMinusExpression
+</I>&gt;&gt;&gt;<i> which can either be a negation or a subtraction expression.  In order
+</I>&gt;&gt;&gt;<i> to to check to see which it is, I have `if ($rhs != null)` within my
+</I>&gt;&gt;&gt;<i> action.  That line, however, causes the following error:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> SemanticChecker.g:163:3: missing attribute access on rule scope: rhs
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> You can use &quot;if ($rhs.tree != null)&quot;.
+</I>&gt;<i> 
+</I>&gt;<i> You're right, thank you.  Here's what ANTLR generates:
+</I>&gt;<i> 
+</I>&gt;<i> ...
+</I>&gt;<i> if ((rhs!=null?((CommonTree)rhs.tree):null) != null)
+</I>&gt;<i> {
+</I>&gt;<i> 	typeChecker.assertIsNumericType((rhs!=null?rhs.type:null));
+</I>&gt;<i> 	typeChecker.assertEqualTypes((lhs!=null?lhs.type:null),
+</I>&gt;<i> (rhs!=null?rhs.type:null));
+</I>&gt;<i> }
+</I>&gt;<i> 
+</I>&gt;<i> So it places a guard around my check making sure that it only happens
+</I>&gt;<i> if rhs isn't null.  To pose my next question, isn't what I had
+</I>&gt;<i> perfectly legal? I.e. Isn't it pefectly legal to reference $labelName
+</I>&gt;<i> without referencing an attribute, such as in my null check?
+</I>
+The syntax $labelName can be used in a parser or lexer grammar to refer
+to a Token object, in cases where the reference is statically guaranteed
+to correspond to a single token or fragment.
+
+In a tree grammar, or in other cases in a parser grammar, the reference
+might correspond to more than one token. So there are two possible design
+choices for that situation: either make $labelName evaluate to something
+other than a Token object reference, or disallow it. Making it evaluate to
+something other than a Token would be inconsistent and possibly error-
+prone, so disallowing it is reasonable.
+
+In the case where all you're doing is testing the reference against null,
+it may seem as though it wouldn't matter whether it corresponds to a
+single token or more than one token. But ANTLR doesn't analyse
+expressions in the target language, so it can't special-case this
+situation.
+
+This restriction tripped me up as well when I first came across it.
+Arguably, it would have been better to *always* require an attribute
+access -- say, &quot;$labelName.token&quot; in cases where you want a Token, and
+&quot;$labelName.isPresent&quot; to test whether labelName matched any tokens
+(or characters in the case of a lexer grammar).
+That would have been easier to remember, and more consistent between
+different kinds of grammar. Currently lexer grammars are not even self-
+consistent: depending on context a bare $labelName reference evaluates
+sometimes to an integer code point value, and sometimes to a Token
+object reference.
+
+
+[The other thing I think is suboptimal about ANTLR's behaviour in this
+area (at least the Java target; I haven't checked other targets) is
+that it generates a variable in the target language that has the same
+name as the label. This means that leaving off the '$' will result in
+code that may compile, and if it does compile, usually does something
+unintended. It also causes errors if a label name matches a target
+language keyword. Just mangling the name slightly would have prevented
+these problems, although doing so now might be incompatible with any
+grammars that rely on this property of the generated code.]
+
+-- 
+David-Sarah Hopwood  &#9893;  <A HREF="http://davidsarah.livejournal.com">http://davidsarah.livejournal.com</A>
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="036392.html">[antlr-interest] Bug or misunderstanding?: missing attribute	access on rule scope
+</A></li>
+	<LI>Next message: <A HREF="036396.html">[antlr-interest] Bug or misunderstanding?: missing attribute	access on rule scope
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36394">[ date ]</a>
+              <a href="thread.html#36394">[ thread ]</a>
+              <a href="subject.html#36394">[ subject ]</a>
+              <a href="author.html#36394">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

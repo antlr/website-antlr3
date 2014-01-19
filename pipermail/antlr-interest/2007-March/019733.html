@@ -1,0 +1,190 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] uh oh...trouble in meaning of (..)=&gt; pred!!!
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20uh%20oh...trouble%20in%20meaning%20of%20%28..%29%3D%3E%20pred%21%21%21&In-Reply-To=%3C43157F7E-04D9-4458-9673-71C208188129%40cs.usfca.edu%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="019731.html">
+   <LINK REL="Next"  HREF="019736.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] uh oh...trouble in meaning of (..)=&gt; pred!!!</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20uh%20oh...trouble%20in%20meaning%20of%20%28..%29%3D%3E%20pred%21%21%21&In-Reply-To=%3C43157F7E-04D9-4458-9673-71C208188129%40cs.usfca.edu%3E"
+       TITLE="[antlr-interest] uh oh...trouble in meaning of (..)=&gt; pred!!!">parrt at cs.usfca.edu
+       </A><BR>
+    <I>Wed Mar 14 16:56:04 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="019731.html">[antlr-interest] uh oh...trouble in meaning of (..)=&gt; pred!!!
+</A></li>
+        <LI>Next message: <A HREF="019736.html">[antlr-interest] uh oh...trouble in meaning of (..)=&gt;  pred!!!
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#19733">[ date ]</a>
+              <a href="thread.html#19733">[ thread ]</a>
+              <a href="subject.html#19733">[ subject ]</a>
+              <a href="author.html#19733">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Loring, good thoughts.
+
+Well, I tweaked things so that (...)=&gt; forces itself into a gated sem  
+pred whereas it used to be just a sem pred.  Backtracking mode uses  
+plain sempred and so it doesn't order until the alts are ambig.  With  
+the gated version of (...)=&gt;, it always forces eval.
+
+So, this grammar forces 'aa' to test pred for alt1 before choosing alt1:
+
+z : (a d) =&gt; a
+   | (b d) =&gt; b
+   | ('a'|'b')+
+   ;
+a       :       'a' 'a' ;
+b       :       'a' 'a' 'b' ;
+d       :       '0'|'1' ;
+
+Upon 'aab', it forces pred2, but does NOT test synpred for alt1 as  
+the 'aab' makes alt 1 impossible to match.  Cool, eh?
+
+So, the diff is from about an hour ago, is that this grammar always  
+tests the pred for alt1.
+
+y : ('a')=&gt; 'a'
+   | 'b'
+   ;
+
+it is still efficient.  Upon 'b', it does not test it!  Hooray for  
+me. Whew.  was panicking for a second there!
+
+I'll think this over and commit tomorrow.
+
+Ter
+
+On Mar 14, 2007, at 4:27 PM, Loring Craymer wrote:
+
+&gt;<i> Ter--
+</I>&gt;<i>
+</I>&gt;<i> As a first step, predicates should not specify more
+</I>&gt;<i> tokens that the alternative being selected.  That
+</I>&gt;<i> would rule out the example grammar.
+</I>&gt;<i>
+</I>&gt;<i> As to the ordering problem:  the original expectation
+</I>&gt;<i> was that LL* &quot;did not need no stinking syntactic
+</I>&gt;<i> predicates&quot; and that automatic and silent elimination
+</I>&gt;<i> was a good thing since synpreds were a no-op.  Given
+</I>&gt;<i> that synpreds are sometimes needed in v3, I think that
+</I>&gt;<i> it makes more sense to always generate code for them
+</I>&gt;<i> but to issue an &quot;extraneous synpred&quot; warning so that
+</I>&gt;<i> the grammar developer can remove them.  [You could
+</I>&gt;<i> also add some machinery (a flag in the predicate
+</I>&gt;<i> object or some such) to turn off warnings for
+</I>&gt;<i> automatically generated synpreds (backtracking =
+</I>&gt;<i> true).]
+</I>&gt;<i>
+</I>&gt;<i> --Loring
+</I>&gt;<i>
+</I>&gt;<i> --- Terence Parr &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">parrt at cs.usfca.edu</A>&gt; wrote:
+</I>&gt;<i>
+</I>&gt;&gt;<i> Hi.  Harmut submitted a bug report, which I have
+</I>&gt;&gt;<i> converted to a parser:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> grammar T;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> x : (a d) =&gt; a
+</I>&gt;&gt;<i>    | (b d) =&gt; b
+</I>&gt;&gt;<i>    | ('a'|'b')+
+</I>&gt;&gt;<i>    ;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> a       :       'a' 'a' ;
+</I>&gt;&gt;<i> b       :       'a' 'a' 'b' ;
+</I>&gt;&gt;<i> digit   :       '0'|'1' ;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Basically, in the book and in my intentions,
+</I>&gt;&gt;<i> predicates order the
+</I>&gt;&gt;<i> alts.  The problem is that ANTLR's analysis doesn't
+</I>&gt;&gt;<i> consider
+</I>&gt;&gt;<i> syntactic predicates if it can figure out what to do
+</I>&gt;&gt;<i> w/o them.
+</I>&gt;&gt;<i> That's an optimization.  The problem is that you are
+</I>&gt;&gt;<i> often specifying
+</I>&gt;&gt;<i> the lookahead in the predicate that must be
+</I>&gt;&gt;<i> evaluated.  Crap.  ANTLR
+</I>&gt;&gt;<i> is not forcing those predicates in there.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> For semantic predicates, we have {...}? and {...}?=&gt;
+</I>&gt;&gt;<i> where the latter
+</I>&gt;&gt;<i> forces backtracking.  Perhaps (...)=&gt; should always
+</I>&gt;&gt;<i> force
+</I>&gt;&gt;<i> backtracking.  BUT, for backtracking=true, I add a
+</I>&gt;&gt;<i> predicate to every
+</I>&gt;&gt;<i> alt!  I guess for that backtracking mode, those
+</I>&gt;&gt;<i> predicates should be
+</I>&gt;&gt;<i> analogous to {...}? and manually specified (...)=&gt;
+</I>&gt;&gt;<i> should operate
+</I>&gt;&gt;<i> like {..}?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I have exactly 4 days to resolve this issue before
+</I>&gt;&gt;<i> the book goes to
+</I>&gt;&gt;<i> copy editing.  Anybody wanna help me think about
+</I>&gt;&gt;<i> this?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Ter
+</I>&gt;&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> ______________________________________________________________________ 
+</I>&gt;<i> ______________
+</I>&gt;<i> Now that's room service!  Choose from over 150,000 hotels
+</I>&gt;<i> in 45,000 destinations on Yahoo! Travel to find your fit.
+</I>&gt;<i> <A HREF="http://farechase.yahoo.com/promo-generic-14795097">http://farechase.yahoo.com/promo-generic-14795097</A>
+</I>
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="019731.html">[antlr-interest] uh oh...trouble in meaning of (..)=&gt; pred!!!
+</A></li>
+	<LI>Next message: <A HREF="019736.html">[antlr-interest] uh oh...trouble in meaning of (..)=&gt;  pred!!!
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#19733">[ date ]</a>
+              <a href="thread.html#19733">[ thread ]</a>
+              <a href="subject.html#19733">[ subject ]</a>
+              <a href="author.html#19733">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,338 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Re: Help with Java grammar
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20Help%20with%20Java%20grammar&In-Reply-To=20040309142638.GC26038%40cs.utwente.nl">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="006793.html">
+   <LINK REL="Next"  HREF="006803.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Re: Help with Java grammar</H1>
+    <B>cliftonccraig</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20Help%20with%20Java%20grammar&In-Reply-To=20040309142638.GC26038%40cs.utwente.nl"
+       TITLE="[antlr-interest] Re: Help with Java grammar">ccc at icsaward.com
+       </A><BR>
+    <I>Tue Mar  9 08:25:17 PST 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="006793.html">[antlr-interest] Re: Help with Java grammar
+</A></li>
+        <LI>Next message: <A HREF="006803.html">[antlr-interest] Re: Help with Java grammar
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6794">[ date ]</a>
+              <a href="thread.html#6794">[ thread ]</a>
+              <a href="subject.html#6794">[ subject ]</a>
+              <a href="author.html#6794">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Thanks Ric,
+
+Still no luck. I tried your suggestion and while it went through the
+ANTLR generator ok it didnt stop the OutOfMemory error. It appears my
+parser is still getting hung up on the last line being a single
+comment. I'm trying another ugly solution to my problem that is not
+ANTLR related and maybe someone can help me here. I am trying to
+append a newline character to each stream fed into my parser but I'm
+not satisfied with what I have. I created an AppendInputStream that
+extends a filtered stream. I need this to perform as fast as possible
+and I didn't find anything in the JDK that looked like it would help.
+Basically what I want to do is wrap the FileInputStream that I give my
+parser in my custom AppendInputStream and hand it off like so:
+Reader r = new InputStreamReader( new AppendInputStream( new
+FileInputStream(javaFile), &quot;\r\n&quot; ) )
+
+It sounds like overkill but I just don't see any easier way to do
+this. I thought I saw a way to chain or concatenate to InputStreams
+together as one in some book or article but I can't remember. Please,
+could someone help me with either solution. I feel so stumped.
+
+Cliff
+
+The source to my AppendInputStream is below:
+    private static class AppendInputStream extends FilterInputStream
+    {
+        InputStream additional;
+        private static final int EOF = -1;
+        private boolean endOfFirst = false, firstMarked = false,
+secondMarked = false;
+        private int markCount = 0, markLimit = 0;
+
+        public AppendInputStream(InputStream in, String additional)
+        {
+            this(in,additional.getBytes());
+        }
+
+        protected AppendInputStream(InputStream in, byte[] add)
+        {
+            this(in, new ByteArrayInputStream(add));
+        }
+
+        protected AppendInputStream(InputStream in, InputStream add)
+        {
+            super(in);
+            additional = add;
+        }
+
+        public int read() throws IOException
+        {
+            int val = EOF;
+            if (false==endOfFirst)
+            {
+                val = super.read();
+            }
+            if (EOF != val)
+            {
+                trackMarking(1);
+                return val;
+            }
+            else
+            {
+                endOfFirst = true;
+                conditionallyMark();
+                return additional.read();
+            }
+        }
+
+        public int read(byte b[]) throws IOException
+        {
+            return read(b, 0, b.length);
+        }
+
+        public int read(byte b[], int off, int len) throws IOException
+        {
+            if(off + len &gt; b.length)
+                throw new IndexOutOfBoundsException(&quot;Cannot read &quot; +
+len + &quot; bytes from offset &quot; + off + &quot; in array of length &quot; +
+b.length);
+            int val = EOF;
+            if (false==endOfFirst)
+            {
+                val = super.read(b, off, len);
+                trackMarking(val);
+            }
+            if (EOF != val)
+            {
+                if( len &gt; val )
+                {
+                    endOfFirst = true;
+                    val += readAdditional(b, val + off, len - val);
+                }
+            }
+            else
+            {
+                endOfFirst = true;
+                val = readAdditional(b, 0, b.length);
+            }
+            return val;
+        }
+
+        /**
+         * Keep track of the # of bytes read into our marking.
+         * @param val
+         */
+        private void trackMarking(int val)
+        {
+            if(firstMarked) markCount += val;
+        }
+
+        private int readAdditional(byte[] b, int off, int len) throws
+IOException
+        {
+            conditionallyMark();
+            return additional.read(b, off, len);
+        }
+
+        private void conditionallyMark()
+        {
+            //Just-in-time marking. If the 1st is marked but the 2nd
+hasn't been marked
+            //and have haven't read past our mark limit we mark it
+right before our 1st
+            //attempt to read into it.
+            if(firstMarked &amp;&amp; false==secondMarked &amp;&amp; markLimit -
+markCount &gt; 0)
+            {
+                additional.mark(markLimit - markCount);
+                secondMarked = true;
+            }
+        }
+
+        public int available() throws IOException
+        {
+            if (endOfFirst)
+            {
+                return additional.available();
+            }
+            else
+            {
+                return super.available();
+            }
+        }
+
+        public void close() throws IOException
+        {
+            super.close();
+            additional.close();
+        }
+
+        public synchronized void mark(int readlimit)
+        {
+            markLimit = readlimit;
+            if(endOfFirst &amp;&amp; false==firstMarked &amp;&amp;
+false==secondMarked)
+            {
+                additional.mark(readlimit);
+                secondMarked = true;
+            }
+            else
+            {
+                super.mark(readlimit);
+                firstMarked = true;
+            }
+        }
+
+        public boolean markSupported()
+        {
+            return super.markSupported() &amp;&amp; additi
+onal.markSupported();
+        }
+
+        public synchronized void reset() throws IOException
+        {
+            if(firstMarked)
+            {
+                super.reset();
+                firstMarked = false;
+            }
+            markCount = 0; markLimit = 0;
+
+            if (secondMarked)
+            {
+                additional.reset();
+            }
+        }
+
+        public long skip(long n) throws IOException
+        {
+            if(endOfFirst)
+                return additional.skip(n);
+            else
+                return super.skip(n);
+        }
+    }
+
+
+--- In <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>, Ric Klaren &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">klaren at c...</A>&gt; wrote:
+&gt;<i> On Tue, Mar 09, 2004 at 02:08:09PM -0000, cliftonccraig wrote:
+</I>&gt;<i> &gt; I just tried this:
+</I>&gt;<i> &gt; SL_COMMENT
+</I>&gt;<i> &gt; 	:	&quot;//&quot;
+</I>&gt;<i> &gt; 		(~('\n'|'\r'))* ('\n'|'\r'('\n')?)
+</I>&gt;<i> &gt; 		{
+</I>&gt;<i> &gt; //*CCC- Allow comments to flow through to the rewrite engine
+</I>&gt;<i> &gt; //		    $setType(Token.SKIP);
+</I>&gt;<i> &gt; 		    newline();
+</I>&gt;<i> &gt; 		}
+</I>&gt;<i> &gt; 		|
+</I>&gt;<i> &gt; 		&quot;//&quot; (~('\n'|'\r'))*
+</I>&gt;<i> &gt; 	;
+</I>&gt;<i> 
+</I>&gt;<i> How about this? 
+</I>&gt;<i> 
+</I>&gt;<i> SL_COMMENT
+</I>&gt;<i>    :  &quot;//&quot; 
+</I>&gt;<i>       ( ~('\n'|'\r') )*                         // not a newline
+</I>part...
+&gt;<i>       ( ('\n'|'\r'('\n')? { newline(); } ) )?   // optional newline
+</I>&gt;<i>    ;
+</I>&gt;<i> 
+</I>&gt;<i> If this gives trouble generate the lexer with -traceLexer and see
+</I>where it
+&gt;<i> gets stuck. (or check with debugger)
+</I>&gt;<i> 
+</I>&gt;<i> There's a few dirty tricks you can do with EOF checks that work by
+</I>checking
+&gt;<i> LA(i) for EOF in the init action of a closure rule, but I don't
+</I>think these
+&gt;<i> should be necessary for this. (unless I'm missing the point
+</I>somewhere)
+&gt;<i> 
+</I>&gt;<i> &gt; And I got an warning saying:
+</I>&gt;<i> &gt; D:\scm\tools\parsers\grammar\ANTLR\java.g:1235: warning:lexical
+</I>&gt;<i> &gt; nondeterminism between alts 1 and 2 of block upon
+</I>&gt;<i> &gt; D:\scm\tools\parsers\grammar\ANTLR\java.g:1235:     k==1:'/'
+</I>&gt;<i> &gt; D:\scm\tools\parsers\grammar\ANTLR\java.g:1235:     k==2:'/'
+</I>&gt;<i> &gt; D:\scm\tools\parsers\grammar\ANTLR\java.g:1235:    
+</I>&gt;<i> &gt; k==3:'\u0003'..'\t','\u000b','\u000c','\u000e'..'\uffff'
+</I>&gt;<i> &gt; D:\scm\tools\parsers\grammar\ANTLR\java.g:1235:    
+</I>&gt;<i> &gt;
+</I>k==4:&lt;end-of-token&gt;,'\u0003'..'\t','\u000b','\u000
+c','\u000e'..'\uffff'
+&gt;<i> 
+</I>&gt;<i> Don't worry too much about warnings like these ;) Read the source
+</I>for what
+&gt;<i> antlr generated for the rule and it often becomes obvious if the
+</I>&gt;<i> parser/lexer will do the right thing. (and it helps in getting a
+</I>feel for
+&gt;<i> things)
+</I>&gt;<i> 
+</I>&gt;<i> Cheers,
+</I>&gt;<i> 
+</I>&gt;<i> Ric
+</I>&gt;<i> -- 
+</I>&gt;<i>
+</I>-----+++++****************************************
+*************+++++++++-------
+&gt;<i>     ---- Ric Klaren ----- <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">j.klaren at u...</A> ----- +31 53 4893722  ----
+</I>&gt;<i>
+</I>-----+++++****************************************
+*************+++++++++-------
+&gt;<i>  Time what is time - I wish I knew how to tell You why - It hurts to
+</I>know -
+&gt;<i>           Aren't we machines - Time what is time - Unlock the door
+</I>&gt;<i>                - And see the truth - Then time is time again
+</I>&gt;<i>                 From: 'Time what is Time' by Blind Guardian
+</I>
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+     <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+     <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+     <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="006793.html">[antlr-interest] Re: Help with Java grammar
+</A></li>
+	<LI>Next message: <A HREF="006803.html">[antlr-interest] Re: Help with Java grammar
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6794">[ date ]</a>
+              <a href="thread.html#6794">[ thread ]</a>
+              <a href="subject.html#6794">[ subject ]</a>
+              <a href="author.html#6794">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

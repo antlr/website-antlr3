@@ -1,0 +1,2546 @@
+From roma at qwertty.com  Fri Aug  1 01:32:08 2008
+From: roma at qwertty.com (Roman Odaisky)
+Date: Fri, 1 Aug 2008 11:32:08 +0300
+Subject: [stringtemplate-interest] ST, Django and get_something_display()
+In-Reply-To: <D999E176-B036-4DDB-BDCA-36F5A4A3277B@cs.usfca.edu>
+References: <200807311649.47298.roma@qwertty.com>
+	<D999E176-B036-4DDB-BDCA-36F5A4A3277B@cs.usfca.edu>
+Message-ID: <200808011132.12602.roma@qwertty.com>
+
+On Friday, 01.08.2008 01:27:39 Terence Parr wrote:
+
+> Hi Roman, i assumed people would follow the javabeans notation of
+> getFooDisplay.  Too bad django doesn't. hmm...well, I'd say create a
+> wrapper object that converts syntax...register a renderer like
+> djangoToBeans object that answers getFooDisplay and delegates to
+> django object.  Might be Able to use reflection or something to make
+> this more automatic...
+
+Hi,
+
+I guess the intent was only to allow calling methods which don?t modify the 
+object?
+
+What about modifying the logic a bit: for $o.m$ if m is a method of o, and 
+either m starts with /[gG]et[A-Z]/, or /get_/, or it has a special attribute, 
+for example, StringTemplate_safe, then call o.m(), otherwise use the old 
+rules? All the languages which run StringTemplate have made a wise decision 
+of supporting reflection and attributes (and the stupid decision of ignoring 
+const, which would have been the ideal solution for this), so something like 
+this seems easily implementable and it no longer imposes a certain naming 
+convention. (I wonder whether the .NET version uses get or Get prefix.)
+
+For example, those following the Qt style don?t use the get prefix at all 
+(o.someProperty()/o.setSomeProperty()), those using the Apps Hungarian 
+notation also don?t need it (the Hungarian prefix indicates quite clearly 
+that a method is a getter).
+
+So what about adding an attribute which would indicate safe methods?
+
+-- 
+WBR
+Roman.
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: smime.p7s
+Type: application/pkcs7-signature
+Size: 2286 bytes
+Desc: not available
+Url : http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20080801/40475512/attachment.bin 
+
+From roma at qwertty.com  Fri Aug  1 02:07:55 2008
+From: roma at qwertty.com (Roman Odaisky)
+Date: Fri, 1 Aug 2008 12:07:55 +0300
+Subject: [stringtemplate-interest] [attr:tpl];separator
+In-Reply-To: <DF334F7A-38DD-4E15-9707-1B2157E69DAD@cs.usfca.edu>
+References: <200808010008.56046.roma@qwertty.com>
+	<DF334F7A-38DD-4E15-9707-1B2157E69DAD@cs.usfca.edu>
+Message-ID: <200808011208.02580.roma@qwertty.com>
+
+On Friday, 01.08.2008 01:35:58 Terence Parr wrote:
+> On Jul 31, 2008, at 2:08 PM, Roman Odaisky wrote:
+> > Greetings,
+> >
+> > Having gotten StringTemplate to work with Django, I wanted to make a
+> > list of
+> > certain data.
+> >
+> > If I write something like
+> >
+> > $[obj.color, obj.size, obj.volume]; separator=" | "$
+> >
+> > I get
+> >
+> > Yellow | Large | 42
+> >
+> > as intended. But then I wanted to modify the presentation of one of
+> > the
+> > attributes, namely, to append the unit to the number. I tried using
+> > obj.volume:{$it$ m?} and that didn?t work, neither did anything else I
+> > attempted.
+>
+> ST might not allow arbitrary expressions within the list constructor
+> [...], although that doesn't sound like something I would miss. Did
+> you try obj.volume:{x | $x$ units} ?
+
+The template $[a:{$it$}]$ throws antlr.RecognitionException, which then 
+happens to be obscured by this:
+  
+File "/usr/lib/python2.5/site-packages/stringtemplate3/language/ActionParser.py", 
+line 887, in list_
+    self.reportError(ex)
+  
+File "/usr/lib/python2.5/site-packages/stringtemplate3/language/ActionParser.py", 
+line 75, in reportError
+    if group == stringtemplate3.StringTemplate.defaultGroup:
+AttributeError: type object 'StringTemplate' has no attribute 'defaultGroup'
+
+(a bug?). $[a:{x|$x$}]$ doesn?t work as well.
+
+> > What is the right way to include the result of template application
+> > to a list?
+> >
+> > Or, say, I want to achieve the same thing this template does:
+> >
+> > A=$a$, B=$b$, C=$c$, D=$d$
+> >
+> > except if any of a, b, c or d attributes are null, their entries
+> > must not be
+> > shown, like this:
+> >
+> > A=1, B=2, D=4
+>
+> You'd have to put $if(a)$A=$a$$endif$ and so on.
+
+Do I understand correctly that $if(an_undefined_attribute)$ something $endif$ 
+is either ?something?, or an empty string, but never a null value? And if ST 
+encounters such a value in a list, it doesn?t omit it?
+
+> > Is there a way to construct a list from constant strings in the
+> > template? If
+> > there were such a list, I would have written
+> >
+> > $["A", "B", "C", "D"],[a, b, c, d]:{ k, v | $k$=$v$}; separator=", "$
+> >
+> > Indeed I?ve just checked after having written this, and this exact
+> > notation
+> > worked, much to my surprise as it doesn?t seem to be documented
+> > anywhere.
+> > Though it doesn?t solve the problem completely: if an attribute from
+> > the
+> > second list is null, the corresponding item from the first one isn?t
+> > removed.
+>
+> Right.  ST assumes that the parallel lists have the same size.
+>
+> You could make or pass in a map that mapped iteration to units:
+>
+> units ::= [
+> 	"1" : "A",
+> 	"2" : "B"
+> 	...
+> ]
+>
+> and then do units.(i) inside an iteration where i is an implicitly
+> maintained loop iteration variable. Naturally, the solution is icky.
+>
+> Try:
+>
+> $["A", "B", "C", "D"],[a, b, c, d]:{ k, v | $if(v)$$k$=$v$$endif$};
+> separator=", "$
+
+>>> st = StringTemplate('$["A", "B", "C", "D"],[a, b, c, d]:{ k, v | 
+$if(v)$$k$=$v$$endif$}; separator=", "$')
+>>> st['a'] = 'aa'
+>>> st['b'] = 'bb'
+>>> st['d'] = 'dd'
+>>> print unicode(st)
+A=aa, B=bb, C=dd,
+
+My suggestion would be to make sure lists allow calling templates like this:
+
+$[a, b:someTemplate(), c]$
+or even
+$[a, [b1, b2]:someTemplate(), c]$
+
+And if b were missing (if it would fail the $if(b)$ test), then the template 
+wouldn?t be applied to it at all, and the list would contain one less item. 
+(Those who need it to be applied even if the attribute is empty, will simply 
+use $[a, {$b$}, c]$.) Is it feasible?
+
+I?m currently developing a Web site and I have to display some text in a line 
+with separators between groups. But I guess such a feature as I suggested 
+above would be useful elsewhere. For example, in generating Python code with 
+named arguments:
+
+call ::= "some_function(<[a:{aa=<a>}, b:{bb=<b>}, c:{cc=<c>}, d:{dd=<d>}]; 
+separator= ", ">)"
+
+call(a=1, b=2, d=4) <! some_function(aa=1, bb=2, dd=4) !>
+
+-- 
+WBR
+Roman.
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: smime.p7s
+Type: application/pkcs7-signature
+Size: 2286 bytes
+Desc: not available
+Url : http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20080801/309c1901/attachment-0001.bin 
+
+From roma at qwertty.com  Fri Aug  1 04:08:01 2008
+From: roma at qwertty.com (Roman Odaisky)
+Date: Fri, 1 Aug 2008 14:08:01 +0300
+Subject: [stringtemplate-interest] [patch] Unicode
+In-Reply-To: <e50835b20806160748x36f21deem8461c57ccbca0f94@mail.gmail.com>
+References: <e50835b20806160748x36f21deem8461c57ccbca0f94@mail.gmail.com>
+Message-ID: <200808011408.05106.roma@qwertty.com>
+
+Greetings,
+
+Attached patch is all one seemingly needs to use UTF-8 template files.
+
+-- 
+HTH
+Roman.
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: groups.py.diff
+Type: text/x-diff
+Size: 437 bytes
+Desc: not available
+Url : http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20080801/d4a2f57b/attachment.bin 
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: smime.p7s
+Type: application/pkcs7-signature
+Size: 2286 bytes
+Desc: not available
+Url : http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20080801/d4a2f57b/attachment-0001.bin 
+
+From pink at odahoda.de  Sat Aug  2 02:30:33 2008
+From: pink at odahoda.de (Benjamin Niemann)
+Date: Sat, 2 Aug 2008 11:30:33 +0200
+Subject: [stringtemplate-interest] [patch] Unicode
+In-Reply-To: <200808011408.05106.roma@qwertty.com>
+References: <e50835b20806160748x36f21deem8461c57ccbca0f94@mail.gmail.com>
+	<200808011408.05106.roma@qwertty.com>
+Message-ID: <543531490808020230o71f1f277tbe674974d317f2f7@mail.gmail.com>
+
+Hi Roman,
+
+> Attached patch is all one seemingly needs to use UTF-8 template files.
+
+thanks for looking into this.
+I think hardcoding utf-8 doesn't hurt as a start, because it's
+compatible with ascii files. As a long term solution, I'd prefer PEP
+263 style charset declarations for group files.
+
+-Ben
+
+From roma at qwertty.com  Sun Aug 10 07:52:26 2008
+From: roma at qwertty.com (Roman Odaisky)
+Date: Sun, 10 Aug 2008 17:52:26 +0300
+Subject: [stringtemplate-interest] [patch] Unicode: One more hack
+In-Reply-To: <200808011408.05106.roma@qwertty.com>
+References: <e50835b20806160748x36f21deem8461c57ccbca0f94@mail.gmail.com>
+	<200808011408.05106.roma@qwertty.com>
+Message-ID: <200808101752.34833.roma@qwertty.com>
+
+Greetings,
+
+> Attached patch is all one seemingly needs to use UTF-8 template files.
+
+That works for $x$?, but not for $x:{$it$?}$.
+
+I had to replace all mentions of __str__ and str() by __unicode__ and 
+unicode(), that did the job.
+
+I did it by two simple commands:
+sed -i -e 's/\<__str__\>/__unicode__/g' ./**/*.py
+sed -i -e 's/\<str[(]/unicode(/g' ./**/*.py
+
+I also attach the result as a patch.
+
+Of course, all of this is one big hack, the person responsible for PyST should 
+upgrade it for Unicode in a more sensible manner.
+
+-- 
+HTH
+Roman.
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: st.str2unicode.diff
+Type: text/x-diff
+Size: 27284 bytes
+Desc: Patch for adding Unicode support to ST
+Url : http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20080810/4e6ce383/attachment-0002.bin 
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: smime.p7s
+Type: application/pkcs7-signature
+Size: 2286 bytes
+Desc: not available
+Url : http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20080810/4e6ce383/attachment-0003.bin 
+
+From roma at qwertty.com  Sun Aug 10 07:59:18 2008
+From: roma at qwertty.com (Roman Odaisky)
+Date: Sun, 10 Aug 2008 17:59:18 +0300
+Subject: [stringtemplate-interest] Is $if()$ needed?
+Message-ID: <200808101759.19093.roma@qwertty.com>
+
+Greetings,
+
+I wonder whether $if(attr)$ is redundant. Instead of
+
+$if(attr)$
+template
+$endif$
+
+one can write
+
+$attr:{template}$
+
+which looks cleaner.
+
+The only thing missing is the else part. Perhaps the grammar can be extended, 
+for example, this way:
+
+$attr:{if}$
+$attr:{if}!{else}$
+$attr!{else}$
+
+This also allows to test for more than one attribute:
+
+$[a, b]:{template}$
+
+?If? constructs come from the imperative world. ST doesn?t have ?for?, not 
+even ?foreach?, why should we have ?if??
+
+-- 
+WBR
+Roman.
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: smime.p7s
+Type: application/pkcs7-signature
+Size: 2286 bytes
+Desc: not available
+Url : http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20080810/7f492909/attachment.bin 
+
+From roma at qwertty.com  Sun Aug 10 11:19:21 2008
+From: roma at qwertty.com (Roman Odaisky)
+Date: Sun, 10 Aug 2008 21:19:21 +0300
+Subject: [stringtemplate-interest] Caching (precompiling?)
+Message-ID: <200808102119.25598.roma@qwertty.com>
+
+Greetings,
+
+StringTemplateGroup loads templates only once. Does it precompile the 
+templates, or does it merely try to avoid excessive disk operations?
+
+In other words, what do I lose if I set the refresh interval to zero? Any 
+decent server operating system performs filesystem caching, there should be 
+no significant performance hit caused by frequent reading.
+
+I?m using ST 3.1 for Python.
+
+-- 
+TIA
+Roman.
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: smime.p7s
+Type: application/pkcs7-signature
+Size: 2286 bytes
+Desc: not available
+Url : http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20080810/9a7185b2/attachment.bin 
+
+From pink at odahoda.de  Mon Aug 11 05:12:40 2008
+From: pink at odahoda.de (Benjamin Niemann)
+Date: Mon, 11 Aug 2008 14:12:40 +0200
+Subject: [stringtemplate-interest] [patch] Unicode: One more hack
+In-Reply-To: <200808101752.34833.roma@qwertty.com>
+References: <e50835b20806160748x36f21deem8461c57ccbca0f94@mail.gmail.com>
+	<200808011408.05106.roma@qwertty.com>
+	<200808101752.34833.roma@qwertty.com>
+Message-ID: <543531490808110512s2021681co9650d602d38a835a@mail.gmail.com>
+
+Hi Roman,
+
+I've just started 'unicodifying' PyST along with updating it to 3.2.
+Will hopefully have a first beta by next weekend.
+
+-Ben
+
+
+On Sun, Aug 10, 2008 at 4:52 PM, Roman Odaisky <roma at qwertty.com> wrote:
+> Greetings,
+>
+>> Attached patch is all one seemingly needs to use UTF-8 template files.
+>
+> That works for $x$?, but not for $x:{$it$?}$.
+>
+> I had to replace all mentions of __str__ and str() by __unicode__ and
+> unicode(), that did the job.
+>
+> I did it by two simple commands:
+> sed -i -e 's/\<__str__\>/__unicode__/g' ./**/*.py
+> sed -i -e 's/\<str[(]/unicode(/g' ./**/*.py
+>
+> I also attach the result as a patch.
+>
+> Of course, all of this is one big hack, the person responsible for PyST should
+> upgrade it for Unicode in a more sensible manner.
+>
+> --
+> HTH
+> Roman.
+>
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>
+>
+
+From roma at qwertty.com  Mon Aug 11 06:14:44 2008
+From: roma at qwertty.com (Roman Odaisky)
+Date: Mon, 11 Aug 2008 16:14:44 +0300
+Subject: [stringtemplate-interest] [patch] Unicode: One more hack
+In-Reply-To: <543531490808110512s2021681co9650d602d38a835a@mail.gmail.com>
+References: <e50835b20806160748x36f21deem8461c57ccbca0f94@mail.gmail.com>
+	<200808101752.34833.roma@qwertty.com>
+	<543531490808110512s2021681co9650d602d38a835a@mail.gmail.com>
+Message-ID: <200808111614.48870.roma@qwertty.com>
+
+Hi,
+
+> I've just started 'unicodifying' PyST along with updating it to 3.2.
+> Will hopefully have a first beta by next weekend.
+
+Thanks.
+
+Are you planning making a Debian package of it?
+
+-- 
+WBR
+Roman.
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: smime.p7s
+Type: application/pkcs7-signature
+Size: 2286 bytes
+Desc: not available
+Url : http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20080811/700581a3/attachment.bin 
+
+From pink at odahoda.de  Mon Aug 11 12:27:22 2008
+From: pink at odahoda.de (Benjamin Niemann)
+Date: Mon, 11 Aug 2008 21:27:22 +0200
+Subject: [stringtemplate-interest] [patch] Unicode: One more hack
+In-Reply-To: <200808111614.48870.roma@qwertty.com>
+References: <e50835b20806160748x36f21deem8461c57ccbca0f94@mail.gmail.com>
+	<200808101752.34833.roma@qwertty.com>
+	<543531490808110512s2021681co9650d602d38a835a@mail.gmail.com>
+	<200808111614.48870.roma@qwertty.com>
+Message-ID: <543531490808111227n32e1613vb72055eb3ec9f21c@mail.gmail.com>
+
+Hi Roman,
+
+On Mon, Aug 11, 2008 at 3:14 PM, Roman Odaisky <roma at qwertty.com> wrote:
+>> I've just started 'unicodifying' PyST along with updating it to 3.2.
+>> Will hopefully have a first beta by next weekend.
+>
+> Are you planning making a Debian package of it?
+
+I have no plans yet, to do this myself. I will upload it to PyPy, so
+it can be easily installed with easy_install.
+
+-Ben
+
+From roma at qwertty.com  Wed Aug 13 10:09:23 2008
+From: roma at qwertty.com (Roman Odaisky)
+Date: Wed, 13 Aug 2008 20:09:23 +0300
+Subject: [stringtemplate-interest] Bug in PyST: fails to look for templates
+	in supergroup [patch]
+Message-ID: <200808132009.27537.roma@qwertty.com>
+
+Greetings,
+
+I failed to find the proper place to report bugs for the Python version of 
+StringTemplate, so I?ll report it here.
+
+PyST fails to look for templates in supergroups.
+
+To reproduce:
+
+mkdir -p /tmp/ST/sub
+echo '$var:inner()$' >/tmp/ST/outer.st
+echo 'it = $it$' >/tmp/ST/sub/inner.st
+
+python <<E
+from stringtemplate3 import StringTemplateGroup
+stg_sub = StringTemplateGroup("brochure_common", "/tmp/ST/sub")
+stg = StringTemplateGroup("brochure", "/tmp/ST", superGroup=stg_sub)
+st = stg.getInstanceOf("outer")
+st["var"] = "hello"
+print str(st)  # or unicode(st)
+E
+
+I get an error message (why doesn?t PyST propagate the original exception?!).
+
+Expected: ?it = hello?.
+
+To fix: grep for ?eek?, agree with the comment, place ?return None? instead 
+of ?raise?. Though it?s not a proper fix, because it would return None also 
+in the (rare) case ?br.close()? throws an exception.
+
+StringTemplateGroup.lookupTemplate expects loadTemplateFromBeneathRootDir to 
+return None in case the template file is not found, while the latter throws 
+an exception instead.
+
+-- 
+WBR
+Roman.
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: smime.p7s
+Type: application/pkcs7-signature
+Size: 2286 bytes
+Desc: not available
+Url : http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20080813/0fce4964/attachment.bin 
+
+From parrt at cs.usfca.edu  Wed Aug 13 14:53:24 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Wed, 13 Aug 2008 14:53:24 -0700
+Subject: [stringtemplate-interest] ST, Django and get_something_display()
+In-Reply-To: <200808011132.12602.roma@qwertty.com>
+References: <200807311649.47298.roma@qwertty.com>
+	<D999E176-B036-4DDB-BDCA-36F5A4A3277B@cs.usfca.edu>
+	<200808011132.12602.roma@qwertty.com>
+Message-ID: <8EC6C27C-3F1B-4C46-A29F-04A2B9B822D2@cs.usfca.edu>
+
+
+On Aug 1, 2008, at 1:32 AM, Roman Odaisky wrote:
+
+> On Friday, 01.08.2008 01:27:39 Terence Parr wrote:
+>
+>> Hi Roman, i assumed people would follow the javabeans notation of
+>> getFooDisplay.  Too bad django doesn't. hmm...well, I'd say create a
+>> wrapper object that converts syntax...register a renderer like
+>> djangoToBeans object that answers getFooDisplay and delegates to
+>> django object.  Might be Able to use reflection or something to make
+>> this more automatic...
+>
+> Hi,
+>
+> I guess the intent was only to allow calling methods which don?t  
+> modify the
+> object?
+
+Yep, must be side-effect free.
+
+> What about modifying the logic a bit: for $o.m$ if m is a method of  
+> o, and
+> either m starts with /[gG]et[A-Z]/, or /get_/, or it has a special  
+> attribute,
+> for example, StringTemplate_safe, then call o.m(), otherwise use the  
+> old
+> rules?
+
+Adding 'get_' Would be okay but there could be many of the patterns.
+
+> All the languages which run StringTemplate have made a wise decision
+> of supporting reflection and attributes (and the stupid decision of  
+> ignoring
+> const, which would have been the ideal solution for this), so  
+> something like
+> this seems easily implementable and it no longer imposes a certain  
+> naming
+> convention. (I won inder whether the .NET version uses get or Get  
+> prefix.)
+
+Hmm... well, i suppose I could add a feature that it looks for a  
+method with that exact name.. Right now it looks for a get method.  
+failing that it looks for a field. failing that, I could make it look  
+for that generic method. the problem is that it is now able to call a  
+random method on the object, which is against the principle of  
+enforcing (as well as possible) model-view separation.
+
+> For example, those following the Qt style don?t use the get prefix  
+> at all
+> (o.someProperty()/o.setSomeProperty()), those using the Apps Hungarian
+> notation also don?t need it (the Hungarian prefix indicates quite  
+> clearly
+> that a method is a getter).
+
+Yeah, each target implementation language should use with the local  
+language uses. Java always uses get/set.
+
+> So what about adding an attribute which would indicate safe methods?
+
+Hmm...a possibility.  anybody else have an opinion?
+
+Ter
+
+From parrt at cs.usfca.edu  Wed Aug 13 14:59:40 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Wed, 13 Aug 2008 14:59:40 -0700
+Subject: [stringtemplate-interest] Is $if()$ needed?
+In-Reply-To: <200808101759.19093.roma@qwertty.com>
+References: <200808101759.19093.roma@qwertty.com>
+Message-ID: <E71E6F40-78C0-4EDD-AEB7-C76D3C50B3D1@cs.usfca.edu>
+
+
+On Aug 10, 2008, at 7:59 AM, Roman Odaisky wrote:
+
+> Greetings,
+>
+> I wonder whether $if(attr)$ is redundant. Instead of
+>
+> $if(attr)$
+> template
+> $endif$
+>
+> one can write
+>
+> $attr:{template}$
+>
+> which looks cleaner.
+
+But, you need
+
+$if(attr)$, template$endif$
+
+if you wanted to add a comma.  Oh, could do $attr:{, template}$ I  
+guess. But, that only works for short templates.  IF works great for  
+20 line inclusions.
+
+> The only thing missing is the else part. Perhaps the grammar can be  
+> extended,
+> for example, this way:
+>
+> $attr:{if}$
+> $attr:{if}!{else}$
+> $attr!{else}$
+>
+> This also allows to test for more than one attribute:
+>
+> $[a, b]:{template}$
+>
+> ?If? constructs come from the imperative world. ST doesn?t have  
+> ?for?, not
+> even ?foreach?, why should we have ?if??
+
+An excellent question ;)  It needs some kind of conditional and the  
+implied conditional of ':' would indeed work.
+
+Ter
+
+From parrt at cs.usfca.edu  Wed Aug 13 15:00:30 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Wed, 13 Aug 2008 15:00:30 -0700
+Subject: [stringtemplate-interest] Caching (precompiling?)
+In-Reply-To: <200808102119.25598.roma@qwertty.com>
+References: <200808102119.25598.roma@qwertty.com>
+Message-ID: <81B1132D-7CC9-41DC-AB76-02E8F56ACF28@cs.usfca.edu>
+
+
+On Aug 10, 2008, at 11:19 AM, Roman Odaisky wrote:
+
+> Greetings,
+>
+> StringTemplateGroup loads templates only once. Does it precompile the
+> templates, or does it merely try to avoid excessive disk operations?
+
+"Precompiles" to trees.  It does it to avoid the disk operations; you  
+can set the cache refresh interval though.
+
+> In other words, what do I lose if I set the refresh interval to  
+> zero? Any
+
+nothing really... that is what I do for my website antlr.org,  
+st.org, ...
+
+Ter
+
+From parrt at cs.usfca.edu  Wed Aug 13 15:09:54 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Wed, 13 Aug 2008 15:09:54 -0700
+Subject: [stringtemplate-interest] [attr:tpl];separator
+In-Reply-To: <200808011208.02580.roma@qwertty.com>
+References: <200808010008.56046.roma@qwertty.com>
+	<DF334F7A-38DD-4E15-9707-1B2157E69DAD@cs.usfca.edu>
+	<200808011208.02580.roma@qwertty.com>
+Message-ID: <6C33D809-E012-49EA-91E2-01F04103371B@cs.usfca.edu>
+
+Added bug reports:
+
+http://www.antlr.org:8888/browse/ST-41
+
+and
+
+http://www.antlr.org:8888/browse/ST-42
+
+IF is defined to return a blank string, though we could make an  
+exception inside [...] perhaps.
+
+Ter
+
+On Aug 1, 2008, at 2:07 AM, Roman Odaisky wrote:
+
+> On Friday, 01.08.2008 01:35:58 Terence Parr wrote:
+>> On Jul 31, 2008, at 2:08 PM, Roman Odaisky wrote:
+>>> Greetings,
+>>>
+>>> Having gotten StringTemplate to work with Django, I wanted to make a
+>>> list of
+>>> certain data.
+>>>
+>>> If I write something like
+>>>
+>>> $[obj.color, obj.size, obj.volume]; separator=" | "$
+>>>
+>>> I get
+>>>
+>>> Yellow | Large | 42
+>>>
+>>> as intended. But then I wanted to modify the presentation of one of
+>>> the
+>>> attributes, namely, to append the unit to the number. I tried using
+>>> obj.volume:{$it$ m?} and that didn?t work, neither did anything  
+>>> else I
+>>> attempted.
+>>
+>> ST might not allow arbitrary expressions within the list constructor
+>> [...], although that doesn't sound like something I would miss. Did
+>> you try obj.volume:{x | $x$ units} ?
+>
+> The template $[a:{$it$}]$ throws antlr.RecognitionException, which  
+> then
+> happens to be obscured by this:
+>
+> File "/usr/lib/python2.5/site-packages/stringtemplate3/language/ 
+> ActionParser.py",
+> line 887, in list_
+>    self.reportError(ex)
+>
+> File "/usr/lib/python2.5/site-packages/stringtemplate3/language/ 
+> ActionParser.py",
+> line 75, in reportError
+>    if group == stringtemplate3.StringTemplate.defaultGroup:
+> AttributeError: type object 'StringTemplate' has no attribute  
+> 'defaultGroup'
+>
+> (a bug?). $[a:{x|$x$}]$ doesn?t work as well.
+>
+>>> What is the right way to include the result of template application
+>>> to a list?
+>>>
+>>> Or, say, I want to achieve the same thing this template does:
+>>>
+>>> A=$a$, B=$b$, C=$c$, D=$d$
+>>>
+>>> except if any of a, b, c or d attributes are null, their entries
+>>> must not be
+>>> shown, like this:
+>>>
+>>> A=1, B=2, D=4
+>>
+>> You'd have to put $if(a)$A=$a$$endif$ and so on.
+>
+> Do I understand correctly that $if(an_undefined_attribute)$  
+> something $endif$
+> is either ?something?, or an empty string, but never a null value?  
+> And if ST
+> encounters such a value in a list, it doesn?t omit it?
+>
+>>> Is there a way to construct a list from constant strings in the
+>>> template? If
+>>> there were such a list, I would have written
+>>>
+>>> $["A", "B", "C", "D"],[a, b, c, d]:{ k, v | $k$=$v$}; separator=",  
+>>> "$
+>>>
+>>> Indeed I?ve just checked after having written this, and this exact
+>>> notation
+>>> worked, much to my surprise as it doesn?t seem to be documented
+>>> anywhere.
+>>> Though it doesn?t solve the problem completely: if an attribute from
+>>> the
+>>> second list is null, the corresponding item from the first one isn?t
+>>> removed.
+>>
+>> Right.  ST assumes that the parallel lists have the same size.
+>>
+>> You could make or pass in a map that mapped iteration to units:
+>>
+>> units ::= [
+>> 	"1" : "A",
+>> 	"2" : "B"
+>> 	...
+>> ]
+>>
+>> and then do units.(i) inside an iteration where i is an implicitly
+>> maintained loop iteration variable. Naturally, the solution is icky.
+>>
+>> Try:
+>>
+>> $["A", "B", "C", "D"],[a, b, c, d]:{ k, v | $if(v)$$k$=$v$$endif$};
+>> separator=", "$
+>
+>>>> st = StringTemplate('$["A", "B", "C", "D"],[a, b, c, d]:{ k, v |
+> $if(v)$$k$=$v$$endif$}; separator=", "$')
+>>>> st['a'] = 'aa'
+>>>> st['b'] = 'bb'
+>>>> st['d'] = 'dd'
+>>>> print unicode(st)
+> A=aa, B=bb, C=dd,
+>
+> My suggestion would be to make sure lists allow calling templates  
+> like this:
+>
+> $[a, b:someTemplate(), c]$
+> or even
+> $[a, [b1, b2]:someTemplate(), c]$
+>
+> And if b were missing (if it would fail the $if(b)$ test), then the  
+> template
+> wouldn?t be applied to it at all, and the list would contain one  
+> less item.
+> (Those who need it to be applied even if the attribute is empty,  
+> will simply
+> use $[a, {$b$}, c]$.) Is it feasible?
+>
+> I?m currently developing a Web site and I have to display some text  
+> in a line
+> with separators between groups. But I guess such a feature as I  
+> suggested
+> above would be useful elsewhere. For example, in generating Python  
+> code with
+> named arguments:
+>
+> call ::= "some_function(<[a:{aa=<a>}, b:{bb=<b>}, c:{cc=<c>}, d: 
+> {dd=<d>}];
+> separator= ", ">)"
+>
+> call(a=1, b=2, d=4) <! some_function(aa=1, bb=2, dd=4) !>
+>
+> -- 
+> WBR
+> Roman.
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+
+From parrt at cs.usfca.edu  Wed Aug 13 16:16:09 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Wed, 13 Aug 2008 16:16:09 -0700
+Subject: [stringtemplate-interest] adding Stuff for 3.2.1
+Message-ID: <10FDA860-CE2F-4CC6-9194-EF1BBCBF5D28@cs.usfca.edu>
+
+http://www.antlr.org/download/build/stringtemplate-08-13-2008.16.tar.gz
+
+o IF conditionals and list elements couldn't use template
+   application.  Can do $if(names:{$it$})$Fail!$endif$ and
+   $[names:{$it$!},phones]$ and $[names, ["foo","bar"]:{$it$!},phones]$
+   Can't use IF inside of a [...] because those are expressions not
+   statements.
+
+o Made template output sensitive to the anchor of any enclosing template
+   instances. ST used to ignore anchor unless you had a wrap and now it
+   looks at anchor like an indent; uses widest.  ST used to give this:
+
+	{ a,
+	{ 1,
+	2,
+	3 }
+	, b }
+
+   for these templates where the first was stuck into second
+	<\n>{ <stuff; anchor, separator=",\n"> }<\n>
+         { <values; anchor, separator=", "> }
+
+   but now gives:
+
+	{ a,
+	  { 1,
+	    2,
+	    3 }
+	  , b };
+
+   see testSubtemplatesAnchorToo()
+
+o To deal with combined anchors and indentation, force indents to
+   include any current anchor point. Prevents a check later in write
+   to deal with anchors when starting new line.  See pushIndentation()
+
+
+
+From jaluber at gmx.de  Wed Aug 13 16:22:16 2008
+From: jaluber at gmx.de (Johannes Luber)
+Date: Thu, 14 Aug 2008 01:22:16 +0200
+Subject: [stringtemplate-interest] adding Stuff for 3.2.1
+In-Reply-To: <10FDA860-CE2F-4CC6-9194-EF1BBCBF5D28@cs.usfca.edu>
+References: <10FDA860-CE2F-4CC6-9194-EF1BBCBF5D28@cs.usfca.edu>
+Message-ID: <48A36CA8.1060305@gmx.de>
+
+Terence Parr schrieb:
+> http://www.antlr.org/download/build/stringtemplate-08-13-2008.16.tar.gz
+> 
+> o IF conditionals and list elements couldn't use template
+>    application.  Can do $if(names:{$it$})$Fail!$endif$ and
+>    $[names:{$it$!},phones]$ and $[names, ["foo","bar"]:{$it$!},phones]$
+>    Can't use IF inside of a [...] because those are expressions not
+>    statements.
+> 
+> o Made template output sensitive to the anchor of any enclosing template
+>    instances. ST used to ignore anchor unless you had a wrap and now it
+>    looks at anchor like an indent; uses widest.  ST used to give this:
+> 
+> 	{ a,
+> 	{ 1,
+> 	2,
+> 	3 }
+> 	, b }
+> 
+>    for these templates where the first was stuck into second
+> 	<\n>{ <stuff; anchor, separator=",\n"> }<\n>
+>          { <values; anchor, separator=", "> }
+> 
+>    but now gives:
+> 
+> 	{ a,
+> 	  { 1,
+> 	    2,
+> 	    3 }
+> 	  , b };
+
+Wouldn't it make more sense to dedent the ", b };" again? What would 
+happen, if embed <stuff> twice otherwise?
+
+Johannes
+
+> 
+>    see testSubtemplatesAnchorToo()
+> 
+> o To deal with combined anchors and indentation, force indents to
+>    include any current anchor point. Prevents a check later in write
+>    to deal with anchors when starting new line.  See pushIndentation()
+> 
+> 
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+> 
+
+
+From parrt at cs.usfca.edu  Wed Aug 13 16:25:50 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Wed, 13 Aug 2008 16:25:50 -0700
+Subject: [stringtemplate-interest] adding Stuff for 3.2.1
+In-Reply-To: <48A36CA8.1060305@gmx.de>
+References: <10FDA860-CE2F-4CC6-9194-EF1BBCBF5D28@cs.usfca.edu>
+	<48A36CA8.1060305@gmx.de>
+Message-ID: <B7FA7BC1-F023-47F0-9BCE-C5934A9D82CA@cs.usfca.edu>
+
+
+On Aug 13, 2008, at 4:22 PM, Johannes Luber wrote:
+>> o Made template output sensitive to the anchor of any enclosing  
+>> template
+>>   instances. ST used to ignore anchor unless you had a wrap and now  
+>> it
+>>   looks at anchor like an indent; uses widest.  ST used to give this:
+>> 	{ a,
+>> 	{ 1,
+>> 	2,
+>> 	3 }
+>> 	, b }
+>>   for these templates where the first was stuck into second
+>> 	<\n>{ <stuff; anchor, separator=",\n"> }<\n>
+>>         { <values; anchor, separator=", "> }
+>>   but now gives:
+>> 	{ a,
+>> 	  { 1,
+>> 	    2,
+>> 	    3 }
+>> 	  , b };
+>
+> Wouldn't it make more sense to dedent the ", b };" again?
+
+Oh, right, yeah, that is another problem...the separator still  
+appears, but at the anchor offset of outer list (a here).  You *do*  
+want the ',' to line up with '{' but the anchor prevents anything  
+generated from <values; anchor> to be to the left...I need sort of  a  
+"soft separator".  Since I don't really know what I want here I didn't  
+do anything. ;) I need some kind of negative indent in general but  
+have no good ideas.
+
+Ter
+
+From dieter_frej at gmx.net  Thu Aug 14 03:30:14 2008
+From: dieter_frej at gmx.net (Dieter Frej)
+Date: Thu, 14 Aug 2008 12:30:14 +0200
+Subject: [stringtemplate-interest] basic question to template group
+In-Reply-To: <487BBD3F.3000004@gmx.de>
+References: <20080713204213.120390@gmx.net> <487BBD3F.3000004@gmx.de>
+Message-ID: <20080814103014.84960@gmx.net>
+
+Hi Rabea,
+
+that example made it totally clear. @Ter: I recommend this to be added be to the wiki.
+
+Still two questions are left: 
+- in your example you used the parameter "theGroup" in the StringTemplateGroup constructor. What is it used for? 
+- what are the advantages (and of course disadvantages) of using one .stg or serveral .st files?
+
+Thanks in advance,
+
+- Daniel
+
+
+
+-------- Original-Nachricht --------
+> Datum: Mon, 14 Jul 2008 22:55:27 +0200
+> Von: Rabea Gransberger <rgransberger at gmx.de>
+> An: Dieter Frej <dieter_frej at gmx.net>
+> CC: stringtemplate-interest at antlr.org
+> Betreff: Re: [stringtemplate-interest] basic question to template group
+
+> Dieter Frej schrieb:
+> > Hi,
+> > 
+> > what I wanted to do was to put all templates (all in all these are
+> around 5 templates) in one physical file and use this file to generate my
+> output. Following the great number of example on the Internet, I figured that I
+> need a template group to realize my requirement
+> > 
+> > StringTemplateGroup stGroup = new StringTemplateGroup("mygroup",
+> "C:\\Users\\xyz\\workspace");
+> > StringTemplate st = stGroup.getInstanceOf("junit");
+> > st.setAttribute("tests", ts); 
+> > System.out.println(st.toString());
+> > 
+> > I created the junit.st file and placed in the directory specified in the
+> constructor of the StringTemplateGroup. In my junit.st I want to call
+> another "template method"
+> > 
+> > junitclass(testheet) ::= <<
+> > 
+> > public class $tests.name$ {
+> > 	
+> > 	$m23ethod(rows=tests.rows)$
+> > 	
+> > }
+> > 
+> > Putting also
+> > 
+> > m23ethod(rows) ::= <<
+> > 	public void test() {
+> > $rows:{ u |
+> > 	$u.inputColumns; separator=", "$
+> > }$
+> > 
+> > in junit.st does not working. I get the following exception
+> > 
+> > Exception in thread "main" java.lang.IllegalArgumentException: Can't
+> find template m23ethod.st; context is [junit]; group hierarchy is [mygroup]
+> > 
+> > Maybe I do not fully get template groups, but why am I required to
+> create a separate template for each method I am calling? Or am I doing something
+> wrong? (or totally missing the point? also possible ;-)
+> 
+> You've mixed up the possiblities to create StringTemplate Groups:
+> - You may group .st files in a directory
+> - You may create a group file (.stg) which contains all the templates.
+> 
+> Here's an example:
+> public class GroupFiles {
+> 
+> 	public static void main(String[] args) throws IOException {
+> 		StringTemplateGroup groupDir = new StringTemplateGroup("theGroup",
+> 				"templates/group");
+> 
+> 		final StringTemplate oneTemplate = groupDir.getInstanceOf("one");
+> 		oneTemplate.setAttribute("class", GroupFiles.class);
+> 		System.out.println(oneTemplate.toString());
+> 
+> 		final FileReader reader = new FileReader("templates/group.stg");
+> 		StringTemplateGroup groupFile = new StringTemplateGroup(reader);
+> 		reader.close();
+> 		
+> 		final StringTemplate oneTemplate2 = groupFile.getInstanceOf("one");
+> 		oneTemplate2.setAttribute("class", GroupFiles.class);
+> 		System.out.println(oneTemplate2.toString());
+> 	}
+> 
+> }
+> 
+> Using the following directory structure:
+> templates
+>    -group
+>     -- one.st
+>     -- two.st
+>    - group.stg
+> 
+> Contents of the files:
+> one.st:
+> ------
+> $two(className=class.name)$
+> ------
+> 
+> two.st:
+> ------
+> $className$
+> ------
+> 
+> group.stg:
+> -------
+> group theGroup;
+> 
+> one(class) ::= <<
+> <two(className=class.name)>
+>  >>
+> 
+> two(className) ::= <<
+> <className>
+>  >>
+> --------
+> 
+> Hope this made it a bit clearer.
+> 
+> Rabea
+
+-- 
+Psssst! Schon das coole Video vom GMX MultiMessenger gesehen?
+Der Eine f?r Alle: http://www.gmx.net/de/go/messenger03
+
+From asword at telus.net  Thu Aug 14 10:36:56 2008
+From: asword at telus.net (asword at telus.net)
+Date: Thu, 14 Aug 2008 11:36:56 -0600 (MDT)
+Subject: [stringtemplate-interest] Changing separators in recursive templates
+Message-ID: <16219385.8453271218735416959.JavaMail.nitido@priv-edmwes95>
+
+An HTML attachment was scrubbed...
+URL: http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20080814/8297e51b/attachment.html 
+
+From parrt at cs.usfca.edu  Fri Aug 15 11:37:10 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Fri, 15 Aug 2008 11:37:10 -0700
+Subject: [stringtemplate-interest] basic question to template group
+In-Reply-To: <20080814103014.84960@gmx.net>
+References: <20080713204213.120390@gmx.net> <487BBD3F.3000004@gmx.de>
+	<20080814103014.84960@gmx.net>
+Message-ID: <BDE428E1-585E-4D15-BDF1-FBF5463F249C@cs.usfca.edu>
+
+Added :)
+
+http://www.antlr.org/wiki/pages/viewpage.action?pageId=11567203
+
+Ter
+
+From parrt at cs.usfca.edu  Fri Aug 15 11:40:05 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Fri, 15 Aug 2008 11:40:05 -0700
+Subject: [stringtemplate-interest] Changing separators in recursive
+	templates
+In-Reply-To: <16219385.8453271218735416959.JavaMail.nitido@priv-edmwes95>
+References: <16219385.8453271218735416959.JavaMail.nitido@priv-edmwes95>
+Message-ID: <9BC5F88D-DC15-4651-B693-698BBD8D8E52@cs.usfca.edu>
+
+
+On Aug 14, 2008, at 10:36 AM, asword at telus.net wrote:
+
+> Hello,
+>
+>  I recently started using StringTemplate, and haven't found my  
+> around all the docs and mailing lists yet.  I am using the C#  
+> version 3.1beta (since it adds features I need).  I've run into a  
+> few problems here and there, particularly with trying to use  
+> recursive templates.  The latest one seemed like a flat out bug so I  
+> thought I would inquire about it.
+>  The situation is that I have a graph of objects that represent a C+ 
+> + boolean expression that I want to output.  My initial attempt at  
+> this was roughly this (I don't have the original code as I've worked  
+> around the problem by taking a different strategy, I would just like  
+> to know why it didn't work):
+>  BinaryOp(node, op) ::=  
+> "$node.SubExpressions:EvalElement(elem=it);separator=op$"
+> EvalElement(elem) ::= <<
+>
+> $if(elem.IsBinaryOp)$
+>
+> ($BinaryOp(node=elem,op=node.Op)$)
+>
+> $else$
+>
+> $elem.Condition$
+>
+> $endif$
+>
+> >>
+>
+>
+> This almost worked.  The problem arose when it had recursed a level  
+> or two and the op changed from (for example) "&&" to "||" and back  
+> again.  The "||" never appeared, instead the separator was always  
+> "&&" at all levels.
+>
+
+That does seem strange.  Perhaps you could simply do separator=node.Op  
+to avoid Anything weird with the parameters.
+
+> Also, are there any hints to debugging templates more effectively?   
+> I'm finding that it is mostly guesswork and that I get NoViableAlt  
+> exceptions which don't provide any clues as to their source.  Many  
+> of these are caught internally by StringTemplate, and if I have the  
+> debugger set to stop at the exception then I have to step through  
+> potentially dozens of them until I get to the exception that I  
+> really want to look at.
+>
+
+NoViable alt errors are parse errors...often the line numbers are not  
+exactly helpful because the errors are within an action. I'm not  
+familiar enough with C# implementation to know what the real issues are.
+
+Ter
+
+From roma at qwertty.com  Sat Aug 16 01:39:15 2008
+From: roma at qwertty.com (Roman Odaisky)
+Date: Sat, 16 Aug 2008 11:39:15 +0300
+Subject: [stringtemplate-interest] Is $if()$ needed?
+In-Reply-To: <200808101759.19093.roma@qwertty.com>
+References: <200808101759.19093.roma@qwertty.com>
+Message-ID: <200808161139.15594.roma@qwertty.com>
+
+Greetings,
+
+> $attr:{template}$
+> The only thing missing is the else part.
+
+Indeed even this is present, as I?ve just realized:
+
+$if(attr)$template1$else$template2$endif$
+
+$attr:{template1};null={template2}$
+
+So $if$ is only syntactic sugar for large templates to avoid building fences 
+of braces.
+
+-- 
+WBR
+Roman.
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: smime.p7s
+Type: application/pkcs7-signature
+Size: 2286 bytes
+Desc: not available
+Url : http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20080816/1b9abb54/attachment.bin 
+
+From bob.foltrigg at gmail.com  Sun Aug 17 05:51:24 2008
+From: bob.foltrigg at gmail.com (Bob Foltrigg)
+Date: Sun, 17 Aug 2008 14:51:24 +0200
+Subject: [stringtemplate-interest] pystringtemplate 2.2
+	UnicodeDecodeError -- been fixed?
+In-Reply-To: <e50835b20806161139g4b5a76eycae0adad0d650bec@mail.gmail.com>
+References: <e50835b20806160748x36f21deem8461c57ccbca0f94@mail.gmail.com>
+	<543531490806160804h6e84aacbx1140131fa2bd1d96@mail.gmail.com>
+	<e50835b20806161139g4b5a76eycae0adad0d650bec@mail.gmail.com>
+Message-ID: <C63A3182749341F780E04CF8C713648F@jazzil>
+
+I'm resuming this thread because I'm still experiencing issues regarding
+unicode and PyStringTemplate -- however I have managed to observe some
+progress. As mentioned in my original mail below, I could go pretty far to
+have things look fine and dandy, but it turned out it's only as smooth as
+long I run my app in CPython. As soon as I switch over to Jython and present
+bindings for my templates in something other than ascii, things break down
+again, and I get the dreaded UnicodeDecodeError. The affecting spot is line
+605 in stringtemplate3/language/AST3Expr.py:
+
+(
+602:        if renderer is not None:
+603:            v = renderer.toString(o, self.formatString)
+604:        else:
+605:            v = unicode(o)
+)
+
+I'm aware that this may well be labeled as a Jython issue, but still I think
+that PyStringTemplate is a bit too insisting on blindly converting
+everything to the type unicode, while Jython's str is unicode-aware by
+default, which means Jython strings suffer a double decoding inside PyST.
+This is just a weak assumption, maybe somebody with more experience in the
+PyST/encodings/Jython area could shed some light on the issue.
+
+On a different note: the unit tests in the package seem to be broken for me
+(>20 error on both CPython and JPython). Am I missing something or is this
+the current state of affairs? If so, then is there any undergoing effort to
+fix them, or could I be of help and start to plow thru it?
+
+Thank you for any help,
+-Bob. 
+
+> -----Original Message-----
+> From: bob foltrigg [mailto:bob.foltrigg at gmail.com] 
+> Sent: 2008. j?nius 16. 20:39
+> To: Benjamin Niemann
+> Cc: stringtemplate-interest at antlr.org
+> Subject: Re: [stringtemplate-interest] pystringtemplate 2.2 
+> UnicodeDecodeError -- been fixed?
+> 
+> Hi,
+> thank you for the quick answer. I'm using V3.1 and have the 
+> problems described. I can get around the bug right now, 
+> because my templates are HTMLs and can substitute characters 
+> for HTML entites, but in the future I'd like to see proper 
+> Unicode support in PyST. Haven't investigated the problem 
+> myself either but I'm ready to contribute whatever I can come 
+> up with if it can help.
+> -Bob.
+> 
+> On Mon, Jun 16, 2008 at 5:04 PM, Benjamin Niemann 
+> <pink at odahoda.de> wrote:
+> > Hi Bob,
+> >
+> > I upgraded stringtemplate for Python to V3.1. I haven't looked too 
+> > deep into unicode support though.
+> > Are you still having these problems with 3.1?
+> >
+> > -Ben
+> >
+> >
+> > On Mon, Jun 16, 2008 at 4:48 PM, bob foltrigg 
+> <bob.foltrigg at gmail.com> wrote:
+> >> Hi all,
+> >> It seems like I'm affected by the same error as Bohumil 
+> Simcik (was) 
+> >> as mentioned by him in a posting sent to this list last 
+> May (archived 
+> >> under 
+> >> 
+> http://www.antlr.org:8080/pipermail/stringtemplate-interest/2007-May/
+> >> 001052.html) Terence's response was that the source of the bug is 
+> >> caused by PyST lagging behind the other versions (see next 
+> message by 
+> >> thread after the previous one in the archives).
+> >> My question would be whether this failure has been appointed to 
+> >> anybody since then, if not, then what steps should I take 
+> be allowed 
+> >> to submit my solution for it.
+> >> Thank You,
+> >> -Bob.
+> >> _______________________________________________
+> >> stringtemplate-interest mailing list
+> >> stringtemplate-interest at antlr.org
+> >> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+> >>
+> >
+> 
+
+
+From pink at odahoda.de  Sun Aug 17 07:00:02 2008
+From: pink at odahoda.de (Benjamin Niemann)
+Date: Sun, 17 Aug 2008 16:00:02 +0200
+Subject: [stringtemplate-interest] pystringtemplate 2.2
+	UnicodeDecodeError -- been fixed?
+In-Reply-To: <C63A3182749341F780E04CF8C713648F@jazzil>
+References: <e50835b20806160748x36f21deem8461c57ccbca0f94@mail.gmail.com>
+	<543531490806160804h6e84aacbx1140131fa2bd1d96@mail.gmail.com>
+	<e50835b20806161139g4b5a76eycae0adad0d650bec@mail.gmail.com>
+	<C63A3182749341F780E04CF8C713648F@jazzil>
+Message-ID: <543531490808170700p5c17903cw4f0569fe74035d2b@mail.gmail.com>
+
+Hi Bob,
+
+I'm currently working on getting ST ready for the next release.
+Correct unicode handling one of the things, I want to get working.
+
+On Sun, Aug 17, 2008 at 2:51 PM, Bob Foltrigg <bob.foltrigg at gmail.com> wrote:
+> I'm resuming this thread because I'm still experiencing issues regarding
+> unicode and PyStringTemplate -- however I have managed to observe some
+> progress. As mentioned in my original mail below, I could go pretty far to
+> have things look fine and dandy, but it turned out it's only as smooth as
+> long I run my app in CPython. As soon as I switch over to Jython and present
+> bindings for my templates in something other than ascii, things break down
+> again, and I get the dreaded UnicodeDecodeError. The affecting spot is line
+> 605 in stringtemplate3/language/AST3Expr.py:
+>
+> (
+> 602:        if renderer is not None:
+> 603:            v = renderer.toString(o, self.formatString)
+> 604:        else:
+> 605:            v = unicode(o)
+> )
+>
+> I'm aware that this may well be labeled as a Jython issue, but still I think
+> that PyStringTemplate is a bit too insisting on blindly converting
+> everything to the type unicode, while Jython's str is unicode-aware by
+> default, which means Jython strings suffer a double decoding inside PyST.
+> This is just a weak assumption, maybe somebody with more experience in the
+> PyST/encodings/Jython area could shed some light on the issue.
+
+I have no experience with Jython, so I can't tell how hard it is to
+get this working right. If I find some time, I may look into it, but
+no promises.
+
+> On a different note: the unit tests in the package seem to be broken for me
+> (>20 error on both CPython and JPython). Am I missing something or is this
+> the current state of affairs? If so, then is there any undergoing effort to
+> fix them, or could I be of help and start to plow thru it?
+
+Can you be a bit more specific? I usually make sure that the tests
+pass 100% before submitting.
+
+-Ben
+
+>> -----Original Message-----
+>> From: bob foltrigg [mailto:bob.foltrigg at gmail.com]
+>> Sent: 2008. j?nius 16. 20:39
+>> To: Benjamin Niemann
+>> Cc: stringtemplate-interest at antlr.org
+>> Subject: Re: [stringtemplate-interest] pystringtemplate 2.2
+>> UnicodeDecodeError -- been fixed?
+>>
+>> Hi,
+>> thank you for the quick answer. I'm using V3.1 and have the
+>> problems described. I can get around the bug right now,
+>> because my templates are HTMLs and can substitute characters
+>> for HTML entites, but in the future I'd like to see proper
+>> Unicode support in PyST. Haven't investigated the problem
+>> myself either but I'm ready to contribute whatever I can come
+>> up with if it can help.
+>> -Bob.
+>>
+>> On Mon, Jun 16, 2008 at 5:04 PM, Benjamin Niemann
+>> <pink at odahoda.de> wrote:
+>> > Hi Bob,
+>> >
+>> > I upgraded stringtemplate for Python to V3.1. I haven't looked too
+>> > deep into unicode support though.
+>> > Are you still having these problems with 3.1?
+>> >
+>> > -Ben
+>> >
+>> >
+>> > On Mon, Jun 16, 2008 at 4:48 PM, bob foltrigg
+>> <bob.foltrigg at gmail.com> wrote:
+>> >> Hi all,
+>> >> It seems like I'm affected by the same error as Bohumil
+>> Simcik (was)
+>> >> as mentioned by him in a posting sent to this list last
+>> May (archived
+>> >> under
+>> >>
+>> http://www.antlr.org:8080/pipermail/stringtemplate-interest/2007-May/
+>> >> 001052.html) Terence's response was that the source of the bug is
+>> >> caused by PyST lagging behind the other versions (see next
+>> message by
+>> >> thread after the previous one in the archives).
+>> >> My question would be whether this failure has been appointed to
+>> >> anybody since then, if not, then what steps should I take
+>> be allowed
+>> >> to submit my solution for it.
+>> >> Thank You,
+>> >> -Bob.
+>> >> _______________________________________________
+>> >> stringtemplate-interest mailing list
+>> >> stringtemplate-interest at antlr.org
+>> >> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>> >>
+>> >
+>>
+>
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>
+
+From bob.foltrigg at gmail.com  Sun Aug 17 07:52:50 2008
+From: bob.foltrigg at gmail.com (Bob Foltrigg)
+Date: Sun, 17 Aug 2008 16:52:50 +0200
+Subject: [stringtemplate-interest] pystringtemplate 2.2
+	UnicodeDecodeError -- been fixed?
+In-Reply-To: <543531490808170700p5c17903cw4f0569fe74035d2b@mail.gmail.com>
+References: <e50835b20806160748x36f21deem8461c57ccbca0f94@mail.gmail.com>
+	<543531490806160804h6e84aacbx1140131fa2bd1d96@mail.gmail.com>
+	<e50835b20806161139g4b5a76eycae0adad0d650bec@mail.gmail.com>
+	<C63A3182749341F780E04CF8C713648F@jazzil>
+	<543531490808170700p5c17903cw4f0569fe74035d2b@mail.gmail.com>
+Message-ID: <93DBC36293484B2E8A3EB706FEC5283E@jazzil>
+
+> 
+> Hi Bob,
+> 
+> I'm currently working on getting ST ready for the next release.
+> Correct unicode handling one of the things, I want to get working.
+
+Hi,
+Sounds promising, looking forward to trying it.
+
+> > I'm aware that this may well be labeled as a Jython issue, 
+> but still I 
+> > think that PyStringTemplate is a bit too insisting on blindly 
+> > converting everything to the type unicode, while Jython's str is 
+> > unicode-aware by default, which means Jython strings suffer 
+> a double decoding inside PyST.
+> > This is just a weak assumption, maybe somebody with more 
+> experience in 
+> > the PyST/encodings/Jython area could shed some light on the issue.
+> 
+> I have no experience with Jython, so I can't tell how hard it 
+> is to get this working right. If I find some time, I may look 
+> into it, but no promises.
+
+I'm ready to dive into the Jython-side. For starters it would be great to
+see the unittests rolling on Jython.
+
+> 
+> > On a different note: the unit tests in the package seem to 
+> be broken 
+> > for me (>20 error on both CPython and JPython). Am I 
+> missing something 
+> > or is this the current state of affairs? If so, then is there any 
+> > undergoing effort to fix them, or could I be of help and 
+> start to plow thru it?
+> 
+> Can you be a bit more specific? I usually make sure that the 
+> tests pass 100% before submitting.
+
+Shame on me, tests run 100% OK on linux. 
+
+> 
+> -Ben
+> 
+> >> -----Original Message-----
+> >> From: bob foltrigg [mailto:bob.foltrigg at gmail.com]
+> >> Sent: 2008. j?nius 16. 20:39
+> >> To: Benjamin Niemann
+> >> Cc: stringtemplate-interest at antlr.org
+> >> Subject: Re: [stringtemplate-interest] pystringtemplate 2.2 
+> >> UnicodeDecodeError -- been fixed?
+> >>
+> >> Hi,
+> >> thank you for the quick answer. I'm using V3.1 and have 
+> the problems 
+> >> described. I can get around the bug right now, because my 
+> templates 
+> >> are HTMLs and can substitute characters for HTML entites, 
+> but in the 
+> >> future I'd like to see proper Unicode support in PyST. Haven't 
+> >> investigated the problem myself either but I'm ready to contribute 
+> >> whatever I can come up with if it can help.
+> >> -Bob.
+> >>
+> >> On Mon, Jun 16, 2008 at 5:04 PM, Benjamin Niemann 
+> <pink at odahoda.de> 
+> >> wrote:
+> >> > Hi Bob,
+> >> >
+> >> > I upgraded stringtemplate for Python to V3.1. I haven't 
+> looked too 
+> >> > deep into unicode support though.
+> >> > Are you still having these problems with 3.1?
+> >> >
+> >> > -Ben
+> >> >
+> >> >
+> >> > On Mon, Jun 16, 2008 at 4:48 PM, bob foltrigg
+> >> <bob.foltrigg at gmail.com> wrote:
+> >> >> Hi all,
+> >> >> It seems like I'm affected by the same error as Bohumil
+> >> Simcik (was)
+> >> >> as mentioned by him in a posting sent to this list last
+> >> May (archived
+> >> >> under
+> >> >>
+> >> 
+> http://www.antlr.org:8080/pipermail/stringtemplate-interest/2007-May/
+> >> >> 001052.html) Terence's response was that the source of 
+> the bug is 
+> >> >> caused by PyST lagging behind the other versions (see next
+> >> message by
+> >> >> thread after the previous one in the archives).
+> >> >> My question would be whether this failure has been appointed to 
+> >> >> anybody since then, if not, then what steps should I take
+> >> be allowed
+> >> >> to submit my solution for it.
+> >> >> Thank You,
+> >> >> -Bob.
+> >> >> _______________________________________________
+> >> >> stringtemplate-interest mailing list 
+> >> >> stringtemplate-interest at antlr.org 
+> >> >> 
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+> >> >>
+> >> >
+> >>
+> >
+> > _______________________________________________
+> > stringtemplate-interest mailing list
+> > stringtemplate-interest at antlr.org
+> > http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+> >
+> 
+
+
+From parrt at cs.usfca.edu  Mon Aug 18 12:42:51 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Mon, 18 Aug 2008 12:42:51 -0700
+Subject: [stringtemplate-interest] Is $if()$ needed?
+In-Reply-To: <200808161139.15594.roma@qwertty.com>
+References: <200808101759.19093.roma@qwertty.com>
+	<200808161139.15594.roma@qwertty.com>
+Message-ID: <85F864C1-6C49-4F40-AE15-CFC3092CA809@cs.usfca.edu>
+
+
+On Aug 16, 2008, at 1:39 AM, Roman Odaisky wrote:
+
+> Greetings,
+>
+>> $attr:{template}$
+>> The only thing missing is the else part.
+>
+> Indeed even this is present, as I?ve just realized:
+>
+> $if(attr)$template1$else$template2$endif$
+>
+> $attr:{template1};null={template2}$
+
+wow. cool.
+
+> So $if$ is only syntactic sugar for large templates to avoid  
+> building fences
+> of braces.
+
+Yeah, and elseif is nice
+Ter
+
+From roma at qwertty.com  Mon Aug 18 12:56:37 2008
+From: roma at qwertty.com (Roman Odaisky)
+Date: Mon, 18 Aug 2008 22:56:37 +0300
+Subject: [stringtemplate-interest] Is $if()$ needed?
+In-Reply-To: <85F864C1-6C49-4F40-AE15-CFC3092CA809@cs.usfca.edu>
+References: <200808101759.19093.roma@qwertty.com>
+	<200808161139.15594.roma@qwertty.com>
+	<85F864C1-6C49-4F40-AE15-CFC3092CA809@cs.usfca.edu>
+Message-ID: <200808182256.43427.roma@qwertty.com>
+
+> > So $if$ is only syntactic sugar for large templates to avoid
+> > building fences
+> > of braces.
+>
+> Yeah, and elseif is nice
+
+Elseif:
+
+$a:{IF};null=b:{ELSEIF};null={ELSE}$
+
+(doesn?t work, but could have)
+
+
+Or with your recent addition:
+
+$first([a:{IF}, b:{ELSEIF}, {ELSE}])$
+
+(should work)
+
+
+-- 
+WBR
+Roman.
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: smime.p7s
+Type: application/pkcs7-signature
+Size: 2286 bytes
+Desc: not available
+Url : http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20080818/09b8116f/attachment.bin 
+
+From parrt at cs.usfca.edu  Mon Aug 18 16:11:00 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Mon, 18 Aug 2008 16:11:00 -0700
+Subject: [stringtemplate-interest] Is $if()$ needed?
+In-Reply-To: <200808182256.43427.roma@qwertty.com>
+References: <200808101759.19093.roma@qwertty.com>
+	<200808161139.15594.roma@qwertty.com>
+	<85F864C1-6C49-4F40-AE15-CFC3092CA809@cs.usfca.edu>
+	<200808182256.43427.roma@qwertty.com>
+Message-ID: <271A9277-DCDB-4D88-B87A-0EBA4AC9D0AB@cs.usfca.edu>
+
+
+On Aug 18, 2008, at 12:56 PM, Roman Odaisky wrote:
+
+>>> So $if$ is only syntactic sugar for large templates to avoid
+>>> building fences
+>>> of braces.
+>>
+>> Yeah, and elseif is nice
+>
+> Elseif:
+>
+> $a:{IF};null=b:{ELSEIF};null={ELSE}$
+>
+> (doesn?t work, but could have)
+>
+>
+> Or with your recent addition:
+>
+> $first([a:{IF}, b:{ELSEIF}, {ELSE}])$
+>
+> (should work)
+
+ooooh!  You are a fiendishly clever man! or even
+
+$[[a:{IF}, b:{ELSEIF}, {ELSE}]:{$it$}$
+
+Ter
+
+From gaochunguang at 163.com  Wed Aug 20 01:46:30 2008
+From: gaochunguang at 163.com (gaochunguang)
+Date: Wed, 20 Aug 2008 16:46:30 +0800
+Subject: [stringtemplate-interest] [antlr-interest] why "null" does not
+	work (String Template)
+References: <001101c8ff7a$38a29050$6401a8c0@alien>
+	<6DD443E1-B16F-438E-B741-8782A4A5F6D6@classdump.org>
+Message-ID: <006f01c902a1$3e43a2e0$1300a8c0@alien>
+
+thank you.
+----- Original Message ----- 
+From: "Kay R?pke" <kroepke at classdump.org>
+To: "gaochunguang" <gaochunguang at 163.com>
+Cc: "ANTLR-Interest Interest" <antlr-interest at antlr.org>
+Sent: Saturday, August 16, 2008 9:27 PM
+Subject: Re: [antlr-interest] why "null" does not work (String Template)
+
+
+Hi!
+(setting reply-to to stringtemplate-interest because that's the  
+appropriate place for this question).
+
+On Aug 16, 2008, at 10:29 AM, gaochunguang wrote:
+
+>
+>  StringTemplate st = new
+>       StringTemplate("<chars; wrap, null=\"0\">",
+>       AngleBracketTemplateLexer.class);
+>  st.setAttribute("chars", "a");
+>  st.setAttribute("chars", "b");
+>  st.setAttribute("chars", "c");
+>  st.setAttribute("chars", null);
+>  st.setAttribute("chars", "e");
+>  st.setAttribute("chars", "f");
+>  System.out.println(st.toString());
+>
+> output is abcef.
+
+
+the setAttribute method ignores anything with a null value. I'm not  
+sure what the rationale is behind that, but by writing it like:
+
+        StringTemplate st = new
+                 StringTemplate("<chars; wrap, null=\"0\">",
+                 AngleBracketTemplateLexer.class);
+         st.setAttribute("chars", new String[] {"a", "b", "c", null,  
+"e", "f"});
+         System.out.println(st.toString());
+
+you get the output:
+abc0ef
+
+I believe ST should check if the attribute you want to set already is  
+a multivalue container before discarding null values (but not null  
+names obviously) in setAttribute(Object, Object), because in the  
+current implementation it's not behaving consistently, as shown above.
+
+cheers,
+-k
+-- 
+Kay R?pke
+http://classdump.org/
+
+
+
+
+
+
+From sinsvend at gmail.com  Fri Aug 22 05:43:13 2008
+From: sinsvend at gmail.com (Sindre Svendby)
+Date: Fri, 22 Aug 2008 14:43:13 +0200
+Subject: [stringtemplate-interest] if-condition in subtemplates
+Message-ID: <1440c3b10808220543w7d8d6354ja3ded8a1862c7619@mail.gmail.com>
+
+Hi, I having problems with if-condition in subtemplate's (template's
+that invokes other template's)
+
+Imagine I _dont_ have a var called nVar and call firstTemplate:
+
+----
+group templ;
+
+firstTemplate() ::= <<
+$if(!nVar)$
+    $subTempl(...)$
+$endif$
+>>
+
+subTempl() ::= <<
+$if(!nVar)$                <--- Reporting
+java.util.NoSuchElementException: no such attribute: nVar in template
+context
+    ..whatever..
+$endif$
+>>
+----
+
+In the StringTemplate Documentation it stand "IF actions test the
+presence or absence of an attribute unless the object is a Boolean, in
+which case it tests the attribute for true/false."
+
+Is this error intentional? Is there any work-arounds, or have I just
+no clue about what I'm doing :)
+I have this problem with StringTemplate Group Files.
+
+-- Sindre
+
+From parrt at cs.usfca.edu  Fri Aug 22 11:06:05 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Fri, 22 Aug 2008 11:06:05 -0700
+Subject: [stringtemplate-interest] if-condition in subtemplates
+In-Reply-To: <1440c3b10808220543w7d8d6354ja3ded8a1862c7619@mail.gmail.com>
+References: <1440c3b10808220543w7d8d6354ja3ded8a1862c7619@mail.gmail.com>
+Message-ID: <C35D1704-ABA6-43B2-A9FD-89993B6C1F60@cs.usfca.edu>
+
+
+On Aug 22, 2008, at 5:43 AM, Sindre Svendby wrote:
+
+> Hi, I having problems with if-condition in subtemplate's (template's
+> that invokes other template's)
+>
+> Imagine I _dont_ have a var called nVar and call firstTemplate:
+>
+> ----
+> group templ;
+>
+> firstTemplate() ::= <<
+> $if(!nVar)$
+>    $subTempl(...)$
+> $endif$
+>>>
+
+are you sure nVar is not in the parameter list for firstTemplate?
+
+>
+> subTempl() ::= <<
+> $if(!nVar)$                <--- Reporting
+> java.util.NoSuchElementException: no such attribute: nVar in template
+> context
+>    ..whatever..
+> $endif$
+>>>
+> ----
+>
+> In the StringTemplate Documentation it stand "IF actions test the
+> presence or absence of an attribute unless the object is a Boolean, in
+> which case it tests the attribute for true/false."
+>
+> Is this error intentional? Is there any work-arounds, or have I just
+> no clue about what I'm doing :)
+> I have this problem with StringTemplate Group Files.
+
+Group files enforce attribute definitions whereas template files  
+don't.  Can't ref an attr that doesn't exist.
+
+ter
+
+From sinsvend at gmail.com  Mon Aug 25 07:29:46 2008
+From: sinsvend at gmail.com (Sindre Svendby)
+Date: Mon, 25 Aug 2008 16:29:46 +0200
+Subject: [stringtemplate-interest] if-condition in subtemplates
+In-Reply-To: <C35D1704-ABA6-43B2-A9FD-89993B6C1F60@cs.usfca.edu>
+References: <1440c3b10808220543w7d8d6354ja3ded8a1862c7619@mail.gmail.com>
+	<C35D1704-ABA6-43B2-A9FD-89993B6C1F60@cs.usfca.edu>
+Message-ID: <1440c3b10808250729i4120e998sae8e9ef6e2fbee70@mail.gmail.com>
+
+2008/8/22 Terence Parr <parrt at cs.usfca.edu>:
+>
+> On Aug 22, 2008, at 5:43 AM, Sindre Svendby wrote:
+>
+>> Hi, I having problems with if-condition in subtemplate's (template's
+>> that invokes other template's)
+>>
+>> Imagine I _dont_ have a var called nVar and call firstTemplate:
+>>
+>> ----
+>> group templ;
+>>
+>> firstTemplate() ::= <<
+>> $if(!nVar)$
+>>   $subTempl(...)$
+>> $endif$
+>>>>
+>
+> are you sure nVar is not in the parameter list for firstTemplate?
+
+Im sure, I have replace nVar with other non-real var. names to, it
+returns false. Should it return an error?
+
+>
+>>
+>> subTempl() ::= <<
+>> $if(!nVar)$                <--- Reporting
+>> java.util.NoSuchElementException: no such attribute: nVar in template
+>> context
+>>   ..whatever..
+>> $endif$
+>>>>
+>> ----
+>>
+>> In the StringTemplate Documentation it stand "IF actions test the
+>> presence or absence of an attribute unless the object is a Boolean, in
+>> which case it tests the attribute for true/false."
+>>
+>> Is this error intentional? Is there any work-arounds, or have I just
+>> no clue about what I'm doing :)
+>> I have this problem with StringTemplate Group Files.
+>
+> Group files enforce attribute definitions whereas template files don't.
+>  Can't ref an attr that doesn't exist.
+>
+> ter
+>
+ok.
+
+Another really basic question:
+basicEks() ::= <<
+$int sum = 21;$
+$sum$
+>>
+
+Shouldn't this have 21 as output?
+
+Sindre
+
+From jaluber at gmx.de  Mon Aug 25 07:55:43 2008
+From: jaluber at gmx.de (Johannes Luber)
+Date: Mon, 25 Aug 2008 16:55:43 +0200
+Subject: [stringtemplate-interest] if-condition in subtemplates
+In-Reply-To: <1440c3b10808250729i4120e998sae8e9ef6e2fbee70@mail.gmail.com>
+References: <1440c3b10808220543w7d8d6354ja3ded8a1862c7619@mail.gmail.com>	<C35D1704-ABA6-43B2-A9FD-89993B6C1F60@cs.usfca.edu>
+	<1440c3b10808250729i4120e998sae8e9ef6e2fbee70@mail.gmail.com>
+Message-ID: <48B2C7EF.2090408@gmx.de>
+
+Sindre Svendby schrieb:
+> Another really basic question:
+> basicEks() ::= <<
+> $int sum = 21;$
+> $sum$
+> 
+> Shouldn't this have 21 as output?
+
+StringTemplate doesn't allow arbitrary computations in the template
+files. You can probably create a model method SetSumTo21() and call it
+before you output sum, though.
+
+Johannes
+> 
+> Sindre
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+> 
+
+
+From parrt at cs.usfca.edu  Mon Aug 25 13:39:19 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Mon, 25 Aug 2008 13:39:19 -0700
+Subject: [stringtemplate-interest] tow questions
+In-Reply-To: <002901c90675$426eaea0$1300a8c0@alien>
+References: <002901c90675$426eaea0$1300a8c0@alien>
+Message-ID: <871EAC35-6E6F-43FB-BB46-7DF228A0E815@cs.usfca.edu>
+
+STIs dynamically scoped, meaning embedded templates can see the  
+attributes of their enclosing instance. The separator notation is  
+correct that you're using. use "," not "\r\n".
+Ter
+On Aug 24, 2008, at 10:41 PM, gaochunguang wrote:
+
+> about following template:
+>
+> SELECT(tableName, Fields, ic) ::= <<
+>
+> <iBB(ic)> CREATE TABLE <tableName> { <iE(ic)>
+> <Fields:{f | <FieldP(f)>}; separator="\r\n">
+> <iB(ic)> } <iE(ic)>
+> >>
+>
+> FieldP(f) ::= <<
+> <iB(ic)> <f.Name> <f.mType> <if(f.isNull)> NULL <else> NOT NULL  
+> <endif> <iE(ic)>
+> >>
+>
+> tow questions:
+> First, why ic can work in FieldP?
+> Second, how to set separator "," between FieldP()?
+>
+> thank you very much!
+
+
+From parrt at cs.usfca.edu  Mon Aug 25 15:03:31 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Mon, 25 Aug 2008 15:03:31 -0700
+Subject: [stringtemplate-interest] added MarkMail support to ST support page
+Message-ID: <D483477F-25D9-46A8-9DFD-A47D95C5E360@cs.usfca.edu>
+
+first, i added a support page ;) then added MarkMail search etc...
+
+http://www.stringtemplate.org/support.html
+
+Ter
+
+From bobthekingofegypt at googlemail.com  Tue Aug 26 09:03:09 2008
+From: bobthekingofegypt at googlemail.com (Richard Martin)
+Date: Tue, 26 Aug 2008 17:03:09 +0100
+Subject: [stringtemplate-interest] Issues with handling refresh interval and
+	group loaders.
+Message-ID: <31d110d20808260903r7be9b16ar58ae9af9a4ffc5de@mail.gmail.com>
+
+Hello,
+
+I am using StringTemplate as my templating system, basically for
+webpages, and over the development a couple of things have come up
+that don't work the way I expected.  I am not sure if I have just used
+them wrongly or not.
+
+First is setting the refresh interval.  I want the refresh level to be
+0 for all templates so I can just change the stg file and have all the
+changes appear instantly on the site.  The templates basically follow
+a simple inheritance design at the moment (but in my class that loads
+the group I will not know this exact inheritance tree, base might or
+might not exist in another context - I just give this as an example)
+-
+
+base - (page outline say)
+sport extends base - (a page replacing regions in base)
+news extends base - (a page replacing regions in base)
+
+So the code rendering the page just calls loadgroup with news or sport
+and then gets the instanceof page, sets the attributes and renders.
+All works good but setting refresh interval to 0 only allows changes
+in "news" to work not it's hierarchy.  So any changes to "base" do not
+appear.  Even if I call getSupergroup on the "news" and sets its
+timeout to 0 I still cant get any changes made to "base" to appear.
+If I explicitly load base and set its timeout to 0 then I can get it
+to accept changes.  But I will not know the specific hierarchies to
+load in all super groups manually and set there timeouts.  Is this a
+bug or a feature I am not using correctly, is it possible to set an
+entire hierarchy refresh interval to 0?
+
+Second is a feature I am probably not using the way that was expected.
+ Basically my system is a web framework, it handles multiple contexts
+and each context has it's own templates.  To try get around naming
+conflicts what I did was cache a group loader for each context.  Then
+when my string template controller is asked to render it registers the
+group loader for that context with
+StringTemplateGroup.registerGroupLoader().  Then it calls load group
+with the correct template.  The problem here is if you have two
+contexts that both have a base.stg for example.  Once you goto the
+first context and render is called everything works fine, you get the
+templates for that context.  Then you goto another context that has a
+base.stg, the correct group loader is registered and the group is
+loaded from it.  The problem there is you get the base.stg from the
+first context even though you are on a different group loader, but if
+the other templates don't clash by name you get the correct other
+parts.  I am guessing that this is an artifact of the caching problem
+above.  Base has been cached regardless of the registered group
+loader.  So even though I have changed the group loader the call for
+base.stg is returning the cached version.
+Has it ever been considered that you might need a way to load multiple
+distinct sets of templates (that may contain naming conflicts), or is
+there another way to work around it?
+
+Thanks for any help
+Bob
+
+From Larry.Jones at aspentech.com  Wed Aug 27 19:58:11 2008
+From: Larry.Jones at aspentech.com (Jones, Larry)
+Date: Wed, 27 Aug 2008 21:58:11 -0500
+Subject: [stringtemplate-interest] Translation using Recursive Templates
+Message-ID: <690A62A322DBE24FAD5208C158E5DF2E013A702D@houmail3.corp.aspentech.com>
+
+I am translating one language to another. In the source language, I have
+expressions such as (SRC A B C D) where SRC is a function ID and A..D
+are other expressions. This expression must translate to an expression
+like (TGT A, (TGT B, (TGT C, D))) or (TGT(TGT(TGT A, B), C, D))). (The
+value of the expression is independent of the order of its arguments.) I
+have already parsed the source and created an AST.
+ 
+Because the output grammar is recursive, I attempted to recursively
+invoke a template; however, I cannot determine how to terminate the
+recursion correctly. For example: tgt(args) ::= <<tgt_fun(<first(args)>,
+<rest(args):tgt()>)>> produces incorrect results.
+ 
+Any thoughts on the template I need to produce this translation?
+ 
+Thanks.
+ 
+--
+
+Lawrence Allan Jones
+Senior Developer / Technical Advisor
+Aspen Technology, Inc.
+2500 CityWest Blvd. Suite 1500
+Houston, Texas 77042
+USA
+281-504-3324 (work)
+281-504-3395 (fax)
+larry.jones at aspentech.com
+www.aspentech.com <http://www.aspentech.com/> 
+
+ 
+ 	
+ 
+
+This e-mail and any attachments are intended only for use by the addressee(s) named herein and may contain legally privileged and/or confidential information. If you are not the intended recipient of this e-mail, you are hereby notified any dissemination, distribution or copying of this email, and any attachments thereto, is strictly prohibited. If you receive this email in error please immediately notify the sender and permanently delete the original copy and any copy of any e-mail, and any printout thereof.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20080827/79f747f3/attachment.html 
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: not available
+Type: image/gif
+Size: 2078 bytes
+Desc: email_2_03.gif
+Url : http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20080827/79f747f3/attachment.gif 
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: not available
+Type: image/gif
+Size: 200 bytes
+Desc: email_2_04.gif
+Url : http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20080827/79f747f3/attachment-0001.gif 
+
+From parrt at cs.usfca.edu  Fri Aug 29 10:31:25 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Fri, 29 Aug 2008 10:31:25 -0700
+Subject: [stringtemplate-interest] Issues with handling refresh interval
+	and group loaders.
+In-Reply-To: <31d110d20808260903r7be9b16ar58ae9af9a4ffc5de@mail.gmail.com>
+References: <31d110d20808260903r7be9b16ar58ae9af9a4ffc5de@mail.gmail.com>
+Message-ID: <E5913B8E-A887-4B38-B00D-FB3D84924D3B@cs.usfca.edu>
+
+
+On Aug 26, 2008, at 9:03 AM, Richard Martin wrote:
+> base - (page outline say)
+> sport extends base - (a page replacing regions in base)
+> news extends base - (a page replacing regions in base)
+>
+> So the code rendering the page just calls loadgroup with news or sport
+> and then gets the instanceof page, sets the attributes and renders.
+> All works good but setting refresh interval to 0 only allows changes
+> in "news" to work not it's hierarchy.  So any changes to "base" do not
+> appear.  Even if I call getSupergroup on the "news" and sets its
+> timeout to 0 I still cant get any changes made to "base" to appear.
+> If I explicitly load base and set its timeout to 0 then I can get it
+> to accept changes.  But I will not know the specific hierarchies to
+> load in all super groups manually and set there timeouts.  Is this a
+> bug or a feature I am not using correctly, is it possible to set an
+> entire hierarchy refresh interval to 0?
+
+That is weird...So when you create base and the subgroups and set the  
+refresh interval to 0 before doing any loading, it still has a problem?
+
+> Second is a feature I am probably not using the way that was expected.
+> Basically my system is a web framework, it handles multiple contexts
+> and each context has it's own templates.  To try get around naming
+> conflicts what I did was cache a group loader for each context.  Then
+> when my string template controller is asked to render it registers the
+> group loader for that context with
+> StringTemplateGroup.registerGroupLoader().  Then it calls load group
+> with the correct template.  The problem here is if you have two
+> contexts that both have a base.stg for example.  Once you goto the
+> first context and render is called everything works fine, you get the
+> templates for that context.  Then you goto another context that has a
+> base.stg, the correct group loader is registered and the group is
+> loaded from it.  The problem there is you get the base.stg from the
+> first context even though you are on a different group loader, but if
+> the other templates don't clash by name you get the correct other
+> parts.  I am guessing that this is an artifact of the caching problem
+> above.  Base has been cached regardless of the registered group
+> loader.  So even though I have changed the group loader the call for
+> base.stg is returning the cached version.
+> Has it ever been considered that you might need a way to load multiple
+> distinct sets of templates (that may contain naming conflicts), or is
+> there another way to work around it?
+
+ST was specifically designed to handle this. that is the point of the  
+group mechanism. jGuru did this all the time. A new skin for the site  
+was simply a new ST group. From the session, I find the skin name and  
+then switch the templateLib pointer in my framework to the appropriate  
+ST gropu object. works like a charm including inheritance.
+
+Ter
+
+From parrt at cs.usfca.edu  Fri Aug 29 10:33:38 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Fri, 29 Aug 2008 10:33:38 -0700
+Subject: [stringtemplate-interest] Translation using Recursive Templates
+In-Reply-To: <690A62A322DBE24FAD5208C158E5DF2E013A702D@houmail3.corp.aspentech.com>
+References: <690A62A322DBE24FAD5208C158E5DF2E013A702D@houmail3.corp.aspentech.com>
+Message-ID: <E96962CE-356F-4037-92FE-E1062174955E@cs.usfca.edu>
+
+
+On Aug 27, 2008, at 7:58 PM, Jones, Larry wrote:
+
+> I am translating one language to another. In the source language, I  
+> have expressions such as (SRC A B C D) where SRC is a function ID  
+> and A..D are other expressions. This expression must translate to an  
+> expression like (TGT A, (TGT B, (TGT C, D))) or (TGT(TGT(TGT A, B),  
+> C, D))). (The value of the expression is independent of the order of  
+> its arguments.) I have already parsed the source and created an AST.
+>
+> Because the output grammar is recursive, I attempted to recursively  
+> invoke a template; however, I cannot determine how to terminate the  
+> recursion correctly. For example: tgt(args) ::=  
+> <<tgt_fun(<first(args)>, <rest(args):tgt()>)>> produces incorrect  
+> results.
+>
+> Any thoughts on the template I need to produce this translation?
+
+Hi Larry,
+
+Generally recursion in ST will terminate when there's no work to do.  
+For example,
+
+walk(t) ::= <<
+<t.payload>
+<t.children:{c | <c:walk()>}>
+ >>
+
+Here, if there are no children it does not recurse.
+Ter
+
+From Larry.Jones at aspentech.com  Fri Aug 29 13:06:57 2008
+From: Larry.Jones at aspentech.com (Jones, Larry)
+Date: Fri, 29 Aug 2008 15:06:57 -0500
+Subject: [stringtemplate-interest] Translation using Recursive Templates
+In-Reply-To: <E96962CE-356F-4037-92FE-E1062174955E@cs.usfca.edu>
+Message-ID: <690A62A322DBE24FAD5208C158E5DF2E013A703C@houmail3.corp.aspentech.com>
+
+Ter,
+
+I thought I had my problem licked, but I either:
+- Iterate over all the children producing a linear list.
+- Recurse one too many times.
+
+For example, my source language has expressions like max(1, 2, 3, 4, 5).
+I want to translate this to max(1, max(2, max(3, max(4, 5)))) because my
+target language only takes two arguments for max().
+
+I currently use the following template. A and B are a debugging device
+to indicate which branch the template engine takes. The conditional is
+attempting to determine if I have two arguments left.
+max(args) ::= <<
+<if(first(first(first(rest(args)))))>
+A MAX(<first(args)>, <max(rest(args))>)
+<else>
+B MAX(<first(args)>, <first(rest(args))>)
+<endif>
+>>
+
+The result of rendering the template is: 
+a = A MAX(1, A MAX(2, A MAX(3, A MAX(4, B MAX(5, )))))
+
+Notice that the "B" branch is taken when rest(args) is empty.
+
+-----Original Message-----
+From: Terence Parr [mailto:parrt at cs.usfca.edu] 
+Sent: Friday, August 29, 2008 12:34 PM
+To: Jones, Larry
+Cc: stringtemplate-interest at antlr.org
+Subject: Re: [stringtemplate-interest] Translation using Recursive
+Templates
+
+
+
+On Aug 27, 2008, at 7:58 PM, Jones, Larry wrote:
+
+> I am translating one language to another. In the source language, I
+> have expressions such as (SRC A B C D) where SRC is a function ID  
+> and A..D are other expressions. This expression must translate to an  
+> expression like (TGT A, (TGT B, (TGT C, D))) or (TGT(TGT(TGT A, B),  
+> C, D))). (The value of the expression is independent of the order of  
+> its arguments.) I have already parsed the source and created an AST.
+>
+> Because the output grammar is recursive, I attempted to recursively
+> invoke a template; however, I cannot determine how to terminate the  
+> recursion correctly. For example: tgt(args) ::=  
+> <<tgt_fun(<first(args)>, <rest(args):tgt()>)>> produces incorrect  
+> results.
+>
+> Any thoughts on the template I need to produce this translation?
+
+Hi Larry,
+
+Generally recursion in ST will terminate when there's no work to do.  
+For example,
+
+walk(t) ::= <<
+<t.payload>
+<t.children:{c | <c:walk()>}>
+ >>
+
+Here, if there are no children it does not recurse.
+Ter
+
+This e-mail and any attachments are intended only for use by the addressee(s) named herein and may contain legally privileged and/or confidential information. If you are not the intended recipient of this e-mail, you are hereby notified any dissemination, distribution or copying of this email, and any attachments thereto, is strictly prohibited. If you receive this email in error please immediately notify the sender and permanently delete the original copy and any copy of any e-mail, and any printout thereof.
+
+From Larry.Jones at aspentech.com  Fri Aug 29 13:18:33 2008
+From: Larry.Jones at aspentech.com (Jones, Larry)
+Date: Fri, 29 Aug 2008 15:18:33 -0500
+Subject: [stringtemplate-interest] Translation using Recursive Templates
+In-Reply-To: <690A62A322DBE24FAD5208C158E5DF2E013A703C@houmail3.corp.aspentech.com>
+Message-ID: <690A62A322DBE24FAD5208C158E5DF2E013A703D@houmail3.corp.aspentech.com>
+
+
+Oops. I think user error has betrayed me once again.
+
+The following template does what I want (when I don't try to get the
+first of the first of the rest)
+max(args) ::= <<
+<if(first(rest(rest(args))))>
+MAX(<first(args)>, <max(rest(args))>)
+<else>
+MAX(<first(args)>, <first(rest(args))>)
+<endif>
+>>
+
+Sorry for the noise.
+
+-----Original Message-----
+From: stringtemplate-interest-bounces at antlr.org
+[mailto:stringtemplate-interest-bounces at antlr.org] On Behalf Of Jones,
+Larry
+Sent: Friday, August 29, 2008 3:07 PM
+To: Terence Parr
+Cc: stringtemplate-interest at antlr.org
+Subject: Re: [stringtemplate-interest] Translation using Recursive
+Templates
+
+
+Ter,
+
+I thought I had my problem licked, but I either:
+- Iterate over all the children producing a linear list.
+- Recurse one too many times.
+
+For example, my source language has expressions like max(1, 2, 3, 4, 5).
+I want to translate this to max(1, max(2, max(3, max(4, 5)))) because my
+target language only takes two arguments for max().
+
+I currently use the following template. A and B are a debugging device
+to indicate which branch the template engine takes. The conditional is
+attempting to determine if I have two arguments left.
+max(args) ::= <<
+<if(first(first(first(rest(args)))))>
+A MAX(<first(args)>, <max(rest(args))>)
+<else>
+B MAX(<first(args)>, <first(rest(args))>)
+<endif>
+>>
+
+The result of rendering the template is: 
+a = A MAX(1, A MAX(2, A MAX(3, A MAX(4, B MAX(5, )))))
+
+Notice that the "B" branch is taken when rest(args) is empty.
+
+-----Original Message-----
+From: Terence Parr [mailto:parrt at cs.usfca.edu] 
+Sent: Friday, August 29, 2008 12:34 PM
+To: Jones, Larry
+Cc: stringtemplate-interest at antlr.org
+Subject: Re: [stringtemplate-interest] Translation using Recursive
+Templates
+
+
+
+On Aug 27, 2008, at 7:58 PM, Jones, Larry wrote:
+
+> I am translating one language to another. In the source language, I 
+> have expressions such as (SRC A B C D) where SRC is a function ID
+> and A..D are other expressions. This expression must translate to an  
+> expression like (TGT A, (TGT B, (TGT C, D))) or (TGT(TGT(TGT A, B),  
+> C, D))). (The value of the expression is independent of the order of  
+> its arguments.) I have already parsed the source and created an AST.
+>
+> Because the output grammar is recursive, I attempted to recursively 
+> invoke a template; however, I cannot determine how to terminate the
+> recursion correctly. For example: tgt(args) ::=  
+> <<tgt_fun(<first(args)>, <rest(args):tgt()>)>> produces incorrect  
+> results.
+>
+> Any thoughts on the template I need to produce this translation?
+
+Hi Larry,
+
+Generally recursion in ST will terminate when there's no work to do.  
+For example,
+
+walk(t) ::= <<
+<t.payload>
+<t.children:{c | <c:walk()>}>
+ >>
+
+Here, if there are no children it does not recurse.
+Ter
+
+This e-mail and any attachments are intended only for use by the
+addressee(s) named herein and may contain legally privileged and/or
+confidential information. If you are not the intended recipient of this
+e-mail, you are hereby notified any dissemination, distribution or
+copying of this email, and any attachments thereto, is strictly
+prohibited. If you receive this email in error please immediately notify
+the sender and permanently delete the original copy and any copy of any
+e-mail, and any printout thereof.
+_______________________________________________
+stringtemplate-interest mailing list stringtemplate-interest at antlr.org
+http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+This e-mail and any attachments are intended only for use by the addressee(s) named herein and may contain legally privileged and/or confidential information. If you are not the intended recipient of this e-mail, you are hereby notified any dissemination, distribution or copying of this email, and any attachments thereto, is strictly prohibited. If you receive this email in error please immediately notify the sender and permanently delete the original copy and any copy of any e-mail, and any printout thereof.
+
+From parrt at cs.usfca.edu  Fri Aug 29 13:21:44 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Fri, 29 Aug 2008 13:21:44 -0700
+Subject: [stringtemplate-interest] Translation using Recursive Templates
+In-Reply-To: <690A62A322DBE24FAD5208C158E5DF2E013A703D@houmail3.corp.aspentech.com>
+References: <690A62A322DBE24FAD5208C158E5DF2E013A703D@houmail3.corp.aspentech.com>
+Message-ID: <EB8D5AFB-7971-4AF7-8CF4-16F3CCE7E288@cs.usfca.edu>
+
+Heh, that's cool. Looks fine.
+Ter
+On Aug 29, 2008, at 1:18 PM, Jones, Larry wrote:
+
+>
+> Oops. I think user error has betrayed me once again.
+>
+> The following template does what I want (when I don't try to get the
+> first of the first of the rest)
+> max(args) ::= <<
+> <if(first(rest(rest(args))))>
+> MAX(<first(args)>, <max(rest(args))>)
+> <else>
+> MAX(<first(args)>, <first(rest(args))>)
+> <endif>
+>>>
+>
+> Sorry for the noise.
+>
+> -----Original Message-----
+> From: stringtemplate-interest-bounces at antlr.org
+> [mailto:stringtemplate-interest-bounces at antlr.org] On Behalf Of Jones,
+> Larry
+> Sent: Friday, August 29, 2008 3:07 PM
+> To: Terence Parr
+> Cc: stringtemplate-interest at antlr.org
+> Subject: Re: [stringtemplate-interest] Translation using Recursive
+> Templates
+>
+>
+> Ter,
+>
+> I thought I had my problem licked, but I either:
+> - Iterate over all the children producing a linear list.
+> - Recurse one too many times.
+>
+> For example, my source language has expressions like max(1, 2, 3, 4,  
+> 5).
+> I want to translate this to max(1, max(2, max(3, max(4, 5))))  
+> because my
+> target language only takes two arguments for max().
+>
+> I currently use the following template. A and B are a debugging device
+> to indicate which branch the template engine takes. The conditional is
+> attempting to determine if I have two arguments left.
+> max(args) ::= <<
+> <if(first(first(first(rest(args)))))>
+> A MAX(<first(args)>, <max(rest(args))>)
+> <else>
+> B MAX(<first(args)>, <first(rest(args))>)
+> <endif>
+>>>
+>
+> The result of rendering the template is:
+> a = A MAX(1, A MAX(2, A MAX(3, A MAX(4, B MAX(5, )))))
+>
+> Notice that the "B" branch is taken when rest(args) is empty.
+>
+> -----Original Message-----
+> From: Terence Parr [mailto:parrt at cs.usfca.edu]
+> Sent: Friday, August 29, 2008 12:34 PM
+> To: Jones, Larry
+> Cc: stringtemplate-interest at antlr.org
+> Subject: Re: [stringtemplate-interest] Translation using Recursive
+> Templates
+>
+>
+>
+> On Aug 27, 2008, at 7:58 PM, Jones, Larry wrote:
+>
+>> I am translating one language to another. In the source language, I
+>> have expressions such as (SRC A B C D) where SRC is a function ID
+>> and A..D are other expressions. This expression must translate to an
+>> expression like (TGT A, (TGT B, (TGT C, D))) or (TGT(TGT(TGT A, B),
+>> C, D))). (The value of the expression is independent of the order of
+>> its arguments.) I have already parsed the source and created an AST.
+>>
+>> Because the output grammar is recursive, I attempted to recursively
+>> invoke a template; however, I cannot determine how to terminate the
+>> recursion correctly. For example: tgt(args) ::=
+>> <<tgt_fun(<first(args)>, <rest(args):tgt()>)>> produces incorrect
+>> results.
+>>
+>> Any thoughts on the template I need to produce this translation?
+>
+> Hi Larry,
+>
+> Generally recursion in ST will terminate when there's no work to do.
+> For example,
+>
+> walk(t) ::= <<
+> <t.payload>
+> <t.children:{c | <c:walk()>}>
+>>>
+>
+> Here, if there are no children it does not recurse.
+> Ter
+>
+> This e-mail and any attachments are intended only for use by the
+> addressee(s) named herein and may contain legally privileged and/or
+> confidential information. If you are not the intended recipient of  
+> this
+> e-mail, you are hereby notified any dissemination, distribution or
+> copying of this email, and any attachments thereto, is strictly
+> prohibited. If you receive this email in error please immediately  
+> notify
+> the sender and permanently delete the original copy and any copy of  
+> any
+> e-mail, and any printout thereof.
+> _______________________________________________
+> stringtemplate-interest mailing list stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>
+> This e-mail and any attachments are intended only for use by the  
+> addressee(s) named herein and may contain legally privileged and/or  
+> confidential information. If you are not the intended recipient of  
+> this e-mail, you are hereby notified any dissemination, distribution  
+> or copying of this email, and any attachments thereto, is strictly  
+> prohibited. If you receive this email in error please immediately  
+> notify the sender and permanently delete the original copy and any  
+> copy of any e-mail, and any printout thereof.
+
+

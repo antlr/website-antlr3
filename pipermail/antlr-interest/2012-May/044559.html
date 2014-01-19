@@ -1,0 +1,136 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] gUnit for v4?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20gUnit%20for%20v4%3F&In-Reply-To=%3C45789FE7-F5A6-4EE6-A6D1-9CCF1D3A230A%40cs.usfca.edu%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="044560.html">
+   <LINK REL="Next"  HREF="044561.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] gUnit for v4?</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20gUnit%20for%20v4%3F&In-Reply-To=%3C45789FE7-F5A6-4EE6-A6D1-9CCF1D3A230A%40cs.usfca.edu%3E"
+       TITLE="[antlr-interest] gUnit for v4?">parrt at cs.usfca.edu
+       </A><BR>
+    <I>Tue May  1 09:34:22 PDT 2012</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="044560.html">[antlr-interest] Handling Antlr Syntax Errors or how to give a better message on unexpected token
+</A></li>
+        <LI>Next message: <A HREF="044561.html">[antlr-interest] Failing parser rule test in GUnit
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#44559">[ date ]</a>
+              <a href="thread.html#44559">[ thread ]</a>
+              <a href="subject.html#44559">[ subject ]</a>
+              <a href="author.html#44559">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+On Apr 30, 2012, at 7:38 PM, David Meibusch wrote:
+
+&gt;<i> Ter,
+</I>&gt;<i> 
+</I>&gt;<i> I can layout out our use case, just to see if it confirms your
+</I>&gt;<i> assumptions.
+</I>
+Hi David, thanks very much for your response! I believe it's still okay to drop gUnit for v4&#8230;
+
+one of your biggest tests is the AST construction, which of course is no longer necessary since ANTLR generates parse trees and automatically.
+
+Your point about worrying about upgrades to the tool causing regressions is well taken, though, the parse tree is a well-defined structure derived from the grammar rules. I suppose in the future the types of the nodes could change, but the &quot;toString&quot; of the payloads would not, unless of course you yourself changed what the payload was. We should be okay here too.
+
+Your grammar uses embedded actions, which we are also strongly discouraging in v4. That means it's also discouraged to return values from rules. So, there's no return values to test from a gUnit tool.
+
+Going through your improvements with respect to v4:
+
+&gt;<i> Expectations have:
+</I>&gt;<i> 
+</I>&gt;<i> OK/FAIL, same as before
+</I>
+I think this is easy enough to simulate where the sequence of method calls:
+
+String[] inputs = { &quot;input1&quot;, &quot;input2&quot;, &quot;input3&quot;, &#8230; };
+checkNoErrors(inputs); // checks number of syntax errors from parser
+
+I do this a lot myself in v4. It's very useful when checking that *my* understanding of the grammar and how it assigns precedence to my input streams, but again I don't really need gunit:
+
+		String[] tests = {
+			&quot;a&quot;,			&quot;(s (e a) &lt;EOF&gt;)&quot;,
+			&quot;a+b&quot;,			&quot;(s (e (e a) + (e b)) &lt;EOF&gt;)&quot;,
+			&quot;a*b&quot;,			&quot;(s (e (e a) * (e b)) &lt;EOF&gt;)&quot;,
+			&quot;a?b:c&quot;,		&quot;(s (e (e a) ? (e b) : (e c)) &lt;EOF&gt;)&quot;,
+			&quot;a=b=c&quot;,		&quot;(s (e (e a) = (e (e b) = (e c))) &lt;EOF&gt;)&quot;,
+			&quot;a?b+c:d&quot;,		&quot;(s (e (e a) ? (e (e b) + (e c)) : (e d)) &lt;EOF&gt;)&quot;,
+			&quot;a?b=c:d&quot;,		&quot;(s (e (e a) ? (e (e b) = (e c)) : (e d)) &lt;EOF&gt;)&quot;,
+			&quot;a? b?c:d : e&quot;,	&quot;(s (e (e a) ? (e (e b) ? (e c) : (e d)) : (e e)) &lt;EOF&gt;)&quot;,
+			&quot;a?b: c?d:e&quot;,	&quot;(s (e (e a) ? (e b) : (e (e c) ? (e d) : (e e))) &lt;EOF&gt;)&quot;,
+		};
+		runTests(grammar, tests, &quot;s&quot;);
+
+It's not is pretty, but we get to avoid creating and maintaining a tool. 
+
+&gt;<i> RETURN[&lt;name&gt;] allows you to test a rule return by name
+</I>
+As we are discouraging return values, this has less utility. Of course, if you do in fact have returned items, this would be useful. Whether the return on the investment of creating and maintaining a separate tools worth it, I'm not sure.
+
+&gt;<i> OUTPUT (or -&gt;) allows you to test the parse tree created with no parse
+</I>&gt;<i> errors expected
+</I>
+ANTLR should be generating the correct parse tree should be invariant for the same grammar, regardless of upgrades to the tool.
+
+&gt;<i> ERROR allows you to test the parse tree with error nodes expected
+</I>
+I think raw code would also work here. I do something that looks almost like gUnit:
+
+	String[] bad_inlineChecks = {
+		&quot;$lab&quot;,			&quot;error(67): A.g4:7:4: missing attribute access on rule reference lab in $lab\n&quot;,
+		&quot;$q&quot;,           &quot;error(63): A.g4:7:4: unknown attribute reference q in $q\n&quot;,
+		&quot;$q.y&quot;,         &quot;error(63): A.g4:7:4: unknown attribute reference q in $q.y\n&quot;,
+		&quot;$q = 3&quot;,       &quot;error(63): A.g4:7:4: unknown attribute reference q in $q\n&quot;,
+		&quot;$q = 3;&quot;,      &quot;error(63): A.g4:7:4: unknown attribute reference q in $q = 3;\n&quot;,
+		&quot;$q.y = 3;&quot;,    &quot;error(63): A.g4:7:4: unknown attribute reference q in $q.y = 3;\n&quot;,
+		&quot;$q = $blort;&quot;, &quot;error(63): A.g4:7:4: unknown attribute reference q in $q = $blort;\n&quot; +
+						&quot;error(63): A.g4:7:9: unknown attribute reference blort in $blort\n&quot;,
+		&quot;$a.ick&quot;,       &quot;error(65): A.g4:7:6: unknown attribute ick for rule a in $a.ick\n&quot;,
+		&quot;$a.ick = 3;&quot;,  &quot;error(65): A.g4:7:6: unknown attribute ick for rule a in $a.ick = 3;\n&quot;,
+		&quot;$b.d&quot;,         &quot;error(64): A.g4:7:6: cannot access rule d's parameter: $b.d\n&quot;,  // can't see rule ref's arg
+		&quot;$d.text&quot;,      &quot;error(63): A.g4:7:4: unknown attribute reference d in $d.text\n&quot;, // valid rule, but no ref
+		&quot;$lab.d&quot;,		&quot;error(64): A.g4:7:8: cannot access rule d's parameter: $lab.d\n&quot;,
+	};
+
+&gt;<i> Note that error reporting and recovery is particularly important - in
+</I>&gt;<i> fact close to the entire rationale for this parser's existence.
+</I>
+Yep, makes sense. I think we can still go with methods for now. In the end, we might find some good uses for a simple gUnit translator to jUnit cases. But, we can add that later. I'm just trying to figure out what I get into the 1st release.
+
+Ter
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="044560.html">[antlr-interest] Handling Antlr Syntax Errors or how to give a better message on unexpected token
+</A></li>
+	<LI>Next message: <A HREF="044561.html">[antlr-interest] Failing parser rule test in GUnit
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#44559">[ date ]</a>
+              <a href="thread.html#44559">[ thread ]</a>
+              <a href="subject.html#44559">[ subject ]</a>
+              <a href="author.html#44559">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

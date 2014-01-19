@@ -1,0 +1,219 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] unicode strings using supplemental char range
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20unicode%20strings%20using%20supplemental%20char%20range&In-Reply-To=DD772E05-C7EC-11D8-BDAA-000393A56BB6%40glyphic.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="008457.html">
+   <LINK REL="Next"  HREF="008470.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] unicode strings using supplemental char range</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20unicode%20strings%20using%20supplemental%20char%20range&In-Reply-To=DD772E05-C7EC-11D8-BDAA-000393A56BB6%40glyphic.com"
+       TITLE="[antlr-interest] unicode strings using supplemental char range">parrt at cs.usfca.edu
+       </A><BR>
+    <I>Sun Jun 27 09:25:45 PDT 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="008457.html">[antlr-interest] unicode strings using supplemental char range
+</A></li>
+        <LI>Next message: <A HREF="008470.html">[antlr-interest] unicode strings using supplemental char range
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#8462">[ date ]</a>
+              <a href="thread.html#8462">[ thread ]</a>
+              <a href="subject.html#8462">[ subject ]</a>
+              <a href="author.html#8462">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+On Jun 26, 2004, at 8:48 PM, Mark Lentczner wrote:
+&gt;<i> I think the problem is much simpler than all this gnashing of teeth is
+</I>&gt;<i> making things out to be.
+</I>
+Hi Mark,
+
+Thanks a million for cutting this down to the essentials.  At the very 
+least your suggestion is a fabulous starting place that would not 
+preclude future enhancements.
+
+&gt;<i> Ignoring for the moment Unicode specific extensions to Antlr, Antlr has
+</I>&gt;<i> very modest needs to be fully Unicode compliant:
+</I>&gt;<i>
+</I>&gt;<i> [ Terminology: &quot;char&quot; = Java type, 16-bits, &quot;character&quot; = Unicode
+</I>&gt;<i> character in range 0..0x10FFFF, &quot;String&quot; = Java type, &quot;unicode string&quot;
+</I>&gt;<i> = a sequence of zero or more characters. ]
+</I>&gt;<i>
+</I>&gt;<i> 	- the ability to read a stream of characters
+</I>&gt;<i> 	- the ability to take a String written in a grammar file (i.e.
+</I>&gt;<i> &quot;abc\u20ac123&quot;) and produce a unicode string from it (i.e. [ 97, 98,
+</I>&gt;<i> 99, 8364, 49, 50, 41 ] - or if you mailer can handle it: [ 'a', 'b',
+</I>&gt;<i> 'c', '&#8364;', '1, '2', '3' ])
+</I>
+So, I need to make IntString or some such and then use it to represent 
+all string literals found in a grammar, all of which are assumed to be 
+UTF-16 unless they use &quot;\u+...&quot; character notation (but I would convert 
+to IntString after reading it in).  My dictionary of string literals 
+would go to a dictionary of IntString.  When generating code, I would 
+convert my match(String) to be match(IntString) and IntString would 
+move to org.antlr.runtime package (or perhaps int[] is good enough at 
+that point).  All input symbols would be ints as per my IntegerStream 
+now (that is the thing that sucks from a CharSource) and has methods 
+for lookahead like:
+
+int LA(int i);
+
+For lexer errors and such, I would have to have support code to print 
+IntString back out character by character (full unicode), right?  But, 
+what if the terminal can't handle it?  Won't I have to allow people to 
+specify the encoding?  Doesn't this start to get messy?  Can you go a 
+little further and tell me at runtime what support you think we'd need? 
+  match() will be easy, but how do I print: &quot;expecting foo found bar&quot;?
+
+&gt;<i> Note: The escape syntax for Antlr will probably need to be redesigned.
+</I>&gt;<i> &quot;\u&quot; followed by four hex digits doesn't cut it, though could be kept
+</I>&gt;<i> for backward compatibility.  It is probably best to bite the bullet and
+</I>&gt;<i> have a delimited escape sequence: &quot;\U&quot; followed by hex digits followed
+</I>&gt;<i> by &quot;;&quot;.  Or if you want to look like the Unicode documentation
+</I>&gt;<i> standards, &quot;\U+&quot;...
+</I>
+Yeah, i'm leaning towards to \uxxxx for 16-bit char and \u+10xxxx 
+format for full character range notation.  Can even be in the same 
+string.
+
+&gt;<i> Other features that have been discussed fall into two camps:
+</I>&gt;<i>
+</I>&gt;<i> Features that are really not logically part of a lexer/parser package:
+</I>&gt;<i> 	- transcoding the input from a some encoding byte stream into a stream
+</I>&gt;<i> of characters
+</I>
+I'll leave that to Java or a developer's own implementation of 
+IntegerStream.
+
+&gt;<i> 	- character sequence normalization
+</I>
+yeah, no way ;)
+
+&gt;<i> None of these should be part of Antlr (IMHO) and are easily handled as
+</I>&gt;<i> needed via re-implementing the streaming interface.
+</I>&gt;<i>
+</I>&gt;<i> Features that might be possible nice utilities to have in a
+</I>&gt;<i> lexer/parser package:
+</I>&gt;<i> 	- case folding
+</I>
+Well, I want to support a simple &quot;ignore case&quot; feature, which literally 
+just upper cases all char in '...' and &quot;...&quot; before putting them in a 
+hash table or in a DFA.  Then, I'd have LA(i) return the uppercase 
+equivalent, while retaining the actual case to be put into the token 
+text etc...  Does Character.toUpperCase() usually just do this 
+correctly and across all languages or is it encoding sensitive (ick)?
+
+&gt;<i> 	- Unicode character classes as pre-defined (or algorithmically
+</I>&gt;<i> defined) lexer rules
+</I>
+Yep, I want stuff like LETTER and DIGIT.  I *hope* there is a 
+noncontext-sensitive definition.  I have deleted the charVocabulary 
+option for 3.0 and simply made it all UNICODE. :)  Wildcard is just a 
+big range of characters now.  So, even if you're doing LATIN, DIGIT 
+will contain digits for other languages, but that should be ok, right?  
+Can anybody think of a reason to limit the char vocabulary?  Certainly 
+any bizarre character that comes in will get an error the minute it 
+doesn't match anything (even when lexing plain old binary data files).
+
+Wait, is DIGIT a predefined set or is it a &quot;function&quot; that must operate 
+on the character?  Wouldn't that suck!  How would I translate DIGIT if 
+it is a computation?  I need to compute lookahead on DIGIT (i.e., it 
+needs to yield a set of char), which is pretty tough if it's a 
+function.
+
+&gt;<i> 	- Unicode character blocks as pre-defined (or algorithmically defined)
+</I>&gt;<i> lexer rules
+</I>
+I might as well allow stuff in Character.UnicodeBlock as it's just a 
+simple lookup via reflection into the Character.UnicodeBlock class. :)
+
+OTOH, how does all this Java capability work when generating C or LISP? 
+  In other words, is it sufficient for me to allow
+
+lexer grammar test(language=C);
+
+a : &quot;\u0020blort&quot; ;
+INT : (DIGIT)+ ;
+
+ID : (KOREAN)+ 'LATIN CHAR SPEC WRITTEN ALL THE WAY OUT' ;
+
+and then convert all of the strings, characters to IntString and the 
+DIGIT, KOREAN to sets of characters?  Everything would be normalized at 
+that point and ANTLR could proceed as if it were all just a bunch of 
+ints and sets of ints as it does now.
+
+&gt;<i> These may be nice, though Antlr has gotten along just fine until now
+</I>&gt;<i> without them.  I would heavily caution implementing these, or basing
+</I>&gt;<i> implementation issues on them until someone speaks up who would
+</I>&gt;<i> actually use them.  And even then, I caution adding large library needs
+</I>&gt;<i> to Antlr just to support optional features.
+</I>
+Yes, please speak up if you know about what you'd need for BENGALI and 
+classes like DIGIT, TITLECASE, etc...
+
+&gt;<i> [ Personally, I might like to see some of the Unicode character classes
+</I>&gt;<i> (though, by no means all of them).  The Unicode blocks are useless to
+</I>&gt;<i> me, as is case folding.  I suspect for real world language parsing
+</I>&gt;<i> needs, unless a format is actually defined in terms of the Unicode
+</I>&gt;<i> properties, a grammar writer might prefer to explicitly declare their
+</I>&gt;<i> character sets in their lexer anyway. ]
+</I>
+Well, judging from the SableCC grammar that defines all the JavaID sets 
+manually, I'd say that some predefined blocks would be useful, though 
+just how many people are doing Java parsers ;)
+
+heh, we might actually be converging on a solution!  I'd like to decide 
+soon so that I can refactor to have IntString rather than String in the 
+right places.
+
+Ter
+
+
+
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+     <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+     <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+     <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="008457.html">[antlr-interest] unicode strings using supplemental char range
+</A></li>
+	<LI>Next message: <A HREF="008470.html">[antlr-interest] unicode strings using supplemental char range
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#8462">[ date ]</a>
+              <a href="thread.html#8462">[ thread ]</a>
+              <a href="subject.html#8462">[ subject ]</a>
+              <a href="author.html#8462">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,266 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Matching ellipsis
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Matching%20ellipsis&In-Reply-To=FB9F1A24-8E92-4A96-B7AD-B79FEB59349A%40cs.usfca.edu">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="018654.html">
+   <LINK REL="Next"  HREF="018550.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Matching ellipsis</H1>
+    <B>Julian Santander</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Matching%20ellipsis&In-Reply-To=FB9F1A24-8E92-4A96-B7AD-B79FEB59349A%40cs.usfca.edu"
+       TITLE="[antlr-interest] Matching ellipsis">jsantander at lucent.com
+       </A><BR>
+    <I>Wed Nov 29 06:05:03 PST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="018654.html">[antlr-interest] Matching ellipsis
+</A></li>
+        <LI>Next message: <A HREF="018550.html">[antlr-interest] Comments / White-Space and All The Rest
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#18666">[ date ]</a>
+              <a href="thread.html#18666">[ thread ]</a>
+              <a href="subject.html#18666">[ subject ]</a>
+              <a href="author.html#18666">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Ter,
+
+    Thanks very much for your answer. I did manage to solve it, let me 
+tell you what I did and also pose an additional problem I have:
+
+The rule I used in the end (I manage to find a previous post that I 
+could shamelessly copy-and-modify) is:
+
+T_FLOAT_LITERAL:
+        ( i=T_INTEGER_LITERAL d=T_DOT
+            ( ( T_INTEGER_LITERAL?)
+            | ( r=T_DOT
+                    ( ( /*empty*/
+                            { i.setType(T_INTEGER_LITERAL);
+                              emit(i);
+                              d.setType(T_ELLIPSIS);
+                              d.setText(&quot;..&quot;);
+                              emit(d); } )
+                    ) )
+	    | (r=T_ELLIPSIS
+                    ( ( /*empty*/
+                            { i.setType(T_INTEGER_LITERAL);
+                              emit(i);
+                              d.setType(T_ELLIPSIS);
+                              d.setText(&quot;.&quot;+r.getText());
+                              emit(d); } )
+                    ) )
+			
+            ) )
+    	|   ( T_DOT T_INTEGER_LITERAL)
+    ;
+
+
+However this needs some additional code to be added:
+
+@lexer::members {
+    // maximum number of emit() calls inside any rule action
+    private static final int MAX_EMIT_COUNT = 2;
+
+    // buffer (queue) to hold the emit()'d tokens
+    private Token [] myToken = new Token[MAX_EMIT_COUNT];
+    private int add_idx = 0; // deposit emit token here
+    private int next_idx = 0; // next token to be delivered to parser
+
+    public void emit(Token t) {
+        token = t; // set flag to avoid automatic emit() at end of rule.
+        myToken[add_idx++] = t;
+    }
+
+    public Token nextToken() {
+        while (true) {
+            if ( add_idx == next_idx ) {
+                token = null;
+                add_idx = 0;
+                next_idx = 0;
+                tokenStartCharIndex = getCharIndex();
+                if ( input.LA(1)==CharStream.EOF ) {
+                    return Token.EOF_TOKEN;
+                }
+                try {
+                    mTokens();
+                }
+                catch (RecognitionException re) {
+                    reportError(re);
+                    recover(re);
+                }
+            } else {
+                Token result = myToken[next_idx++];
+                if ( result != Token.SKIP_TOKEN ) { // discard SKIP tokens
+                    return result;
+                }
+            }
+        }
+    }
+}
+
+
+At least I believe that If I don't add this code, only the last token is 
+really emitted (???) and this aligns with what was indicated in the post 
+I refer too (actually the code was copied from that post)
+
+Is this still applicable? or can I just happily emit(). Am I doing too 
+many unneeded things in the rule?
+
+I have another problem in this language (this is an existing language 
+written in yacc and lex I'm trying to create a scanner for, btw).  The 
+language defines an identifier as being able to contain '!' characters, 
+but not as the last or the first character of the identifier. I.e 
+abc!xyz should produce a T_IDENT(abc!xyz) token, while abc!=xyz should 
+produce T_IDENT(abc); T_BANG_EQUAL(!=); T_IDENT(xyz).
+
+After different attempts I decided to use a similar approach than the 
+ellipsis case I showed above. However the problem was the interaction 
+with Keywords sort of this (i.e. if!(a &amp;&amp; B) should produce 
+KW_IF(if);T_BANG(!);T_LPAREN(();T_IDENT(a);T_AND(&amp;&amp;);T_IDEN(B);T_RPAREN()).
+
+So far my solution has been to explicitly test for the &quot;if&quot; string to 
+emit token KW_IF or T_IDENT, but I wonder if there's some magic I could 
+perform to implement this in a more uniform manner:
+
+T_IDENT: 
+	ALPHANUMERIC+
+	;
+
+T_IDENT_BANG:
+	i=T_IDENT (T_BANG T_IDENT)* b=T_BANG (
+		(T_IDENT)=&gt; s=T_IDENT {
+			i.setType(T_IDENT);
+			i.setText(getText());
+			emit(i);
+		  }
+		| (T_EQUAL)=&gt; s=T_EQUAL {
+			if(i.getText().equals(&quot;if&quot;)) {
+				i.setType(KW_IF);
+			} else if (i.getText().equals(&quot;elif&quot;)) {
+				i.setType(KW_ELIF);
+			} else {
+				i.setType(T_IDENT);
+			}
+			emit(i);
+			b.setType(T_BANG_EQUAL);
+			b.setText(b.getText()+s.getText());
+			emit(b);
+		}
+		| { 
+			if(i.getText().equals(&quot;if&quot;)) {
+				i.setType(KW_IF);
+			} else if (i.getText().equals(&quot;elif&quot;)) {
+				i.setType(KW_ELIF);
+			} else {
+				i.setType(T_IDENT);
+			}
+			emit(i);
+			b.setType(T_BANG);
+			emit(b);
+		  }
+	) 
+	;
+
+
+
+Thanks very much in advance and sorry for the long e-mail.
+Best regards
+
+    Julian
+
+Terence Parr escribi&#243;:
+&gt;<i> Hi Julian,
+</I>&gt;<i>
+</I>&gt;<i> just call emit() multiple times within a lexer rule :)
+</I>&gt;<i>
+</I>&gt;<i> Ter
+</I>&gt;<i> On Nov 24, 2006, at 2:12 AM, Julian Santander wrote:
+</I>&gt;<i>
+</I>&gt;&gt;<i> Folks,
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>     I'd be very grateful if someone could provide me some guidance on 
+</I>&gt;&gt;<i> a problem I'm having. This is actually my first attempt at a parser 
+</I>&gt;&gt;<i> using ANTLR. I'm using ANTLR beta 5 with Java generation (on a 
+</I>&gt;&gt;<i> Windows XP machine and Java 1.5 if that matters).
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>     At the lexical level I need to match tokens like '.' (dot) '..'  
+</I>&gt;&gt;<i> (ellipsis), integers and floating point numbers. (Actually I don't 
+</I>&gt;&gt;<i> need sign nor exponential formats)....
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>     So far one of my many attempts has been:
+</I>&gt;&gt;<i> T_INTEGER_LITERAL: DIGIT+; DOT: ('.' (('.')=&gt;{false}? | ))=&gt; '.' ; // 
+</I>&gt;&gt;<i> This one is copied from 
+</I>&gt;&gt;<i> <A HREF="http://www.antlr.org/blog/antlr3/lookahead.tml">http://www.antlr.org/blog/antlr3/lookahead.tml</A> May 2006 post. 
+</I>&gt;&gt;<i> T_ELLIPSIS: '.' '.'+ ; T_FLOAT_LITERAL: DIGIT+ DOT DIGIT* | DOT DIGIT+ ;
+</I>&gt;&gt;<i> But so far I'm unable to parse &quot;1..2&quot; into T_INTEGER_LITERAL, 
+</I>&gt;&gt;<i> T_ELLIPSIS, T_INTEGER_LITERAL.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> for example: &quot;... .. 1..2 3...4 5.0 .6 7.&quot; renders: TOKEN: 
+</I>&gt;&gt;<i> T_ELLIPSIS[@-1,0:2='...',&lt;180&gt;,1:0] TOKEN: WS[@-1,3:3=' 
+</I>&gt;&gt;<i> ',&lt;168&gt;,channel=99,1:3] TOKEN: T_ELLIPSIS[@-1,4:5='..',&lt;180&gt;,1:4] 
+</I>&gt;&gt;<i> TOKEN: WS[@-1,6:6=' ',&lt;168&gt;,channel=99,1:6] TOKEN: 
+</I>&gt;&gt;<i> T_FLOAT_LITERAL[@-1,7:8='1.',&lt;181&gt;,1:7] TOKEN: 
+</I>&gt;&gt;<i> T_FLOAT_LITERAL[@-1,9:10='.2',&lt;181&gt;,1:9] TOKEN: WS[@-1,11:11=' 
+</I>&gt;&gt;<i> ',&lt;168&gt;,channel=99,1:11] TOKEN: 
+</I>&gt;&gt;<i> T_FLOAT_LITERAL[@-1,12:13='3.',&lt;181&gt;,1:12] TOKEN: 
+</I>&gt;&gt;<i> T_ELLIPSIS[@-1,14:15='..',&lt;180&gt;,1:14] TOKEN: 
+</I>&gt;&gt;<i> T_INTEGER_LITERAL[@-1,16:16='4',&lt;175&gt;,1:16] TOKEN: WS[@-1,17:17=' 
+</I>&gt;&gt;<i> ',&lt;168&gt;,channel=99,1:17] TOKEN: 
+</I>&gt;&gt;<i> T_FLOAT_LITERAL[@-1,18:20='5.0',&lt;181&gt;,1:18] TOKEN: WS[@-1,21:21=' 
+</I>&gt;&gt;<i> ',&lt;168&gt;,channel=99,1:21] TOKEN: 
+</I>&gt;&gt;<i> T_FLOAT_LITERAL[@-1,22:23='.6',&lt;181&gt;,1:22] TOKEN: WS[@-1,24:24=' 
+</I>&gt;&gt;<i> ',&lt;168&gt;,channel=99,1:24] TOKEN: 
+</I>&gt;&gt;<i> T_FLOAT_LITERAL[@-1,25:26='7.',&lt;181&gt;,1:25] TOKEN: 
+</I>&gt;&gt;<i> WS[@-1,27:27='\n',&lt;168&gt;,channel=99,1:27]
+</I>&gt;&gt;<i> I've tried other things (I've seen a post on emitting multiple tokens 
+</I>&gt;&gt;<i> for the same rule, but was apparently not yet supported in v3, I've 
+</I>&gt;&gt;<i> seen also the pascal examples for v2, but somehow I couldn't get them 
+</I>&gt;&gt;<i> to work??)
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Thanks very much in advance and best regards
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>     Julian
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>
+-- 
+Julian Santander 
+IN Application Development		   Tel: +34 91714 9145
+Lucent Technologies Spain	&lt;mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">jsantander at lucent.com</A>&gt;
+Avenida De Bruselas 8, Alcobendas,  		  28108  Spain
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="018654.html">[antlr-interest] Matching ellipsis
+</A></li>
+	<LI>Next message: <A HREF="018550.html">[antlr-interest] Comments / White-Space and All The Rest
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#18666">[ date ]</a>
+              <a href="thread.html#18666">[ thread ]</a>
+              <a href="subject.html#18666">[ subject ]</a>
+              <a href="author.html#18666">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

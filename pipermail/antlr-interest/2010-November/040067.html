@@ -1,0 +1,165 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Missing something basic about lexer tokens
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Missing%20something%20basic%20about%20lexer%20tokens&In-Reply-To=%3C1290218166.31026.81.camel%40gecko%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="040066.html">
+   <LINK REL="Next"  HREF="040068.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Missing something basic about lexer tokens</H1>
+    <B>John B. Brodie</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Missing%20something%20basic%20about%20lexer%20tokens&In-Reply-To=%3C1290218166.31026.81.camel%40gecko%3E"
+       TITLE="[antlr-interest] Missing something basic about lexer tokens">jbb at acm.org
+       </A><BR>
+    <I>Fri Nov 19 17:56:06 PST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="040066.html">[antlr-interest] Missing something basic about lexer tokens
+</A></li>
+        <LI>Next message: <A HREF="040068.html">[antlr-interest] Knowing line and position in tree parser
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40067">[ date ]</a>
+              <a href="thread.html#40067">[ thread ]</a>
+              <a href="subject.html#40067">[ subject ]</a>
+              <a href="author.html#40067">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Greetings! 
+
+On Fri, 2010-11-19 at 18:58 -0500, Sheila M. Morrissey wrote:
+&gt;<i> Hello,
+</I>&gt;<i> 
+</I>&gt;<i> I am working on a recognizer that processes a text file, each line of which starts with one of short list of about 20 characters (mostly either upper case or lower case letters, a few special chars), immediately followed by a &quot;name&quot; (chars or dash), a space or 2, and then various space-delimited stretches of text comprised of arbitrarily any ASCII character Except newline, followed by newline.
+</I>&gt;<i> 
+</I>&gt;<i> The first letter is significant - it indicates what sort of &quot;command&quot; each line is.
+</I>&gt;<i> 
+</I>&gt;<i> Here's a simplified version of the grammar, with just one of these &quot;commands&quot; specified:
+</I>&gt;<i> 
+</I>&gt;<i> grammar ElementAttributes;
+</I>&gt;<i> 
+</I>&gt;<i> options {
+</I>&gt;<i>   language = Java;
+</I>&gt;<i> }
+</I>&gt;<i> @parser::header {}
+</I>&gt;<i> @lexer::header {}
+</I>&gt;<i> 
+</I>&gt;<i> elementAttributes : elementAttributeCommand+ EOF;
+</I>&gt;<i> 
+</I>&gt;<i> /**
+</I>&gt;<i> e.g.
+</I>&gt;<i> Aname IMPLIED
+</I>&gt;<i> */
+</I>&gt;<i> 
+</I>&gt;<i> elementAttributeCommand : ACMD NAME SPACE+ ATTRTYPE NEWLINE;
+</I>&gt;<i> 
+</I>&gt;<i> ATTRTYPE : ('IMPLIED'|'CDATA'|'NOTATION'|'ENTITY'|'TOKEN'|'ID'|'DATA');
+</I>&gt;<i> ACMD : 'A';
+</I>&gt;<i> NEWLINE:    '\r'? '\n';
+</I>&gt;<i> SPACE:      ' ';
+</I>&gt;<i> NAME : (NAMESTARTCHAR NAMECHAR*);
+</I>&gt;<i> 
+</I>&gt;<i> fragment LOWERCASELETTER : ('a'..'z');
+</I>&gt;<i> fragment UPPERCASELETTER : ('A'..'Z');
+</I>&gt;<i> fragment DIGIT : ('0'..'9');
+</I>&gt;<i> fragment DASH  : ('-');
+</I>&gt;<i> fragment NAMESTARTCHAR : (LOWERCASELETTER | UPPERCASELETTER);
+</I>&gt;<i> fragment NAMECHAR : (NAMESTARTCHAR | DIGIT | DASH);
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> If run on a file consisting only of the line (terminated with NEWLINE)
+</I>&gt;<i> Aname IMPLIED
+</I>&gt;<i> 
+</I>&gt;<i> I get the following error:
+</I>&gt;<i> line 1:0 required (...)+ loop did not match anything at input 'Aname'
+</I>&gt;<i> 
+</I>&gt;<i>  How should I be declaring the lexer rules so that 'A' at start of line is recognized as a command token, and yet still make it possible for the &quot;NAME&quot; immediately following it to be unambiguously recognized?
+</I>&gt;<i> 
+</I>
+Please recall 3 facts about current ANTLR lexers:
+1) they recognize tokens independent from any parsing context; and
+2) they do not back-track (once committed to recognizing a prefix of a
+token the rest of the input must match that token); and
+3) they are greedy and happily recognize the longest valid string
+possible.
+
+(i suspect you already know the above facts, but i repeat them in case
+someone in the future searches the mailing-list archive at
+markmail.antlr.org and finds this message without that knowledge)
+
+and so, as you have observed, when the input word &quot;Aname&quot; is seen by
+your lexer it will produce the token NAME because that single token
+greedily matches all of the characters in that input word.
+
+and so your requirement &quot;at the start of the line&quot; must be, somehow,
+encoded into your lexer rule(s) for command(s) like ACMD.
+
+i believe you can read a discussion of this issue by searching the
+archives at markmail.antlr.org for messages about special tokens at the
+beginning of a line.
+
+i seem to remember (i haven't reviewed the archives) that it boils down
+to 3 possibilities:
+
+1) add a predicate(s) to test the start character index of the token to
+ensure that it is at the beginning of a line
+
+2) use a rule of the form ACMD : NEWLINE 'A' ; which works for the
+second and subsequent lines of input. But requires creating a special
+sub-class of the input reader that always delivers a NEWLINE as the very
+first character and then delivers characters from the actual input after
+as the second and subsequent characters. and then of course your parser
+rules should not insist upon a NEWLINE at the end of a command (because
+that NEWLINE is part of the verb that starts the next command). 
+
+3) use a Lex-based lexer rather than and ANTLR-based lexer. search the
+archives for jLex. Lex-based lexers are more oriented around regular
+expressions -- so start-of-line and end-of-line are more easily
+detected/used.
+
+
+
+I also believe that Dr. Parr is looking at version 3 lexer issues such
+as this one and is trying to improve things for version 4. search the
+mailing list archives for Dr Parr's posts regarding version 4.
+
+
+
+(as an aside i think most of my mailing list search suggestions will
+actually result in pointers to pages in the wiki -- i am too lazy to
+actually give you those links directly, sorry)
+
+Hope this helps...
+   -jbb
+
+
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="040066.html">[antlr-interest] Missing something basic about lexer tokens
+</A></li>
+	<LI>Next message: <A HREF="040068.html">[antlr-interest] Knowing line and position in tree parser
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40067">[ date ]</a>
+              <a href="thread.html#40067">[ thread ]</a>
+              <a href="subject.html#40067">[ subject ]</a>
+              <a href="author.html#40067">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

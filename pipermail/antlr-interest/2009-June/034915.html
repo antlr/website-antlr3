@@ -1,0 +1,234 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] CSharp2 -debug generation bug
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20CSharp2%20-debug%20generation%20bug&In-Reply-To=%3CCOL113-W9183E8927F25ED4C5F44F923F0%40phx.gbl%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="034914.html">
+   <LINK REL="Next"  HREF="034924.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] CSharp2 -debug generation bug</H1>
+    <B>Dukie Banderjee</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20CSharp2%20-debug%20generation%20bug&In-Reply-To=%3CCOL113-W9183E8927F25ED4C5F44F923F0%40phx.gbl%3E"
+       TITLE="[antlr-interest] CSharp2 -debug generation bug">dukie_banderjee at hotmail.com
+       </A><BR>
+    <I>Mon Jun 15 20:21:32 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="034914.html">[antlr-interest] ANTLR IDE v2.0.0rc1
+</A></li>
+        <LI>Next message: <A HREF="034924.html">[antlr-interest] CSharp2 -debug generation bug
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#34915">[ date ]</a>
+              <a href="thread.html#34915">[ thread ]</a>
+              <a href="subject.html#34915">[ subject ]</a>
+              <a href="author.html#34915">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+The following grammar compiles fine under ANTLR 3.1.3 except if you use the -debug option, in which case it throws an exception during generation. Exception trace follows.
+
+The culprit line is:
+message: unhSegment bgmSegment segment+ linLoop untSegment -&gt; ^(MESSAGE unhSegment bgmSegment segment+ linLoop untSegment) ;
+
+On this line, I added linLoop on both sides. linLoop in turn references segment+, which I suspect might be the problem. However, this grammar appears to generate okay when -debug is off. (The grammar is functionally flawed, but in any case it should not cause an exception for ANTLR to generate the parser from it.)
+
+
+Thanks,
+Rob
+
+====
+
+grammar Test;
+
+options {
+  language = 'CSharp2' ;
+  output = AST ;
+}
+
+tokens {
+    INTERCHANGE;
+    GROUP;
+    MESSAGE;
+    LOOP;
+    SECTION;
+    SEGMENT;
+    ELEMENT;
+    COMPONENT;
+}
+
+file        : interchange EOF -&gt; interchange;
+
+interchange: unaSegment? unbSegment group unzSegment -&gt; ^(INTERCHANGE unaSegment? unbSegment group unzSegment) ;
+group: ungSegment message+ uneSegment -&gt; ^(GROUP ungSegment message+ uneSegment) ;
+message: unhSegment bgmSegment segment+ linLoop untSegment -&gt; ^(MESSAGE unhSegment bgmSegment segment+ linLoop untSegment) ;
+
+linLoop: linSection+ -&gt; ^(LOOP linSection+) ;
+linSection: linSegment segment+ -&gt; ^(SECTION linSegment segment+ ) ;
+
+bgmSegment: tagBGM elements -&gt; ^(SEGMENT tagBGM elements) ;
+linSegment: tagLIN elements -&gt; ^(SEGMENT tagLIN elements) ;
+
+tagBGM    : { input.LT(1).Text == &quot;BGM&quot; }? TEXT ;
+tagLIN    : { input.LT(1).Text == &quot;LIN&quot; }? TEXT ;
+
+
+unaSegment: tagUNA elements -&gt; ^(SEGMENT tagUNA elements) ;
+unbSegment: tagUNB elements -&gt; ^(SEGMENT tagUNB elements) ;
+ungSegment: tagUNG elements -&gt; ^(SEGMENT tagUNG elements) ;
+unhSegment: tagUNH elements -&gt; ^(SEGMENT tagUNH elements) ;
+untSegment: tagUNT elements -&gt; ^(SEGMENT tagUNT elements) ;
+uneSegment: tagUNE elements -&gt; ^(SEGMENT tagUNE elements) ;
+unzSegment: tagUNZ elements -&gt; ^(SEGMENT tagUNZ elements) ;
+
+tagUNA    : { input.LT(1).Text == &quot;UNA&quot; }? TEXT ;
+tagUNB    : { input.LT(1).Text == &quot;UNB&quot; }? TEXT ;
+tagUNG    : { input.LT(1).Text == &quot;UNG&quot; }? TEXT ;
+tagUNH    : { input.LT(1).Text == &quot;UNH&quot; }? TEXT ;
+tagUNT    : { input.LT(1).Text == &quot;UNT&quot; }? TEXT ;
+tagUNE    : { input.LT(1).Text == &quot;UNE&quot; }? TEXT ;
+tagUNZ    : { input.LT(1).Text == &quot;UNZ&quot; }? TEXT ;
+
+segment: tag elements -&gt; ^(SEGMENT tag elements);
+//{ Console.WriteLine(&quot;Found segment: &quot; + $tag.text); } 
+tag    :    TEXT
+    ;
+
+ignoredLine    : unknownDiscriminator! elements! ;
+
+unknownDiscriminator: TEXT;
+
+        
+elements        : element* terminator! ;
+element        : ELEMENT_SEPARATOR t=components? -&gt; ^(ELEMENT $t?) ;
+components    : comp1 comp2* ;
+
+comp2        : COMPONENT_SEPARATOR t=TEXT? -&gt; ^(COMPONENT $t?)
+    ;
+
+comp1        : t=TEXT -&gt; ^(COMPONENT $t)
+        | COMPONENT_SEPARATOR t=TEXT? -&gt; ^(COMPONENT) ^(COMPONENT $t?) ;
+
+terminator    : SEGMENT_TERMINATOR ;
+
+//terminator    : (EOL | WS)+ ;
+
+SEGMENT_TERMINATOR: '\'';
+ELEMENT_SEPARATOR: '+';
+COMPONENT_SEPARATOR:  ':';
+//TEXT: ('a'..'z'|'A'..'Z'|'0'..'9'|' '|'-'|','|'.'|'/'|'?')+ ;
+TEXT: ('a'..'z'|'A'..'Z'|'0'..'9'|' '|'-'|','|'.'|'/'|ESCAPE)+ ;
+fragment ESCAPE : '?' . ;
+
+WS: ('\r'? '\n')+ { $channel = 99; }  ;
+
+====
+error(10):  internal error: &lt;&lt;OMITTED&gt;&gt;.g : java.util.NoSuchElementException: no such attribute: description in template context [out
+putFile parser genericParser(...) cyclicDFA if(dfa.specialStateSTs)_subtemplate anonymous cyclicDFAState cyclicDFAEdge notPredicate eva
+lPredicate(...)]
+org.antlr.stringtemplate.StringTemplate.checkNullAttributeAgainstFormalArguments(StringTemplate.java:1276)
+org.antlr.stringtemplate.StringTemplate.get(StringTemplate.java:800)
+org.antlr.stringtemplate.StringTemplate.get(StringTemplate.java:798)
+org.antlr.stringtemplate.StringTemplate.get(StringTemplate.java:798)
+org.antlr.stringtemplate.StringTemplate.get(StringTemplate.java:798)
+org.antlr.stringtemplate.StringTemplate.get(StringTemplate.java:798)
+org.antlr.stringtemplate.StringTemplate.get(StringTemplate.java:798)
+org.antlr.stringtemplate.StringTemplate.get(StringTemplate.java:798)
+org.antlr.stringtemplate.StringTemplate.get(StringTemplate.java:798)
+org.antlr.stringtemplate.StringTemplate.get(StringTemplate.java:798)
+org.antlr.stringtemplate.StringTemplate.getAttribute(StringTemplate.java:682)
+org.antlr.stringtemplate.language.ActionEvaluator.attribute(ActionEvaluator.java:360)
+org.antlr.stringtemplate.language.ActionEvaluator.expr(ActionEvaluator.java:136)
+org.antlr.stringtemplate.language.ActionEvaluator.action(ActionEvaluator.java:84)
+org.antlr.stringtemplate.language.ASTExpr.write(ASTExpr.java:148)
+org.antlr.stringtemplate.StringTemplate.write(StringTemplate.java:700)
+org.antlr.stringtemplate.language.ASTExpr.write(ASTExpr.java:722)
+org.antlr.stringtemplate.language.ASTExpr.writeAttribute(ASTExpr.java:659)
+org.antlr.stringtemplate.language.ActionEvaluator.action(ActionEvaluator.java:86)
+org.antlr.stringtemplate.language.ASTExpr.write(ASTExpr.java:148)
+org.antlr.stringtemplate.StringTemplate.write(StringTemplate.java:700)
+org.antlr.stringtemplate.language.ASTExpr.write(ASTExpr.java:722)
+org.antlr.stringtemplate.language.ASTExpr.writeAttribute(ASTExpr.java:659)
+org.antlr.stringtemplate.language.ActionEvaluator.action(ActionEvaluator.java:86)
+org.antlr.stringtemplate.language.ASTExpr.write(ASTExpr.java:148)
+org.antlr.stringtemplate.StringTemplate.write(StringTemplate.java:700)
+org.antlr.stringtemplate.language.ASTExpr.write(ASTExpr.java:722)
+org.antlr.stringtemplate.language.ASTExpr.write(ASTExpr.java:742)
+org.antlr.stringtemplate.language.ASTExpr.writeAttribute(ASTExpr.java:659)
+org.antlr.stringtemplate.language.ActionEvaluator.action(ActionEvaluator.java:86)
+org.antlr.stringtemplate.language.ASTExpr.write(ASTExpr.java:148)
+org.antlr.stringtemplate.StringTemplate.write(StringTemplate.java:700)
+org.antlr.stringtemplate.language.ASTExpr.write(ASTExpr.java:722)
+org.antlr.stringtemplate.language.ASTExpr.writeAttribute(ASTExpr.java:659)
+org.antlr.stringtemplate.language.ActionEvaluator.action(ActionEvaluator.java:86)
+org.antlr.stringtemplate.language.ASTExpr.write(ASTExpr.java:148)
+org.antlr.stringtemplate.StringTemplate.write(StringTemplate.java:700)
+org.antlr.stringtemplate.language.ASTExpr.write(ASTExpr.java:722)
+org.antlr.stringtemplate.language.ASTExpr.write(ASTExpr.java:742)
+org.antlr.stringtemplate.language.ASTExpr.writeAttribute(ASTExpr.java:659)
+org.antlr.stringtemplate.language.ActionEvaluator.action(ActionEvaluator.java:86)
+org.antlr.stringtemplate.language.ASTExpr.write(ASTExpr.java:148)
+org.antlr.stringtemplate.StringTemplate.write(StringTemplate.java:700)
+org.antlr.stringtemplate.language.ConditionalExpr.writeSubTemplate(ConditionalExpr.java:152)
+org.antlr.stringtemplate.language.ConditionalExpr.write(ConditionalExpr.java:103)
+org.antlr.stringtemplate.StringTemplate.write(StringTemplate.java:700)
+org.antlr.stringtemplate.language.ASTExpr.write(ASTExpr.java:722)
+org.antlr.stringtemplate.language.ASTExpr.write(ASTExpr.java:742)
+org.antlr.stringtemplate.language.ASTExpr.writeAttribute(ASTExpr.java:659)
+org.antlr.stringtemplate.language.ActionEvaluator.action(ActionEvaluator.java:86)
+org.antlr.stringtemplate.language.ASTExpr.write(ASTExpr.java:148)
+org.antlr.stringtemplate.StringTemplate.write(StringTemplate.java:700)
+org.antlr.stringtemplate.language.ASTExpr.write(ASTExpr.java:722)
+org.antlr.stringtemplate.language.ASTExpr.writeAttribute(ASTExpr.java:659)
+org.antlr.stringtemplate.language.ActionEvaluator.action(ActionEvaluator.java:86)
+org.antlr.stringtemplate.language.ASTExpr.write(ASTExpr.java:148)
+org.antlr.stringtemplate.StringTemplate.write(StringTemplate.java:700)
+org.antlr.stringtemplate.language.ASTExpr.write(ASTExpr.java:722)
+org.antlr.stringtemplate.language.ASTExpr.writeAttribute(ASTExpr.java:659)
+org.antlr.stringtemplate.language.ActionEvaluator.action(ActionEvaluator.java:86)
+org.antlr.stringtemplate.language.ASTExpr.write(ASTExpr.java:148)
+org.antlr.stringtemplate.StringTemplate.write(StringTemplate.java:700)
+org.antlr.codegen.CodeGenerator.write(CodeGenerator.java:1278)
+org.antlr.codegen.Target.genRecognizerFile(Target.java:94)
+org.antlr.codegen.CodeGenerator.genRecognizer(CodeGenerator.java:463)
+org.antlr.Tool.generateRecognizer(Tool.java:607)
+org.antlr.Tool.process(Tool.java:429)
+org.antlr.Tool.main(Tool.java:91)
+
+
+_________________________________________________________________
+We are your photos. Share us now with Windows Live Photos.
+<A HREF="http://go.microsoft.com/?linkid=9666047">http://go.microsoft.com/?linkid=9666047</A>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20090615/c830991f/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20090615/c830991f/attachment.html</A> 
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="034914.html">[antlr-interest] ANTLR IDE v2.0.0rc1
+</A></li>
+	<LI>Next message: <A HREF="034924.html">[antlr-interest] CSharp2 -debug generation bug
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#34915">[ date ]</a>
+              <a href="thread.html#34915">[ thread ]</a>
+              <a href="subject.html#34915">[ subject ]</a>
+              <a href="author.html#34915">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

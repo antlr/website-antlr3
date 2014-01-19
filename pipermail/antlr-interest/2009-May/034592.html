@@ -1,0 +1,327 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Syntax highlighting and performance possibilities
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Syntax%20highlighting%20and%20performance%20possibilities&In-Reply-To=%3C86403CA0939415448BCCB83855EFE09AA68165%40Bloodymary.ironwillgames.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="034590.html">
+   <LINK REL="Next"  HREF="034593.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Syntax highlighting and performance possibilities</H1>
+    <B>Sam Harwell</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Syntax%20highlighting%20and%20performance%20possibilities&In-Reply-To=%3C86403CA0939415448BCCB83855EFE09AA68165%40Bloodymary.ironwillgames.com%3E"
+       TITLE="[antlr-interest] Syntax highlighting and performance possibilities">sharwell at pixelminegames.com
+       </A><BR>
+    <I>Fri May 22 13:23:10 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="034590.html">[antlr-interest] how to pretty print antlr grammar
+</A></li>
+        <LI>Next message: <A HREF="034593.html">[antlr-interest] [antlr-dev] Syntax highlighting and	performance possibilities
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#34592">[ date ]</a>
+              <a href="thread.html#34592">[ thread ]</a>
+              <a href="subject.html#34592">[ subject ]</a>
+              <a href="author.html#34592">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>As I mentioned once in the past, I've been working on improving lexer
+performance for applications where the full information/features in
+Lexer/CommonToken is not required. A key example is syntax highlighters
+which have strict performance requirements and must be updated as a
+person types. I'll start with a basic description of Visual Studio's
+syntax highlighting mechanism and the information a lexer must provide
+it. Then I'll describe some pathological use cases that should be
+avoided regardless of the lexer used, as the algorithms involved have
+more of an impact than simply improving the lexer's per-line processing
+speed. Finally, I'll describe the &quot;SlimLexer&quot; and how one could
+potentially use it to gain an additional performance edge after the
+other issues are addressed.
+
+ 
+
+
+1         Syntax Highlighting in Visual Studio
+
+
+ 
+
+The syntax highlighter for a programming language in Visual Studio is
+called a colorizer, and is one item provided by a language service.
+Visual Studio's syntax highlighting API uses a per-line scanning
+mechanism. The IDE itself directly stores (caches) a few pieces of
+information, where a few additional items can be easily derived from
+them. The Visual Studio SDK provides a wrapper for the core API that is
+somewhat more friendly when using a tokenizing lexer for syntax
+highlighting.
+
+ 
+
+
+1.1       Items internally cached by Visual Studio IDE
+
+
+ 
+
+Visual Studio maintains an &quot;attribute cache&quot; describing the color of
+each character on the lines currently on the screen. Naturally, as the
+user scroll the window vertically, this cache is continually updated.
+The information describing a character's attributes is stored as a
+32-bit integer. The customizable elements are:
+
+*         The color, stored as an index (range 0-255 inclusive) to a
+customizable lookup table of colors available for use in the document.
+
+*         A Boolean value of whether or not to show a line after the
+current line. If you've used Visual Basic in Visual Studio, this is the
+horizontal line that follows each procedure. It is a full-width
+underlining, similar to the &lt;hr /&gt; HTML element, only with tighter
+spacing.
+
+*         A Boolean value of whether the character is part of code or
+part of &quot;human-language text&quot; (a comment). This affects how the IDE
+handles word-select mode, and improper use is the elusive source of some
+miserable bugs. VSPhp actually suffers from this problem and it's quite
+irritating.
+
+ 
+
+The IDE also maintains a &quot;colorizer state&quot; per line of text. The state
+is a 32-bit value exclusively reserved for the language service. The
+intent here is the colorizer state allows a lexer to parse any line of
+text in the file in isolation, without requiring any lookahead/behind to
+other lines. A simple example of this is in multiline (block) comments.
+If a multiline comment reaches the end of line X without closing, then
+the colorizer state can include a flag that tells line X+1 to start the
+line inside a multiline comment. Even though line X+1 doesn't contain
+the opening token of the comment (say /*), it can properly color the
+line without ever looking back to line X.
+
+ 
+
+Definition: Line X has a valid cache state iff line X was colorized
+after the last time its cached state value was changed.
+
+Definition: The colorizer state at the start of line X is valid iff the
+colorizer state at the end of all lines 0-(X-1) is valid AND line X has
+a valid cache state.
+
+Definition: The colorizer state at the end of line X is valid iff the
+colorizer state at the beginning of line X is valid AND the text on line
+X has not changed since the end state was last computed.
+
+ 
+
+Here is the process for colorizing line X:
+
+ 
+
+1.       If the colorizer state at the end of line X-1 is not valid,
+colorize line X-1 to make it valid.
+
+2.       Provide the state at the start of line X, plus the text on the
+line X to the language service's colorizer. The colorizer's result
+includes the state at the end of line X.
+
+3.       If the new state at the end of line X is different from the
+cached value for the state at the beginning of line X+1, mark line X+1
+as having an invalid colorizer state, and store the new state in place
+of the old.
+
+ 
+
+
+1.2       Additional items the user can easily compute
+
+
+ 
+
+The syntax highlighter can take advantage of the user state update
+mechanism to effectively track the state per character on the line (or
+per token), as follows:
+
+ 
+
+StateAtPosition( line, column ) = StateAtEndOfLine( StartState(line),
+TextOnLine(line).Substring(0,column) )
+
+ 
+
+
+1.3       How the SDK exposes these features
+
+
+ 
+
+The Visual Studio SDK offers a Colorizer class and an IScanner interface
+to simplify the creation of syntax highlighters. Since lexers generally
+operate on tokens as opposed to individual characters, there is a
+disconnect between what people are used to and what Visual Studio's
+cache stores. These interfaces allow the language service to provide
+information about the tokens on a line, which it then internally breaks
+into characters and passes the information to Visual Studio. Some
+additional things to note about using this wrapper:
+
+*         The wrapper does not expose (at all) the Boolean value for the
+underline following a line.
+
+*         The wrapper hides the Boolean value for whether a line is
+human-language text, but the method is generally successful.
+
+*         The wrapper exposes the ability to set the background color
+following the end of a line, but only via an undocumented/sneaky
+technique that you'd only see if you saw the wrapper's source code and
+knew about the underlying interfaces.
+
+*         The wrapper takes advantage of the mechanism in section 1.2 to
+provide an additional 32-bit user-defined value per token. I personally
+use this to keep track of ANTLR's token type, but there aren't any real
+requirements since the value is never used by Visual Studio or its SDK.
+
+ 
+
+
+2         High Performance Syntax Highlighting
+
+
+ 
+
+A high performance syntax highlighter must avoid cascading updates where
+possible. A cascading update is incurred when a change in the document's
+text causes the state at multiple lines after the altered line to
+change. Sometimes this is unavoidable; for example, adding a /* to a
+line in C++ can cause multiple lines afterwards to become comment lines
+instead of code lines, all of which must be updated. Other times, this
+is avoidable. For example, storing the line number in the state forces
+the state for all lines after line X to be updated when a new line is
+added immediately following line X. If the line number itself does not
+change the color of characters on the line, then the line number should
+not be part of the colorizer state for performance reasons.
+
+ 
+
+For a document with M lines and a maximum line width of W, this makes an
+algorithmic difference of O(M) instead of O(1). You might only test your
+colorizer with short test documents, but are your users programming in
+documents with 10,000 or more lines? I know some generated ANTLR code
+files in my language services are well in excess of 30,000 lines, and
+some UnrealScript files I've seen have nearly 20,000 lines (my most
+complete language service to date is for UnrealScript).
+
+ 
+
+Even some of my own language services suffer from this problem; be aware
+that it can be difficult to redesign your language service after you
+start using the colorizer state for other purposes (like line numbers),
+so make sure your state design is correct from the start. This is one of
+many areas where I've formed new/improved ideas but haven't been able to
+incorporate them in my largest language service due to the intricate
+relationships between various IntelliSense features.
+
+ 
+
+
+3         High Performance Lexing
+
+
+ 
+
+I've observed that the Lexer/CommonToken features are overkill for
+certain applications, including syntax highlighting. The simplest
+example is single-line syntax highlighters have no need to store the
+line number as part of the token. In order to reduce memory usage and
+improve speed for this type of application, I've created a SlimLexer and
+SlimToken for testing purposes. These currently have the following
+features:
+
+ 
+
+*         The SlimToken is a C# struct, which is a stack-allocated value
+type that is passed to methods and returned by value. As long as you
+don't force boxing by casting it to Object, it never requires heap
+allocation.
+
+*         The SlimToken is precisely 64-bits to allow efficient
+pass-by-value in registers. As used in my testing, it stores:
+
+o   Token type (16 bits)
+
+o   Token channel (16 bits)
+
+o   Start index (16 bits)
+
+o   Stop index (16 bits)
+
+*         The SlimLexer's tokens are strongly typed to SlimToken to
+eliminate the need to box values.
+
+*         The SlimLexer's most frequently called methods are
+non-virtual, allowing the runtime to easily inline its small methods.
+
+ 
+
+For applications that only need this information (or even a subset of
+that), SlimLexer/SlimToken appears to operate about 6 times faster than
+Lexer/CommonToken in about 1/4 the memory. I'm currently evaluating the
+following items:
+
+ 
+
+1.       Is this layout of SlimToken the best choice? I certainly
+believe 64-bits is the optimal width for a high-performance
+pass-by-value token. However, if SlimToken only applies to a subset X of
+potential lexer applications Y, then I want to make X as large as
+possible so more people can benefit from its significant performance
+improvement.
+
+2.       Do SlimLexer/SlimToken have a place in the ANTLR runtime, or
+are they more suited to separate distribution?
+
+3.       What are the possibilities, if any, for a SlimParser?
+
+a.       Could a SlimParser take advantage of an unboxed SlimToken?
+
+b.      Could a SlimParser have some unboxed output?
+
+c.       In my experience, syntax highlighters don't need a parser, and
+the parsers I've used need more complete token information than
+SlimToken is able to provide. Is this a general view?
+
+ 
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20090522/72ce1f09/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20090522/72ce1f09/attachment.html</A> 
+</PRE>
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="034590.html">[antlr-interest] how to pretty print antlr grammar
+</A></li>
+	<LI>Next message: <A HREF="034593.html">[antlr-interest] [antlr-dev] Syntax highlighting and	performance possibilities
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#34592">[ date ]</a>
+              <a href="thread.html#34592">[ thread ]</a>
+              <a href="subject.html#34592">[ subject ]</a>
+              <a href="author.html#34592">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,284 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Listing order of NT alternatives on rhs of production appears to affect &quot;accept/reject&quot; of parser for	fixed input.
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Listing%20order%20of%20NT%20alternatives%20on%20rhs%20of%0A%20production%20appears%20to%20affect%20%22accept/reject%22%20of%20parser%20for%09fixed%20input.&In-Reply-To=%3C1226510342.4885.712.camel%40server.temporal-wave.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="031517.html">
+   <LINK REL="Next"  HREF="031541.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Listing order of NT alternatives on rhs of production appears to affect &quot;accept/reject&quot; of parser for	fixed input.</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Listing%20order%20of%20NT%20alternatives%20on%20rhs%20of%0A%20production%20appears%20to%20affect%20%22accept/reject%22%20of%20parser%20for%09fixed%20input.&In-Reply-To=%3C1226510342.4885.712.camel%40server.temporal-wave.com%3E"
+       TITLE="[antlr-interest] Listing order of NT alternatives on rhs of production appears to affect &quot;accept/reject&quot; of parser for	fixed input.">jimi at temporal-wave.com
+       </A><BR>
+    <I>Wed Nov 12 09:19:02 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="031517.html">[antlr-interest] Listing order of NT alternatives on rhs of	production appears to affect &quot;accept/reject&quot; of parser for	fixed input.
+</A></li>
+        <LI>Next message: <A HREF="031541.html">[antlr-interest] Listing order of NT alternatives on rhs of production appears to affect &quot;accept/reject&quot; of parser for	fixed input.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#31522">[ date ]</a>
+              <a href="thread.html#31522">[ thread ]</a>
+              <a href="subject.html#31522">[ subject ]</a>
+              <a href="author.html#31522">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Wed, 2008-11-12 at 13:12 +0100, Andreas Weigel wrote:
+&gt;<i> Hi,
+</I>&gt;<i> &gt; I disagree.  My interpretation of that that quote is that enabling 
+</I>&gt;<i> &gt; backtracking can influence /which/ production is used to match an 
+</I>&gt;<i> &gt; input (by prioritizing them) however it doesn't say that the set of 
+</I>&gt;<i> &gt; valid inputs that can match /some/ production changes.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; My problem it seems is that in one grammar ordering ANTLR is able to 
+</I>&gt;<i> &gt; find /some /match for the input while with the other ordering ANTLR 
+</I>&gt;<i> &gt; decides /no /match can be found.  I claim that changing the ordering 
+</I>&gt;<i> &gt; should not affect whether /some /match can be found by the parser for 
+</I>&gt;<i> &gt; a fixed input, irrespective of what that specific match is.  When 
+</I>&gt;<i> &gt; ANLTR says no match can be found, I point to the syntax tree shown in 
+</I>&gt;<i> &gt; my original email and say &quot;what about that match?&quot;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; -- Matt
+</I>&gt;<i> 
+</I>&gt;<i> I also was under the impression, that backtrack=true should always yield 
+</I>&gt;<i> at least some match for a valid input. But I have exactly the same issue 
+</I>&gt;<i> here with another grammar so I'd be very interested in a statement 
+</I>&gt;<i> concerning that issue. 
+</I>
+If it is not parsing valid input, then it would indeed be a bug, but
+unfortunately, you probably think it is valid input but it isn't for one
+reason or another.
+
+I have never known a backtracking parser to fail to parse something that
+will match one rule or another (valid input that the grammar is proven
+to accept [the grammar, not the generated code ;-)] .) This is almost
+certainly an error in the grammar, which is masked by the inability
+localize the error (see below). Could be a bug of course, but my first
+instinct is that it is not.
+
+Basically, backtracking turns off any ambiguity errors that would
+otherwise be thrown up at analysis time (and even if you are using
+backtracking, it is worth turning that option off and generating the
+code, to see what the ambiguities are). However, it isn't quite as
+simple as just taking each alt in order as if the analysis shows that
+some alts do not need predicates then predicates won't be inserted in
+the hope of optimizing the parse.
+
+So, if you can isolate some standalone grammar rule with a smallish
+input, that shows that changing the rule order breaks the grammar, then
+it would be considered a bug, all other things being equal (such as you
+are using your own semantic predicates that work off flags being set or
+not and changing the rule order somehow causes the flags to be
+different).
+
+
+&gt;<i> Left factoring is not a great option for me as I 
+</I>&gt;<i> don't want to tear apart what belongs together 
+</I>
+Unfortunately, what you think belongs together with your language
+reading brain is quite often not the same as a good grammar ;-) You can
+usually left factor without altering the maintainability at all though.
+In fact I would argue that what you are seeing here shows that
+backtracking parsers are more difficult to maintain because sometimes
+the only way to find out what is happening is to debug with ANTLRWorks.
+
+Other than performance, I think that the main issue with backtracking is
+error recovery/syntax errors. This is because given some rule:
+
+r : ra | rb | rc;
+
+Backtracking will try alt ra, and if that fails try rb, then rc. If we
+suppose that ra, rb and rc are complicated rules, then apart from the
+very long syntactic predicates involved, a syntax error way down the
+path of say rc, will cause the error to occur at start(r). Suppose you
+have:
+
+ra: attributes modifiers function;
+rb: attributes modifiers function_prototype;
+rc: attributes modifiers class;
+
+and your input (supposedly trying to match rc, is:
+
+&lt;Attribute&gt; &lt;Attribute&gt; public final static class F(int A) {
+//lots of class body
+syntax error here
+}
+
+Your backtracking will try ra and fail because it sees class, it will
+try rb and fail because it sees class then try rc, get all the way to
+the syntax error, then fail the predicate at the syntax error, so it
+won't take rc either. It will then throw a recognition exception at the
+first &lt;Attribute&gt; because none of the paths match, and your parser users
+will be very confused.
+
+Note that the order should not matter, so again, it would be a bug if
+you can show that correct input is not matched when you reorder the
+alts, assuming no side effects of your alts.
+
+I would be betting on a situation like this if I were you. What you are
+seeing as valid input is valid at that point, but a syntax error farther
+along in the stream is throwing the error a lot earlier than you think,
+even though it is also done a heck of a lot more work than you think.
+
+The only way to work out what is going wrong is to generate your parser
+with the -debug option, run your program, then attach to the parser
+remotely using ANTLR Works. This will step you through the parse and you
+will get to some point where a recognition error happens in the
+predicate, that you were not expecting, and explains why it doesn't take
+the path you think it should.
+
+I can't think off-hand of any grammar that would not be easier to look
+after in a refactored state. For instance, from the above:
+
+r : attributes modifiers
+      (
+          function_types
+        | class
+      )
+   ;
+
+function_types
+   : function_decl_spec
+       (
+           SEMI     // Prototype
+         | function_body
+       )
+    ;
+function_decl_spec
+You can play around with where things are parsed of course, but your
+tree then just reflects the real structure of the program instead of
+trying to jump straight to FUNCTION or FUNCTION_DECL and so on.
+
+
+m : x+=r* -&gt; ^(MEMBERS $x*)
+  ;
+
+r : a=attributes m=modifiers
+      (
+          f=function_types
+
+             -&gt; ^(MEMBER $a? $m? $f)
+
+        | c=class
+
+             -&gt; ^(MEMBER $a? $m? $c)
+
+      )
+   ;
+
+function_types
+   : f=function_decl_spec
+       (
+           SEMI     // Prototype
+
+	     -&gt; ^(FUNC_DECL $f)
+	
+         | fb=function_body
+
+	     -&gt; ^(FUNCTION $fb)
+       )
+    ;
+
+
+&gt;<i> and predicates cannot be 
+</I>&gt;<i> applied as I'm working with another framework (openarchitectureware's 
+</I>&gt;<i> xText) that generates an Antlr grammar without giving me the possibility 
+</I>&gt;<i> to intervene and define those.
+</I>
+Perhaps you should use a different tool, or can fix the tool, or get teh
+authors to fix the tool?
+
+The problem is that the framework is generating a poor grammar and it
+should machine re-factor before generating the grammar. This is fairly
+easy if it already 'knows' the problem domain (and not so easy if you
+have a generic tool like ANTLR itself). By which I mean that if it is
+going to generate a bunch of rules from a template, then the template
+should be refactored to avoid the problem. Or knowing in advance the
+types of inputs that cause it to generate ambiguous parsers, then it
+should special case them. It need not necessarily conduct complete
+analysis, and if it were to do that, then it might as well generate the
+code and skip the grammar ;-)
+
+More simply though, the framework is probably generating an incorrect
+grammar, or the input that causes it to generate the grammar that it
+does is incorrect, or your input is not actually correct even thoguh it
+looks like it is.
+
+Generally, just don't use backtracking, but there are some situations
+where it might be useful:
+
+1) The input is guaranteed to be syntactically correct because it is
+generated by some program, that would be considered in error itself it
+generated syntactically incorrect code. For instance a symbolic
+representation of an intermediate step in a compiler (say assembler code
+generation);
+2) Performance and error localization are not an issue because the input
+is either correct or it isn't. For instance a code formatter can just
+abandon a format and say &quot;Your code is not correct, fix it and try
+again&quot;.
+3) At a push, prototyping. Though my own feeling here is that you end up
+with a weaker parser than you would and never get around to making the
+production version.
+4) One shot parsers, written to convert one thing in to another then
+thrown away (though they may be covered by 1 and 2 above really).
+
+If you can show a small grammar and an input set that does not parser
+correctly, then you will surely get Ter to fix it. So far thoguh, there
+is no indication of an error in ANTLR (that does not mean there isn't
+one, but that there is not enough information yet.)
+
+Hope this helps somewhat,
+
+Jim
+
+&gt;<i> 
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i> 
+</I>
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="031517.html">[antlr-interest] Listing order of NT alternatives on rhs of	production appears to affect &quot;accept/reject&quot; of parser for	fixed input.
+</A></li>
+	<LI>Next message: <A HREF="031541.html">[antlr-interest] Listing order of NT alternatives on rhs of production appears to affect &quot;accept/reject&quot; of parser for	fixed input.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#31522">[ date ]</a>
+              <a href="thread.html#31522">[ thread ]</a>
+              <a href="subject.html#31522">[ subject ]</a>
+              <a href="author.html#31522">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

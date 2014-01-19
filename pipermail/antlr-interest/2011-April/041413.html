@@ -1,0 +1,192 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] v2-&gt;v3 Skip chars in Lexer? Terrence?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20v2-%3Ev3%20Skip%20chars%20in%20Lexer%3F%20Terrence%3F&In-Reply-To=%3CC9D07A31.E9B9E%25ruslan_zasukhin%40valentina-db.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="041412.html">
+   <LINK REL="Next"  HREF="041415.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] v2-&gt;v3 Skip chars in Lexer? Terrence?</H1>
+    <B>Ruslan Zasukhin</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20v2-%3Ev3%20Skip%20chars%20in%20Lexer%3F%20Terrence%3F&In-Reply-To=%3CC9D07A31.E9B9E%25ruslan_zasukhin%40valentina-db.com%3E"
+       TITLE="[antlr-interest] v2-&gt;v3 Skip chars in Lexer? Terrence?">ruslan_zasukhin at valentina-db.com
+       </A><BR>
+    <I>Sun Apr 17 01:06:25 PDT 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="041412.html">[antlr-interest] v2-&gt;v3 Skip chars in Lexer? Terrence?
+</A></li>
+        <LI>Next message: <A HREF="041415.html">[antlr-interest] v2-&gt;v3 Skip chars in Lexer? Terrence?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#41413">[ date ]</a>
+              <a href="thread.html#41413">[ thread ]</a>
+              <a href="subject.html#41413">[ subject ]</a>
+              <a href="author.html#41413">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 4/16/11 9:27 PM, &quot;Jim Idle&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">jimi at temporal-wave.com</A>&gt; wrote:
+
+Hi Jim,
+
+&gt;<i> It is for performance and has been talked about for 4 years, so we don't
+</I>&gt;<i> need to start it again.
+</I>
+Okay, but may be it is good idea to add code-example into that FAQ page
+about this quotes?
+
+    <A HREF="http://www.antlr.org/wiki/pages/viewpage.action?pageId=1461">http://www.antlr.org/wiki/pages/viewpage.action?pageId=1461</A>
+
+There is no C Target example on this page.
+
+&gt;<i>  If we implement ! then you have to build the
+</I>&gt;<i> string in to every token and copy it,
+</I>
+Not very clear but ok.
+
+I have see in book it is possible to use labels in Lexer
+    IDENT:  q1=DQUOTE  something  q2=DQUOTE
+
+But how this helps? In book is shown useless example
+Action with  all labels
+        { $q1, something.text $q2 }
+
+I did think we can do some &quot;re-write&quot; in lexer, but nope
+So what use of that is not clear.
+
+
+&gt;<i> but basically it is easy to strip
+</I>&gt;<i> leading and trailing characters as the tokens carry pointers, so get the
+</I>&gt;<i> start pointer, increment it, get the end point, decrement it, now
+</I>&gt;<i> 
+</I>&gt;<i> Do not use the built in $token.text-&gt;chars as this is slow and just for
+</I>&gt;<i> convenience. 
+</I>
+&gt;<i> The token holds a pointer to the start of the text in the
+</I>&gt;<i> original input stream, which is greatly faster and you don&#185;t do anything
+</I>&gt;<i> at all to the token until and if you use it.
+</I>
+So I must check structure Token of C Target,
+And I should find there two pointers start/end and correct them.
+
+Ok clear, thank you, Jim.
+
+&gt;<i> You know the token type, so can handle it appropriately.
+</I>
+Why I should care about type?
+
+I should correct pointers at the end of lexer rule, right?
+
+&gt;<i> It is a trivial piece of code and you will
+</I>&gt;<i> want a generic method/function for getting the string anyway. It takes
+</I>&gt;<i> less time to implement it than to worry about ! not being there any more
+</I>&gt;<i> :-)
+</I>
+Piece of code may be trivial, but it takes hours to lean your C code.
+And this is where is problem IMO.
+
+This is why again I ask you to add best of the best example into that FAQ
+page. It should take 5 minutes only from you. And will help others.
+
+
+Problem2:  
+    you describe above effective solution only for skip FIRST/LAST quotes.
+    Good.   But you could see that we need yet remove INTERNAL quote
+    and this task require creation of COPY of string from original input.
+    Right?
+    
+STRING_LITERAL
+@init
+{
+    int dquotes_count = 0;
+}
+    :    QUOTE 
+        (    ESCAPE_SEQUENCE
+        |    ~('\'' | '\\')
+        |    QUOTE QUOTE            { ++dquotes_count; }
+        )* 
+        QUOTE 
+        
+        {
+            // Remove the first and the last chars:
+            pANTLR3_STRING pQuotedStr = GETTEXT();
+            pANTLR3_STRING pStr = pQuotedStr-&gt;subString( pQuotedStr, 1,
+pQuotedStr-&gt;len - 1 );
+            
+            char* pStart = (char*) pStr-&gt;chars;
+            
+            while( dquotes_count-- )
+            {
+                char* pFirstQuote = strchr( pStart, '\'' );
+                
+                if( *(pFirstQuote + 1) != '\'' ) // second quote?
+                    continue;
+                   
+                // Example: 'aabbcc''def'
+                int CharsOnLeft = pFirstQuote - pStart + 1;
+                int CharsToMove = pStr-&gt;len - CharsOnLeft;
+                   
+                ANTLR3_MEMMOVE( pFirstQuote + 1, pFirstQuote + 2,
+CharsToMove );
+
+                // prepare for possible next loop:
+                pStart = pFirstQuote + 1;
+                pStr-&gt;len--;
+            }
+            
+            SETTEXT( pStr );
+        }
+    ;
+
+
+
+
+
+-- 
+Best regards,
+
+Ruslan Zasukhin
+VP Engineering and New Technology
+Paradigma Software, Inc
+
+Valentina - Joining Worlds of Information
+<A HREF="http://www.paradigmasoft.com">http://www.paradigmasoft.com</A>
+
+[I feel the need: the need for speed]
+
+</PRE>
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="041412.html">[antlr-interest] v2-&gt;v3 Skip chars in Lexer? Terrence?
+</A></li>
+	<LI>Next message: <A HREF="041415.html">[antlr-interest] v2-&gt;v3 Skip chars in Lexer? Terrence?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#41413">[ date ]</a>
+              <a href="thread.html#41413">[ thread ]</a>
+              <a href="subject.html#41413">[ subject ]</a>
+              <a href="author.html#41413">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

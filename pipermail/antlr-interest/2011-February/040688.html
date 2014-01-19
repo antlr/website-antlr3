@@ -1,0 +1,263 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] How do I accept input ending with a newline	*or* EOF?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20How%20do%20I%20accept%20input%20ending%20with%20a%20newline%0A%09%2Aor%2A%20EOF%3F&In-Reply-To=%3CAANLkTin3iQc2wri7U5TEiQN%3Dd3-Bi8cFL9pLD4dM_NmV%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="040685.html">
+   <LINK REL="Next"  HREF="040689.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] How do I accept input ending with a newline	*or* EOF?</H1>
+    <B>Kirby Bohling</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20How%20do%20I%20accept%20input%20ending%20with%20a%20newline%0A%09%2Aor%2A%20EOF%3F&In-Reply-To=%3CAANLkTin3iQc2wri7U5TEiQN%3Dd3-Bi8cFL9pLD4dM_NmV%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] How do I accept input ending with a newline	*or* EOF?">kirby.bohling at gmail.com
+       </A><BR>
+    <I>Thu Feb  3 17:05:20 PST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="040685.html">[antlr-interest] How do I accept input ending with a newline	*or* EOF?
+</A></li>
+        <LI>Next message: <A HREF="040689.html">[antlr-interest] How do I accept input ending with a newline	*or* EOF?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40688">[ date ]</a>
+              <a href="thread.html#40688">[ thread ]</a>
+              <a href="subject.html#40688">[ subject ]</a>
+              <a href="author.html#40688">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Thu, Feb 3, 2011 at 6:00 PM, chris king &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">kingces95 at gmail.com</A>&gt; wrote:
+&gt;<i> Kirby thanks! That helped a ton and thanks for that + vs * tip. A real life
+</I>&gt;<i> saver.
+</I>&gt;<i> I have another problem&#160;and I'm hoping you can point me in the right
+</I>&gt;<i> direction. I'm trying to chose between two&#160;approaches for building for&#160;a
+</I>&gt;<i> pre-processor. The first (1)&#160;approach is to have the pre-processor pass
+</I>&gt;<i> tokens to the compiler. The second (2) approach is to have the pre-processor
+</I>&gt;<i> pass strings (those that have not been #if defed out) to the compiler. The
+</I>&gt;<i> former&#160;seems more natural&#160;but complicates the lexer because the the lexing
+</I>&gt;<i> is context sensitive (see below). The latter simplifies both pre-processor
+</I>&gt;<i> and compiler but feels ugly because it requires the input to be lexered
+</I>&gt;<i> twice.
+</I>&gt;<i> As I said, the problem I encountered with the first approach is that the
+</I>&gt;<i> lexer is context sensitive. For example, consider the following toy grammar
+</I>&gt;<i> where pre-processor identifiers can be upper or lower case but language
+</I>&gt;<i> identifiers can only be lower case. The input &quot;'#define HELLO&quot; parses fine
+</I>&gt;<i> but &quot;#define hello&quot; fails because (I assume) &quot;hello&quot; could be match by two
+</I>&gt;<i> lexer productions -- ID and PP_ID. I tried inserting a predicate in ID
+</I>&gt;<i> (e.g.&#160;ID :&#160;{false}?=&gt; 'a'..'z';) to provide context but if I do then
+</I>&gt;<i> ANTLRWorks spins when I try to&#160;interpret any input. I've also tried fiddling
+</I>&gt;<i> with the order of ID and PP_ID but each ordering has it's own problems (e.g.
+</I>&gt;<i> can only make one of the following for a given order: { &quot;hello&quot;, &quot;#define
+</I>&gt;<i> hello&quot; }).
+</I>
+Chris,
+
+   I'm not much of an ANTLR expert, but here are my thoughts.  My
+first thought is go read what Jim Idle has to say on the list, he
+dispenses a lot of practical advice about parsing.  In this case, I
+believe Jim's stock advice is that you are doing too much in the lexer
+and parser.  In order to generate decent error messages, you should
+just skip figuring out if the item is in capital or lower case letters
+until after the input is parsed.  Just have one rule 'ID'.  Once you
+have the whole thing parsed and in memory, use a tree walker to
+validate that the input consumed by the ID that is after a '#define'
+is in all caps.  If it isn't, print out a really nice error message,
+when you have a lot of semantic information and context to print out a
+good error.
+
+First, you're mistaken about why &quot;hello&quot; vs. &quot;HELLO&quot; is causing you
+problems.  It can be lexed exactly one way.  If it matches two rules,
+the first rule listed wins (if you inverted ID and PP_ID, then ID
+tokens could never be generated).  One of the things about ANTLR is
+that the lexer runs to completion before the parser ever runs (even if
+it doesn't, it logically does).  I always split up my lexer and
+parser, specifically so I never get confused into thinking that the
+parser will cause the lexer to backtrack and generate a new token type
+(it would with other parser rules, but tokens, absolutely not).  The
+lexer has some other behavior that isn't like the parser.  That's the
+advanced lesson for a different e-mail.
+
+So if for some reason you insist on doing the validation early do
+something like this:
+
+pp_input:
+'#' 'define' (ID|PP_ID)+ (NEW_LINE | EOF)
+;
+
+Down lower, I'd point out that you really want to to be: (ID|PP_ID)
+with no plus after it (or better yet just have it be 'ID' if you
+follow the advice above), I think your lexer rule is not doing what
+you expect.  Which leads to another piece of advice:
+
+Lex your stuff, and then dump it out in a format that makes sense to
+you, print the token and then the token text.  Make absolutely sure
+the lexer is generating what you expect (the lexer has a lot more
+surprises then the parser does IMHO).  Then go mentally execute the
+parser, and figure out what is going on.  In this case 'hello' is
+generating an 'ID' token, and your rule only allowed a 'PP_ID' token.
+That is the likely culprit with some of the problems you are
+describing.
+
+&gt;<i> start
+</I>&gt;<i> &#160;&#160; &#160; &#160; &#160;: input*
+</I>&gt;<i> &#160;&#160; &#160; &#160; &#160;;
+</I>&gt;<i> input
+</I>&gt;<i> &#160;&#160; &#160; &#160; &#160;: ID+ (NEW_LINE | EOF)
+</I>&gt;<i> &#160;&#160; &#160; &#160; &#160;| pp_input
+</I>&gt;<i> &#160;&#160; &#160; &#160; &#160;;
+</I>&gt;<i> pp_input
+</I>&gt;<i> &#160;&#160; &#160; &#160; &#160;: '#' 'define' PP_ID+ (NEW_LINE | EOF)
+</I>&gt;<i> &#160;&#160; &#160; &#160; &#160;;
+</I>&gt;<i> NEW_LINE
+</I>&gt;<i> &#160;&#160; &#160; &#160; &#160;: '\r' '\n'
+</I>&gt;<i> &#160;&#160; &#160; &#160; &#160;;
+</I>&gt;<i> ID
+</I>&gt;<i> &#160;&#160; &#160; &#160; &#160;: 'a'..'z';
+</I>&gt;<i>
+</I>&gt;<i> PP_ID
+</I>&gt;<i> &#160;&#160; &#160; &#160; &#160;: 'a'..'z'
+</I>&gt;<i> &#160;&#160; &#160; &#160; &#160;| 'A'..'Z';
+</I>
+I'd not put '#' 'define' in a parser rule.  I'd make it a proper token
+for clarity.
+
+Next, I'm pretty sure you mean that ID has a value of 'hello', the way
+you have the rules constructed, the input 'hello' is 5 tokens (one of
+'h', 'e', 'l', 'l', and 'o').  So first things, first, I'd fix that
+(and PP_ID analogously, if you insist on keeping it).
+
+You aren't skipping whitespace, but I'm assuming you just elided that
+from this grammar.
+
+Next, are you sure you don't mean ('\n' | '\r') for new line?  I think
+I'd just follow Jim's advice and ensure that you have a new line at
+the end.  It would make the EOF handling much easier (or barring that,
+just add EOF to as an alternative to NEWLINE rule and the grammar
+becomes easier to read).
+
+Finally, I'd stop using ANTLR works temporarily.  I'd generate the
+code, and step through the Java in a debugger.  One of the beauties of
+ANTLR is that you can tell a _lot_ about what is going on just from
+the stack trace and stepping through the code (recursive descent
+parsers are fantastic in this respect).
+
+If it is spinning, that is generally a sign that you have done
+something silly and have a rule that allow consumes no input and is
+repeated.  There is nothing obvious to me just from looking at the
+grammar.  You've got enough small problems that I'll let you sort
+those out first.  From what you've sent me, nothing would actually
+work, so it'll be hard to figure out what is really going on with
+precision.
+
+I'd split your input rule just for symmetry to be something like:
+
+input :
+     ID+ (NEW_LINE | EOF)
+;
+
+pp_input:
+     DEFINE PP_ID+ (NEW_LINE | EOF)
+;
+
+Then have a third rule like:
+
+stmt:
+    (input | pp_input)
+;
+
+Modify the start to use it:
+start:
+    (stmt)* EOF;
+
+I like the symmetry, and I would guess it makes it easier to read the
+stack traces to figure out where you are (you can tell if it is
+attempting to parse the input as a input, or as a pre-processor
+input).
+
+Again, my suggestions very concisely are:
+
+1. Split the Lexer and the Parser up.
+2. Do not use the ability to have generated tokens in the parser (read
+remove '#define' from the parser rule.
+3. Don't try and differentiate between the uppercase/lowercase stuff
+inside the lexer.
+4. Run the lexer and make sure it generates exactly the tokens you think it is.
+5. Run the parser in a debugger, recursive descent style parsers are
+how you would write a parser by hand, so they make a lot of sense when
+you step through them and the stack traces tell you exactly how it is
+attempting to match the input so far.
+
+Thanks,
+   Kirby
+
+PS:  Assembling all my instructions, except splitting the lexer and
+parser apart (and not running any of this, so if it breaks, keep the
+pieces):
+
+// Add EOF, to force all the input to be consumed, or generate an error.
+start:
+    stmt* EOF
+        ;
+
+stmt:
+    input|pp_input
+;
+
+input
+        : ID NEW_LINE;
+        ;
+
+pp_input
+        :  DEFINE ID NEW_LINE
+        ;
+
+// NOTE: This is going to cause you problems if you have a '#', but
+not a '#define'
+// again I'm skipping that to get you past this point.
+DEFINE:
+    '#define'
+;
+
+NEW_LINE
+        : '\r' '\n' | EOF
+        ;
+ID
+        : 'a'..'z'
+        | 'A'..'Z';
+
+// Add a whitespace rule somewhere in here...
+
+&lt;snip...&gt;
+</PRE>
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="040685.html">[antlr-interest] How do I accept input ending with a newline	*or* EOF?
+</A></li>
+	<LI>Next message: <A HREF="040689.html">[antlr-interest] How do I accept input ending with a newline	*or* EOF?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40688">[ date ]</a>
+              <a href="thread.html#40688">[ thread ]</a>
+              <a href="subject.html#40688">[ subject ]</a>
+              <a href="author.html#40688">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

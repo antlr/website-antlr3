@@ -1,0 +1,246 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Interface between a C preprocessor and the C grammar parsers
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Interface%20between%20a%20C%20preprocessor%20and%20the%20C%0A%20grammar%20parsers&In-Reply-To=%3C49C13B63.3040607%40jazillian.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="033420.html">
+   <LINK REL="Next"  HREF="033421.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Interface between a C preprocessor and the C grammar parsers</H1>
+    <B>Andy Tripp</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Interface%20between%20a%20C%20preprocessor%20and%20the%20C%0A%20grammar%20parsers&In-Reply-To=%3C49C13B63.3040607%40jazillian.com%3E"
+       TITLE="[antlr-interest] Interface between a C preprocessor and the C grammar parsers">antlr at jazillian.com
+       </A><BR>
+    <I>Wed Mar 18 11:20:19 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="033420.html">[antlr-interest] Interface between a C preprocessor and the C	grammar parsers
+</A></li>
+        <LI>Next message: <A HREF="033421.html">[antlr-interest] My kooky ASN.1 grammar again - can't find the	ambiguity
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#33481">[ date ]</a>
+              <a href="thread.html#33481">[ thread ]</a>
+              <a href="subject.html#33481">[ subject ]</a>
+              <a href="author.html#33481">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+Vincent De Groote wrote:
+&gt;<i> Hello,
+</I>&gt;<i> 
+</I>&gt;<i> I need to build a program which reads C language files, modifies the 
+</I>&gt;<i> files (code transformations), then save the files back to disk. The 
+</I>&gt;<i> saved files must have the original file structure, with unexpanded 
+</I>&gt;<i> include files,  unexpanded macros, inactive lines (skipped by the 
+</I>&gt;<i> preprocessor), ...  Beside the code rewrite functionnality, the program 
+</I>&gt;<i> must also be able to reformat source code, based on its syntactic structure.
+</I>&gt;<i> 
+</I>&gt;<i> This means that the tokens hidden to the grammatical parser must be 
+</I>&gt;<i> accessible to the final application.
+</I>&gt;<i> 
+</I>&gt;<i> I'm really a newbie in parsing, and I need some advices on how to do this.
+</I>&gt;<i> 
+</I>&gt;<i> My first questions are about the interface between the preprocessor and 
+</I>&gt;<i> the C grammar parser:
+</I>&gt;<i> 
+</I>&gt;<i> - Should the preprocessor parser be embedded in the C grammar ?  (This 
+</I>&gt;<i> seems a little ugly)
+</I>
+Yes. I embed the following in my C grammar:
+ppline
+    : ppdefine
+    | ppinclude
+    | ppif
+    ;
+
+ppdefine
+    : PPdefine^ ID ( ppdefineArgs )? (
+        constExpr
+        | ID
+        | Number
+        | StringLiteral
+        |   // empty
+    )
+    ;
+
+ppdefineArgs
+    : LPAREN! ( ID )? ( COMMA! ID )* RPAREN!
+                { ## = #( #[NPPdefineArgs], ## );}
+    ;
+
+ppinclude
+    : ( PPinclude^ LT ) =&gt; PPinclude^ LT! ( ~(GT) )+ GT!
+    | PPinclude^ StringLiteral
+    ;
+
+ppif
+    // need to do lookahead because &quot;#if&quot;, &quot;#ifdef&quot;, and &quot;#ifndef&quot; are the same
+for k==3
+    : ( ( PPifndef ) =&gt; PPifndef^ | ( PPifdef ) =&gt; PPifdef^ | ( PPif ) =&gt; PPif^
+)
+            ppexpr ( ppline )+ ( ppelif )* ( ppelse )? PPendif!
+    ;
+
+/*
+ppifdef
+    // we could use &quot;ID&quot; instead of ppexpr below, but this way it's easier
+    // to work with the AST
+    : PPifdef^ ppexpr ( ppline )+ ( ppelif )* ( ppelse )? PPendif!
+    ;
+*/
+
+ppelif
+    : PPelif! ppexpr ( ppline )*
+                { ## = #( #[NPPelif], ## );}
+    ;
+
+ppelse
+    : PPelse! ( ppline )*
+                { ## = #( #[NPPelse], ## );}
+    ;
+
+ppexpr
+    : ppAndExpr ( LOR^ ppAndExpr )*
+                { ## = #( #[NPPexpr], ## );}
+    ;
+
+ppAndExpr
+    : ppNotExpr ( LAND^ ppNotExpr )*
+    ;
+
+ppNotExpr
+    : ( LNOT^ )? ppExprTerminal
+    ;
+
+ppExprTerminal
+    : ( PPDEFINED ) =&gt; PPDEFINED^ LPAREN! ID RPAREN!
+    | ID
+    | Number
+    ;
+
+&gt;<i> - Should the preprocessor parser be a syntaxical parser (with 
+</I>&gt;<i> productions like active/incative lines, start and end of includes, ...), 
+</I>&gt;<i> or a lexical parser ?
+</I>
+People generally call them a &quot;lexer&quot; and a &quot;parser&quot;, and ANTLR generates
+both from a single grammar. The rules above are parser rules. You'll also
+need to add these lexer rules:
+PPDEFINED       : &quot;defined&quot;;
+PPdefine    : &quot;#define&quot; ;
+PPif        : &quot;#if&quot; ;
+PPelse      : &quot;#else&quot; ;
+PPelif      : &quot;#elif&quot; ;
+PPendif     : &quot;#endif&quot; ;
+PPinclude   : &quot;#include&quot; ;
+PPifdef     : &quot;#ifdef&quot; ;
+PPifndef    : &quot;#ifndef&quot;;
+
+
+and these &quot;imaginary tokens&quot;:
+        |       NPPblock
+        |       NPPline
+        |       NPPelif
+        |       NPPelse
+
+&gt;<i> -  What should this preprocessor parser return ? 
+</I>&gt;<i>    - A list of tokens (with their channel set to hidden / visible) (is 
+</I>&gt;<i> it possible for a grammatical parser to return a token list) ?
+</I>&gt;<i>    - A tree structure with the structure of the file ?
+</I>&gt;<i>    - Something other ?
+</I>
+If you just enhance the C parser to handle preprocessor directives like this,
+the preprocessor stuff will just show up as nodes in your C parser's AST.
+
+&gt;<i> 
+</I>&gt;<i> Other questions about the C grammar parser:
+</I>&gt;<i> 
+</I>&gt;<i> In the reference book (The Definitive ANTLR Reference: Building Domain 
+</I>&gt;<i> Specific languages), I read that an AST should not contain syntax-only 
+</I>&gt;<i> tokens, like the ';' statement separator, parentheses used to change 
+</I>&gt;<i> operation precedence ...  I do not understand why  an AST should not 
+</I>&gt;<i> contain such tokens.  I suppose they are just useless in an AST.  Are 
+</I>&gt;<i> there other reasons ?
+</I>
+No, just that they're useless. Note that the &quot;cgram&quot; ANTLR grammar
+does put a lot of these useless tokens in the AST. I usually find it
+easier to just ignore them when processing the AST, rather than futzing with
+the grammar to stop them from from going into the AST.
+
+&gt;<i> 
+</I>&gt;<i> This book is well written, but I'm not sure to be able to select the 
+</I>&gt;<i> best choice  between AST, Tree, custom made structures ...
+</I>
+Start by using AST, then if/when you start needing features that AST doesn't have,
+subclass it.
+
+&gt;<i> 
+</I>&gt;<i> If the AST is not the good structure to return the parsed grammar to the 
+</I>&gt;<i> caller, I suppose I could use custom made structures.  But is that the 
+</I>&gt;<i> best choice ?
+</I>
+AST certainly has the basic tree operations that you'll need, so don't
+start from scratch. Subclass AST as needed.
+&gt;<i> 
+</I>&gt;<i> I do not understand very well the differences between an abstract tree 
+</I>&gt;<i> and a concrete tree (I'm really a newbie ...). 
+</I>&gt;<i> Some hints about these differences are welcome.
+</I>
+The AST is the essence of the parsed source code, stored in a tree-like
+data structure. Don't worry about a concrete tree, you won't be using it.
+&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> Thanks for your replies,
+</I>&gt;<i> 
+</I>&gt;<i> Vincent De Groote
+</I>
+Your task is far harder than it looks.
+I'm currently working on a thing that just adds &quot;printf&quot; calls 
+after every assignment in C code. It's quite amazing how 
+difficult it is, especially after seeing how easy it is
+for &quot;C-&quot; in the book. 
+
+The outputting of formatted code will be the easy part.
+You can either use a treewalker or my &quot;by hand&quot; approach:
+<A HREF="http://www.jazillian.com/antlr/emitter.html">http://www.jazillian.com/antlr/emitter.html</A>
+
+Good luck. 
+Andy
+
+
+</PRE>
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="033420.html">[antlr-interest] Interface between a C preprocessor and the C	grammar parsers
+</A></li>
+	<LI>Next message: <A HREF="033421.html">[antlr-interest] My kooky ASN.1 grammar again - can't find the	ambiguity
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#33481">[ date ]</a>
+              <a href="thread.html#33481">[ thread ]</a>
+              <a href="subject.html#33481">[ subject ]</a>
+              <a href="author.html#33481">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

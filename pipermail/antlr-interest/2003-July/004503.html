@@ -1,0 +1,127 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Re: Reusing Lexer/Parser instances
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20Reusing%20Lexer/Parser%20instances&In-Reply-To=beok6n%2Blr6v%40eGroups.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004501.html">
+   <LINK REL="Next"  HREF="004491.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Re: Reusing Lexer/Parser instances</H1>
+    <B>Brian Smith</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20Reusing%20Lexer/Parser%20instances&In-Reply-To=beok6n%2Blr6v%40eGroups.com"
+       TITLE="[antlr-interest] Re: Reusing Lexer/Parser instances">brian-l-smith at uiowa.edu
+       </A><BR>
+    <I>Sat Jul 12 18:44:49 PDT 2003</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004501.html">[antlr-interest] Re: Reusing Lexer/Parser instances
+</A></li>
+        <LI>Next message: <A HREF="004491.html">[antlr-interest] another nondeterminism question
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4503">[ date ]</a>
+              <a href="thread.html#4503">[ thread ]</a>
+              <a href="subject.html#4503">[ subject ]</a>
+              <a href="author.html#4503">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I had a requirement that I had to recognize identifiers (&quot;unquoted 
+names&quot; below) quickly. After profiling to find the performance problem 
+in my application, I ended up writing this in my lexer (SmnLexer.g) so 
+that I could reuse a lexer instance. It isn't the most elegant but it 
+works in my application:
+
+private static class StringMatchBuffer extends antlr.InputBuffer {
+StringMatchBuffer() { super(); }
+    public String text;
+
+    /** Ensure that the input buffer is sufficiently full */
+    public void fill(int amount) { syncConsume(); }
+
+    public String getLAChars() {
+       return text.substring(markerOffset + numToConsume);
+    }
+
+    public String getMarkedChars() {
+         throw new UnsupportedOperationException();
+    }
+
+    /** Get a lookahead character */
+    public char LA(int i) throws antlr.CharStreamException {
+        int index = markerOffset + numToConsume + i - 1;
+        return index &gt;= text.length() ? EOF_CHAR : text.charAt(index);
+    }
+
+    /** Sync up deferred consumption */
+    protected void syncConsume() {
+        markerOffset += numToConsume;
+        numToConsume = 0;
+    }
+}
+
+private final static StringMatchBuffer stringMatchBuffer
+      = new StringMatchBuffer();
+private final static SmnLexer stringMatchLexer
+      = new SmnLexer(new antlr.LexerSharedInputState(stringMatchBuffer));
+private int rememberTokenType;
+
+public static synchronized boolean matchesUnquotedName(String s) {
+     try {
+         stringMatchBuffer.text = s;
+         stringMatchLexer.inputState.reset();
+         stringMatchLexer.rememberTokenType = Token.INVALID_TYPE;
+         stringMatchLexer.resetText();
+         stringMatchLexer.mUNQUOTED_NAME(false);
+         return stringMatchLexer.rememberTokenType
+                ==  SmnLexerTokenTypes.UNQUOTED_NAME
+            &amp;&amp; stringMatchLexer.LA(1) == EOF_CHAR;
+     } catch (ANTLRException e) {
+         return false;
+     }
+}
+
+Lexer rule:
+
+UNQUOTED_NAME
+     : ( ('A'..'Z' | 'a'..'z') ('A'..'Z' | 'a'..'z' | '0'..'9' | '_' )* )
+     {   $setType(testLiteralsTable(_ttype));
+         rememberTokenType = _ttype;
+     }
+     ;
+
+
+
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004501.html">[antlr-interest] Re: Reusing Lexer/Parser instances
+</A></li>
+	<LI>Next message: <A HREF="004491.html">[antlr-interest] another nondeterminism question
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4503">[ date ]</a>
+              <a href="thread.html#4503">[ thread ]</a>
+              <a href="subject.html#4503">[ subject ]</a>
+              <a href="author.html#4503">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

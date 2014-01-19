@@ -1,0 +1,164 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] [C Runtime] Token issues (predicates and	indices) and composition tree grammars
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5BC%20Runtime%5D%20Token%20issues%20%28predicates%20and%0A%09indices%29%20and%20composition%20tree%20grammars&In-Reply-To=%3C27766db30808261445j11469fb1n45c5feb69818c5ee%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="030344.html">
+   <LINK REL="Next"  HREF="030347.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] [C Runtime] Token issues (predicates and	indices) and composition tree grammars</H1>
+    <B>Kurt Otte</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5BC%20Runtime%5D%20Token%20issues%20%28predicates%20and%0A%09indices%29%20and%20composition%20tree%20grammars&In-Reply-To=%3C27766db30808261445j11469fb1n45c5feb69818c5ee%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] [C Runtime] Token issues (predicates and	indices) and composition tree grammars">kurtotte at gmail.com
+       </A><BR>
+    <I>Tue Aug 26 14:45:58 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="030344.html">[antlr-interest] [C Runtime] Token issues (predicates and	indices) and	composition tree grammars
+</A></li>
+        <LI>Next message: <A HREF="030347.html">[antlr-interest] Nested Generics - Java Grammar
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30379">[ date ]</a>
+              <a href="thread.html#30379">[ thread ]</a>
+              <a href="subject.html#30379">[ subject ]</a>
+              <a href="author.html#30379">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Jim,
+
+On Mon, Aug 25, 2008 at 5:12 PM, Jim Idle &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">jimi at temporal-wave.com</A>&gt; wrote:
+
+&gt;<i>  On Mon, 2008-08-25 at 15:53 -0600, Kurt Otte wrote:
+</I>&gt;<i>
+</I>&gt;<i>  -------------------------------------------------------
+</I>&gt;<i>
+</I>&gt;<i> *Validating predicates in the tree grammars return incorrect token info*
+</I>&gt;<i>
+</I>&gt;<i> To reproduce this run: ex1.exe test/tree_validating_error.txt
+</I>&gt;<i>
+</I>&gt;<i> This produces the following output:
+</I>&gt;<i> =====
+</I>&gt;<i> (BAR (CNAME (VAR (CNAME a) (CNAME b) c) (CNAME _a)) foo)
+</I>&gt;<i> -Imaginary-(0)  : error 6 : (0), at offset 0, near UP : syntax not
+</I>&gt;<i> recognized...
+</I>&gt;<i>
+</I>&gt;<i> tree_validating_error.txt(4)  : error 3 : , at offset 11, near foo : cannot
+</I>&gt;<i> match to any predicted input...
+</I>&gt;<i>
+</I>&gt;<i> I'll look but I think this is a grammar error. Probably trying to match
+</I>&gt;<i> ^(TOKEN)
+</I>&gt;<i>
+</I>
+Thank you.   It would appear that when the validating predicate fails it
+doesn't create a failed predicate exception with the right token.  Rather it
+seems to fail down a different path and ends up with a mismatched token
+exception with the wrong token.
+
+&gt;<i>
+</I>&gt;<i>  =====
+</I>&gt;<i>
+</I>&gt;<i> Looking at the grammar in ex1walker.g, I have the following validation
+</I>&gt;<i> predicate:
+</I>&gt;<i>
+</I>&gt;<i> // force this false to trigger an error
+</I>&gt;<i> var_cname
+</I>&gt;<i>  : ^(CNAME NAME {(0)}? cname?)
+</I>&gt;<i> ;
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> This forces a token to fail due to the predicate returning false
+</I>&gt;<i> (hard-coded in this example).  What token should the error be on?  I think
+</I>&gt;<i> there is some confusion here between a disambiguating semantic predicate and
+</I>&gt;<i> a validating semantic predicate.  It seems the disambiguating semantic
+</I>&gt;<i> predicate wants the error to be on the next token, but the validating
+</I>&gt;<i> semantic predicate want the error on the previous token.  However, when
+</I>&gt;<i> walking through the code, the function antlr3RecognitionExceptionNew seems
+</I>&gt;<i> to always grab the next token.  In my example, this token ends up being the
+</I>&gt;<i> imaginary UP token.  This leads to a confusing non-helpful error message.
+</I>&gt;<i> Is it possible to look up different tokens in the error handler?
+</I>&gt;<i>
+</I>&gt;<i> The error handler is really just a template. I can't predict what you need
+</I>&gt;<i> from it, especially in tree walkers. Override the handler function with your
+</I>&gt;<i> own. The default is designed to be helpful to a grammar programmer and as
+</I>&gt;<i> such will confuse the hell out of your users. You should not be getting
+</I>&gt;<i> recognition errors on your AST though and unless there is some real strange
+</I>&gt;<i> reason to have them, you should not need syntactic predicates as you should
+</I>&gt;<i> produce an unambiguous AST.
+</I>&gt;<i>
+</I>
+I have overridden the error handler, but how do I get a different token
+after I am inside the error handler.  For example, if I detect that the
+token is an UP, I would prefer to back up to closest real token to get
+context.  If it is a DOWN, I would prefer to move forward to the next real
+token; however, at this point I would just settle for any real token so I
+can get context of about which line the problem is happening.  I have
+experimented with _LT(yada,-1) and _LA(yada,-1); however, they don't appear
+to be working when called from the error handler.  What is the recommended
+way to get a different token from the stream in a error handler?
+
+&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Changing antlr3RecognitionExceptionNew to call _LT(tns,-1) for the
+</I>&gt;<i> ANTLR3_COMMONTREENODE case (change 1 to -1 to get previous token) seems to
+</I>&gt;<i> fix the problem for this particular example, but won't work for the general
+</I>&gt;<i> case.  This change causes the following expected output:
+</I>&gt;<i>
+</I>&gt;<i> test/tree_validating_error.txt(4)  : error 6 : (0), at offset 2, near a :
+</I>&gt;<i> syntax not recognized...
+</I>&gt;<i>
+</I>&gt;<i> It seems there needs to be a way to change the error handling depending on
+</I>&gt;<i> whether we are in a disambiguating predicate or a validating predicate, but
+</I>&gt;<i> I am not sure how that would be done.
+</I>&gt;<i>
+</I>&gt;<i> I think that you should be able to produce an AST that does need
+</I>&gt;<i> disambiguation, but there are times when you might need this for partial
+</I>&gt;<i> tree matching I supppose.
+</I>&gt;<i>
+</I>
+I use this to verify symbols have been previously declared so I need to
+write a bit of code to check internal data structures to make sure the
+statement is valid with a previously delcared symbol.
+
+Thanks,
+
+Kurt
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20080826/5d1fbce7/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20080826/5d1fbce7/attachment.html</A> 
+</PRE>
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="030344.html">[antlr-interest] [C Runtime] Token issues (predicates and	indices) and	composition tree grammars
+</A></li>
+	<LI>Next message: <A HREF="030347.html">[antlr-interest] Nested Generics - Java Grammar
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30379">[ date ]</a>
+              <a href="thread.html#30379">[ thread ]</a>
+              <a href="subject.html#30379">[ subject ]</a>
+              <a href="author.html#30379">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

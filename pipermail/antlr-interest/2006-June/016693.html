@@ -1,0 +1,132 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Re: [antlr-dev] Hitting method size limit
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20%5Bantlr-dev%5D%20Hitting%20method%20size%20limit&In-Reply-To=200606221516.49327.e.papegaaij%40student.utwente.nl">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="016692.html">
+   <LINK REL="Next"  HREF="016694.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Re: [antlr-dev] Hitting method size limit</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20%5Bantlr-dev%5D%20Hitting%20method%20size%20limit&In-Reply-To=200606221516.49327.e.papegaaij%40student.utwente.nl"
+       TITLE="[antlr-interest] Re: [antlr-dev] Hitting method size limit">parrt at cs.usfca.edu
+       </A><BR>
+    <I>Thu Jun 22 14:22:08 PDT 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="016692.html">[antlr-interest] Need help with an address parser
+</A></li>
+        <LI>Next message: <A HREF="016694.html">[antlr-interest] Re: [antlr-dev] Hitting method size limit
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#16693">[ date ]</a>
+              <a href="thread.html#16693">[ thread ]</a>
+              <a href="subject.html#16693">[ subject ]</a>
+              <a href="author.html#16693">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>[switching to antlr-interest]
+
+Emond,  I changed the grammar to use fragment instead of protected  
+and then chagned
+
+fragment
+NESTED_METHOD_BODY_ACTION
+	: {bodyFollow}?=&gt;
+	'{'
+	( NESTED_METHOD_BODY_ACTION
+	| CHAR_LITERAL_ACTION
+	| STRING_LITERAL_ACTION
+	| .
+	)*
+	'}'
+	;
+
+to use ~('{'|'\''|'&quot;') instead of .  It now terminates, but rules like:
+
+METHOD_SIG_ACTION: {sigFollow}?=&gt;
+                    {sigFollow = false;}
+                    (~(';'|'{'))+
+                    {bodyFollow = true;};
+
+EXPRESSION_ACTION: {exprFollow}?=&gt;
+                    {exprFollow = false;}
+                    (~';')+;
+
+severely overlap with each other and all the other rules.  Moreover,  
+some of these rules are recursive, which means the DFA cannot see  
+inside.  ANTLR is going crazy building bigger and bigger DFAs trying  
+to see past the recursion.
+
+A better way is to use the filter=true option.  Then just list the  
+tokens with your predicates; ANTLR will backtrack so it will be  
+slower but you can do some really ambiguous stuff.  Things seen first  
+take precedence.
+
+Look at codegen/action.g in distribution, which is the $x.y  
+translator for actions.  It does stuff like:
+
+ENCLOSING_RULE_SCOPE_ATTR
+	:	'$' x=ID '.' y=ID	{enclosingRule!=null &amp;&amp;
+	                         $x.text.equals(enclosingRule.name) &amp;&amp;
+	                         enclosingRule.getLocalAttributeScope 
+($y.text)!=null}?
+		...
+	;
+
+TOKEN_SCOPE_ATTR
+	:	'$' x=ID '.' y=ID	{enclosingRule!=null &amp;&amp;
+	                         (enclosingRule.getTokenLabel($x.text)!=null||
+	                          isTokenRefInAlt($x.text)) &amp;&amp;
+	                         AttributeScope.tokenScope.getAttribute 
+($y.text)!=null}?
+		...
+	;
+
+LABEL_REF
+	:	'$' ID {enclosingRule!=null &amp;&amp;
+	            getElementLabel($ID.text)!=null &amp;&amp;
+		        enclosingRule.getRuleLabel($ID.text)==null}?
+		...
+	;
+
+These are all highly ambiguous but are resolved with predicates that  
+fail/succeed after the syntax matches.  The default backtracking of  
+the filter makes the lexer rewind and try next rule.  You should see  
+a stream of tokens come out like normal even though this is &quot;filter&quot;  
+mode.
+
+Ter
+</PRE>
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="016692.html">[antlr-interest] Need help with an address parser
+</A></li>
+	<LI>Next message: <A HREF="016694.html">[antlr-interest] Re: [antlr-dev] Hitting method size limit
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#16693">[ date ]</a>
+              <a href="thread.html#16693">[ thread ]</a>
+              <a href="subject.html#16693">[ subject ]</a>
+              <a href="author.html#16693">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

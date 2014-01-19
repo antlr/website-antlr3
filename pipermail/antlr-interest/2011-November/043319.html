@@ -1,0 +1,170 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] [C] my v3 Parser no reuse() slower 20% than v2. With reuse() 2GB leaks, oops.
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5BC%5D%20my%20v3%20Parser%20no%20reuse%28%29%20slower%2020%25%20than%0A%20v2.%20With%20reuse%28%29%202GB%20leaks%2C%20oops.&In-Reply-To=%3CCAE9B300.F586D%25ruslan_zasukhin%40valentina-db.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="043318.html">
+   <LINK REL="Next"  HREF="043320.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] [C] my v3 Parser no reuse() slower 20% than v2. With reuse() 2GB leaks, oops.</H1>
+    <B>Ruslan Zasukhin</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5BC%5D%20my%20v3%20Parser%20no%20reuse%28%29%20slower%2020%25%20than%0A%20v2.%20With%20reuse%28%29%202GB%20leaks%2C%20oops.&In-Reply-To=%3CCAE9B300.F586D%25ruslan_zasukhin%40valentina-db.com%3E"
+       TITLE="[antlr-interest] [C] my v3 Parser no reuse() slower 20% than v2. With reuse() 2GB leaks, oops.">ruslan_zasukhin at valentina-db.com
+       </A><BR>
+    <I>Wed Nov 16 08:35:44 PST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="043318.html">[antlr-interest] [C] my v3 Parser no reuse() slower 20% than v2. With reuse() 2GB leaks, oops.
+</A></li>
+        <LI>Next message: <A HREF="043320.html">[antlr-interest] [C] my v3 Parser no reuse() slower 20% than v2. With reuse() 2GB leaks, oops.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#43319">[ date ]</a>
+              <a href="thread.html#43319">[ thread ]</a>
+              <a href="subject.html#43319">[ subject ]</a>
+              <a href="author.html#43319">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 11/16/11 6:00 PM, &quot;Jim Idle&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">jimi at temporal-wave.com</A>&gt; wrote:
+
+&gt;<i> [C] my v3 Parser no reuse() slower 20% than v2. With reuse() 2GB leaks,
+</I>&gt;<i> oops.
+</I>&gt;<i> 
+</I>&gt;<i> Do not use the $text annotations if you want performance, they are purely
+</I>&gt;<i> for convenience &#173; I must have said this 5000 times and I wish I had never
+</I>&gt;<i> added that bit ;) I also told you 3 or 4 times in various emails not to use
+</I>&gt;<i> it. I think that that is in the API docs somewhere, but I should make sure
+</I>&gt;<i> that it is, if it is not.
+</I>
+Right you told ...
+
+But in docs, ANTLR books, examples, everywhere present this
+
+    hex_string_literal
+
+    :    s = HEX_NUMBER  -&gt; CONST_STR_HEX[$s.text-&gt;chars]
+
+Yes, I have checked C API docs even today, but have found any special page,
+which says
+
+    Java guys do this
+    C guys do this.
+
+
+&gt;<i> There is no memory leak, but the auto string stuff does not release until
+</I>&gt;<i> you free the string factory, which only happens when you free the parser,
+</I>&gt;<i> not when you reuse it. Because it allocates small strings all the time, it
+</I>&gt;<i> kills performance, and then you will page.
+</I>
+Clear.
+
+So when I &quot;fix&quot; all places with .text usage problem with memory should
+disappear self.
+
+
+&gt;<i> xxx: s=HEX_NUMBER { $s.type = CONST_STR_HEX; } ;
+</I>
+&gt;<i> I think that the field name is type but you get the idea.
+</I>
+Yes, I will try this asap and give feedback.
+I have 40 such places in parser. And some number in the tree parser.
+
+
+&gt;<i>  Don&#185;t use the
+</I>&gt;<i> fake object oriented stuff when you want performance, use the structs
+</I>&gt;<i> directly &#173; you will find that it is many times faster than the v2 C++, not
+</I>&gt;<i> slower &#173; this is C and you should get as close to the metal as you can.
+</I>
+I very hope :-)
+
+If with PARSER I think I see how I can use this $s.type
+I will check right now other 39 places in parser :)
+
+=====================================
+It is not clear to me what we can do with Tree Parser ??
+
+So I have some token, e.g. Date or time or other literal.
+I make label, now I need get TEXT.
+
+general_literal returns [ENode_Const_Ptr res]
+
+    : cd=CONST_DATE
+            { res=make_enode_date ( GET_FBL_STRING($cd.text) );  }
+
+
+
+So far I have found, that I can do something as
+
+general_literal returns [ENode_Const_Ptr res]
+
+    : cd=CONST_DATE
+      {
+              pANTLR3_COMMON_TOKEN pToken = $cd-&gt;getToken( $cd );
+              ANTLR3_MARKER pStart = pToken -&gt;getStartIndex( pToken );
+              ANTLR3_MARKER pEnd  = pToken-&gt;getStopIndex( pToken );
+             .... Do some job ...
+      }
+
+
+Does such code in TreeParser looks correct for you?
+
+Is it really safe and  getStartIndex / getStopIndex always return us correct
+pointers?
+
+Of course this can be extracted into special func to be used in many places
+in one line of code ...
+
+Just I believe there is no any example in C and any docs pages which discuss
+this for TreeParser and C. If exists please point me by finger :-)
+
+
+-- 
+Best regards,
+
+Ruslan Zasukhin
+VP Engineering and New Technology
+Paradigma Software, Inc
+
+Valentina - Joining Worlds of Information
+<A HREF="http://www.paradigmasoft.com">http://www.paradigmasoft.com</A>
+
+[I feel the need: the need for speed]
+
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="043318.html">[antlr-interest] [C] my v3 Parser no reuse() slower 20% than v2. With reuse() 2GB leaks, oops.
+</A></li>
+	<LI>Next message: <A HREF="043320.html">[antlr-interest] [C] my v3 Parser no reuse() slower 20% than v2. With reuse() 2GB leaks, oops.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#43319">[ date ]</a>
+              <a href="thread.html#43319">[ thread ]</a>
+              <a href="subject.html#43319">[ subject ]</a>
+              <a href="author.html#43319">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

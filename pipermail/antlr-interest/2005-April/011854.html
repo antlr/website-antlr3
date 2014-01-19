@@ -1,0 +1,151 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] ANTLR 2.7.5 C# runtime in
+	amulti-threadedenvironment hangs
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20ANTLR%202.7.5%20C%23%20runtime%20in%0A%09amulti-threadedenvironment%20hangs&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="011850.html">
+   <LINK REL="Next"  HREF="011855.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] ANTLR 2.7.5 C# runtime in
+	amulti-threadedenvironment hangs</H1>
+    <B>Jim Crozman</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20ANTLR%202.7.5%20C%23%20runtime%20in%0A%09amulti-threadedenvironment%20hangs&In-Reply-To="
+       TITLE="[antlr-interest] ANTLR 2.7.5 C# runtime in
+	amulti-threadedenvironment hangs">JCrozman at webplan.com
+       </A><BR>
+    <I>Thu Apr 14 14:17:38 PDT 2005</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="011850.html">[antlr-interest] AntlrStudio testing - Need huge grammar file
+</A></li>
+        <LI>Next message: <A HREF="011855.html">[antlr-interest] Need help with nondeterminism warning
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#11854">[ date ]</a>
+              <a href="thread.html#11854">[ thread ]</a>
+              <a href="subject.html#11854">[ subject ]</a>
+              <a href="author.html#11854">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>It would take a bit of work to reconfigure my environment to to go back
+to 2.7.2.1. I didn't do any performance testing when I upgraded. I
+haven't been concentrating too much on performance of parsing right now
+since usually the execution of a query swamps the parsing. I did have
+some bad performance when I was using syntactic predicates. But I was
+able to refactor and get rid of any recursive ones.
+
+If what your interested in is performance between queueing and reusing
+the ASPPairs and just always &quot;new&quot;ing them I did a little experiment.
+
+We are using the latest 2.0 release of .net so I recompiled the C#
+runtime as shipped to be fair. Plus I compiled a version with
+ASTPair.GetInstance() just returning new ASTPair(). And PutInstance just
+doing nothing. I compiled optimized versions (you have to force it in
+nant in 2.0).
+
+I mad a performance bench mark that parsed 1000 queries. It took 10.38
+seconds as shipped and 10.21 seconds letting the garbage collector do
+its thing.
+
+I also put it into a bigger loop and watched the performance counters
+after 1 minute of execution.
+
+The reuse version (as shipped) spent 0.497% of the cpu time in the
+garbage collector and did 264 Generation 0 collections and 36 Generation
+1
+
+The &quot;new&quot; version spent 0.527% of the cpu time in the garbage collector
+and did 338 Generation 0 collections and 41 Generation 1
+
+So the garbage collector does have to work a little harder but it does
+it more effeciently than doing the management and reuse manually using
+the Queue. I am finding the more I use C# the more I love it and hate
+going back to our unmanaged C++ code where you have to worry so much
+about memory management. I also spent some time at the Microsoft lab
+tracking how the JIT compiler generated code. Does it ever do a good job
+inlining methods and minimizing stack frames.
+
+The memory usage was about the same. ANTLR's usage is swamped by other
+things allocated in our engine.
+
+One disadvantage of keeping free nodes on the Queue is that when the
+parsing is idle (between queries) the memory used by the &quot;free&quot; ASTPairs
+is tied up and can not be reclaimed by the garbage collector. They can
+only ever be reused as ASTPairs. Probably not that many of the in
+practice. If there were the Queue implementation gets not very friendly
+because it keeps growing a fixed size array (allocating a bigger one and
+copying everything over). Big arrays are not very friendly to the memory
+management and paging. I assume here you wouldn't expect the queue to
+get much bigger than 100 entries even if there are pultiple parser
+instances running.
+
+The Multithreading bug is one of those hard to recreate ones. It will
+just about never happen on a single CPU machine because you would need
+to have a time slice in the middel of the critical code. And only on a
+multi CPU machine under very heavy loading. The kind you hate to come
+across in the field! I have had 20 years of working on multi-cpu
+machines and it is always interesting the bugs and scaling issues that
+come up. I have become very careful with static variables.
+
+
+Jordan, have you done benchmarks with and without the queue? I notice
+the Java implementation doesn't use one.
+
+Jim
+
+-----Original Message-----
+From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>
+[mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Micheal J
+Sent: Wednesday, April 13, 2005 9:08 PM
+To: ''antlr-interest' Interest'
+Subject: RE: [antlr-interest] ANTLR 2.7.5 C# runtime in
+amulti-threadedenvironment hangs
+
+&gt;<i> We use ANTLR to parse our query language in our data server. 
+</I>&gt;<i> This is a multi user system so we service many simultaneous requests. 
+</I>&gt;<i> It is a .NET product so we use C# as the language.
+</I>&gt;<i> We have been using 2.7.2.1 for quite a while and I finally got around 
+</I>&gt;<i> to moving up to 2.7.5 a few weeks ago.
+</I>
+Jim, can you comment on the relative performance of 2.7.2.1 and 2.7.5 in
+your environment  please?
+
+Cheers,
+
+Micheal
+ANTLR/C#
+
+</PRE>
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="011850.html">[antlr-interest] AntlrStudio testing - Need huge grammar file
+</A></li>
+	<LI>Next message: <A HREF="011855.html">[antlr-interest] Need help with nondeterminism warning
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#11854">[ date ]</a>
+              <a href="thread.html#11854">[ thread ]</a>
+              <a href="subject.html#11854">[ subject ]</a>
+              <a href="author.html#11854">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

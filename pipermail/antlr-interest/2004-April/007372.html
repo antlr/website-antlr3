@@ -1,0 +1,352 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Re: second lexical pass - yeah
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20second%20lexical%20pass%20-%20yeah&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="007349.html">
+   <LINK REL="Next"  HREF="007326.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Re: second lexical pass - yeah</H1>
+    <B>matthew ford</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20second%20lexical%20pass%20-%20yeah&In-Reply-To="
+       TITLE="[antlr-interest] Re: second lexical pass - yeah">Matthew.Ford at forward.com.au
+       </A><BR>
+    <I>Mon Apr 12 13:52:22 PDT 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="007349.html">[antlr-interest] Re: second lexical pass - yeah
+</A></li>
+        <LI>Next message: <A HREF="007326.html">Unsubscription by antlr-interest member
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#7372">[ date ]</a>
+              <a href="thread.html#7372">[ thread ]</a>
+              <a href="subject.html#7372">[ subject ]</a>
+              <a href="author.html#7372">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Here is something that worked for me.
+Now that I look at it I cannot rememeber why the ESC rule is like it is.
+matthew
+P.S. in my case  DATE and TIME were separated by white space
+
+// Whitespace -- ignored
+TAB_FORMFEED
+  : ( '\t'
+  | '\f'
+  )
+  {  _ttype = Token.SKIP; }
+ ;
+
+// Whitespace -- ignored
+SPACE
+  : ' '
+  {  _ttype = Token.SKIP; }
+ ;
+
+
+NEWLINE
+  : ( /* '\r' '\n' can be matched in one alternative or by matching
+    '\r' in one iteration and '\n' in another.  I am trying to
+    handle any flavor of newline that comes in, but the language
+    that allows both &quot;\r\n&quot; and &quot;\r&quot; and &quot;\n&quot; to all be valid
+    newline is ambiguous.  Consequently, the resulting grammar
+    must be ambiguous.  I'm shutting this warning off.
+    */
+    options {
+    generateAmbigWarnings=false;
+   }
+   : '\r' '\n'   // DOS
+   | '\r'  // Macintosh
+   | '\n' // Unix
+   )  {newline();}
+  { if (skipNL) {   // skip NL is skipNEWLINE() called
+    _ttype = Token.SKIP;
+   }
+  }
+;
+
+// white space is skipped by the parser
+protected
+WS_SET : ( ' '
+  | '\t' | '\f'
+  | NEWLINE
+  | ML_COMMENT
+  | SL_COMMENT
+  )+
+  {$setType(Token.SKIP);}  // way to set token type
+ ;
+
+// Single-line comments
+SL_COMMENT
+ : &quot;//&quot;
+  (~('\n'|'\r'))* NEWLINE
+  {$setType(Token.SKIP);}
+ ;
+
+// multiple-line comments these are also skipped
+ML_COMMENT
+ : &quot;/*&quot;
+  ( // suppress warnings about * /
+   options {
+    greedy = true;
+   }
+  : { LA(2)!='/' }? '*'
+  | ~('*'|'\n'|'\r')
+  | NEWLINE
+  )*
+  &quot;*/&quot;
+  {$setType(Token.SKIP);}
+ ;
+
+
+// character literals SINGLE QUOTES around string
+//CHAR_LITERAL
+// : '\''! (ESC|~('\''|'\\'))* '\''!
+// ;
+
+// note must have WS between strings because &quot;&quot; is used for &quot; inside string
+STRING_LITERAL
+  : SL_STRING_LITERAL //(WS_SET! SL_STRING_LITERAL)*
+      // string concat does not work because it tries to concat anything
+after
+      // a string + WS_SET.
+  ;
+
+ // string literals DOUBLE QUOTES around string
+ // &quot;&quot; =&gt; &quot; inside double quotes.
+ // can also use \&quot;
+protected
+SL_STRING_LITERAL
+{int i = 0;}
+ : '&quot;'! (ESC|~('&quot;'|'\\'|'\n'))* ('&quot;''&quot;'! ((ESC|~('&quot;'|'\\'|'\n')))*)*
+  ('&quot;'!
+  |'\n'
+   {
+     if (i==0) {
+      throw new TokenStreamRecognitionException(
+     new RecognitionException(&quot;found newline inside string:'&quot;+$getText+&quot;'&quot;,
+getFilename(), getLine()));
+    }
+   }
+  )
+ ;
+
+// escape sequence -- note that this is protected; it can only be called
+//   from another lexer rule -- it will not ever directly return a token to
+//   the parser
+// There are various ambiguities hushed in this rule.  The optional
+// '0'...'9' digit matches should be matched here rather than letting
+// them go back to STRING_LITERAL to be matched.  ANTLR does the
+// right thing by matching immediately; hence, it's ok to shut off
+// the FOLLOW ambig warnings.
+protected
+ESC
+ : '\\'
+  ( 'n' { $setText(&quot;\n&quot;);}
+  | 'r' { $setText(&quot;\r&quot;);}
+  | 't' { $setText(&quot;\t&quot;);}
+  | 'b' { $setText(&quot;\b&quot;);}
+  | 'f' { $setText(&quot;\f&quot;);}
+  | '&quot;' { $setText(&quot;\&quot;&quot;);}
+  | '\'' { $setText(&quot;\'&quot;);}
+  | '\\' { $setText(&quot;\\&quot;);}
+  | ('u')+ HEX_DIGIT HEX_DIGIT HEX_DIGIT HEX_DIGIT
+  | ('0'..'3')
+   (
+    options {
+     warnWhenFollowAmbig = false;
+    }
+   : ('0'..'9')
+    (
+     options {
+      warnWhenFollowAmbig = false;
+     }
+    : '0'..'9'
+    )?
+   )?
+  | ('4'..'7')
+   (
+    options {
+     warnWhenFollowAmbig = false;
+    }
+   : ('0'..'9')
+   )?
+  )
+ ;
+
+
+
+// hexadecimal digit (again, note it's protected!)
+protected
+HEX
+ : '0' 'x' (HEX_DIGIT)+
+ ;
+
+protected
+HEX_DIGIT
+ : ('0'..'9'|'a'..'f')
+ ;
+
+
+// an identifier.  Note that testLiterals is set to true!  This means
+// that after we match the rule, we look in the literals table to see
+// if it's a literal or really an identifer
+IDENT
+ options {testLiterals=true;
+     paraphrase = &quot;an identifier&quot;;}
+ : ('a'..'z'|'_'|'$') ('a'..'z'|'_'|'0'..'9'|'$')*
+ ;
+
+protected
+DIGIT
+ : ('0'..'9')
+ ;
+
+
+// a numeric literal
+protected
+INT
+ : (DIGIT)+
+ ;
+
+// signed int
+//protected
+//SIGNED_INT
+// : ('+'|'-')?INT
+// ;
+
+// a numeric literal date, time, int, float, hex or oct
+DATE_TIME_INT_FLOAT
+ : (DIGIT DIGIT DIGIT DIGIT '/') =&gt; DATE {_ttype = DATE;}
+ | (DIGIT (DIGIT)? ':') =&gt; TIME {_ttype = TIME;}
+ | (INT '.') =&gt; FLOAT {_ttype = FLOAT;}
+ | INT {_ttype = INT;}
+ | ('0' 'x')=&gt; HEX {_ttype = HEX;}
+ ;
+
+protected
+FLOAT
+ : INT '.' INT (EXPONENT)?
+ ;
+
+// signed float
+//protected
+//SIGNED_FLOAT
+// : SIGNED_INT '.' INT (EXPONENT)?
+// ;
+
+
+protected
+DATE
+ : DIGIT DIGIT DIGIT DIGIT '/'
+   DIGIT (DIGIT)? '/' DIGIT (DIGIT)?
+ ;
+
+protected
+TIME
+ : DIGIT (DIGIT)? ':'
+   DIGIT (DIGIT)? ':'
+   DIGIT (DIGIT)? ('.' INT)?
+ ;
+
+// need to add floating point
+// a couple protected methods to assist in matching floating point numbers
+protected
+EXPONENT
+ : ('e') ('+'|'-')? ('0'..'9')+
+ ;
+
+
+// should be in parser also duration
+
+----- Original Message ----- 
+From: &quot;Terence Parr&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">parrt at cs.usfca.edu</A>&gt;
+To: &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>&gt;
+Sent: Tuesday, April 13, 2004 5:11 AM
+Subject: Re: [antlr-interest] Re: second lexical pass - yeah
+
+
+&gt;<i>
+</I>&gt;<i> On Apr 12, 2004, at 11:50 AM, <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">FranklinChen at cmu.edu</A> wrote:
+</I>&gt;<i> &gt; Is there a reason not to just do this:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; protected DATE: ...
+</I>&gt;<i> &gt; protected STRING_LITERAL: ...
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; DATE_OR_STRING_LITERAL
+</I>&gt;<i> &gt;     : (DATE) =&gt; DATE { $setType(DATE); }
+</I>&gt;<i> &gt;     | STRING_LITERAL { $setType(STRING_LITERAL); }
+</I>&gt;<i> &gt;     ;
+</I>&gt;<i>
+</I>&gt;<i> This will be much slower due to the predicate for large input, but
+</I>&gt;<i> might work.
+</I>&gt;<i>
+</I>&gt;<i> &gt; By the way, has anyone been seeing my messages to this list?  I've
+</I>&gt;<i> &gt; posted three or four separate messages on different questions I've had
+</I>&gt;<i> &gt; (one related to lexer issues).
+</I>&gt;<i>
+</I>&gt;<i> I'm behind in email as usual...sorry.
+</I>&gt;<i> Ter
+</I>&gt;<i> --
+</I>&gt;<i> Professor Comp. Sci., University of San Francisco
+</I>&gt;<i> Creator, ANTLR Parser Generator, <A HREF="http://www.antlr.org">http://www.antlr.org</A>
+</I>&gt;<i> Cofounder, <A HREF="http://www.jguru.com">http://www.jguru.com</A>
+</I>&gt;<i> Cofounder, <A HREF="http://www.knowspam.net">http://www.knowspam.net</A> enjoy email again!
+</I>&gt;<i> Cofounder, <A HREF="http://www.peerscope.com">http://www.peerscope.com</A> pure link sharing
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Yahoo! Groups Links
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+     <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+     <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+     <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="007349.html">[antlr-interest] Re: second lexical pass - yeah
+</A></li>
+	<LI>Next message: <A HREF="007326.html">Unsubscription by antlr-interest member
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#7372">[ date ]</a>
+              <a href="thread.html#7372">[ thread ]</a>
+              <a href="subject.html#7372">[ subject ]</a>
+              <a href="author.html#7372">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

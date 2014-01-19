@@ -1,0 +1,134 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [stringtemplate-interest] difficulty using format and null options together
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20difficulty%20using%20format%20and%20null%0A%20options%20together&In-Reply-To=%3C47E31591.2060807%40rcn.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001389.html">
+   <LINK REL="Next"  HREF="001401.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[stringtemplate-interest] difficulty using format and null options together</H1>
+    <B>John Snyders</B> 
+    <A HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20difficulty%20using%20format%20and%20null%0A%20options%20together&In-Reply-To=%3C47E31591.2060807%40rcn.com%3E"
+       TITLE="[stringtemplate-interest] difficulty using format and null options together">jjsnyders at rcn.com
+       </A><BR>
+    <I>Thu Mar 20 18:55:29 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001389.html">[stringtemplate-interest] difficulty using format and null	options together
+</A></li>
+        <LI>Next message: <A HREF="001401.html">[stringtemplate-interest] difficulty using format and null	options together
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1392">[ date ]</a>
+              <a href="thread.html#1392">[ thread ]</a>
+              <a href="subject.html#1392">[ subject ]</a>
+              <a href="author.html#1392">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>When you look at the implementation of all the options (format, null 
+etc.) in ASTExpr.java it seems very natural to handle the null option 
+first before format. The code checks for a null value a few steps before 
+it has a string to render.
+It is documented that the null option is applied first then format then 
+separator.
+
+In the case where the format option is transforming characters like 
+changing case I think it makes sense to apply null first. I can see that 
+in your case you clearly don't want to quote the NULL. The trouble is 
+that you need some out of band value to pass to format. In general you 
+don't have one and null is really your only 100% safe option. If you 
+change the format renderer to check for the string NULL and don't quote 
+it then there is a remote but possible chance that one of the non-null 
+strings could have the value &quot;NULL&quot; in which case it would not get 
+quoted when it should.
+
+Changing ASTExpr so that it passes null to the format renderer could be 
+tricky and in addition I don't think that existing renderers ever expect 
+to be called with null.
+
+I wonder if the following would work.
+When the null option is used the string value is wrapped in a class such 
+as NullDefault. This simple class acts much like a string and toString 
+just renders the wrapped string. So because of the way ST default 
+rendering works it should just call toString and get the intended 
+default value. When the NullDefault object is passed to the format 
+renderer it will be able to distinguish it from a normal string. This 
+could still have some backward compatibility problems depending on if 
+people wrote robust renderers that called toString on objects they 
+didn't recognize.
+
+Terence, what do you think? Is this worth doing or will it cause problems?
+-John
+
+Mark Wharton wrote:
+&gt;<i> Hello,
+</I>&gt;<i>
+</I>&gt;<i> I'm having difficulty using format and null options together in generating an SQL statement with quoted values and NULL keyword. Here's a sample:
+</I>&gt;<i>
+</I>&gt;<i> 	String ts = &quot;$values; format=\&quot;quote\&quot;, null=\&quot;NULL\&quot;, separator=\&quot;, \&quot;$&quot;;
+</I>&gt;<i> 	StringTemplate t = new StringTemplate(ts);
+</I>&gt;<i> 	t.registerRenderer(String.class, new ValueRenderer());
+</I>&gt;<i> 	List values = new ArrayList();
+</I>&gt;<i> 	values.add(&quot;x&quot;);
+</I>&gt;<i> 	values.add(&quot;y&quot;);
+</I>&gt;<i> 	values.add(null);
+</I>&gt;<i> 	values.add(&quot;z&quot;);
+</I>&gt;<i> 	values.add(null);
+</I>&gt;<i> 	t.setAttribute(&quot;values&quot;, values);
+</I>&gt;<i> 	System.out.println(&quot;t: &quot;+t.toString());
+</I>&gt;<i>
+</I>&gt;<i> Actual Result...
+</I>&gt;<i>
+</I>&gt;<i> 	t: &quot;x&quot;, &quot;y&quot;, &quot;NULL&quot;, &quot;z&quot;, &quot;NULL&quot;
+</I>&gt;<i>
+</I>&gt;<i> Desired Result...
+</I>&gt;<i>
+</I>&gt;<i> 	t: &quot;x&quot;, &quot;y&quot;, NULL, &quot;z&quot;, NULL
+</I>&gt;<i>
+</I>&gt;<i> It looks like the null option is applied before the format option and consequently the NULL becomes quoted because it is a string when the renderer processes it. I don't see how it is possible to have non quoted NULL in the output for null values in the list when the format option is also used in the same expression.
+</I>&gt;<i>
+</I>&gt;<i> Thanks,
+</I>&gt;<i>
+</I>&gt;<i> Mark
+</I>&gt;<i>
+</I>&gt;<i> Mark Wharton
+</I>&gt;<i> + 8190 9834 2559
+</I>&gt;<i> <A HREF="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">contact at moonbase.com.au</A>
+</I>&gt;<i>
+</I>&gt;<i> _______________________________________________
+</I>&gt;<i> stringtemplate-interest mailing list
+</I>&gt;<i> <A HREF="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">stringtemplate-interest at antlr.org</A>
+</I>&gt;<i> <A HREF="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest</A>
+</I>&gt;<i>
+</I>&gt;<i>   
+</I></PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001389.html">[stringtemplate-interest] difficulty using format and null	options together
+</A></li>
+	<LI>Next message: <A HREF="001401.html">[stringtemplate-interest] difficulty using format and null	options together
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1392">[ date ]</a>
+              <a href="thread.html#1392">[ thread ]</a>
+              <a href="subject.html#1392">[ subject ]</a>
+              <a href="author.html#1392">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">More information about the stringtemplate-interest
+mailing list</a><br>
+</body></html>

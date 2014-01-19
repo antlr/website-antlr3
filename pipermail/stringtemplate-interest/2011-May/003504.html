@@ -1,0 +1,172 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [stringtemplate-interest] ST4: New feature STGroup.unloadMore() ?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20ST4%3A%20New%20feature%20STGroup.unloadMore%28%29%20%3F&In-Reply-To=%3C6F6C430B-2037-43A2-B959-FC7F635D2F9B%40abego-software.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003503.html">
+   <LINK REL="Next"  HREF="003506.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[stringtemplate-interest] ST4: New feature STGroup.unloadMore() ?</H1>
+    <B>Udo Borkowski</B> 
+    <A HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20ST4%3A%20New%20feature%20STGroup.unloadMore%28%29%20%3F&In-Reply-To=%3C6F6C430B-2037-43A2-B959-FC7F635D2F9B%40abego-software.de%3E"
+       TITLE="[stringtemplate-interest] ST4: New feature STGroup.unloadMore() ?">ub at abego-software.de
+       </A><BR>
+    <I>Tue May 17 02:56:58 PDT 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003503.html">[stringtemplate-interest] ST4: How to get group template name	list?
+</A></li>
+        <LI>Next message: <A HREF="003506.html">[stringtemplate-interest] ST4: New feature STGroup.unloadMore()	?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3504">[ date ]</a>
+              <a href="thread.html#3504">[ thread ]</a>
+              <a href="subject.html#3504">[ subject ]</a>
+              <a href="author.html#3504">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+currently the STGroup method unload() 
+
+	&quot;unloads&quot; all templates and dictionaries but leave renderers, adaptors, and import relationships. 
+
+Notice &quot;import relationships&quot; are not unloaded.
+
+Other than renderers and adaptors the import relationship is often defined inside the group text and not by explicitly calling STGroup.importTemplates(&#8230;). This may lead to strange issues when the import list in the group text in the file is modified (especially when imports are removed/replaced) and stGroup.unload() is used to force next getInstanceOf to reload templates..
+
+Example:
+
+t.stg
+==========
+import &quot;g1.stg&quot;
+
+main() ::= &lt;&lt;
+v1-&lt;f()&gt;
+&gt;&gt;<i>
+</I>==========
+
+g1.stg
+==========
+f() ::= &quot;g1&quot;
+==========
+
+g2.stg
+==========
+f() ::= &quot;g2&quot;
+f2() ::= &quot;f2 in g2&quot;
+==========
+
+Calling t/main() correctly renders &quot;g1&quot;.
+
+Now we modify &quot;t.stg&quot; to
+==========
+import &quot;g2.stg&quot;
+
+main() ::= &lt;&lt;
+v2-&lt;f()&gt;;&lt;f2()&gt;
+&gt;&gt;<i>
+</I>==========
+
+and call unload() for that group.
+
+We now render test/main() and get &quot;v2-g1;f2&quot;, however I would have expected &quot;v2-g2;f2&quot;.
+
+This is because group t now holds the groups &quot;g1&quot; and &quot;g2&quot; in its &quot;imports&quot;. &quot;g1&quot; was not removed. So when looking for template &quot;f&quot; it is first found in &quot;g1&quot; and used. When looking for &quot;f2&quot; it finds nothing in g1, but in g2. So both g1 and g2 are used for rendering.
+
+What about introducing a new method unloadMore() that also unloads the import relationships?
+
+I tried adding this to STGroup:
+
+	/**
+	 * As {@link #unload()}, but also &quot;unloads&quot; the import relationships, i.e.
+	 * already imported groups will be &quot;re-imported&quot;.
+	 */
+	public synchronized void unloadMore() {
+		unload();
+		imports.clear();
+	}
+	
+Here a little test to check the result the new method STGroup.unloadMore:
+
+	@Test
+	public void testUnloadMore() throws Exception {
+		writeFile(tmpdir, &quot;t.stg&quot;,
+				&quot;import \&quot;g1.stg\&quot;\n\nmain() ::= &lt;&lt;\nv1-&lt;f()&gt;\n&gt;&gt;&quot;);
+		writeFile(tmpdir, &quot;g1.stg&quot;, &quot;f() ::= \&quot;g1\&quot;&quot;);
+		writeFile(tmpdir, &quot;g2.stg&quot;, &quot;f() ::= \&quot;g2\&quot;\nf2() ::= \&quot;f2\&quot;\n&quot;);
+		STGroup group = new org.stringtemplate.v4.STGroupFile(tmpdir + &quot;/t.stg&quot;);
+		ST st = group.getInstanceOf(&quot;main&quot;);
+		Assert.assertEquals(&quot;v1-g1&quot;, st.render());
+
+		// Change the imports of group t.
+		writeFile(tmpdir, &quot;t.stg&quot;,
+				&quot;import \&quot;g2.stg\&quot;\n\nmain() ::= &lt;&lt;\nv2-&lt;f()&gt;;&lt;f2()&gt;\n&gt;&gt;&quot;);
+		group.unloadMore(); // will also unload already imported groups
+		st = group.getInstanceOf(&quot;main&quot;);
+		Assert.assertEquals(&quot;v2-g2;f2&quot;, st.render());
+	}
+
+
+Shall I add this to the sources? Got a better name than &quot;unloadMore&quot;?
+
+Udo
+
+
+PS.: Here the corresponding test for STGroupUnload:
+
+	@Test
+	public void testUnloadMore() throws Exception {
+		writeFile(tmpdir, &quot;t.stg&quot;,
+				&quot;import \&quot;g1.stg\&quot;\n\nmain() ::= &lt;&lt;\nv1-&lt;f()&gt;\n&gt;&gt;&quot;);
+		writeFile(tmpdir, &quot;g1.stg&quot;, &quot;f() ::= \&quot;g1\&quot;&quot;);
+		writeFile(tmpdir, &quot;g2.stg&quot;, &quot;f() ::= \&quot;g2\&quot;\nf2() ::= \&quot;f2\&quot;\n&quot;);
+		STGroup group = new org.stringtemplate.v4.STGroupFile(tmpdir + &quot;/t.stg&quot;);
+		ST st = group.getInstanceOf(&quot;main&quot;);
+		Assert.assertEquals(&quot;v1-g1&quot;, st.render());
+
+		// Change the imports of group t.
+		writeFile(tmpdir, &quot;t.stg&quot;,
+				&quot;import \&quot;g2.stg\&quot;\n\nmain() ::= &lt;&lt;\nv2-&lt;f()&gt;;&lt;f2()&gt;\n&gt;&gt;&quot;);
+		group.unloadMore(); // will also unload already imported groups
+		st = group.getInstanceOf(&quot;main&quot;);
+		Assert.assertEquals(&quot;v2-g2;f2&quot;, st.render());
+	}
+
+
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/stringtemplate-interest/attachments/20110517/a00aaae5/attachment-0001.html">http://www.antlr.org/pipermail/stringtemplate-interest/attachments/20110517/a00aaae5/attachment-0001.html</A> 
+</PRE>
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003503.html">[stringtemplate-interest] ST4: How to get group template name	list?
+</A></li>
+	<LI>Next message: <A HREF="003506.html">[stringtemplate-interest] ST4: New feature STGroup.unloadMore()	?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3504">[ date ]</a>
+              <a href="thread.html#3504">[ thread ]</a>
+              <a href="subject.html#3504">[ subject ]</a>
+              <a href="author.html#3504">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">More information about the stringtemplate-interest
+mailing list</a><br>
+</body></html>

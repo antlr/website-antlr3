@@ -1,0 +1,254 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] One weird, one (hopefully) simple problem ... from a newbie
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20One%20weird%2C%20one%20%28hopefully%29%20simple%20problem%20...%20from%20a%20newbie&In-Reply-To=0EF9DEABA42FE547BAE43D0298F146B23DD3D3%40ESP.eca-international.local">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002774.html">
+   <LINK REL="Next"  HREF="002775.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] One weird, one (hopefully) simple problem ... from a newbie</H1>
+    <B>jbb at acm.org</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20One%20weird%2C%20one%20%28hopefully%29%20simple%20problem%20...%20from%20a%20newbie&In-Reply-To=0EF9DEABA42FE547BAE43D0298F146B23DD3D3%40ESP.eca-international.local"
+       TITLE="[antlr-interest] One weird, one (hopefully) simple problem ... from a newbie">jbb at acm.org
+       </A><BR>
+    <I>Fri Jan 24 14:47:02 PST 2003</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002774.html">[antlr-interest] One weird, one (hopefully) simple problem ... from a newbie
+</A></li>
+        <LI>Next message: <A HREF="002775.html">[antlr-interest] catching an exception in the parser and cont
+	inuing - will this work?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2781">[ date ]</a>
+              <a href="thread.html#2781">[ thread ]</a>
+              <a href="subject.html#2781">[ subject ]</a>
+              <a href="author.html#2781">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Mr. Youngman :-
+
+You asked:
+
+Wol&gt;......if I change UNTIL to
+Wol&gt;WHILE, it only appears to get as far as the LOOP......
+      
+This is because of this rule:
+
+wl		: (wle:WLE {System.out.println(&quot;WHILE &quot;+wle);});
+                       ^^^
+                        |
+                 should be WHILE (i think)
+
+You also asked:
+
+Wol&gt;......And I'm not getting any
+Wol&gt;error messages - it's just that my trace appears to work over the entire
+Wol&gt;file with &quot;until&quot;, but stop as it hits &quot;while&quot;. That's my weird problem.
+
+This is because of this rule:
+
+entry	:	(sl|ig|id|nl|rg|lb|dc|lp|wl|un|rp|assign)+;
+
+which tells your generated parser to simply stop when it sees an input
+it does not recognize to be the begining of a phrase in the language
+you are trying to parse. If you change this rule to:
+
+entry : (sl|ig|id|nl|rg|lb|dc|lp|wl|un|rp|assign)+ EOF;
+
+then your parser is instructed to correctly process the entire input
+file until it sees the end-of-file. thus when an unrecognizable
+leading token is seen an error message will be displayed.
+
+And lastly, you asked:
+
+Wol&gt;And as for the simple problem? How do I get the parser to print &quot;MULTIPLY&quot;,
+Wol&gt;&quot;DIVIDE&quot; or whatever - by the way, it's got to be postfix.
+
+Here is a version of your grammar which accumulates expressions into a
+String in postfix form and prints it. You, however, will probably
+want to exploit Antlr's capabilities for constructing and traversing a
+Abstract Syntax Tree (AST) and not use a string as an intermediate
+format for your parse results.
+
+-------------------------
+class BASICLexer extends Lexer;
+
+options {
+    exportVocab=BASIC;
+    k=2;
+}
+
+tokens {
+    LABEL;
+    LOOP; WHILE; UNTIL; REPEAT;
+}
+
+{
+    // Are we in a statement or expression?
+    private final int STATEMENT = 0;
+    private final int EXPRESSION = 1;
+    int state = STATEMENT;
+}
+
+WS  : ( ' '|'\t') { $setType(Token.SKIP); };
+EOL : ( &quot;\r\n&quot;|'\r'|'\n' ) { newline(); state = STATEMENT; };
+
+protected ALPHA : ('a'..'z'|'A'..'Z') ;
+protected NUMERIC : ('0'..'9') ;
+IDENT
+    : ( ALPHA ( ALPHA|NUMERIC|'.'|'$'|'%')* )
+        {
+            if (state == STATEMENT) {
+                if (LA(1) == ':' ) {
+                    int len=text.length();
+                    consume();
+                    text.setLength(len);
+                    _ttype = LABEL;
+                } else {
+                    // more stuff here
+                    String txt = $getText.toUpperCase();
+                    // cant use switch here - it takes int. bummer
+                    if (txt.equals(&quot;LOOP&quot;)) { _ttype =
+                        LOOP;}
+                    else if (txt.equals(&quot;WHILE&quot;)) {
+                        _ttype = WHILE;}
+                    else if (txt.equals(&quot;UNTIL&quot;)) {
+                        _ttype = UNTIL;}
+                    else if (txt.equals(&quot;REPEAT&quot;)) {
+                        _ttype = REPEAT;};
+                }
+            }
+        }
+    ;
+
+INT     : (NUMERIC)+ ;
+DECIMAL : ('.') ;
+STRING_LITERAL : '&quot;' ('A'..'Z'|'a'..'z'|'0'..'9')* '&quot;' ;
+
+PLUS    : ('+');
+MINUS   : ('-');
+DIVIDE  : ('/');
+MULTIPLY: ('*');
+ASSIGN  : ('=');
+
+class BASICParser extends Parser;
+
+options {
+    exportVocab=BASIC;
+    buildAST=true;
+    k=2;
+}
+
+ig returns [String val=null] :
+	i:INT
+	{
+	    System.out.println(&quot;Integer &quot;+i);
+	    val = i.getText();
+	}
+    ;
+
+id returns [String ident=null] :
+	iden:IDENT
+	{
+	    System.out.println(&quot;Ident &quot;+iden);
+	    ident = iden.getText();
+	}
+    ;
+
+rg    : (r:REAL {System.out.println(&quot;Real &quot;+r);});
+sl    : (slit:STRING_LITERAL {System.out.println(&quot;String &quot;+slit);});
+nl    : (EOL {System.out.println(&quot;New line&quot;);});
+lb    : (lbl:LABEL {System.out.println(&quot;Label &quot;+lbl);});
+dc    : (dcm:DECIMAL {System.out.println(&quot;Decimal &quot;+dcm);});
+lp    : (loop:LOOP {System.out.println(&quot;LOOP &quot;+loop);});
+wl    : (wle:WHILE {System.out.println(&quot;WHILE &quot;+wle);});
+un    : (until:UNTIL {System.out.println(&quot;UNTIL &quot;+until);});
+rp    : (repeat:REPEAT {System.out.println(&quot;REPEAT &quot;+repeat);});
+
+mulOp returns [String op=null] :
+	MULTIPLY { op = &quot;MUL&quot;; }
+    | DIVIDE { op = &quot;DIV&quot;; }
+    ;
+
+addOp returns [String op=null] :
+	PLUS { op=&quot;ADD&quot;; }
+    | MINUS { op=&quot;SUB&quot;; }
+    ;
+
+atom returns [String a=null] : a=ig | a=id ;
+
+prodExpr returns [String prod=null] :
+	prod=atom
+	(
+	    { String o, r; }
+	    o=mulOp r=prodExpr { prod += &quot; &quot; + r + &quot; &quot; + o; }
+	)?
+    ;
+
+sumExpr returns [String sum=null] :
+	sum=prodExpr
+	(
+	    { String o, r; }
+	    o=addOp r=sumExpr { sum += &quot; &quot; + r + &quot; &quot; + o; }
+	)?
+    ;
+
+expr returns [String e=null] :
+	e=sumExpr
+    ;
+
+assign :
+	{ String ident, e; }
+	ident=id ASSIGN e=expr
+	{
+	    System.out.println(e+&quot; &quot;+ident+&quot; ASG&quot;);
+	}
+    ;
+
+entry :
+	(sl|ig|id|nl|rg|lb|dc|lp|wl|un|rp|assign)+ EOF
+    ;
+-------------------------
+
+Hope this helps...
+
+-- 
+	-jbb
+----------------+----------------------------
+ John B. Brodie | Email : <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">jbrodie at cs.fit.edu</A>
+----------------+----------------------------
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002774.html">[antlr-interest] One weird, one (hopefully) simple problem ... from a newbie
+</A></li>
+	<LI>Next message: <A HREF="002775.html">[antlr-interest] catching an exception in the parser and cont
+	inuing - will this work?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2781">[ date ]</a>
+              <a href="thread.html#2781">[ thread ]</a>
+              <a href="subject.html#2781">[ subject ]</a>
+              <a href="author.html#2781">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

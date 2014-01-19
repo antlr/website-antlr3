@@ -1,0 +1,188 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] &quot;everything else&quot; clause
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20%22everything%20else%22%20clause&In-Reply-To=20040426122302.GF342%40cs.utwente.nl">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="007632.html">
+   <LINK REL="Next"  HREF="007642.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] &quot;everything else&quot; clause</H1>
+    <B>Mike Lischke</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20%22everything%20else%22%20clause&In-Reply-To=20040426122302.GF342%40cs.utwente.nl"
+       TITLE="[antlr-interest] &quot;everything else&quot; clause">lists at lischke-online.de
+       </A><BR>
+    <I>Mon Apr 26 10:24:02 PDT 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="007632.html">[antlr-interest] &quot;everything else&quot; clause
+</A></li>
+        <LI>Next message: <A HREF="007642.html">[antlr-interest] &quot;everything else&quot; clause
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#7635">[ date ]</a>
+              <a href="thread.html#7635">[ thread ]</a>
+              <a href="subject.html#7635">[ subject ]</a>
+              <a href="author.html#7635">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Ric, 
+
+Thank you for your reply.
+
+&gt;<i> The . alternative always generates non determinism errors 
+</I>&gt;<i> since it does not behave like 'if-nothing-matched-so-far-try-this'. 
+</I>
+Yes, now I know.
+
+&gt;<i>In general you can read 
+</I>&gt;<i> the generated code and see if the does the right thing. Note 
+</I>&gt;<i> that you probably have to move the '.' into the rule with the 
+</I>&gt;<i> other alternatives because the parser will never leave the 
+</I>&gt;<i> above rule (barring EOF) (I don't think the greedy option 
+</I>&gt;<i> will matter in this case).
+</I>
+I could not make it work so I did it a bit differently. The grammar I'm using now for my preprocessor parser starts so:
+
+  // ----- The main entry point -----
+  program: 
+    (
+      define
+      | undef
+      | ifdef
+      | ifndef
+      | if_rule
+      | include
+      | rest
+    )*
+  ;
+
+  rest:
+    (options {greedy = false;}:
+      ~(
+        &quot;#define&quot;
+        | &quot;#undef&quot;
+        | &quot;#ifdef&quot;
+        | &quot;#ifndef&quot;
+        | &quot;#if&quot;
+        | &quot;#elif&quot;
+        | &quot;#endif&quot;
+        | &quot;#else&quot;
+        | &quot;#include&quot;
+      )
+    )+
+  ;
+  
+  define:
+    // The #define syntax is ambiguous because the optional literal could also belong to a 
+		// following resource definition.
+	  &quot;#define&quot;^ id: IDENTIFIER (options {greedy = true;}: value: literal)?
+	  { 
+	    // Add this value (or just the identifier if there is no value) to the symbol table.
+	  	Object value = evaluator.evaluate(value_AST);
+			symbolTable.put(id.getText(), value);
+		}
+	;
+	  
+	undef:
+	  &quot;#undef&quot;^ id: IDENTIFIER
+	  { 
+	    // Remove the identifier from the symbol table.
+	    symbolTable.remove(id.getText());
+	  }
+	;
+	  
+	ifdef:
+	  ifstart: &quot;#ifdef&quot;^ resource_identifier program (else_part)? ifend: &quot;#endif&quot;
+	  {
+	  	// Check if the given symbol exists in our symbol table and strip out...
+	  }
+	;
+	  
+	else_part:
+    &quot;#else&quot;^ program
+    | &quot;#elif&quot;^ expression program (else_part)?
+	;
+... Etc.	  
+
+Since the &quot;everything else&quot; part in the parser consists of all tokens not mentioned I had to import the lexer
+vocabulary. This is no big deal as I need it anyway for my main parser and now the files are parsed correctly so far.
+The next thing to todo is to make the TokenRewriteEngine work. It looks like I have to rewrite the grammar a bit because
+I cannot address a single token in the else_part from, say, the ifdef rule, hence I cannot strip out the proper part.
+
+&gt;<i> In the action code for the . alternative you will have to 
+</I>&gt;<i> make sure to do the right thing with the tokens you don't 
+</I>&gt;<i> want to match in the parser. 
+</I>
+As mentioned above my plan is to use Terence's TokenRewriteEngine to strip out the conditional parts and then feed the
+result to my main parser. Once this is done I can start over to write a file name subparser.
+
+&gt;<i>Note also that your lexer will 
+</I>&gt;<i> have tokenized it in some way. 
+</I>
+Indeed. It seems a bit overkill but requires the least work. The lexer will produce the inital token stream and the
+rewrite engine will spit out the modified stream to the main parser. So essentially, the tokenizing is only done once
+(as before). For me it sounds like an effective solution. Although, having a true &quot;everything else&quot;
+rule/token/you-name-it would still be quite cool for skipping unwanted text parts in the parser (for the lexer there is
+this nice filter stuff).
+
+&gt;<i> You will maybe get strange interactions with semantic 
+</I>&gt;<i> predicates (depending on the action used, you may be able to 
+</I>&gt;<i> cheat that with an init action for the . alternative and 
+</I>&gt;<i> check explicitly for guessing mode there).
+</I>
+I only have one action in the lexer: white space skipping. So this is fortunately nothing to take care of for me.
+ 
+&gt;<i> (Advice read a lot of generated code ;) )
+</I>
+Oh, I do. I learned a lot already from the generated code and the examples. Coming from a yacc/lex background I'm now
+addicted to the recursive descent parser design. It is so wonderfully debuggable and errors can be found quite easily.
+Great stuff! (many thanks to Terence at this place). I only wonder why there are so few existing grammars. I'd expect
+many of them in such a successful package.
+
+Mike
+--
+www.soft-gems.net
+
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+     <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+     <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+     <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="007632.html">[antlr-interest] &quot;everything else&quot; clause
+</A></li>
+	<LI>Next message: <A HREF="007642.html">[antlr-interest] &quot;everything else&quot; clause
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#7635">[ date ]</a>
+              <a href="thread.html#7635">[ thread ]</a>
+              <a href="subject.html#7635">[ subject ]</a>
+              <a href="author.html#7635">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

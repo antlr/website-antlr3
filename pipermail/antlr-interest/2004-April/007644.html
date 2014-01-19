@@ -1,0 +1,233 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Annotation tool best practices
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Annotation%20tool%20best%20practices&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="007643.html">
+   <LINK REL="Next"  HREF="007650.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Annotation tool best practices</H1>
+    <B>micheal_jor</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Annotation%20tool%20best%20practices&In-Reply-To="
+       TITLE="[antlr-interest] Annotation tool best practices">open.zone at virgin.net
+       </A><BR>
+    <I>Tue Apr 27 06:14:14 PDT 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="007643.html">[antlr-interest] Could antlr do this ?
+</A></li>
+        <LI>Next message: <A HREF="007650.html">[antlr-interest] Annotation tool best practices
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#7644">[ date ]</a>
+              <a href="thread.html#7644">[ thread ]</a>
+              <a href="subject.html#7644">[ subject ]</a>
+              <a href="author.html#7644">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+I have been struggling a little to understand the extent to which the
+annotation tool is useful and whether a different idea is needed to
+support grammar maintenance.
+
+In a typical language processing project, I might have a lexer, parser
+and about 6 core tree parsers. Ignoring the output language
+perspective, there might be two flavours each of the lexer and the
+parser. One of the flavour might recognize an expanded language. No
+grammar inheritance between flavours.
+
+Comparing the tree parsers to each other, the same rule often has a
+different signature and return type from one grammar to the other. And
+of course many of the tree parsers might define different flavours of
+a particular rule.
+
+To keep the size of this post down, I am going to restrict my
+discussion to just these two types of variation:
+
+a. Same rule different signature across grammars
+------------------------------------------------
+
+   Grammar 1:
+      expression
+          :    assignment_expression
+               {...}
+          ;
+
+   Grammar 2:
+      expression [Location loc, Context ctx, Widget wgt] returns Type
+          :    retVal=assignment_expression[loc, ctx, wgt]
+               {...}
+          ;
+
+b. Same rule different flavours (even in same Grammar)
+------------------------------------------------------
+   Grammar 1:
+      dottedName
+          :    IDENT
+          |    #(DOT identifier IDENT)
+          ;
+
+   Grammar 1:
+      dottedNameAsString returns String 
+          :    IDENT  {...}
+          |    #(DOT tmp=identifierAsString IDENT)
+          	{...}
+          ;
+
+   Grammar 1:
+      dottedNameAsElement returns ModelElement
+          :    IDENT  {...}
+          |    #(DOT tmp=identifierAsElement IDENT)
+          	{...}
+          ;
+
+Using the tool
+==============
+
+Using the annotation tool to deal with (a) seems to require something
+like the following:
+
+  grammar.tg
+  ----------
+      expression &lt;r_expr_sig&gt;
+      	&lt;r_expr_init&gt;
+          :    &lt;r_expr_rspec&gt;assignment_expression&lt;r_expr_args&gt;
+               &lt;r_expr_action&gt;
+          ;
+
+  grammar.ins
+  -----------
+      @r_expr_sig     : [Location loc, Context ctx, Widget wgt]
+returns Type
+      @r_expr_init    : { //declare local var 'retVal'
+                        }
+      @r_expr_rspec   : retVal=
+      @r_expr_args    : [loc, ctx, wgt]
+      @r_expr_action  : {...}
+
+Having to specify so much in an auxiliary file seems a little much
+but, &lt;r_expr_sig&gt;, &lt;r_expr_init&gt;, &lt;r_expr_action&gt; would have to be
+done to be able to reuse the grammar across languages anyway. So
+perhaps the overhead is acceptable.
+
+
+How about (b). Let's assume that the reason the grammar needs three
+flavours of the basic 'dottedName' rule is because we replace some
+occurrences of 'dottedName' with the 'dottedNameAsString' and
+'dottedNameAsElement' flavours that do more work and need the context
+of the call to do that work. Dealing with (b) seems to require
+something like this:
+
+  grammar.tg
+  ----------
+      class &lt;r_class_sig&gt;
+      	&lt;r_class_init&gt;
+          :    #( CLASS &lt;r_class_rspec&gt;&lt;r_class_rule&gt;&lt;r_class_args&gt;
+LPAREN 
+                   ...
+                  RPAREN
+                  &lt;r_class_action&gt;
+               )
+          ;
+
+  walker1.ins - no signature, calls dottedName
+  -----------
+      @r_class_init    : { //init stuff
+                        }
+      @r_class_rule    : dottedName
+      @r_class_action  : {...}
+
+  walker2.ins - has signature, calls dottedNameAsElement
+  -----------
+      @r_class_sig    : [Location loc, Context ctx] returns ModelElement
+      @r_class_init    : { //declare local var 'retVal'
+                        }
+      @r_class_rspec   : retVal=
+      @r_class_rule    : dottedNameAsElement
+      @r_class_args    : [loc, ctx]
+      @r_class_action  : {...}
+
+Here, we've had to move the rule name from the template grammar to the
+insert file. Note that this might be required for many rules and, that
+a single rule with multiple occurrences of &quot;dottedName&quot; might be
+linked to multiple flavours via similar inserts. This seems a little
+&quot;wrong&quot; to me somehow. I'd always imagine that as long as the *.tg
+file contained the grammar and just additional tags for the insert
+points, it wasn't too bad a trade-off. I get to view a cleaner, bare
+bones grammar and with a good naming scheme I can even &quot;read into the
+insert file&quot; just from the template grammar.
+
+Heck, maybe I'm missing some insight here. How do you solve such
+issues in your projects?. Do you use the annotation tool or another
+tool?. Perhaps you have a very different solution based on entirely
+different concepts from the text replacement preprocessing at work
+here. Enquiring minds would like to know....
+
+
+Cheers,
+
+Micheal
+ANTLR/C#
+
+
+PS	[I would be grateful for any references to design discussion or
+implementations of editors that can handle virtual documents composed
+from a number of other documents like the template and insert files
+above. Looking at my solution for (b) above, I would like to be able
+to view and edit directly the walker1.g and walker2.g grammars. The
+editor should hide the fact that they are composites of grammar.tg and
+walker1.ins and walker2.ins respectively. Perhaps multiple *.tg and
+*.ins files can be involved in a single grammar...]
+
+PPS	[For those unaware of it's existence, the Annotation tool is
+designed to help you maintain language- and task-specific actions code
+separately from an [hopefully clearer] ANTLR grammar. It was written
+by Bogdan Mitu and is available in the Yahoo Files area. A newer
+version is also available from the file sharing area on the web site.]
+
+
+
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+     <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+     <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+     <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="007643.html">[antlr-interest] Could antlr do this ?
+</A></li>
+	<LI>Next message: <A HREF="007650.html">[antlr-interest] Annotation tool best practices
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#7644">[ date ]</a>
+              <a href="thread.html#7644">[ thread ]</a>
+              <a href="subject.html#7644">[ subject ]</a>
+              <a href="author.html#7644">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

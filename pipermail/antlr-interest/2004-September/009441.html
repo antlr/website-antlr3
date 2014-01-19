@@ -1,0 +1,193 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] StringTemplate &quot;reflection&quot; enhancement
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20StringTemplate%20%22reflection%22%20enhancement&In-Reply-To=D052BEE8-0F31-11D9-9FCD-000A95891192%40cs.usfca.edu">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="009440.html">
+   <LINK REL="Next"  HREF="009443.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] StringTemplate &quot;reflection&quot; enhancement</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20StringTemplate%20%22reflection%22%20enhancement&In-Reply-To=D052BEE8-0F31-11D9-9FCD-000A95891192%40cs.usfca.edu"
+       TITLE="[antlr-interest] StringTemplate &quot;reflection&quot; enhancement">parrt at cs.usfca.edu
+       </A><BR>
+    <I>Sat Sep 25 15:20:32 PDT 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="009440.html">[antlr-interest] StringTemplate &quot;reflection&quot; enhancement
+</A></li>
+        <LI>Next message: <A HREF="009443.html">[antlr-interest] StringTemplate &quot;reflection&quot; enhancement
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#9441">[ date ]</a>
+              <a href="thread.html#9441">[ thread ]</a>
+              <a href="subject.html#9441">[ subject ]</a>
+              <a href="author.html#9441">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Ok, I just found an objection.  $x.y$ currently looks up y in the 
+attribute table of x if x is a ST.  This is consistent with the use of 
+$super.attribute$ and $super.templateRef()$.  Hmm...so $self.name$ 
+doesn't work: it looks for attribute name in the attribute list not 
+getName() in ST self.  Argh!!!!
+
+Any suggestions?  I don't want to make self special obviously and 
+behave differently than any other reference to a template variable.
+
+Perhaps we throw out self and use just a plain attribute reference that 
+is special like $attributes$, which you could then walk with ST.  The 
+negative is that it would unnecessarily expensive to compute 
+&quot;attributes&quot; and have it laying around all the time.   Perhaps it's 
+only available in &quot;lint mode&quot;, which already exists?
+
+$attributes:{Name: $it.name$ Type: $it.type.name$ 
+Properties:$it.properties$}$
+
+Also, what if a an attribute is multi-valued?  Before I had this:
+
+&gt;<i> Name: user
+</I>&gt;<i> Type: org.foo.MyUser
+</I>&gt;<i> Properties: name, email, address, phone
+</I>
+but what if it's really say 2 users:
+
+Name: users
+Type: org.foo.MyUser
+Properties: name, email, address, phone
+Type: org.foo.MyUser
+Properties: name, email, address, phone
+
+oh, i guess ST would handle that automatically with template 
+application.
+
+Now, what about properties that have properties.  For example,
+
+Name: student
+Type: org.foo.Student
+Properties: name, school, ID
+
+where school property is actually an aggregate with properties too or 
+worse a ST itself?  You must recurse.  Since this could go 10 levels 
+deep, I'm not sure if it's worth digging down into subproperties of 
+subproperties etc...
+
+Ter
+
+On Sep 25, 2004, at 1:31 PM, Terence Parr wrote:
+
+&gt;<i> Howdy,
+</I>&gt;<i>
+</I>&gt;<i> When debugging templates particularly for web pages with lots of nested
+</I>&gt;<i> templates, printing out the list of attributes you've set with
+</I>&gt;<i> setAttribute() is pretty handy.  You could, for example, display the
+</I>&gt;<i> contents of all attributes at the bottom of a web page if in &quot;debug&quot;
+</I>&gt;<i> mode.  So if you had set two attributes title (a simple string) and
+</I>&gt;<i> user (a user-defined object), you might want this info:
+</I>&gt;<i>
+</I>&gt;<i> Name: title
+</I>&gt;<i> Type: java.lang.String
+</I>&gt;<i>
+</I>&gt;<i> Name: user
+</I>&gt;<i> Type: org.foo.MyUser
+</I>&gt;<i> Properties: name, email, address, phone
+</I>&gt;<i>
+</I>&gt;<i> It shows the incoming data not the references in the template.
+</I>&gt;<i>
+</I>&gt;<i> Seems like this can be easily had by allowing templates to access the
+</I>&gt;<i> list of attribute name/value pairs via a reflection method.  We'd want
+</I>&gt;<i> this to be on-demand rather than computing a set of reflection
+</I>&gt;<i> descriptors each time.  Rather than make a special attribute, we should
+</I>&gt;<i> make it something like &lt;self.attributes&gt; which will on demand (when
+</I>&gt;<i> rendered) call getAttributes() on &quot;self&quot; (the template object).
+</I>&gt;<i>
+</I>&gt;<i> &lt;self.attributes&gt; would return not the raw attribute data, but a
+</I>&gt;<i> reflection object that describes the key/value pair.  That reflection
+</I>&gt;<i> object would let you say:
+</I>&gt;<i>
+</I>&gt;<i> &lt;self.attributes:{Name: &lt;it.name&gt; Type: &lt;it.type.name&gt; Properties:
+</I>&gt;<i> &lt;it.properties&gt;}&gt;
+</I>&gt;<i>
+</I>&gt;<i> Further you want to be able to be able to recursively walk down to
+</I>&gt;<i> embedded templates and get those attributes.  You'd probably want a
+</I>&gt;<i> flattened list of all attributes for any particular page.  Perhaps that
+</I>&gt;<i> requires &lt;self.embedded&gt; or &lt;self.children&gt; so you can use
+</I>&gt;<i> StringTemplate to walk down to those templates. :)
+</I>&gt;<i>
+</I>&gt;<i> All I have to do is set &quot;self&quot; to be a predefined attribute pointing to
+</I>&gt;<i> the surrounding template &quot;this&quot; pointer and all this will just work.
+</I>&gt;<i> &lt;self.name&gt; etc... will just work as they are getXXX methods already
+</I>&gt;<i> defined.
+</I>&gt;<i>
+</I>&gt;<i> Hmm...anybody have any suggestions or problems with this approach?
+</I>&gt;<i>
+</I>&gt;<i> Thanks,
+</I>&gt;<i> Ter
+</I>&gt;<i> --
+</I>&gt;<i> CS Professor &amp; Grad Director, University of San Francisco
+</I>&gt;<i> Creator, ANTLR Parser Generator, <A HREF="http://www.antlr.org">http://www.antlr.org</A>
+</I>&gt;<i> Cofounder, <A HREF="http://www.jguru.com">http://www.jguru.com</A>
+</I>&gt;<i> Cofounder, <A HREF="http://www.knowspam.net">http://www.knowspam.net</A> enjoy email again!
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Yahoo! Groups Links
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>--
+CS Professor &amp; Grad Director, University of San Francisco
+Creator, ANTLR Parser Generator, <A HREF="http://www.antlr.org">http://www.antlr.org</A>
+Cofounder, <A HREF="http://www.jguru.com">http://www.jguru.com</A>
+Cofounder, <A HREF="http://www.knowspam.net">http://www.knowspam.net</A> enjoy email again!
+
+
+
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+    <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+    <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+    <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="009440.html">[antlr-interest] StringTemplate &quot;reflection&quot; enhancement
+</A></li>
+	<LI>Next message: <A HREF="009443.html">[antlr-interest] StringTemplate &quot;reflection&quot; enhancement
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#9441">[ date ]</a>
+              <a href="thread.html#9441">[ thread ]</a>
+              <a href="subject.html#9441">[ subject ]</a>
+              <a href="author.html#9441">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

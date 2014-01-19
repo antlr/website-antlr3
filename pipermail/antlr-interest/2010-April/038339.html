@@ -1,0 +1,155 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] greedy vs nongreedy lexer rules
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20greedy%20vs%20nongreedy%20lexer%20rules&In-Reply-To=%3Cj2r1c0448551004181604l71b097e5ibd8b7f23b33155f%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="038336.html">
+   <LINK REL="Next"  HREF="038340.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] greedy vs nongreedy lexer rules</H1>
+    <B>Cliff Hudson</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20greedy%20vs%20nongreedy%20lexer%20rules&In-Reply-To=%3Cj2r1c0448551004181604l71b097e5ibd8b7f23b33155f%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] greedy vs nongreedy lexer rules">cliff.s.hudson at gmail.com
+       </A><BR>
+    <I>Sun Apr 18 16:04:41 PDT 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="038336.html">[antlr-interest] greedy vs nongreedy lexer rules
+</A></li>
+        <LI>Next message: <A HREF="038340.html">[antlr-interest] greedy vs nongreedy lexer rules
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#38339">[ date ]</a>
+              <a href="thread.html#38339">[ thread ]</a>
+              <a href="subject.html#38339">[ subject ]</a>
+              <a href="author.html#38339">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>With respect to local variables and actions in ambiguous sets of rule, it
+seems to me that the entire rule alternative is the scope for all actions
+which appear in it, so having an action which declares a variable and then
+another action later in the alternative which executes some code is really
+all one method.  What would need to be dealt with is that the language
+target generator would need to be able to take the state pulled from the DFA
+and insert that information into the alternative's action sequence so that
+each action had access to the logical state at the time it executes.
+
+For instance, in the rule:
+
+FOO: { int n=4; } 'a'* { n += $text.Length; } 'bcd' { System.WriteLine(&quot;{0}:
+{1}&quot;, n, $text); } ;
+
+the alternative's action function would look like:
+
+foo_alt1(State[] states)
+{
+    int n=4;
+    n += states[0].Text.Length;
+    System.WriteLine(&quot;{0}: {1}&quot;, n, states[1].Text);
+}
+
+The State[] is an output from the DFA.  Ambiguity then doesn't have any
+effect on your ability to execute actions, but language targets would need
+to be rewritten.
+
+
+On Sun, Apr 18, 2010 at 3:40 PM, Terence Parr &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">parrt at cs.usfca.edu</A>&gt; wrote:
+
+&gt;<i> Hi Kyle.  Thanks for the thoughts!  I'm also having more evil thoughts.
+</I>&gt;<i>
+</I>&gt;<i> The ANTLR lexers are really out of control in what they allow just to
+</I>&gt;<i> support edge cases.  For MOST grammars, you have no actions in lexer rules
+</I>&gt;<i> except for skip() calls in whitespace rules etc...  Some are complicated
+</I>&gt;<i> like ANTLR's action splitter. here's a few rules:
+</I>&gt;<i>
+</I>&gt;<i> SET_DYNAMIC_SCOPE_ATTR
+</I>&gt;<i>        :       '$' x=ID '::' y=ID WS? '=' expr=ATTR_VALUE_EXPR ';'
+</I>&gt;<i>                {delegate.setDynamicScopeAttr($text, $x, $y, $expr);}
+</I>&gt;<i>        ;
+</I>&gt;<i>
+</I>&gt;<i> DYNAMIC_SCOPE_ATTR
+</I>&gt;<i>        :       '$' x=ID '::' y=ID {delegate.dynamicScopeAttr($text, $x,
+</I>&gt;<i> $y);}
+</I>&gt;<i>        ;
+</I>&gt;<i>
+</I>&gt;<i> QUALIFIED_ATTR
+</I>&gt;<i>        :       '$' x=ID '.' y=ID {input.LA(1)!='('}?
+</I>&gt;<i> {delegate.qualifiedAttr($text, $x, $y);}
+</I>&gt;<i>        ;
+</I>&gt;<i>
+</I>&gt;<i> Actions are at right edges (easy to do) but they ref labels from rule refs.
+</I>&gt;<i>  I can implement this easily enough with a DFA that saves named substrings
+</I>&gt;<i> and then ref them in the action.  But, actions sort of imply I'm going to
+</I>&gt;<i> generate code for the rules. I would LOVE to do away with lexer code gen
+</I>&gt;<i> (makes new targets easier too).  With predicates and actions in middle of
+</I>&gt;<i> rules, though, we'd have to stuff those in another &quot;support&quot; function
+</I>&gt;<i> somewhere and then exec them AFTER we match rules in case we have an
+</I>&gt;<i> ambiguous case.  For example:
+</I>&gt;<i>
+</I>&gt;<i> FOO : 'f' {an-action} 'oo' ;
+</I>&gt;<i> ID : 'a'..'z'+ ;
+</I>&gt;<i>
+</I>&gt;<i> Here, after matching 'f', we can't distinguish FOO vs ID yet we have to
+</I>&gt;<i> exec an action!  The only way is to match FOO vs ID with the DFA and then
+</I>&gt;<i> rewind and exec FOO (the winner). Ugh. That means generating a FOO() method.
+</I>&gt;<i>  Or, we could simply disallow ambig action exec, which is easy for me to
+</I>&gt;<i> detect in the NFA-&gt;DFA conversion.
+</I>&gt;<i>
+</I>&gt;<i> What about local variables?
+</I>&gt;<i>
+</I>&gt;<i> DUH : {int n=0;} ('a'..'z' {n++;})+ {do something with n;} ;
+</I>&gt;<i>
+</I>&gt;<i> can't yank {int n=0;} into its own function.  I'm thinking we need to
+</I>&gt;<i> formalize locals so I can avoid genrating code that won't compile.
+</I>&gt;<i>
+</I>&gt;<i> What about backward compatibility?  Losing recursion breaks some grammars.
+</I>&gt;<i>  Formalizing locals breaks some.  Perhaps easy answer is to simply allow v3
+</I>&gt;<i> lexers to hook in to v4 parsers.  The imports within the v3 lexer would have
+</I>&gt;<i> change to
+</I>&gt;<i>
+</I>&gt;<i> import org.antlr.v4.runtime.legacy.Lexer;
+</I>&gt;<i>
+</I>&gt;<i> etc... but we could make it work.
+</I>&gt;<i>
+</I>&gt;<i> A tough decision.  I'm aiming for really small lexers w/o code gen except
+</I>&gt;<i> for user actions and semantic predicates.
+</I>&gt;<i>
+</I>&gt;<i> Ter
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe:
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i>
+</I></PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="038336.html">[antlr-interest] greedy vs nongreedy lexer rules
+</A></li>
+	<LI>Next message: <A HREF="038340.html">[antlr-interest] greedy vs nongreedy lexer rules
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#38339">[ date ]</a>
+              <a href="thread.html#38339">[ thread ]</a>
+              <a href="subject.html#38339">[ subject ]</a>
+              <a href="author.html#38339">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,180 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Predicate hoisting pain
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Predicate%20hoisting%20pain&In-Reply-To=%3C49E353C6.3060204%40temporal-wave.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="034028.html">
+   <LINK REL="Next"  HREF="034039.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Predicate hoisting pain</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Predicate%20hoisting%20pain&In-Reply-To=%3C49E353C6.3060204%40temporal-wave.com%3E"
+       TITLE="[antlr-interest] Predicate hoisting pain">jimi at temporal-wave.com
+       </A><BR>
+    <I>Mon Apr 13 08:01:26 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="034028.html">[antlr-interest] Predicate hoisting pain
+</A></li>
+        <LI>Next message: <A HREF="034039.html">[antlr-interest] Predicate hoisting pain
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#34032">[ date ]</a>
+              <a href="thread.html#34032">[ thread ]</a>
+              <a href="subject.html#34032">[ subject ]</a>
+              <a href="author.html#34032">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Sam Barnett-Cormack wrote:
+&gt;<i> Hi all,
+</I>&gt;<i>
+</I>&gt;<i> So, in my grammar I have need to re-use rules so they ultimately refer 
+</I>&gt;<i> to a different rule (so I don't have to duplicate 
+</I>&gt;<i> intersection/union/exception rules). I use a parameter and gated 
+</I>&gt;<i> predicates, like so:
+</I>&gt;<i>
+</I>&gt;<i> elements[boolean os]
+</I>&gt;<i>    : {!$os}?=&gt;subtypeElements
+</I>&gt;<i>    | {$os}?=&gt;objectSetElements
+</I>&gt;<i>    | LPAREN! elementSetSpec[$os] RPAREN!
+</I>&gt;<i>    ;
+</I>&gt;<i>
+</I>&gt;<i> This is ultimately referred to from two places. The first, which 
+</I>&gt;<i> generates code that's just fine, is:
+</I>&gt;<i>
+</I>&gt;<i> elementSetSpecs
+</I>&gt;<i>    : rootElementSetSpec[false] (COMMA EXTMARK (COMMA 
+</I>&gt;<i> additionalElementSetSpec[false])?)?
+</I>&gt;<i>    -&gt; ^(ELEMENTSET rootElementSetSpec EXTMARK? additionalElementSetSpec?)
+</I>&gt;<i>    ;
+</I>&gt;<i>
+</I>&gt;<i> However, in the *slightly* more complex case:
+</I>&gt;<i>
+</I>&gt;<i> objectSetSpec
+</I>&gt;<i>    : rootElementSetSpec[true] (COMMA EXTMARK 
+</I>&gt;<i> additionalElementSetSpec[true]?)?
+</I>&gt;<i>    | EXTMARK (COMMA additionalElementSetSpec[true])?
+</I>&gt;<i>    ;
+</I>&gt;<i>
+</I>&gt;<i> The predicates get hoisted in the generated code, and then there's 
+</I>&gt;<i> compile errors with undefined variable 'os'.
+</I>&gt;<i>
+</I>&gt;<i> I'm not sure why it happens in one case and not the other, and I'm even 
+</I>&gt;<i> less clear on how to fix it. Can anyone help?
+</I>&gt;<i>
+</I>&gt;<i>   
+</I>This is an FAQ basically, but you answer your own question as to why as 
+your parameter to the rule is a local parameter but the code must be/can 
+be hoisted for some decisions.
+
+The solution is relatively simple, but it probably isn't the correct 
+solution as your need for this indicates that you are probably going 
+wrong in the way you are constructing the parser. What you shoudl really 
+do is merge these two possibilities in the parser, then in your tree 
+walk, if you detect the use of a construct that is not valid for the 
+context, then you parser it anyway but issue a really good semantic 
+error along the lines of &quot;Element specs like FOO cannot be used within 
+specs for BARs&quot;. If you do not do this then your users will just get 
+&quot;Syntax error at FOO!&quot;, and unless they are already very knowledgeable 
+about the language, then they won't really know what this means.
+
+However, as you can obviously distinguish the cases at some point higher 
+up the rule chain, then if you wish to pursue this, then all you need do 
+is create a scope with your flag in it at a high enough level, init it 
+to the default case, then set/unset it as the rules descend, then use it 
+as the gated predicate in your rule above:
+
+highuprule
+    scope
+     { boolean os; }
+    @init { $highuprule::os = false; }
+:<i> rule rule rule ... ;
+</I>
+...
+
+ruleX :  X  Y (Z { $highuprule::os = true; }  objectSetSpec)? // Z 
+present means flip the flag
+;
+
+objectSetSpec
+   : {$highuprule:os}?=&gt;additionalSetSpec
+   | something else
+   ;
+
+
+Because scopes are globally available to the parsing context, the 
+histing has no effect on the locality of the parameter.
+
+However, remember the rules of good construction:
+
+1) Anything that can be moved as an error in the lexer syntactically, to 
+a semantic error, or left to the parser, should be;
+2) Anything that can be moved from a syntax error in the parser to a 
+semantic error in the tree walker, should be;
+
+In general this means that error messages from your front end will be as 
+good as they can be:
+
+1) &quot;Unknown character '\u8290'; in the lexer becomes: &quot;Line 20, offset 
+42: The character 'u8290' is not a valid character for use in a variable 
+name!&quot;
+2) &quot;No viable alt at 'FOO'&quot;, becomes &quot;Line 42, offset 22: The construct 
+FOO cannot be used within a BAR, only within a BAZ, try specifying as a 
+BARRY.&quot;
+
+and so on.
+
+Jim
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="034028.html">[antlr-interest] Predicate hoisting pain
+</A></li>
+	<LI>Next message: <A HREF="034039.html">[antlr-interest] Predicate hoisting pain
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#34032">[ date ]</a>
+              <a href="thread.html#34032">[ thread ]</a>
+              <a href="subject.html#34032">[ subject ]</a>
+              <a href="author.html#34032">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

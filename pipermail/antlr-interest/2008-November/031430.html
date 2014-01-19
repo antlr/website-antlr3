@@ -1,0 +1,340 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Antlr3 C runtime woes.
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Antlr3%20C%20runtime%20woes.&In-Reply-To=%3C1226001341.4523.678.camel%40jimi.temporal-wave.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="031426.html">
+   <LINK REL="Next"  HREF="031428.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Antlr3 C runtime woes.</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Antlr3%20C%20runtime%20woes.&In-Reply-To=%3C1226001341.4523.678.camel%40jimi.temporal-wave.com%3E"
+       TITLE="[antlr-interest] Antlr3 C runtime woes.">jimi at temporal-wave.com
+       </A><BR>
+    <I>Thu Nov  6 11:55:41 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="031426.html">[antlr-interest] Antlr3 C runtime woes.
+</A></li>
+        <LI>Next message: <A HREF="031428.html">[antlr-interest] [fatal] rule Tokens has non-LL(*) decision due to	recursive rule invocations
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#31430">[ date ]</a>
+              <a href="thread.html#31430">[ thread ]</a>
+              <a href="subject.html#31430">[ subject ]</a>
+              <a href="author.html#31430">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Thu, 2008-11-06 at 09:48 -0800, Vamsi Juvvi wrote:
+&gt;<i> Hi all.
+</I>&gt;<i> 
+</I>&gt;<i>    I hope this gets scanned by jim or any other C runtime expert and I
+</I>&gt;<i> get some advice.
+</I>
+Are you using output=AST ? I would need to see more of your grammar to
+see whether any of these are bugs are just a misuse of the grammar to be
+honest. I think that you might be trying to do things that would work if
+you had output=AST (or the other way around).
+
+&gt;<i> 
+</I>&gt;<i>    I had sent out an email containing a whole lot of text (in
+</I>&gt;<i> retrospect) and probably created an overload for whoever read it. I am
+</I>&gt;<i> simplifying it and adding some other problems I am facing. 
+</I>&gt;<i> 
+</I>&gt;<i>   I am trying to write a replacement for the MSIDL compiler with a
+</I>&gt;<i> custom simplified and customized syntax for my company's needs. I am
+</I>&gt;<i> using Antlr 3.1.1 with the C runtime. The problems started when I
+</I>&gt;<i> decided to carry some comments over from the IDL file to the generated
+</I>&gt;<i> files. Thats when I lost a few days tracking the following issues and
+</I>&gt;<i> figuring out workarounds.
+</I>&gt;<i> 
+</I>&gt;<i>   //-- Problem 1 -----------------
+</I>&gt;<i>   In a rule (import_decl say), I want to have a validating predicate
+</I>&gt;<i> to ensure that the rule starts on a line all by itself. The antlr book
+</I>&gt;<i> gave me the impression that it can expressed thus.
+</I>&gt;<i> 
+</I>&gt;<i>       import_decl : IMPORT_DECL { $start.pos == 0 } ?
+</I>
+Here you would be trying to reference the first token of the rule
+return, which if your outputting the AST will be the tree span.
+
+There are a few things wrong here. But first review what you are trying
+to do. It seems that you want whatever IMPORT_DECL is, to start at
+column position 0 only. What do you do with this token when it isn't at
+column 0? Your construct will probably just throw a confusing error to
+the user about what to them looks like valid code. Don't try to encode
+errors in the grammar syntax like this, you should be going the other
+way and parsing everything, then issuing specific things about errors
+that you can check for. Then again, if the parser can accept it even if
+it isn't at the start of a line, why make this an error anyway?
+
+If you want to know something about IMPORT_DECL, then reference it
+explicitly:
+
+import_decl: i=IMPORT_DECL  { if ($i.whatever ...
+
+off the top of my head the pos attribute isn't the start position of the
+token, but the token number anyway (check that though I have not
+looked).
+
+If a token takes a different meaning when not at the start of the line,
+then perform this token change in the lexer, not the parser. The parser
+is really about token sequences, not their position in text lines.
+
+Also, remember that you might not want:
+
+import
+
+to be any different than:
+
+     import
+
+
+&gt;<i>   There is a workaround though. I can hack it to use the actual
+</I>&gt;<i> members in the C runtime. I can replace the predicate with
+</I>&gt;<i>    { retval.start-&gt;charPosition == 0 }?
+</I>
+It usually means that you are doing something wrong if you start
+resorting to this.
+
+&gt;<i>   //-- Problem 2---------------------
+</I>&gt;<i>   Similar problems exist when I want to generate an imaginary token in
+</I>&gt;<i> my parser initialized with a real token.
+</I>
+You are probably repeating the same mistake to be honest.
+
+&gt;<i> 
+</I>&gt;<i>   tokens
+</I>&gt;<i>    {
+</I>&gt;<i>       INTERFACE_BLOCK; // imaginary token.
+</I>&gt;<i>    }
+</I>&gt;<i> 
+</I>&gt;<i>   // The book indicates that the following should work.
+</I>&gt;<i>   interface
+</I>&gt;<i>     :^(INTERFACE_BLOCK[$interface.start] interface_decl
+</I>&gt;<i> interface_body_line*)
+</I>
+You mean -&gt; ^(  
+
+right?
+
+&gt;<i>  The C code generated however has two issues.
+</I>&gt;<i>    It has the same problem as above where it tries to cast the rule
+</I>&gt;<i> retvalue to pANTLR3_COMMON_TOKEN instead of casting the retval.start
+</I>&gt;<i> item.
+</I>
+This may be a bug in the start template then.
+
+&gt;<i>    It uses ADAPTER-&gt;createTypeTokenText or ADAPTER-&gt;createTypeText
+</I>&gt;<i> instead of ADAPTER-&gt;createTypeToken which is what I expect
+</I>
+This stuff can be confusing. One of the issues is that the Java runtime
+uses overloaded method calls, which I don't have in C, so the template
+has to guess from the parameters it is given. However, I have not known
+it to be wrong. Try explicitly constructing what you want to know in the
+interface rule and returning it from the rule, this will be much less
+confusing in your grammar anyway.
+
+&gt;<i> 
+</I>&gt;<i>  I am doing all of this just so I can encode the start or a rule
+</I>&gt;<i> ( INTERFACE_BLOCK[$start] is expected to copy the start token's data
+</I>&gt;<i> into the INTERFACE_BLOCK token) so I can later start searching for
+</I>&gt;<i> comments on a hidden channel.
+</I>
+Why not keep your interface block IMAGINARY and just use:
+
+-&gt; ^(INTERFACE_BLOCK $interface $interface_decl) 
+
+INTERFACE_BLOCK will then contain start and end tokens anyway in your
+AST and the start will logically be the interface token. I think that
+you are trying to solve problems that don't exist ;-)
+
+&gt;<i> 
+</I>&gt;<i>   I worked around this by adding even more suspect C code and ended up
+</I>&gt;<i> making the antlr grammar file lose some of it's declarative beauty. In
+</I>&gt;<i> my parser I did this to work around.
+</I>&gt;<i> 
+</I>&gt;<i> interface
+</I>&gt;<i> @after
+</I>
+@after isn't really supported in C targets at the moment anyway. There
+are sequencing issues.
+
+&gt;<i> {         
+</I>&gt;<i>     // Save the line-num/charPos of the first token to match in this
+</I>&gt;<i> interface
+</I>
+Yeah - I think that you are doing all this code but the imaginary token
+has this anyway. The imaginary token will give you the start and end
+tokens that it spans, regardless of how you re-write them. Hence in your
+AST, you get the start token, and ask it in turn for the line and column
+position, just like in Java. Then, if you don't like it, you can give a
+nice semantic error and not have the parser say &quot;NVA at 'interface'&quot; ;-)
+It is also a lot more efficient as until you ask for anythign, it is all
+just passing pointers around.
+
+
+&gt;<i>     // rule to the members of our imaginary token.
+</I>&gt;<i>     pANTLR3_COMMON_TOKEN pTok = retval.tree-&gt;getToken(retval.tree);
+</I>&gt;<i>     if(pTok != 0)
+</I>&gt;<i>     {
+</I>&gt;<i>       pTok-&gt;line = retval.start-&gt;line;
+</I>&gt;<i>       pTok-&gt;charPosition = retval.start-&gt;charPosition;
+</I>&gt;<i>     }    
+</I>&gt;<i> }
+</I>&gt;<i>     : interface_decl
+</I>&gt;<i>         OPEN_BRACE
+</I>&gt;<i>             interface_body_line*
+</I>&gt;<i>         CLOSE_BRACE SEMI_COLON
+</I>&gt;<i>     -&gt; ^(INTERFACE_BLOCK interface_decl interface_body_line*)    
+</I>&gt;<i>     ;
+</I>&gt;<i>   
+</I>&gt;<i>   Is this related to the unsupported tokenReWrite feature documented
+</I>&gt;<i> in the C runtime or a bug ?
+</I>
+I think you are just doing things wrong ;-) It isn't token rewrite that
+is unsupported, but the tokenStreamRewrite engine.
+
+&gt;<i> 
+</I>&gt;<i>   This makes me feel vaguely dirty. I will have an interresting time
+</I>&gt;<i> explaining why these workarounds are neccesary. I have hyped antlr to
+</I>&gt;<i> the point where any mention of bugs will make my boss cringe. I will
+</I>&gt;<i> just gloss over all the C code telling him that its just the way it
+</I>&gt;<i> has to be done. 
+</I>
+No, basically, just take it out, and let ANTLR do what it does
+naturally.
+
+&gt;<i> 
+</I>&gt;<i>   //-- Problem 3 -----
+</I>&gt;<i>   Finally armed with these workaround, I expected searching the token
+</I>&gt;<i> stream for comments before/after would be straighforward. Frustration
+</I>&gt;<i> strikes again. After several days of pulling my hair out, I realize
+</I>&gt;<i> that there is yet another bug (which was reported on the antlr mailing
+</I>&gt;<i> lists last year) which needs to be fixed for it to work.
+</I>&gt;<i> 
+</I>&gt;<i>   First thing I did was allow hidden channel tokens to be retained. I
+</I>&gt;<i> wasn't aware that this needed to be done till I started tracing
+</I>&gt;<i> through the run time (Extra documentation maybe)
+</I>&gt;<i> 
+</I>&gt;<i>  pTokenStream = antlr3CommonTokenStreamSourceNew(ANTLR3_SIZE_HINT,
+</I>&gt;<i> TOKENSOURCE(pLexerCtx));
+</I>&gt;<i>  pTokenStream-&gt;discardOffChannel     = ANTLR3_FALSE;
+</I>&gt;<i> 
+</I>&gt;<i>  After this was done, there seems to be a very subtle bug with cache
+</I>&gt;<i> coherency (occacional issue when using caching for performance) which
+</I>&gt;<i> was reported on the mainling list. This was causing a token that was
+</I>&gt;<i> supposed to be hidden to be sent to parser failing the parse. The
+</I>&gt;<i> first token in my file was a hidden token and luckily exposed the
+</I>&gt;<i> problem right away. The fix (as reported by the original reporter of
+</I>&gt;<i> the problem) was to make sure that in the last few lines of the
+</I>&gt;<i> *fillBuffer* methods in antlr3tokenstream.c.
+</I>&gt;<i> 
+</I>&gt;<i> replace 
+</I>&gt;<i> 
+</I>&gt;<i>      /* Set the consume pointer to the first token that is on our
+</I>&gt;<i> channel */
+</I>&gt;<i>     tokenStream-&gt;p  = 0;
+</I>&gt;<i>     tokenStream-&gt;p  = skipOffTokenChannels(tokenStream,
+</I>&gt;<i> tokenStream-&gt;p);
+</I>&gt;<i> 
+</I>&gt;<i>     /* Cache the size so we don't keep doing indirect method calls*/
+</I>&gt;<i>     tokenStream-&gt;tstream-&gt;istream-&gt;cachedSize =
+</I>&gt;<i> tokenStream-&gt;tokens-&gt;count;
+</I>&gt;<i> 
+</I>&gt;<i>   With
+</I>&gt;<i> 
+</I>&gt;<i>      /* Cache the size so we don't keep doing indirect method calls
+</I>&gt;<i>      * Relocated to above the following two lines following bug report
+</I>&gt;<i>      * at <A HREF="http://markmail.org/search/list:antlr?q=token+stream">http://markmail.org/search/list:antlr?q=token+stream</A>
+</I>&gt;<i> +comments#query:list%3Aantlr%20token%20stream%20comments+page:6
+</I>&gt;<i> +mid:5olqv5itjde27uhi+state:results
+</I>&gt;<i>      */
+</I>&gt;<i>     tokenStream-&gt;tstream-&gt;istream-&gt;cachedSize =
+</I>&gt;<i> tokenStream-&gt;tokens-&gt;count;
+</I>&gt;<i> 
+</I>&gt;<i>     /* Set the consume pointer to the first token that is on our
+</I>&gt;<i> channel
+</I>&gt;<i>      */
+</I>&gt;<i>     tokenStream-&gt;p  = 0;
+</I>&gt;<i>     tokenStream-&gt;p  = skipOffTokenChannels(tokenStream,
+</I>&gt;<i> tokenStream-&gt;p);
+</I>&gt;<i> 
+</I>&gt;<i>   //----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+</I>&gt;<i> 
+</I>&gt;<i>  These are minor problems on the whole, but made the experience of
+</I>&gt;<i> developing non trivial Antlr3 stuff surprinsgly tricky and not nearly
+</I>&gt;<i> as much fun as it was with Antlr2. 
+</I>
+Well, I think you are doing a bit of running before walking really ;-)
+
+&gt;<i> I understand the fact that this is a volunteer effort and that much
+</I>&gt;<i> like in a commercial setting, bugs can slip through in a volunteer
+</I>&gt;<i> driven runtime and it is amazing that there are so few bugs.
+</I>&gt;<i> 
+</I>&gt;<i>   I can volunteer to start adding test cases if someone can point me
+</I>&gt;<i> to the resources to do so. 
+</I>
+I have been asking for someone to do this for 3 years. All you need to
+do is write them. I want to use something like C-unit, but at the end of
+the day, I don't care so long as someone other than me produces them.
+
+&gt;<i> If there is an effort to start with a CPP runtime, I will be more than
+</I>&gt;<i> glad to assist in whatever way is needed as reading the current C code
+</I>&gt;<i> makes me want to cry! 
+</I>
+Normally, you don't go anywhere near this, but just use your own C++
+code. However, I have started the C++ runtime and I will finish it
+shortly.
+
+&gt;<i> I feel more manly just for digging through it and getting it to work
+</I>&gt;<i> for me :-).
+</I>
+Try writing it :-)
+
+&gt;<i> 
+</I>&gt;<i>  I hope someone can tell me where I am doing idiotic things or put
+</I>&gt;<i> these bugs in for eventual fixes. I can help with this but I will
+</I>&gt;<i> probably have to learn stringtemplate stuff and get an overview
+</I>&gt;<i> document or some such. I am willing however.
+</I>
+Mostly you are over complicating things I believe. 
+
+I have some time set aside this week for latest bugs and some C++ work,
+so I will check these things, probably tomorrow.
+
+Jim
+
+
+</PRE>
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="031426.html">[antlr-interest] Antlr3 C runtime woes.
+</A></li>
+	<LI>Next message: <A HREF="031428.html">[antlr-interest] [fatal] rule Tokens has non-LL(*) decision due to	recursive rule invocations
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#31430">[ date ]</a>
+              <a href="thread.html#31430">[ thread ]</a>
+              <a href="subject.html#31430">[ subject ]</a>
+              <a href="author.html#31430">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

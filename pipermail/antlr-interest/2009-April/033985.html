@@ -1,0 +1,151 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Disambiguating simple grammar &#8211; could anyone help?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%3D%3Futf-8%3Fq%3FDisambiguating_simple_grammar_%3F%3D%0A%20%3D%3Futf-8%3Fq%3F%3DE2%3D80%3D93_could_anyone_help%3D3F%3F%3D&In-Reply-To=%3C49DF30E5.7050206%40lancaster.ac.uk%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="033984.html">
+   <LINK REL="Next"  HREF="033986.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Disambiguating simple grammar &#8211; could anyone help?</H1>
+    <B>Sam Barnett-Cormack</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%3D%3Futf-8%3Fq%3FDisambiguating_simple_grammar_%3F%3D%0A%20%3D%3Futf-8%3Fq%3F%3DE2%3D80%3D93_could_anyone_help%3D3F%3F%3D&In-Reply-To=%3C49DF30E5.7050206%40lancaster.ac.uk%3E"
+       TITLE="[antlr-interest] Disambiguating simple grammar &#8211; could anyone help?">s.barnett-cormack at lancaster.ac.uk
+       </A><BR>
+    <I>Fri Apr 10 04:43:33 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="033984.html">[antlr-interest] Disambiguating simple grammar &#150; could anyone help?
+</A></li>
+        <LI>Next message: <A HREF="033986.html">[antlr-interest] bug in GnuCParser.g - missing declarations and	statements
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#33985">[ date ]</a>
+              <a href="thread.html#33985">[ thread ]</a>
+              <a href="subject.html#33985">[ subject ]</a>
+              <a href="author.html#33985">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Tomasz Jastrzebski wrote:
+&gt;<i> Hello developers,
+</I>&gt;<i> I cannot figure out how to disambiguate the following grammar using 
+</I>&gt;<i> syntactic predicate, so the range rule takes precedence over the offset 
+</I>&gt;<i> rule.
+</I>&gt;<i> Could anyone advice? I prefer to keep separate range and offset rules 
+</I>&gt;<i> because of the custom AST tree construction.
+</I>&gt;<i> Thanks for any pointers,
+</I>
+I'll take a look...
+
+&gt;<i> grammar test;
+</I>&gt;<i> program : (expression)* ;
+</I>&gt;<i> expression
+</I>&gt;<i>  :
+</I>&gt;<i>    Identifier ((range) =&gt; range)?
+</I>&gt;<i>  | offset
+</I>&gt;<i>  ;
+</I>&gt;<i> range : Integer ('-' Integer)? ;
+</I>&gt;<i> offset : ('+' | '-') Integer ;
+</I>&gt;<i> Identifier : ('a'..'z')+ ;
+</I>&gt;<i> Integer : ('0'..'0')+ ;
+</I>&gt;<i> WhiteSpace : (' ' | '\t' | '\r\n' | '\r')+ { $channel=HIDDEN; };
+</I>
+Well, to start with, should the Integer rule be:
+
+Integer : ('0'..'9')+;
+
+There should be no need for disambiguation between range and offset. 
+They have different start sets. You will presumably have sentences like
+
+foo 10-25 - 10 baz 1-5 bar + 5
+
+Now, while that's hard to read, it shouldn't be hard to parse. The 
+parser tries to read an expression - it goes for the first alt if it 
+sees an Identifier, the second if it sees  '+' or '-'. Once in the first 
+alt, if it sees an Integer it does the optional bit, otherwise it exits 
+and looks for another expression. So, the sentence above is presumably 
+to be parsed as :
+
+expression(Identifier(foo) range(Integer(10) '-' Integer(25)))
+expression(offset('-' Integer(10)))
+expression(Identifier(baz) range(Integer(1) '-' Integer(5)))
+expression(Identifier(bar))
+expression(offset('+' Integer(5)))
+
+Where the problem appears to come is part-way through range. Should:
+
+foo 10 - 15
+
+Be:
+
+expression(Identifier(foo) range(Integer(10) '-' Integer(15)))
+
+or:
+
+expression(Identifier(foo) range(Integer(10)))
+expression(offset('-' Integer(15)))
+
+The way you've described the language, that's an inherent ambiguity. 
+Now, if you want it to be interpreted as a range whenever possible, you 
+need to deal with the ambiguity on the exit set of range (I think), so 
+the predicate needs to be there. Lose the predicate from the expression 
+rule and put it in range:
+
+range : Integer (('-')=&gt;('-' Integer)|) ;
+
+This should prevent range from exiting prematurely. However, if you're 
+designing this language, I'd recommend getting rid of the inherent 
+ambiguity by putting in an expression terminator or requiring 
+start-and-end markers for range (parentheses, maybe), or even not using 
+'-' for ranges - use '..' instead.
+
+Now, I've not tested this, and might've made a mistake, but I think that 
+I've got the problem identified there.
+
+-- 
+Sam Barnett-Cormack
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="033984.html">[antlr-interest] Disambiguating simple grammar &#150; could anyone help?
+</A></li>
+	<LI>Next message: <A HREF="033986.html">[antlr-interest] bug in GnuCParser.g - missing declarations and	statements
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#33985">[ date ]</a>
+              <a href="thread.html#33985">[ thread ]</a>
+              <a href="subject.html#33985">[ subject ]</a>
+              <a href="author.html#33985">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,248 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] parsing just a subset of a grammar
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20parsing%20just%20a%20subset%20of%20a%20grammar&In-Reply-To=%3CCAF9KzRNXhfreRei_AEaPbBHoQY_X7xT400x%3DOUJMhXJmkGn4dw%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="045777.html">
+   <LINK REL="Next"  HREF="045768.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] parsing just a subset of a grammar</H1>
+    <B>Bernard Kaiflin</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20parsing%20just%20a%20subset%20of%20a%20grammar&In-Reply-To=%3CCAF9KzRNXhfreRei_AEaPbBHoQY_X7xT400x%3DOUJMhXJmkGn4dw%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] parsing just a subset of a grammar">bkaiflin.ruby at gmail.com
+       </A><BR>
+    <I>Mon Nov 19 15:05:13 PST 2012</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="045777.html">[antlr-interest] parsing just a subset of a grammar
+</A></li>
+        <LI>Next message: <A HREF="045768.html">[antlr-interest] parsing just a subset of a grammar
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#45767">[ date ]</a>
+              <a href="thread.html#45767">[ thread ]</a>
+              <a href="subject.html#45767">[ subject ]</a>
+              <a href="author.html#45767">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+welcome in the club &quot;ANTLR doesn't behave the way I expected&quot; :D
+
+As Ivan says in the PS, negation is difficult to manipulate, as well as
+ignoring portions of input. But possible in some circumstances, see CHUNK
+in the thread containing
+<A HREF="http://www.antlr.org/pipermail/antlr-interest/2012-November/045765.html">http://www.antlr.org/pipermail/antlr-interest/2012-November/045765.html</A>
+
+As I don't have the full grammar, I made a short version. Given the four
+rules
+
+any    : ( ID | INT )* EOL ;
+acl    : 'ip' 'access-list' 'extended'? ID EOL ( remark | rule )+ EOF ;
+remark : INT? 'remark' (~EOL)* EOL ;
+rule   : INT? ID+ EOL ;
+
+and the input
+
+$ cat t.config
+no ip bootp server
+ip access-list xyz
+abc def
+
+$ echo $CLASSPATH
+.:/usr/local/lib/antlr-3.4-complete-no-antlrv2.jar
+$ java org.antlr.Tool -trace Cisco.g
+$ java Test &lt; t.config
+enter ID n line=1:0
+enter CHAR n line=1:0
+exit CHAR o line=1:1
+exit ID   line=1:2
+enter config [@0,0:1='no',&lt;7&gt;,1:0]
+Cisco last update 2127
+enter any [@0,0:1='no',&lt;7&gt;,1:0]
+enter WS   line=1:2
+exit WS i line=1:3
+enter T__14 i line=1:3
+exit T__14   line=1:5
+enter WS   line=1:5
+exit WS b line=1:6
+enter ID b line=1:6
+enter CHAR b line=1:6
+exit CHAR o line=1:7
+exit ID   line=1:11
+line 1:3 missing EOL at 'ip'
+exit any [@2,3:4='ip',&lt;14&gt;,1:3]
+
+I can see :
+1) ID is built character by character, it would be better to group them as
+in ID : ( 'a'..'z' | 'A'..'Z' | '_')+
+2) rule any has been chosen, because it's the first (the other is rule)
+that matches a line starting with an ID
+3) the lexer consumes the token [@0,0:1='no',&lt;7&gt;,1:0] &lt;7&gt; is in my case the
+type of ID, see the file &lt;grammar name&gt;.tokens for a list of token types
+4) the lexer skips the white space and sees `ip`. As 'ip' appears as
+implicit token in the parser rule acl, it has received it's own token type,
+in this case T__14, so it is not an ID
+5) I don't know why the lexer doesn't stop here and still reads the next
+character, anyway the parser cannot continue with the loop ( ID | INT)* in
+rule any, because T__14 is neither an ID nor an INT, it expects an EOL to
+terminate the rule and it complains with &quot;missing EOL&quot;
+
+exit any [@2,3:4='ip',&lt;14&gt;,1:3]
+enter acl [@2,3:4='ip',&lt;14&gt;,1:3]
+enter WS   line=1:11
+exit WS s line=1:12
+enter ID s line=1:12
+enter CHAR s line=1:12
+exit CHAR e line=1:13
+exit ID
+ line=1:18
+line 1:6 missing 'access-list' at 'bootp'
+
+6) Now the parser receives from the lexer T__14='ip', the second token in
+the line &quot;no ip bootp server&quot;, and naturally chooses the rule acl which
+starts with 'ip'.
+7) the lexer advances in the input, finds 'server', returns 'bootp' (which
+has not been consumed yet) to the parser
+8) the parser complains because it expects 'access-list' as the next token
+in rule acl.
+
+
+Now let's do a small change to accept ID and keywords like 'ip' in the rule
+any :
+
+grammar Cisco;
+
+/* Parse Cisco config file. */
+
+config
+@init {System.out.println(&quot;Cisco last update 2320&quot;);}
+    :   ( acl | any )* EOF
+    ;
+
+any :   ( id_or_keyword | INT )* EOL
+               {System.out.print(&quot;--- any &quot; + $any.text);}
+    ;
+
+acl :   IP 'access-list' 'extended'? ID EOL ( remark | rule )+ // EOF
+already in config
+               {System.out.print(&quot;--- acl &quot; + $acl.text);}
+    ;
+
+remark
+    :   INT? 'remark' (~EOL)* EOL
+    ;
+
+rule:   INT? ID+ EOL;
+
+id_or_keyword
+    :   ID | IP
+    ;
+
+IP  : 'ip' ; // before ID, or else 'ip' will be captured by ID and rule acl
+will not match
+ID  : ( LETTER | SPECIAL ) ( LETTER | SPECIAL | NUMBER )* ;
+INT : NUMBER+ ;
+EOL : ('\r' | '\n')+;
+WS  : (' ' | '\t') { $channel=HIDDEN; };
+COMMENT : '!' (~('\r' | '\n'))* EOL { $channel=HIDDEN; } ;
+ILLEGAL : . ;
+fragment LETTER  : 'a'..'z' | 'A'..'Z' ;
+fragment SPECIAL : '_' | '-' | '.' | '+' | '/' | ':' | '%' ;
+fragment NUMBER  : '0'..'9' ;
+
+$ java Test &lt; t.config
+enter ID n line=1:0
+exit ID   line=1:2
+enter config [@0,0:1='no',&lt;6&gt;,1:0]
+Cisco last update 2320
+enter any [@0,0:1='no',&lt;6&gt;,1:0]
+enter id_or_keyword [@0,0:1='no',&lt;6&gt;,1:0]
+enter WS   line=1:2
+...
+enter id_or_keyword [@2,3:4='ip',&lt;9&gt;,1:3]
+...
+enter id_or_keyword [@4,6:10='bootp',&lt;6&gt;,1:6]
+...
+exit EOL i line=2:0
+exit id_or_keyword [@7,18:18='\n',&lt;5&gt;,1:18]
+enter IP i line=2:0
+exit IP   line=2:2
+--- any no ip bootp server
+exit any [@8,19:20='ip',&lt;9&gt;,2:0]
+enter WS   line=2:2
+exit WS a line=2:3
+enter T__14 a line=2:3
+exit T__14   line=2:14
+enter acl [@8,19:20='ip',&lt;9&gt;,2:0]
+...
+enter rule [@14,38:40='abc',&lt;6&gt;,3:0]
+exit rule [@18,46:46='&lt;EOF&gt;',&lt;-1&gt;,4:0]
+--- acl ip access-list xyz
+abc def
+exit acl [@18,46:46='&lt;EOF&gt;',&lt;-1&gt;,4:0]
+exit config [@19,46:46='&lt;EOF&gt;',&lt;-1&gt;,4:0]
+
+Looks better, as I expected :)
+
+HTH
+Bernard
+
+
+2012/11/19 Alexander Kostikov &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">alex.kostikov at gmail.com</A>&gt;
+
+&gt;<i>
+</I>&gt;<i> It turns out ANTLR doesn't behave the way I expected =) What I wanted
+</I>&gt;<i> is for ANTLR to parse the following line &quot;no ip bootp server&quot; via
+</I>&gt;<i> 'any' rule but ANTLR finds 'ip' token in the line and treats the line
+</I>&gt;<i> as not correct 'acl' rule. Specifying syntactic predicate &quot;config:
+</I>&gt;<i> (('ip' 'access-list') =&gt; acl | any)* EOF&quot; only makes things worse
+</I>&gt;<i> judging by ANTLRWorks output - parser stops almost immediately with an
+</I>&gt;<i> unrecoverable error.
+</I>&gt;<i>
+</I>&gt;<i> My question is - is there a way to achieve the kind of filtering I'm
+</I>&gt;<i> talking about (parse only 'acl', ignore anything else) via ANTLR
+</I>&gt;<i> grammar? What should I use? Syntactic predicate? Several-pass parsing?
+</I>&gt;<i> Custom lexer (how do I even start implementing such beast?)? Parse out
+</I>&gt;<i> all interesting sections from a file via regex before supplying them
+</I>&gt;<i> to ANTLR grammar that is only ACL-oriented (at least I know how to
+</I>&gt;<i> implement this last option)?
+</I>&gt;<i>
+</I>&gt;<i> -- Alexander
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe:
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i>
+</I></PRE>
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="045777.html">[antlr-interest] parsing just a subset of a grammar
+</A></li>
+	<LI>Next message: <A HREF="045768.html">[antlr-interest] parsing just a subset of a grammar
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#45767">[ date ]</a>
+              <a href="thread.html#45767">[ thread ]</a>
+              <a href="subject.html#45767">[ subject ]</a>
+              <a href="author.html#45767">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

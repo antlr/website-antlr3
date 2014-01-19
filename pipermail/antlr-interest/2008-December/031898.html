@@ -1,0 +1,174 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] newbie request for help
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20newbie%20request%20for%20help&In-Reply-To=%3C1228495697.4072.253.camel%40jimi%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="031893.html">
+   <LINK REL="Next"  HREF="031896.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] newbie request for help</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20newbie%20request%20for%20help&In-Reply-To=%3C1228495697.4072.253.camel%40jimi%3E"
+       TITLE="[antlr-interest] newbie request for help">jimi at temporal-wave.com
+       </A><BR>
+    <I>Fri Dec  5 08:48:17 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="031893.html">[antlr-interest] newbie request for help
+</A></li>
+        <LI>Next message: <A HREF="031896.html">[antlr-interest] newbie request for help
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#31898">[ date ]</a>
+              <a href="thread.html#31898">[ thread ]</a>
+              <a href="subject.html#31898">[ subject ]</a>
+              <a href="author.html#31898">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Thu, 2008-12-04 at 22:46 -0800, Kenny Leung wrote:
+
+&gt;<i> Hi All.
+</I>&gt;<i> 
+</I>&gt;<i> I thought I would get my feet wet by writing a parser for Objective-C  
+</I>&gt;<i> type encodings. I thought it would be pretty easy for such a brief  
+</I>&gt;<i> &quot;language&quot;, but it is turning out to be pretty difficult.
+</I>&gt;<i> 
+</I>&gt;<i> One of the problems lies in parsing something like this:
+</I>&gt;<i> 
+</I>&gt;<i>      {vids=^vids}
+</I>&gt;<i> 
+</I>&gt;<i> which means a struct named &quot;vids&quot;, which is composed of void * (^v),  
+</I>&gt;<i> int, double, and short.
+</I>&gt;<i> 
+</I>&gt;<i> After the &quot;{&quot;, I need to interpret vids as a single token, and after  
+</I>&gt;<i> the &quot;=&quot;, I need to interpret the characters as separate tokens.
+</I>&gt;<i> 
+</I>&gt;<i> One of the interesting things I found was that this is legal:
+</I>&gt;<i> 
+</I>&gt;<i>      NUMBER : '0'..'9';
+</I>&gt;<i> 
+</I>
+This is a lexer rule that turns a stream of characters into a token for
+the parser. Lexer rules start with an upper case letter.
+
+&gt;<i> but this is not:
+</I>&gt;<i> 
+</I>&gt;<i>      number : '0'..'9';
+</I>
+
+This is a parser rule (starts with a lower case letter. Hence you cannot
+use ranges because you cannot guarantee that the two separate tokens '0'
+and '9', which this rule auto-creates, have any meaning as a range. 
+
+&gt;<i> 
+</I>&gt;<i> I bumped into this because I thought I'd &quot;inline&quot; the rule for the  
+</I>&gt;<i> name after the &quot;{&quot;. Can someone explain this?
+</I>&gt;<i> 
+</I>&gt;<i> Is there a way I can say, &quot;use tokenizer rule A after the &quot;{&quot;, but use  
+</I>&gt;<i> tokenizer rule B after the &quot;=&quot;.
+</I>
+
+No. The lexer (all the UpperCase rules) runs first and creates all the
+tokens, then the parser runs (all the lowerCase rules) against the
+pre-determined tokens.
+
+The thing that almost everyone runs in to is that the parser cannot
+influence the lexer as the lexer has already run. Don't use 'XXX' in
+your parser rules, create a token:
+
+XXX : 'XXX'
+
+and use the symbol XXX in your parser rules.
+
+For problems like the above you need a rule set something like:
+
+// Lexer
+POINT : '^' ;
+OPEQ : '=';
+LBRACE : '{';
+RBRACE: '}';
+ID : ('a'..'z'|'A'..'Z') +;
+WS : (' '|'\t')+ { $channel=HIDDEN; }
+
+// Parser
+struct : LBRACE ID OPEQ structSpec RBRACE ;
+
+strcutSpec : ( i=ID { checkIdChars($i.text); } | p=POINT
+{ checkPointer(); )+ ;
+
+
+Instead of trying to get the individual characters of the type spec,
+just consume as a set of natural tokens, then separate everything out
+afterwards, or you will get into a mess. Don't try to think of hte
+paresr in human terms, try to think of what the easiest token set to
+produce is, then what this stream of tokens is going to look like in the
+parser. The parser should accept any syntax that is potentially valid
+and apply semantic checks. For instance above, any ID is accepted, then
+you check the character spec. This allows you to issue an error such as:
+&quot;Invalid type specification character at line n, offset y&quot;, instead of
+&quot;Syntax error.&quot;
+
+Make sure you read the FAQs and getting started articles on the Wiki,
+and if you have the money, buy the book. Inspecting the example grammars
+and contributed grammars is a good idea too.
+
+Jim
+
+
+
+&gt;<i> 
+</I>&gt;<i> AntlrWorks has been great for learning by playing. Thanks for any help!
+</I>&gt;<i> 
+</I>&gt;<i> -Kenny
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i> 
+</I>
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20081205/dafea9ef/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20081205/dafea9ef/attachment.html</A> 
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="031893.html">[antlr-interest] newbie request for help
+</A></li>
+	<LI>Next message: <A HREF="031896.html">[antlr-interest] newbie request for help
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#31898">[ date ]</a>
+              <a href="thread.html#31898">[ thread ]</a>
+              <a href="subject.html#31898">[ subject ]</a>
+              <a href="author.html#31898">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

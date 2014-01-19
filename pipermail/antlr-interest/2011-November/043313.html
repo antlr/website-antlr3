@@ -1,0 +1,158 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] This should be easy - but I can't figure it out
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20This%20should%20be%20easy%20-%20but%20I%20can%27t%20figure%20it%20out&In-Reply-To=%3C4EC31F09.4090902%40acm.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="043312.html">
+   <LINK REL="Next"  HREF="043314.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] This should be easy - but I can't figure it out</H1>
+    <B>John B. Brodie</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20This%20should%20be%20easy%20-%20but%20I%20can%27t%20figure%20it%20out&In-Reply-To=%3C4EC31F09.4090902%40acm.org%3E"
+       TITLE="[antlr-interest] This should be easy - but I can't figure it out">jbb at acm.org
+       </A><BR>
+    <I>Tue Nov 15 18:25:13 PST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="043312.html">[antlr-interest] This should be easy - but I can't figure it out
+</A></li>
+        <LI>Next message: <A HREF="043314.html">[antlr-interest] This should be easy - but I can't figure it out
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#43313">[ date ]</a>
+              <a href="thread.html#43313">[ thread ]</a>
+              <a href="subject.html#43313">[ subject ]</a>
+              <a href="author.html#43313">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Greetings!
+
+First 2 caveats then see discussion below:
+
+1) I do not know C#. all of my suggestions are based on the Java target.
+
+2) My suggestions are from memory. I have not actually tested them (or
+rather I have tested them in the past on other problems and hope memory
+works).
+
+
+On 11/15/2011 07:43 PM, Voelkel, Andy wrote:
+&gt;<i> Hi,
+</I>&gt;<i> 
+</I>&gt;<i> I keep running into questions like this, and don't know how to answer them. Could anyone look at this simple example and tell me how I would accomplish my goal? I think I've got a central concept mixed up in my head.
+</I>&gt;<i> 
+</I>&gt;<i> What I'm trying to do is under the &quot;array&quot; rule below, where I'm trying to create a rewrite rule which collects elements which are within a grouping construct. This seems to come up a lot for me, and I don't get how to do it.
+</I>&gt;<i> 
+</I>&gt;<i> While we're at it, what is the easiest way to strip the &quot; &quot; characters from the strings?
+</I>
+use whatever sub-string functionality is available in C# to remove the
+first and last characters from the string. but do so at the last
+possible moment.
+
+&gt;<i> 
+</I>&gt;<i> Thanks for any help! Here's the grammar excerpt:
+</I>&gt;<i> 
+</I>&gt;<i> tokens { ARRAY; }
+</I>&gt;<i> 
+</I>&gt;<i> @header { using System; }
+</I>&gt;<i> 
+</I>&gt;<i> public prog:   ( stat {Console.WriteLine(
+</I>&gt;<i>                 $stat.tree==null?&quot;null&quot;:$stat.tree.ToStringTree());} )+ ;
+</I>&gt;<i> 
+</I>&gt;<i> stat:   assign | block | ';'! ;
+</I>&gt;<i> block:  ID^ ID '{'! (assign)+ '}'! ;
+</I>&gt;<i> assign: ID '='^ (atom | array) ';'! ;
+</I>&gt;<i> atom:   FLOAT | ID | STRING ;
+</I>&gt;<i> array:  '[' ((FLOAT)+ | (STRING)+) ']' -&gt; ^(ARRAY _FLOATS_OR_STRINGS_ ) ;
+</I>
+generally, any time you have a cardinality meta-operator (the ? * or +)
+in the syntax portion of a rule, you will want a similar cardinality
+operator in the re-write portion of that rule.
+
+thus a first try at a re-write rule is:
+
+array: '[' FLOAT+ | STRING+ ']' -&gt; ^(ARRAY FLOAT+ STRING+) ;
+
+the separate lists on the right of the -&gt; work because your syntax
+specifies separate lists.
+
+and i guess this first try really reduces to this rule:
+
+array : '['^ FLOAT+ | STRING+ ']'! ;
+
+
+
+note that you can use the += operator to accumulate lists of things. but
+these lists are homogeneous (e.g. all of the elements in the list must
+be of the same type).
+
+and in this specific case both of your lists are lists of Tokens, so a
+second try at a re-write rule is:
+
+array: '[' (t+=FLOAT)+ | (t+=STRING)+ ']' -&gt; ^(ARRAY $t+) ;
+
+
+to me both of the above are not good choices because information that
+the parser immediately has about the type of the elements in the array
+is not explicitly placed into the tree.
+
+so i would have 2 imaginary tokens ARRAY_FLOAT and ARRAY_STRING and use
+this rule:
+
+array
+    : ( l='[' (f+=FLOAT)+  ']' -&gt; ^(ARRAY_FLOAT [&quot;FLT ARY&quot;,$l] $f+) )
+    | ( l='[' (s+=STRING)+ ']' -&gt; ^(ARRAY_STRING[&quot;STR ARY&quot;,$l] $s+) )
+  ;
+
+i think this last form will simplify subsequent processing of the tree.
+note also the proper initialization of the imaginary tokens.
+
+&gt;<i> 
+</I>&gt;<i> fragment LETTER : '$'| 'A'..'Z' | 'a'..'z' | '_' ;
+</I>&gt;<i> fragment DIGITS : ('0'..'9')+;
+</I>&gt;<i> fragment EXP : ('e'|'E') ('+'|'-')? ('0'..'9')+ ;
+</I>&gt;<i> STRING : '&quot;' ( ~('&quot;') )* '&quot;' ;
+</I>&gt;<i> ID  :   LETTER (LETTER|DIGITS)*;
+</I>&gt;<i> FLOAT :  (DIGITS? '.' DIGITS EXP?) | (DIGITS EXP?) ;
+</I>&gt;<i> WS  :   (' '|'\t'|'\n'|'\r')+ {Skip();} ;
+</I>&gt;<i> 
+</I>
+Hope this helps...
+   -jbb
+
+</PRE>
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="043312.html">[antlr-interest] This should be easy - but I can't figure it out
+</A></li>
+	<LI>Next message: <A HREF="043314.html">[antlr-interest] This should be easy - but I can't figure it out
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#43313">[ date ]</a>
+              <a href="thread.html#43313">[ thread ]</a>
+              <a href="subject.html#43313">[ subject ]</a>
+              <a href="author.html#43313">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

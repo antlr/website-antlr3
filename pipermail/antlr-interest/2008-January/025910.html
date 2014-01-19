@@ -1,0 +1,270 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] ANTLR3 Nested parser
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20ANTLR3%20Nested%20parser&In-Reply-To=%3C%22L2BE68ABE0E554909B908614CF2AB8809.1201048134.scalix.temporal-wave.com%2A%22%40MHS%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="025903.html">
+   <LINK REL="Next"  HREF="025917.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] ANTLR3 Nested parser</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20ANTLR3%20Nested%20parser&In-Reply-To=%3C%22L2BE68ABE0E554909B908614CF2AB8809.1201048134.scalix.temporal-wave.com%2A%22%40MHS%3E"
+       TITLE="[antlr-interest] ANTLR3 Nested parser">jimi at temporal-wave.com
+       </A><BR>
+    <I>Tue Jan 22 16:08:17 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="025903.html">[antlr-interest] ANTLR3 Nested parser
+</A></li>
+        <LI>Next message: <A HREF="025917.html">[antlr-interest] ANTLR3 Nested parser
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25910">[ date ]</a>
+              <a href="thread.html#25910">[ thread ]</a>
+              <a href="subject.html#25910">[ subject ]</a>
+              <a href="author.html#25910">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>If the exit trigger in your nested language is not something that can be
+picked up lexically, then I don&#8217;t see how you can use the nested grammar
+in quite the same way. Though it seems a little strange that there is no
+lexical context for the end of the embedded language, I have in fact had
+to deal with something similar to this myself.
+
+ 
+
+However, I assume that your parser knows when to stop parsing, so:
+
+ 
+
+1)      There will be a finite set of terminals that end the parse;
+
+2)      Have the second lexer just lex from the trigger point to the end
+of the input stream (it should not throw out any errors, use ANY : . ;
+to consume anything it can&#8217;t really handle.
+
+a.       If there is a way to safely determine a point where it
+definitely ends, then limit the input length to that;
+
+3)      Parse the second token stream but don&#8217;t use EOF on your start
+rule.
+
+4)      Record the input position in the input stream for any terminal
+that might end the parse;
+
+5)      When the parse ends, reset the input stream to the offset
+directly following the end of the terminating terminal;
+
+ 
+
+But, that seems like you will end up lexing a lot of things you should
+not need to this way, especially if you have a lot of embedded elements.
+Perhaps if you mention what you are trying to parse, then better
+solutions can be thought of.  
+
+ 
+
+One other thought is whether the first lexer can determine where the
+embedded language starts and stops in which case you can tokenize the
+whole text into one token and invoke the embedded language parser from
+your parser.
+
+ 
+
+Jim
+
+ 
+
+From: Bertalan Fodor [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">lilypondtool at organum.hu</A>] 
+Sent: Tuesday, January 22, 2008 2:41 PM
+To: Thomas Brandon
+Cc: Antlr Interest
+Subject: Re: [antlr-interest] ANTLR3 Nested parser
+
+ 
+
+Now I could try this. The problem is that I would have to emit the
+EOF_TOKEN from the parser, because the lexer has no idea whether the
+nested language input has come to its end or not. But the token buffer
+surely contains tokens that are not in the nested language, so I have to
+get out from the nested lexer and roll back the consumed tokens somehow.
+
+Do you have an idea for the solution?
+
+Thank you,
+
+Bert
+
+Thomas Brandon &#237;rta: 
+
+Check out the island-grammar example. It shows lexer based nesting. The
+pertinent code in the main lexer is:
+JAVADOC : '/**'
+          {
+            // create a new javadoc lexer/parser duo that feeds
+            // off the current input stream 
+            System.out.println(&quot;enter javadoc&quot;);
+            JavadocLexer j = new JavadocLexer(input);
+            CommonTokenStream tokens = new CommonTokenStream(j);
+            tokens.discardTokenType (JavadocLexer.WS);
+            JavadocParser p = new JavadocParser(tokens);
+            p.comment();
+            // returns a JAVADOC token to the java parser but on a
+            // different channel than the normal token stream so it 
+            // doesn't get in the way.
+            $channel = JAVADOC_CHANNEL;
+          }
+        ;
+And in the nested lexer:
+/** When the javadoc parser sees end-of-comment it just says 'I'm done',
+which 
+ *  consumes the tokens and forces this javadoc parser (feeding
+ *  off the input stream currently) to exit.  It returns from
+ *  method comment(), which was called from JAVADOC action in the
+ *  Simple parser's lexer. 
+ */
+END     : '*/' {token = Token.EOF_TOKEN;}
+          {System.out.println(&quot;exit javadoc&quot;);}
+        ;
+
+Your code in the outer lexer looks OK, just passing the same input
+stream should keep it synched. Check your code for exiting the inner
+lexer. 
+
+Tom.
+
+On Jan 22, 2008 8:00 PM, Bertalan Fodor (LilyPondTool)
+&lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">lilypondtool at organum.hu</A>&gt; wrote:
+
+Thank you for your answer.
+If I understand your suggestion correctly, the problem with it is that I
+can't lex the symbol: actually it is an embedded language, so only the
+nested lexer and parser can find the end of the embedded part. So
+actually I would need the following: feed the nested lexer/parser with
+all the input beginning from the '/**' symbol and let it parse it. Then
+when the parsing is over, I'd like to set the non-nested lexer/parser to
+the end position of the nested parsing. So the problem is how to set the
+input stream position to the end of the embedded part, either rewinding
+or forward winding. Maybe I can use the return value of the nested
+rootRule() to find the position. However I could not find a way yet how
+to do this all.
+
+Anyway, if you have some example of some nested parsing, that could
+probably effectively help me.
+
+Thanks,
+
+Bert 
+
+
+
+Harald M. M&#252;ller wrote: 
+
+I wouldn't do it like this.
+If you want to really do this in the (non-nested) lexer: &quot;Lex&quot; the
+symbol;
+and then start a NEW StringReader on the symbols's getText(), from which
+you
+feed your (nested) lexer and parser.
+Maybe you want to do this in the (non-nested) parser ... easy if the
+symbol
+turns up there; a little work if you pushed the symbol into the HIDDEN
+channel (or some other channel) in the (non-nested) lexer, so that you
+have
+to &quot;undig&quot; it somehow in the (non-nested) parser
+Hope this very short explanation helps.
+Regards
+Harald
+ 
+  
+
+   -----Original Message-----
+   From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> 
+   [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Bertalan Fodor
+   Sent: Tuesday, January 22, 2008 12:45 AM
+   To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+   Subject: [antlr-interest] ANTLR3 Nested parser
+    
+   Hi,
+    
+   I'm creating a parser with nested parser. To make it simple I 
+   tell you my problem as if I was doing Javadoc parsing inside 
+   a Java parser.
+   So I have this in my lexer:
+   JAVADOC: '/**' { JavadocParser javadocParser = new 
+   JavadocParser(new CommonTokenStream(new 
+   JavadocLexer(this.input))); javadocParser.rootRule(); }
+    
+   The problem is that while this code correctly switches to the 
+   Javadoc lexer, and parses the Javadoc parts correctly, upon 
+   returning from the Javadoc parsing, the character stream is 
+   not correctly positioned.
+    
+   Can you help me how to achieve the nested parsing in antlr 3?
+    
+   Thank you very much,
+    
+   Bertalan Fodor
+    
+   ps I've already asked this on this list, but got no answer, 
+   so I tried to make my question more simple.
+    
+       
+
+  
+
+ 
+
+-- 
+LilyPondTool is the editor for LilyPond files.
+See <A HREF="http://lilypondtool.organum.hu">http://lilypondtool.organum.hu</A>
+
+ 
+
+ 
+
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20080122/86a2e25b/attachment-0001.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20080122/86a2e25b/attachment-0001.html</A> 
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="025903.html">[antlr-interest] ANTLR3 Nested parser
+</A></li>
+	<LI>Next message: <A HREF="025917.html">[antlr-interest] ANTLR3 Nested parser
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25910">[ date ]</a>
+              <a href="thread.html#25910">[ thread ]</a>
+              <a href="subject.html#25910">[ subject ]</a>
+              <a href="author.html#25910">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

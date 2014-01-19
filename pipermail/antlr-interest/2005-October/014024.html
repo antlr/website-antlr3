@@ -1,0 +1,195 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] question on greedy matching
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20question%20on%20greedy%20matching&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="014049.html">
+   <LINK REL="Next"  HREF="013993.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] question on greedy matching</H1>
+    <B>Gerrit E.G. Hobbelt</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20question%20on%20greedy%20matching&In-Reply-To="
+       TITLE="[antlr-interest] question on greedy matching">Ger.Hobbelt at bermuda-holding.com
+       </A><BR>
+    <I>Thu Oct 20 14:20:31 PDT 2005</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="014049.html">[antlr-interest] question on greedy matching
+</A></li>
+        <LI>Next message: <A HREF="013993.html">[antlr-interest] syntactic predicates and exceptions
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#14024">[ date ]</a>
+              <a href="thread.html#14024">[ thread ]</a>
+              <a href="subject.html#14024">[ subject ]</a>
+              <a href="author.html#14024">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>From: &quot;Ric Klaren&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">ric.klaren at gmail.com</A>&gt;
+[...]
+&gt;<i> &gt; Consider the following language design for a sort of a try statement:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; try statement ( catch (ID ID) '{' statement '}' )+
+</I>[...]
+&gt;<i> &gt; Moreover, in the example:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; try
+</I>&gt;<i> &gt;      try
+</I>&gt;<i> &gt;          foo();
+</I>&gt;<i> &gt;      catch (E1 e) { bar(); }
+</I>&gt;<i> &gt; catch (E2 e) { baz(); }
+</I>&gt;<i> &gt; catch (E3 e) { baa(); }
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; again the rule makes the statements bind as the indentation suggests.
+</I>[...]
+&gt;<i> Alternatively:
+</I>&gt;<i>
+</I>&gt;<i> start out with a try rule with only one catch. Then define an extra
+</I>&gt;<i> alternative (probably in the statement rule to collect trailing catch
+</I>&gt;<i> statements) Some checks are probably necessary afterwards to see if
+</I>&gt;<i> everything made sense. The catch all might need a predicate to prevent
+</I>&gt;<i> it from being entered if the preceding statement was not a try.
+</I>
+Hm, I just might be saying the same thing (I don't think so, but I might've
+misinterpreted that last paragraph there) when I suggest this solution, of
+course assuming your meta-rule applies:
+
+
+
+Use two rules for 'try/catch': one for an 'outer try' (which by your
+definition may have multiple consecutive catch phrases) and one for 'inner
+try' statement blocks, where each 'inner try' must have only one 'catch',
+hence matching your meta-rule.
+
+Excuse me, but my ANTLR is *very* rusty ATM, though my attempt at this would
+probably look a bit like this:
+
+-------------
+
+// fluff
+source: ( function )+
+function: header base_statement_block;
+
+// here it comes: inner vs. outer
+base_statement_block: (no_try_statement | outer_try_stmt)+;
+
+outer_try_stmt: 'try'
+                    (no_try_statement | inner_try_stmt)+
+               (catch_phrase)+; // accept one or more catch sections
+
+inner_try_stmt: 'try'
+                    (no_try_statement | inner_try_stmt)+
+               catch_phrase;  // accept one and only one catch section
+
+// and choose one of these 'catch_phrase' rules:
+// alternative A for catch with mandatory curly's:
+//             try statement ( catch (ID ID) '{' statement '}' )+
+
+catch_phrase: '{' base_statement_block '}';
+              // outer_try_stmt acceptable as curly's unambiguously
+delineate a base_statement_block
+
+// or this enhancement for A:
+// alternative B, which _includes_ support for
+//             try statement ( catch (ID ID) statement )+
+// assuming the additional meta-rule defined below
+
+catch_phrase: (no_try_statement | inner_try_stmt)+ ;
+                // accept try/catch nesting in catch section, naturally ;-)
+
+no_try_statement: '{' base_statement_block '}'
+                             // curly's explicitly delineate a code section,
+like in the 'C' language
+                          |  // all non-'try' single statements for this
+language:
+                            'if' yada | 'for' walla |
+whatever__you_get_the_idea;
+
+-------------
+
+If I'm not mistaken, this is still somewhat readable, doesn't need
+predicates and is a hack which even makes
+
+&gt;<i> &gt; try statement ( catch (ID ID) statement )+
+</I>
+work, when using catch_phrase rule 'B' and assuming an EXTRA (2nd) meta-rule
+to disambiguate this lovely language: &quot;all statements following a 'catch'
+keyword will be assumed to be part of the catch phrase until another 'catch'
+statement at the same block-level is found or the end of this code section
+has been reached (i.e. one of: end of function, end of block, end of
+source)&quot;.
+
+It would make
+
+&gt;<i> lot of disambiguation, because how are you going to interpret:
+</I>&gt;<i>
+</I>&gt;<i> try
+</I>&gt;<i>       try
+</I>&gt;<i>           foo();
+</I>&gt;<i>       catch (E1 e) try bar(); catch (E3 e) zip();
+</I>&gt;<i> catch (E2 e) baz();
+</I>
+unambiguously parseable - or am I completely out of my mind by now? (again,
+I assume both meta rules here. No rules? No dice.)
+
+I expect my 'solution' to provide this parse result - curly braces added to
+identify major parse tree levels:
+
+try {                   // outer_try - level #0
+      try {             // inner_try - level #1
+           foo();        // no_try_stmt
+       }
+       catch (E1 e) { // catch_phrase @ level #1
+         // 2nd meta-rule says: gobble as much as you can:
+         try {          // inner_try as part of catch_phrase [i.e. level #2]
+            bar();     // no_try_Stmt
+         }
+         catch (E3 e) { // catch_phrase @ level #2
+            zip();
+         }
+       } // 'catch (E2 ...' is identified as second catch at level #2 --&gt;
+fallback to #1
+       // ... also second catch at #1 --&gt; fallback to #0
+}
+catch (E2 e) {        // catch_phrase for outer_try [level #0]
+  baz();
+}
+// end of code section
+
+
+The above should probably even work with yuck, I mean, yacc. ;-)
+
+
+HTH,
+
+Ger
+
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="014049.html">[antlr-interest] question on greedy matching
+</A></li>
+	<LI>Next message: <A HREF="013993.html">[antlr-interest] syntactic predicates and exceptions
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#14024">[ date ]</a>
+              <a href="thread.html#14024">[ thread ]</a>
+              <a href="subject.html#14024">[ subject ]</a>
+              <a href="author.html#14024">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

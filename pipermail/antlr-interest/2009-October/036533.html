@@ -1,0 +1,383 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Can somebody give me the very simplest example	of grammar to AST to StringTemplate output
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Can%20somebody%20give%20me%20the%20very%20simplest%20example%0A%09of%20grammar%20to%20AST%20to%20StringTemplate%20output&In-Reply-To=%3C63944fdc632eef48bdebf8cd32436afb%40temporal-wave.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="036532.html">
+   <LINK REL="Next"  HREF="036544.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Can somebody give me the very simplest example	of grammar to AST to StringTemplate output</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Can%20somebody%20give%20me%20the%20very%20simplest%20example%0A%09of%20grammar%20to%20AST%20to%20StringTemplate%20output&In-Reply-To=%3C63944fdc632eef48bdebf8cd32436afb%40temporal-wave.com%3E"
+       TITLE="[antlr-interest] Can somebody give me the very simplest example	of grammar to AST to StringTemplate output">jimi at temporal-wave.com
+       </A><BR>
+    <I>Mon Oct 26 12:30:32 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="036532.html">[antlr-interest] Can somebody give me the very simplest example	of grammar to AST to StringTemplate output
+</A></li>
+        <LI>Next message: <A HREF="036544.html">[antlr-interest] Can somebody give me the very simplest example	of grammar to AST to StringTemplate output
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36533">[ date ]</a>
+              <a href="thread.html#36533">[ thread ]</a>
+              <a href="subject.html#36533">[ subject ]</a>
+              <a href="author.html#36533">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Here are some snippets from a tree parser using option output=template:
+
+ 
+
+Straight creation from a rewrite and list:
+
+ 
+
+statements
+
+ 
+
+    :   s+=statement_comment*
+
+        -&gt; statements(stats={$s})
+
+ ;
+
+ 
+
+Just passing a result up the rule chain (don't have rules return an empty $st):
+
+ 
+
+ruleDefinition
+
+ : ^(RULE
+
+      statements
+
+   )
+
+   {
+
+     $st = $statements.st;
+
+   }
+
+;
+
+ 
+
+&gt;<i>From a rule reference:
+</I>
+ 
+
+ 
+
+statement_comment
+
+   : ^(STATEMENT statement
+
+        (
+
+           STAT_COMMENT
+
+                    -&gt;line(stat={$statement.st}, comment={$STAT_COMMENT.text})
+
+...
+
+ 
+
+ 
+
+In an action:
+
+ 
+
+|<i> COMMENT                 
+</I>
+  {
+
+    // Get rid of leading spaces and the ' character, generate the comment line
+
+    //
+
+    $st = %lineComment(comment={$COMMENT.text.trim().substring(1)});
+
+  }
+
+ 
+
+ 
+
+Calling some Java code that returns a StringTemplate using return elements from a rule reference:
+
+ 
+
+...
+
+{
+
+   // Ask the code generator to deal with the assignment
+
+   //
+
+   $st = codeGen.assign($v.st, $v.symbol, $expression.st, $expression.symbol, $expression.type);
+
+}
+
+...
+
+ 
+
+ 
+
+Creating a template that is named from the value of a terminal and setting attributes of the StringTemplate in actions:
+
+ 
+
+callStatement
+
+@init {
+
+    Function f;
+
+}
+
+     :    ^(CALL
+
+            id=IDENTIFIER
+
+            {
+
+                $st = %({$id.text})();
+
+                f = (Function)localSymbols.lookup($id.text);
+
+                %{$st}.instr=f.getInstruction();
+
+ }
+
+...
+
+ 
+
+ 
+
+Setting the template before invoking the tree walker (or parser):
+
+ 
+
+    /**
+
+     * The String Template group loader object, which knows where and how
+
+     * to instantiate templates for us.
+
+     */
+
+    protected StringTemplateGroupLoader loader;
+
+ 
+
+    /**
+
+     * The string template that is used for code generation of the main file
+
+     */
+
+    protected StringTemplate theFile;
+
+ 
+
+    loader = new CommonGroupLoader(templateDirs.toString(), null);
+
+    StringTemplateGroup.registerGroupLoader(loader);
+
+    StringTemplateGroup.registerDefaultLexer(AngleBracketTemplateLexer.class);
+
+    templates = StringTemplateGroup.loadGroup(&quot;rtfm&quot;);
+
+ 
+
+... // create parser/AST walker etc  ...
+
+ 
+
+    codeGen.setTemplateLib(templates);
+
+ 
+
+ 
+
+By the way - all these things are right there in TDAR - you need only read about 5 or 6 pages. I think it took me longer to format this than it would to read that section of the book.
+
+ 
+
+For your grammar:
+
+ 
+
+grammar rtfm;
+
+options { output=AST; }
+
+tokens { RTFM; }
+
+a: h=HELLO -&gt;^(RTFM $h);
+
+HELLO : 'hello' ;
+
+ 
+
+AST:
+
+ 
+
+tree grammar rtfmtree;
+
+options { output=template; tokenVocab=rtfm;  }
+
+a: ^(RTFM HELLO) -&gt; rtfm(hello={$HELLO.text})
+
+ 
+
+Template:
+
+ 
+
+group rtfm;
+
+rtfm(hello) ::=
+
+&lt;&lt; 
+
+&lt;hello&gt;, please take the time to RTFM instead of asking for people to do it for you.
+
+&gt;&gt;<i> 
+</I>
+ 
+
+ 
+
+Just finish work a little early tonight, skip the bar, don't turn on the TV or the computer and read TDAR. You'll be done by 10:30PM and the next day you will be able to do the work.
+
+ 
+
+Jim (off to the bar because I did all the reading already ;-) )
+
+ 
+
+From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Naveen Chawla
+Sent: Monday, October 26, 2009 11:50 AM
+To: Indhu Bharathi
+Cc: ANTLR Interest Mailing List; Terence Parr
+Subject: Re: [antlr-interest] Can somebody give me the very simplest example of grammar to AST to StringTemplate output
+
+ 
+
+I sounded rude! You are all legends, I just didn't want to delve into the C/Java bytecode yet, just in order to learn the basic syntax. It's the basic syntax is all I need right now, hence my request for an example translator of &quot;hi&quot; -&gt; &quot;hello&quot;, and I can't find it &quot;bunched together&quot; as such.
+
+ 
+
+Many thanks,
+
+N
+
+2009/10/26 Naveen Chawla &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">naveen.chwl at googlemail.com</A>&gt;
+
+Sorry if I sound rushed, I'm doing so many other things as well.
+
+ 
+
+Regards, N
+
+2009/10/26 Naveen Chawla &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">naveen.chwl at googlemail.com</A>&gt; 
+
+ 
+
+I can't open the &quot;tpantlr-code&quot; file in that archive, for some reason. Can somebody give me, for example &quot;a: 'hello'; &quot;, just that single symbol grammar, then making an AST from it, then a Tree grammar, and using StringTemplate to output &quot;hi&quot; from it. I can't find such a simple example anywhere. i.e. &quot;hi&quot; -&gt; &quot;hello&quot;. Surely someone who has used the features many times would take just a few seconds even from memory.
+
+2009/10/24 Indhu Bharathi &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">indhu.b at s7software.com</A>&gt; 
+
+ 
+
+Section 9.6 of ANTLR definitive reference (Building a Java Bytecode Generator Using a Tree Grammar and Templates) does this. 
+
+ 
+
+The free code samples are available at <A HREF="http://media.pragprog.com/titles/tpantlr/code/tpantlr-code.tgz">http://media.pragprog.com/titles/tpantlr/code/tpantlr-code.tgz</A>
+
+ 
+
+Samples for this specific section is available at 'Code/templates/generator' inside the archive.
+
+ 
+
+The book has a very good explanation too.
+
+ 
+
+Cheers, Indhu
+
+ 
+
+ 
+
+From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Naveen Chawla
+Sent: Saturday, October 24, 2009 9:11 AM
+To: Terence Parr
+Cc: ANTLR Interest Mailing List
+Subject: Re: [antlr-interest] Can somebody give me the very simplest example of grammar to AST to StringTemplate output
+
+ 
+
+No, where?
+Many thanks, N
+
+2009/10/23 Terence Parr &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">parrt at cs.usfca.edu</A>&gt;
+
+have you looked at the (free) code for both books?
+Ter
+
+ 
+
+ 
+
+ 
+
+
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20091026/925bae64/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20091026/925bae64/attachment.html</A> 
+</PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="036532.html">[antlr-interest] Can somebody give me the very simplest example	of grammar to AST to StringTemplate output
+</A></li>
+	<LI>Next message: <A HREF="036544.html">[antlr-interest] Can somebody give me the very simplest example	of grammar to AST to StringTemplate output
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36533">[ date ]</a>
+              <a href="thread.html#36533">[ thread ]</a>
+              <a href="subject.html#36533">[ subject ]</a>
+              <a href="author.html#36533">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

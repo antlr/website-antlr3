@@ -1,0 +1,354 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Help with compressing trees and custom nodes
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Help%20with%20compressing%20trees%20and%20custom%20nodes&In-Reply-To=%3CCAN45N13LUodwbu6sO4src20Pt9-9YLQtCX9nKxu0N4L4vmOFmg%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="044242.html">
+   <LINK REL="Next"  HREF="044254.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Help with compressing trees and custom nodes</H1>
+    <B>Eric</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Help%20with%20compressing%20trees%20and%20custom%20nodes&In-Reply-To=%3CCAN45N13LUodwbu6sO4src20Pt9-9YLQtCX9nKxu0N4L4vmOFmg%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Help with compressing trees and custom nodes">researcher0x00 at gmail.com
+       </A><BR>
+    <I>Fri Mar 16 06:42:50 PDT 2012</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="044242.html">[antlr-interest] Help with compressing trees and custom nodes
+</A></li>
+        <LI>Next message: <A HREF="044254.html">[antlr-interest] Help with compressing trees and custom nodes
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#44253">[ date ]</a>
+              <a href="thread.html#44253">[ thread ]</a>
+              <a href="subject.html#44253">[ subject ]</a>
+              <a href="author.html#44253">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Todd,
+
+
+This is just a suggestion and not the only possible answer.
+
+The easiest way for me to work with AST transformations is to just view the
+AST as an n-ary tree and call the tree API directly.
+
+Here are some example methods I use. This is C# code for the ANTLR 3 C#
+version; you will obviously need to translate to your target language.
+
+        private static void ReplaceNode(CommonTree node, int tokenId,
+string text)
+        {
+            // This method does not set token StatIndex, token StopIndex,
+token Line, or token charPostionInLine
+            ITreeAdaptor adaptor = new CommonTreeAdaptor();
+            CommonTree parent = (CommonTree)node.Parent;
+            CommonToken newToken = new CommonToken(tokenId);
+            CommonTree newNode = (CommonTree)adaptor.Create(newToken, text);
+            int index = node.ChildIndex;
+            parent.DeleteChild(index);
+            parent.InsertChild(index, newNode);
+            Debug.Assert(newToken.Type == tokenId);
+            Debug.Assert(newNode.Text == text);
+            Debug.Assert(newNode.Parent != null);
+            Debug.Assert(newNode.ChildIndex == index);
+        }
+
+       private static void CreateEpsilonRule(CommonTree rules, TokenMap
+tokenMap)
+        {
+            int ruleTokenId = tokenMap.GetId(&quot;RULE&quot;);
+            int idTokenId = tokenMap.GetId(&quot;ID&quot;);
+            int alternativesTokenId = tokenMap.GetId(&quot;ALTERNATIVES&quot;);
+            int alternativeTokenId = tokenMap.GetId(&quot;ALT&quot;);
+            int stringLiteralTokenId = tokenMap.GetId(&quot;STRING_LITERAL&quot;);
+            int ruleRefTokenId = tokenMap.GetId(&quot;RULE_REF&quot;);
+            ITreeAdaptor adaptor = new CommonTreeAdaptor();
+            epsilonRuleMade = true;
+            string rule1Name = &quot;EPSILON&quot;;
+            CommonToken newRule1Token = new CommonToken(ruleTokenId);
+            CommonTree newRule = (CommonTree)adaptor.Create(newRule1Token,
+&quot;RULE&quot;);
+            rules.AddChild(newRule);
+            CommonToken rule1IdToken = new CommonToken(idTokenId);
+            CommonTree rule1IdNode =
+(CommonTree)adaptor.Create(rule1IdToken, rule1Name);
+            newRule.AddChild(rule1IdNode);
+            CommonToken alternatesToken = new
+CommonToken(alternativesTokenId, &quot;ALTERNATIVES&quot;);
+            CommonTree alternatesNode =
+(CommonTree)adaptor.Create(alternatesToken);
+            newRule.AddChild(alternatesNode);
+            CommonToken alternateToken = new
+CommonToken(alternativeTokenId, &quot;ALT&quot;);
+            CommonTree alternateNode =
+(CommonTree)adaptor.Create(alternateToken);
+            alternatesNode.AddChild(alternateNode);
+            CommonToken charLiteralToken = new
+CommonToken(stringLiteralTokenId, string.Empty);
+            CommonTree charLiteralNode =
+(CommonTree)adaptor.Create(charLiteralToken);
+            alternateNode.AddChild(charLiteralNode);
+            newRule.FreshenParentAndChildIndexesDeeply();
+        }
+
+        private static void FindRuleRefs(CommonTree node,
+SortedList&lt;string, List&lt;CommonTree&gt;&gt; ruleRefs, int ruleRefTokenId)
+        {
+            if (node.Type == ruleRefTokenId)
+            {
+                List&lt;CommonTree&gt; ruleRefList;
+                if (!ruleRefs.TryGetValue(node.Text, out ruleRefList))
+                {
+                    ruleRefList = new List&lt;CommonTree&gt;();
+                    ruleRefs[node.Text] = ruleRefList;
+                }
+                ruleRefList.Add(node);
+            }
+            if (node.Children != null)
+            {
+                int childCount = node.Children.Count;
+                for (int index = 0; index &lt; childCount; index++)
+                {
+                    CommonTree visitNode = (CommonTree)node.Children[index];
+                    FindRuleRefs(visitNode, ruleRefs, ruleRefTokenId);
+                }
+            }
+        }
+
+        private static void ChangeToken(CommonTree node, int tokenId,
+string text)
+        {
+            // This method does not perserve token StatIndex, token
+StopIndex, token Line, or token charPostionInLine
+            ITreeAdaptor adaptor = new CommonTreeAdaptor();
+            CommonTree parent = (CommonTree)node.Parent;
+            CommonToken newToken = new CommonToken(tokenId);
+            CommonTree newNode = (CommonTree)adaptor.Create(newToken, text);
+            int index = node.ChildIndex;
+            if (node.Children != null)
+            {
+                // Note: &lt;Node&gt;.Children is read only, so newNode.Children
+= node.Children; is not allowed.
+                newNode.AddChildren(node.Children);
+            }
+            parent.DeleteChild(index);
+            parent.InsertChild(index, newNode);
+            Debug.Assert(newToken.Type == tokenId);
+            Debug.Assert(newNode.Text == text);
+            Debug.Assert(newNode.Parent != null);
+            Debug.Assert(newNode.ChildIndex == index);
+            if (newNode.Children != null)
+            {
+                Debug.Assert(newNode.Children.Count == node.Children.Count);
+            }
+        }
+
+And here is the TokenMap class used by the methods
+
+    public class TokenMap
+    {
+        private SortedList&lt;int, string&gt; ids = new SortedList&lt;int, string&gt;();
+        private SortedList&lt;string, int&gt; names = new SortedList&lt;string,
+int&gt;();
+        private string tokenFilename;
+        public int NextId
+        {
+            get
+            {
+                int value = ids.Count;
+                string name;
+                while (this.ids.TryGetValue(value, out name))
+                {
+                    value++;
+                }
+                return value;
+            }
+        }
+        public string this[int tokenType]
+        {
+            get
+            {
+                string result = string.Empty;
+                if (!(ids.TryGetValue(tokenType, out result)))
+                {
+                    //Debug.Fail(&quot;How did we get here?&quot;);
+                }
+                return result;
+            }
+        }
+        public TokenMap(string tokenFilename)
+        {
+            Debug.Assert(!string.IsNullOrWhiteSpace(tokenFilename));
+            this.tokenFilename = tokenFilename;
+            using (StreamReader streamReader = new
+StreamReader(this.tokenFilename))
+            {
+                string line = streamReader.ReadLine();
+                while (line != null)
+                {
+                    string[] tokenParts = line.Split('=');
+                    string name = string.Empty;
+                    string indexText = string.Empty;
+                    if (tokenParts.Length == 2)
+                    {
+                        name = tokenParts[0];
+                        indexText = tokenParts[1];
+                    }
+                    else
+                    {
+                        // If more than one '=' then split on last '='
+                        // i.e. '&gt;='=5
+                        //  '=='=6
+                        int lastEqualPos = line.LastIndexOf('=');
+                        name = line.Substring(0, lastEqualPos - 1);
+                        int length = line.Length - (lastEqualPos + 1);
+                        indexText = line.Substring(lastEqualPos + 1,
+length);
+                    }
+                    int index = -1;
+                    if (int.TryParse(indexText, out index))
+                    {
+                        if (!name.StartsWith(&quot;T__&quot;))
+                        {
+                            if (!ids.ContainsKey(index))
+                            {
+                                ids.Add(index, name);
+                            }
+                            //else
+                            //{
+                            //    Console.WriteLine(&quot;Duplicate key: &quot; +
+index);
+                            //    Debug.Fail(&quot;How did we get here?&quot;);
+                            //}
+                        }
+                        else
+                        {
+                            // Do nothing.
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine(&quot;Unable to parse to int: '&quot; +
+indexText + &quot;'&quot;);
+                        Debug.Fail(&quot;How did we get here?&quot;);
+                    }
+                    line = streamReader.ReadLine();
+                }
+            }
+            BuildNamesIndex();
+        }
+        private void BuildNamesIndex()
+        {
+            this.names.Clear();
+            foreach (KeyValuePair&lt;int, string&gt; kvp in this.ids)
+            {
+                this.names.Add(kvp.Value, kvp.Key);
+            }
+        }
+        public bool ContainsKey(int tokenType)
+        {
+            return ids.ContainsKey(tokenType);
+        }
+        public int GetId(string name)
+        {
+            int value = -1;
+            if (!this.names.TryGetValue(name, out value))
+            {
+                value = -1;
+            }
+            return value;
+        }
+        public string ToListing()
+        {
+            StringBuilder lines = new StringBuilder();
+            lines.AppendLine(&quot;Token map for &quot; + this.tokenFilename);
+            lines.AppendLine(&quot;Id  Name&quot;);
+            foreach (KeyValuePair&lt;int, string&gt; kvp in this.ids)
+            {
+                string line = string.Format(&quot;{0,3} {1}&quot;, kvp.Key,
+kvp.Value);
+                lines.AppendLine(line);
+            }
+            return lines.ToString();
+        }
+    }
+
+ Hope that helps, Eric
+
+
+
+
+On Thu, Mar 15, 2012 at 2:02 PM, Todd Nine &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">tnine at apigee.com</A>&gt; wrote:
+
+&gt;<i> Hi guys.  I'm new to antlr and have a question regarding tree compressions.
+</I>&gt;<i>  My ultimate goal is to use my grammar to create an AST.  From this AST I
+</I>&gt;<i> then will utilize the visitor pattern to walk the tree and evaluate my
+</I>&gt;<i> results for our Cassandra query engine.  I'm having issues with my tree
+</I>&gt;<i> having a lot of additional nodes that don't have 2 children due to operator
+</I>&gt;<i> precedence.  My questions are below.
+</I>&gt;<i>
+</I>&gt;<i> 1. How can I create a different node class for each element?  For instance,
+</I>&gt;<i> &amp;&amp; ad || need their own nodes, as well as 'NOT' 'within' etc
+</I>&gt;<i>
+</I>&gt;<i> 2. How can I collapse tree elements that only have 1 child.  I.E turn orexp
+</I>&gt;<i> -&gt; andexp -&gt; notexp -&gt; andexp into just an andexp node
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> I've read all the documentation here, but I have a few things that aren't
+</I>&gt;<i> clear.
+</I>&gt;<i>
+</I>&gt;<i> <A HREF="http://www.antlr.org/wiki/display/ANTLR3/Tree+construction">http://www.antlr.org/wiki/display/ANTLR3/Tree+construction</A>
+</I>&gt;<i>
+</I>&gt;<i> When creating my own node classes, it's not clear to me if I need to
+</I>&gt;<i> subclass an antlr node class, or just create any class.  Are there any
+</I>&gt;<i> examples on both compression and creating custom classes?
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Thanks,
+</I>&gt;<i>
+</I>&gt;<i> Todd
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe:
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i>
+</I></PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="044242.html">[antlr-interest] Help with compressing trees and custom nodes
+</A></li>
+	<LI>Next message: <A HREF="044254.html">[antlr-interest] Help with compressing trees and custom nodes
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#44253">[ date ]</a>
+              <a href="thread.html#44253">[ thread ]</a>
+              <a href="subject.html#44253">[ subject ]</a>
+              <a href="author.html#44253">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

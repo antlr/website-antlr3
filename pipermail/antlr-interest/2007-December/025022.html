@@ -1,0 +1,171 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Lexer context problem
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Lexer%20context%20problem&In-Reply-To=%3C20071201092748.0EC3611EB0E%40www.antlr.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   
+   <LINK REL="Next"  HREF="025023.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Lexer context problem</H1>
+    <B>Harald M. M&#252;ller</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Lexer%20context%20problem&In-Reply-To=%3C20071201092748.0EC3611EB0E%40www.antlr.org%3E"
+       TITLE="[antlr-interest] Lexer context problem">harald_m_mueller at gmx.de
+       </A><BR>
+    <I>Sat Dec  1 01:27:44 PST 2007</I>
+    <P><UL>
+        
+        <LI>Next message: <A HREF="025023.html">[antlr-interest] ANTLRWorks 1.1.5 released
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25022">[ date ]</a>
+              <a href="thread.html#25022">[ thread ]</a>
+              <a href="subject.html#25022">[ subject ]</a>
+              <a href="author.html#25022">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Keith -
+
+you wrote:
+&gt;<i> 
+</I>&gt;<i> Could someone explain what I'm doing wrong here
+</I>
+Forgive me being blunt - but what you are doing wrong is to use that
+predicate at all. What you do is a BIG SMELL: Controlling the sequencing of
+your LEXER by knowledge about the order of symbols on the PARSER level.
+Lexing (tokenizing) is based on the assumption that you do it WITHOUT
+knowing anything about the use of the tokens (words) in the grammar. Period.
+
+(There are special cases where this does not work - some have been cited
+here; and eoms way of sometimes(rarely!) passing in some information to the
+lexer at a defined time would be helpful. But usual languages have just a
+handful of gimmicks of that sort; C#, AFAIK, has 2 [&gt;&gt; and keyword
+identifiers]; Pascal hat 1 [the .. from your example]).
+
+Ok - to get inteo the details: The problem with your grammar is that
+
+   ..
+
+is a valid name (I'm not sure you want this - but maybe it has do be like
+that; also ...... is a valid name). That's the reason why &quot;NAME jumps in&quot;.
+There are at least four ways out - in the first three, throw away that
+brackets flag:
+
+a) Define that sequences of periods are not valid names (e.g. by removing
+the dot in the first parenthesis of NAME).
+b) Define that .. is not name by moving DOTDOT *before* rule NAME.
+c) If .. must be name at some places, use my &quot;lexing parser&quot; idea - so
+define
+
+     DOTDOT : .. ;
+     NAME: ...as you have it...
+
+In the parser, say
+
+     name : NAME | DOTDOT ;
+
+and now continue e.g. with
+
+     tuple : name OSB INT DOTDOT INT CSB ;
+
+d) If you are not yet happy then, first go to the definer of your language
+and ask what the heck this '..' name is supposed to be and mean, and
+convince him or her that you want to do a) or b) or c). If this does not
+work: Use that brackets flag WITH =&gt;:
+
+NAME : {!brackets}? =&gt; ...what you have...
+     | '..' { $type = DOTDOT; }
+     ;
+
+- and expect to test for a day; and to write a long comment on why you did
+not use a) or b) or c).
+
+Hope this helps!
+
+Regards
+Harald M.
+
+
+&gt;<i> 
+</I>&gt;<i> Giving the input &quot;Abc[1..2]&quot; to the following
+</I>&gt;<i> -----
+</I>&gt;<i> grammar Test;
+</I>&gt;<i> 
+</I>&gt;<i> @lexer::members {
+</I>&gt;<i> 	boolean brackets;
+</I>&gt;<i> }
+</I>&gt;<i> 
+</I>&gt;<i> tuple	:	NAME OSB INT DOTDOT INT CSB;
+</I>&gt;<i> 
+</I>&gt;<i> NAME	
+</I>&gt;<i> 	:	{!brackets}?  
+</I>&gt;<i> ('A'..'Z'|'a'..'z'|'.'|'_')('0'..'9'|'A'..'Z'|'a'..'z'|'.'|'_')+
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> OSB
+</I>&gt;<i> 	:	'[' {brackets=true;}
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> DOTDOT
+</I>&gt;<i> 	:	{brackets}? '..'
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> CSB
+</I>&gt;<i> 	:	']' {brackets=false;}
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> INT
+</I>&gt;<i> 	:	'0' | ('1'..'9')('0'..'9')*
+</I>&gt;<i> 	;
+</I>&gt;<i> -----
+</I>&gt;<i> I always get an error &quot;ine 1:6 rule NAME failed predicate: 
+</I>&gt;<i> {!brackets}?&quot;
+</I>&gt;<i> 
+</I>&gt;<i> NAME seems to be jumping in when (as far as my understanding 
+</I>&gt;<i> goes (which isn't very far) it shouldn't. The Open Square 
+</I>&gt;<i> Brackets (OSB) sets 'bracket' true so NAME should not be 
+</I>&gt;<i> recognised. Strangely if I reduce 'tuple' to:
+</I>&gt;<i> 
+</I>&gt;<i> 	tuple	:	NAME OSB INT DOTDOT CSB ; / with the 
+</I>&gt;<i> input &quot;Abc[1..]&quot; works
+</I>&gt;<i> 
+</I>&gt;<i> but..
+</I>&gt;<i> 
+</I>&gt;<i> 	tuple	:	NAME OSB DOTDOT INT CSB ; // with the 
+</I>&gt;<i> input &quot;Abc[..1]&quot; fails??
+</I>&gt;<i> 
+</I>&gt;<i> I've just bought the book and scanned that for an answer but 
+</I>&gt;<i> can't find anything.
+</I>&gt;<i> 
+</I>&gt;<i> Thanks in advance
+</I>&gt;<i> Keith
+</I>&gt;<i> 
+</I>
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	
+	<LI>Next message: <A HREF="025023.html">[antlr-interest] ANTLRWorks 1.1.5 released
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25022">[ date ]</a>
+              <a href="thread.html#25022">[ thread ]</a>
+              <a href="subject.html#25022">[ subject ]</a>
+              <a href="author.html#25022">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

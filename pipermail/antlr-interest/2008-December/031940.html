@@ -1,0 +1,140 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] [C target] [3.1.1] Deriving imaginary nodes from	real tokens
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5BC%20target%5D%20%5B3.1.1%5D%20Deriving%20imaginary%20nodes%20from%0A%09real%20tokens&In-Reply-To=%3C1229005078.5865.20.camel%40cartman%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="031942.html">
+   <LINK REL="Next"  HREF="031943.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] [C target] [3.1.1] Deriving imaginary nodes from	real tokens</H1>
+    <B>Sven Van Echelpoel</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5BC%20target%5D%20%5B3.1.1%5D%20Deriving%20imaginary%20nodes%20from%0A%09real%20tokens&In-Reply-To=%3C1229005078.5865.20.camel%40cartman%3E"
+       TITLE="[antlr-interest] [C target] [3.1.1] Deriving imaginary nodes from	real tokens">sven.van.echelpoel at empolis.com
+       </A><BR>
+    <I>Thu Dec 11 06:17:58 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="031942.html">[antlr-interest] grammar highlighting in Netbeans
+</A></li>
+        <LI>Next message: <A HREF="031943.html">[antlr-interest] [C target] [3.1.1] Deriving imaginary nodes from real tokens
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#31940">[ date ]</a>
+              <a href="thread.html#31940">[ thread ]</a>
+              <a href="subject.html#31940">[ subject ]</a>
+              <a href="author.html#31940">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+According to the book you can derive imaginary nodes from real tokens to
+take over attributes (such as line number) from the latter. The syntax
+for this is :
+
+foo : b='bar' -&gt; ^( BAR[ $b ] )
+    ;
+
+However, when you do this with the C target, no line numbers or anything
+gets set. After some sleuthing I found the templates in AST.stg that
+might be relevant to this. They look like this:
+
+createImaginaryNode(tokenType,hetero,args) ::= &lt;&lt;
+&lt;if(hetero)&gt;
+&lt;! new MethodNode(IDLabel, args) !&gt;
+&lt;hetero&gt;New(&lt;tokenType&gt;&lt;if(args)&gt;, &lt;args; separator=&quot;, &quot;&gt;&lt;endif&gt;)
+&lt;else&gt;
+&lt;if(args)&gt;
+
+#if &lt;length(args)&gt; == 2
+	(&lt;ASTLabelType&gt;)ADAPTOR-&gt;createTypeTokenText(ADAPTOR, &lt;tokenType&gt;,
+TOKTEXT(&lt;args; separator=&quot;, &quot;&gt;))
+#else
+	(&lt;ASTLabelType&gt;)ADAPTOR-&gt;createTypeText(ADAPTOR, &lt;tokenType&gt;,
+(pANTLR3_UINT8)&lt;args; separator=&quot;, &quot;&gt;)
+#endif
+
+&lt;else&gt;
+(&lt;ASTLabelType&gt;)ADAPTOR-&gt;createTypeText(ADAPTOR, &lt;tokenType&gt;,
+(pANTLR3_UINT8)&quot;&lt;tokenType&gt;&quot;)
+&lt;endif&gt;
+&lt;endif&gt;
+&gt;&gt;<i>
+</I>
+createRewriteNodeFromElement(token,hetero,args) ::= &lt;&lt;
+&lt;if(hetero)&gt;
+&lt;hetero&gt;New(stream_&lt;token&gt;-&gt;nextToken(stream_&lt;token&gt;)&lt;if(args)&gt;, &lt;args;
+separator=&quot;, &quot;&gt;&lt;endif&gt;)
+&lt;else&gt;
+&lt;if(args)&gt; &lt;! must create new node from old !&gt;
+
+#if	&lt;length(args)&gt; == 2
+(&lt;ASTLabelType&gt;)ADAPTOR-&gt;createTypeTokenText(ADAPTOR,
+&lt;token&gt;-&gt;getType(&lt;token&gt;, TOKTEXT(&lt;token&gt;, &lt;args; separator=&quot;, &quot;&gt;)) /*
+JIMI */
+#else
+ADAPTOR-&gt;createTypeToken(ADAPTOR, &lt;token&gt;-&gt;getType(&lt;token&gt;, &lt;token&gt;,
+&lt;args; separator=&quot;, &quot;&gt;)
+#endif
+
+&lt;else&gt;
+stream_&lt;token&gt;-&gt;nextNode(stream_&lt;token&gt;)
+&lt;endif&gt;
+&lt;endif&gt;
+&gt;&gt;<i>
+</I>
+In the first one, createImaginaryNode, if you pass one argument to it,
+which I'm assuming to be the case, a type from a text is created. In the
+second one, createRewriteNodeFromElement, a type from a token is created
+with the same number of arguments.
+
+Although I have not dug any further, I can tell from examining the
+generated parser code that in an AST rewrite, the createImaginaryNode is
+used, resulting in nothing (the cast to pANTLR3_UINT8 probably and
+luckily makes it point to a zero, immediately terminating the string).
+
+It can be made to work by passing the second argument (the text), even
+though I have no use for that.
+
+foo : b='bar' -&gt; ^( BAR[ $b, &quot;&quot; ] )
+    ;
+
+Am I missing something, or should that normally work as advertised? 
+
+Sven
+
+</PRE>
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="031942.html">[antlr-interest] grammar highlighting in Netbeans
+</A></li>
+	<LI>Next message: <A HREF="031943.html">[antlr-interest] [C target] [3.1.1] Deriving imaginary nodes from real tokens
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#31940">[ date ]</a>
+              <a href="thread.html#31940">[ thread ]</a>
+              <a href="subject.html#31940">[ subject ]</a>
+              <a href="author.html#31940">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

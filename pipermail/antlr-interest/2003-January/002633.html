@@ -1,0 +1,332 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> AST with Scope Re: [antlr-interest] Re: Can Resolvers etc be written as ANTLR tree parsers?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=AST%20with%20Scope%20Re%3A%20%5Bantlr-interest%5D%20Re%3A%20Can%20Resolvers%20etc%20be%20written%20as%20ANTLR%20tree%20parsers%3F&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002625.html">
+   <LINK REL="Next"  HREF="002619.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>AST with Scope Re: [antlr-interest] Re: Can Resolvers etc be written as ANTLR tree parsers?</H1>
+    <B>Matthew Ford</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=AST%20with%20Scope%20Re%3A%20%5Bantlr-interest%5D%20Re%3A%20Can%20Resolvers%20etc%20be%20written%20as%20ANTLR%20tree%20parsers%3F&In-Reply-To="
+       TITLE="AST with Scope Re: [antlr-interest] Re: Can Resolvers etc be written as ANTLR tree parsers?">Matthew.Ford at forward.com.au
+       </A><BR>
+    <I>Tue Jan 14 18:28:47 PST 2003</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002625.html">[antlr-interest] Re: Can Resolvers etc be written as ANTLR tree parsers?
+</A></li>
+        <LI>Next message: <A HREF="002619.html">[antlr-interest] Bug in C# codegen: initializeASTFactory
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2633">[ date ]</a>
+              <a href="thread.html#2633">[ thread ]</a>
+              <a href="subject.html#2633">[ subject ]</a>
+              <a href="author.html#2633">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>See below for an example of carrying around the scope with the AST node.
+
+(Sorry the code has some other specific stuff in it also)
+
+
+/* AD V1.0
+ * (c)Forward Computing and Control Pty. Ltd.
+ */
+package au.com.forward.gaussAD.translators;
+
+import antlr.CommonAST;
+import antlr.Token;
+import antlr.collections.AST;
+
+import au.com.forward.gaussAD.symbolTable.*;
+
+/** A CommonAST which also stores scope
+ * also adds flag to indicate if
+ * result of this node is optimized diagonal matrix
+ *
+ */
+public class CommonASTWithScope extends CommonAST
+       implements GAUSS_AD_PARSERTokenTypes {
+
+    protected Scope scope=null; // save the scope
+
+    protected SymbolTableEntry tableEntry = null;
+
+    static private GaussADWalkerPrinter printer = new
+GaussADWalkerPrinter();
+
+    private int line = 0;  // for line numbers
+
+    public int getLine(){
+         return line;
+    }
+
+
+    public CommonASTWithScope() {
+   super();
+    }
+
+    public CommonASTWithScope(Token tok) {
+   super(tok);
+   tableEntry = new SymbolTableEntry(tok.getText());
+   setTokenType(tok.getType());
+    }
+
+    public void initialize(AST t) {
+     super.initialize(t);
+     if (t instanceof CommonASTWithScope) {
+      // set scope and table entry
+       Scope tmpScope = ((CommonASTWithScope)t).getScope();
+        line=((CommonASTWithScope)t).getLine();
+       if (tmpScope != null) {
+        //scope = tmpScope.cloneScope();
+        scope = tmpScope;  // should clone here but need to sort out
+problems
+       }
+      // clone tableEntry
+      tableEntry =
+((CommonASTWithScope)t).getSymbolTableEntry().symbolTableEntryClone();
+     }
+    }
+
+
+    public void initialize(int t, String txt) {
+     super.initialize(t,txt);
+     tableEntry = new SymbolTableEntry(txt);
+     setTokenType(t);
+    }
+
+    // over rides entry text with this txt
+    public void initialize(int t, String txt, SymbolTableEntry entry) {
+     super.initialize(t,txt);
+     tableEntry = new SymbolTableEntry(txt,entry);
+     setTokenType(t);
+    }
+
+    private void setTokenType(int t) {
+     if (t == ONE) {
+      tableEntry.setONE();
+     } else if (t==ZERO) {
+      tableEntry.setZERO();
+     } else if (t==NUM_FLOAT) {
+      tableEntry.setNumber();
+     }
+    }
+
+    public void initialize(Token t) {
+     super.initialize(t);
+     line=t.getLine();
+     tableEntry = new SymbolTableEntry(t.getText());
+     setTokenType(t.getType());
+    }
+
+    /**
+    * Set the token text for this node
+    * This clears the symbolTableEntry
+    */
+    public void setText(String text) {
+     super.setText(text);
+     tableEntry = new SymbolTableEntry(text);
+  }
+
+
+
+   /** Get the first child of this node; null if not children */
+    public CommonASTWithScope getChild() {
+    return (CommonASTWithScope) super.getFirstChild();
+    }
+
+    /** Get the next sibling in line after this one */
+    public CommonASTWithScope getSibling() {
+       return (CommonASTWithScope) super.getNextSibling();
+    }
+
+   /** Is node t equal to this in terms of token type and text?
+    * use Scope identsEqual to control ignore Case
+    */
+    public boolean equals(AST t) {
+   if ( t==null ) return false;
+   return Scope.identsEqual(this.getText(),t.getText()) &amp;&amp;
+         this.getType() == t.getType();
+    }
+
+   /** Is node t equal to this in terms of token type and text?
+    * use Scope identsEqual to control ignore Case
+    */
+    public boolean identEquals(String str) {
+   if ( str==null ) return false;
+   return Scope.identsEqual(this.getText(),str);
+    }
+
+    public void setScope(Scope scope) {
+     this.scope = scope;
+    }
+
+    public Scope getScope() {
+     return(scope);
+    }
+
+    public void setSymbolTableEntry(SymbolTableEntry entry) {
+      tableEntry = entry;  // don't clone
+    }
+
+    public SymbolTableEntry getSymbolTableEntry() {
+     return tableEntry;
+    }
+
+
+    /**
+     * return true if this node represents
+     * a diagional matrix by only saving the
+     * diagional vector.
+     */
+    public boolean isOptimizedDiag() {
+     if (tableEntry == null) {
+      return false;
+     } // else {
+     return tableEntry.isOptimizedDiag();
+    }
+
+
+  // walk along the siblings and for each sibling do all children
+ public CommonASTWithScope replaceAll(CommonASTWithScope t,
+CommonASTWithScope target, CommonASTWithScope replacement) {
+  CommonASTWithScope result = null;
+  if (t == null) {
+   return t;
+  }
+//   System.out.println(&quot;input: &quot; +t.toStringList());
+//   System.out.println(&quot;target &quot; +target.toStringList());
+//   System.out.println(&quot;replacement &quot; + replacement.toStringList());
+
+    if (t.equalsTree(target)) {
+     result = (CommonASTWithScope)AST_Utils.astFactory.dupTree(replacement);
+//System.out.println(&quot; root equals target result=&quot;+result.toStringList());
+    } else {
+     result = (CommonASTWithScope)AST_Utils.astFactory.dup(t);
+//System.out.println(&quot; root not equal check children of &quot; +
+t.toStringList());
+    if ( t.getFirstChild()!=null ) {
+
+result.setFirstChild(replaceAll(((CommonASTWithScope)t.getFirstChild()),
+target, replacement));
+     }
+  }
+//System.out.println(&quot; finished root now do siblings&quot;);
+
+  CommonASTWithScope nt = result; // now do siblings
+   while (t != null) {      // for each sibling of the root
+   t = (CommonASTWithScope)t.getNextSibling();
+   if (t!= null) {
+    nt.setNextSibling(replaceAll((CommonASTWithScope)t, target,
+replacement));
+    nt = (CommonASTWithScope)nt.getNextSibling();
+   }
+    }
+
+// System.out.println(&quot;result &quot;+ result.toStringList());
+   return result;
+  }
+
+}
+----- Original Message -----
+From: &quot;John D. Mitchell&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">johnm-antlr at non.net</A>&gt;
+To: &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>&gt;
+Sent: Wednesday, January 15, 2003 5:45 AM
+Subject: [antlr-interest] Re: Can Resolvers etc be written as ANTLR tree
+parsers?
+
+
+&gt;<i> &gt;&gt;&gt;&gt;&gt; &quot;micheal&quot; == micheal jor &lt;open <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">zone at virgin</A> net&gt;
+</I>&lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">open.zone at virgin.net</A>&gt; writes:
+&gt;<i>
+</I>&gt;<i> [...]
+</I>&gt;<i>
+</I>&gt;<i> &gt;&gt; The trick is to build the initial AST with sufficient information. :-)
+</I>A
+&gt;<i> &gt;&gt; canonical example seems to be mapping back to the source with position
+</I>&gt;<i> &gt;&gt; information.
+</I>&gt;<i>
+</I>&gt;<i> &gt; Isn't this a Lexer issue?. Ensuring the info is captured by the lexer in
+</I>&gt;<i> &gt; the first place?
+</I>&gt;<i>
+</I>&gt;<i> There's two primary facets to the problem:
+</I>&gt;<i>
+</I>&gt;<i> * Gathering the information in the first place
+</I>&gt;<i>
+</I>&gt;<i> * Propagating the information through the intervening stages
+</I>&gt;<i> to where you need it.
+</I>&gt;<i>
+</I>&gt;<i> [...]
+</I>&gt;<i>
+</I>&gt;<i> &gt;&gt; * create auxiliary structues that you thread through the tree
+</I>&gt;<i>
+</I>&gt;<i> &gt; An example would be?
+</I>&gt;<i>
+</I>&gt;<i> Use-def/def-use chains.  [I.e., chaining together all of the uses of e.g.,
+</I>&gt;<i> a variable with the definition of that variable.]
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> &gt;&gt;&gt; If there are examples of resolvers etc written as ANTLR tree parsers,
+</I>&gt;<i> &gt;&gt;&gt; I'd appreciate a link/sample.
+</I>&gt;<i>
+</I>&gt;<i> &gt;&gt; In this context, what do you mean by &quot;resolvers&quot;?
+</I>&gt;<i>
+</I>&gt;<i> &gt; A processing entity that traverses an AST and links ID nodes to their
+</I>&gt;<i> &gt; defining occurences, resolving overloads and expression types. [Might
+</I>&gt;<i> &gt; make mutiple traversals.]
+</I>&gt;<i>
+</I>&gt;<i> Use an auxiliarly stack to track scoping.  Of course, that can become more
+</I>&gt;<i> complicated depending on your source language.
+</I>&gt;<i>
+</I>&gt;<i> For use before definition, you can create a lookaside list per scope where
+</I>&gt;<i> you save the references to those uses and resolve them either when you
+</I>come
+&gt;<i> to the definition or when you leave the scope or when you've completed the
+</I>&gt;<i> traversal -- again, it depends a lot on the semantics of your language.
+</I>&gt;<i>
+</I>&gt;<i> Take care,
+</I>&gt;<i> John
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002625.html">[antlr-interest] Re: Can Resolvers etc be written as ANTLR tree parsers?
+</A></li>
+	<LI>Next message: <A HREF="002619.html">[antlr-interest] Bug in C# codegen: initializeASTFactory
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2633">[ date ]</a>
+              <a href="thread.html#2633">[ thread ]</a>
+              <a href="subject.html#2633">[ subject ]</a>
+              <a href="author.html#2633">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,174 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Lexical error recovery by manual symbol	(character) insertion/deletion?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Lexical%20error%20recovery%20by%20manual%20symbol%0A%09%28character%29%20insertion/deletion%3F&In-Reply-To=%3C4d596d820802150614ha6185aem40407dd60dd8215d%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="026490.html">
+   <LINK REL="Next"  HREF="026487.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Lexical error recovery by manual symbol	(character) insertion/deletion?</H1>
+    <B>Darach Ennis</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Lexical%20error%20recovery%20by%20manual%20symbol%0A%09%28character%29%20insertion/deletion%3F&In-Reply-To=%3C4d596d820802150614ha6185aem40407dd60dd8215d%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Lexical error recovery by manual symbol	(character) insertion/deletion?">darach at gmail.com
+       </A><BR>
+    <I>Fri Feb 15 06:14:12 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="026490.html">[antlr-interest] Java AST Grammar
+</A></li>
+        <LI>Next message: <A HREF="026487.html">[antlr-interest] Lexical error recovery by manual symbol	(character) insertion/deletion?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#26485">[ date ]</a>
+              <a href="thread.html#26485">[ thread ]</a>
+              <a href="subject.html#26485">[ subject ]</a>
+              <a href="author.html#26485">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi all.
+
+I have a small testcase grammar as follows which can correctly match integer
+and floats and dots
+unless any &lt;number&gt;&lt;dot&gt;&lt;non-number&gt; sequence is in the input stream wherein
+it tries to match
+a float, fails and issues an error due to not finding a lexical subrule
+alternative.
+
+Input phrase example:
+
+1 2.3 .4 9. 9...
+
+Output errors:
+line 1:11 required (...)+ loop did not match anything at character ' ' //
+aka: the character proceeding the occurance of '9.' above, a space
+line 1:14 required (...)+ loop did not match anything at character '.' //
+aka: the character proceeding the second occurance of '9.' above, another
+dot
+
+Note that '.4' above is not a float but a dot followed by the integer four.
+This gets matched correctly.
+
+As '.' is used as a terminal for a statement and a lone integer is a valid
+expression the sequence of
+tokens &lt;digit&gt;&lt;dot&gt; is valid.
+
+The grammar:
+
+test:   literal+;
+literal:    I | D | F;
+I   :   ('0' | '1'..'9' '0'..'9'*) ;
+F :   ('0' | '1'..'9' '0'..'9'*) '.' '0'..'9'+;
+D   :   '.';
+WS  :   (' ' | '\t' | '\n' | '\r') { $channel=HIDDEN; };
+C   :   '#' ~('\n'|'\r')* ('\r'|'\n') { $channel=HIDDEN; };
+
+Introducing an erroneous rule to mop up the subrule mismatch is about the
+only strategy that seems to work:
+
+test:   literal+;
+literal:    I | D | F | ERR;
+I   :   ('0' | '1'..'9' '0'..'9'*);
+F :   ('0' | '1'..'9' '0'..'9'*) '.' '0'..'9'+;
+D   :   '.';
+ERR: I D;
+WS  :   (' ' | '\t' | '\n' | '\r') { $channel=HIDDEN; };
+C   :   '#' ~('\n'|'\r')* ('\r'|'\n') { $channel=HIDDEN; };
+
+This might be just fine in simpler grammars. However, I'm looking for
+something akin to error recovery
+by symbol insertion but at the lexer/character level, not in the parser as
+described in the book. In my
+case any dot character preceeded with a digit but not followed by a digit
+should be preceeded by a
+whitespace:
+
+2.3 -&gt; &lt;number&gt;&lt;dot&gt;&lt;number&gt;
+.3 -&gt; &lt;dot&gt; &lt;number&gt;
+3. -&gt; . &lt;number&gt; &lt;whitespace&gt; &lt;dot&gt;
+
+Thus in the third production we would avoid the lexical ambiguity simply by
+separating the 'mismatched float' &lt;integer&gt; and &lt;dot&gt;
+tokens by an intervening whitespace. However, it looks like manual error
+recovery in lexer rules is not supported by ANTLRv3, at
+least in the java grammar. Here's a modified (and probably illegal) 'F'
+lexer rule:
+
+F :   ('0' | '1'..'9' '0'..'9'*) '.' '0'..'9'+
+    ;
+    catch [RecognitionException re] {
+        // recover?
+    }
+
+ANTLR will try and generate code for this, but there are missing templates
+for the error recovery:
+
+ANTLR Parser Generator  Version 3.0.1 (August 13, 2007)  1989-2007
+error(10):  internal error: /tmp/BadDot.g : java.util.NoSuchElementException:
+no such attribute: exceptions in template context [lexerRule]
+org.antlr.stringtemplate.StringTemplate.rawSetAttribute(StringTemplate.java
+:<i>661)
+</I>org.antlr.stringtemplate.StringTemplate.setAttribute(StringTemplate.java
+:<i>522)
+</I>org.antlr.stringtemplate.StringTemplate.setAttribute(StringTemplate.java
+:<i>604)
+</I>org.antlr.stringtemplate.StringTemplate.setAttribute(StringTemplate.java
+:<i>565)
+</I>org.antlr.codegen.CodeGenTreeWalker.exceptionHandler(CodeGenTreeWalker.java
+:<i>1413)
+</I>org.antlr.codegen.CodeGenTreeWalker.exceptionGroup(CodeGenTreeWalker.java
+:<i>1103)
+</I>org.antlr.codegen.CodeGenTreeWalker.rule(CodeGenTreeWalker.java:805)
+org.antlr.codegen.CodeGenTreeWalker.rules(CodeGenTreeWalker.java:544)
+org.antlr.codegen.CodeGenTreeWalker.grammarSpec(CodeGenTreeWalker.java:486)
+org.antlr.codegen.CodeGenTreeWalker.grammar(CodeGenTreeWalker.java:297)
+org.antlr.codegen.CodeGenerator.genRecognizer(CodeGenerator.java:406)
+org.antlr.Tool.processGrammar(Tool.java:347)
+org.antlr.Tool.process(Tool.java:311)
+org.antlr.Tool.main(Tool.java:70)
+
+Is there a simpler fix to the dot-ambiguity that I'm missing? Would a
+lexical error recovery mechanism
+be justifiably used in this case? Or, is this user error or a limitation/bug
+with ANTLRv3?
+
+Regards,
+
+Darach.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20080215/00e8119a/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20080215/00e8119a/attachment.html</A> 
+</PRE>
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="026490.html">[antlr-interest] Java AST Grammar
+</A></li>
+	<LI>Next message: <A HREF="026487.html">[antlr-interest] Lexical error recovery by manual symbol	(character) insertion/deletion?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#26485">[ date ]</a>
+              <a href="thread.html#26485">[ thread ]</a>
+              <a href="subject.html#26485">[ subject ]</a>
+              <a href="author.html#26485">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

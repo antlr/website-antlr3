@@ -1,0 +1,182 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] [PATCH] Fixes FOLLOW set computation
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20%5BPATCH%5D%20Fixes%20FOLLOW%20set%20computation&In-Reply-To=20040306220340.GV14069%40localhost.localdomain">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="006748.html">
+   <LINK REL="Next"  HREF="006755.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] [PATCH] Fixes FOLLOW set computation</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20%5BPATCH%5D%20Fixes%20FOLLOW%20set%20computation&In-Reply-To=20040306220340.GV14069%40localhost.localdomain"
+       TITLE="[antlr-interest] [PATCH] Fixes FOLLOW set computation">parrt at cs.usfca.edu
+       </A><BR>
+    <I>Sat Mar  6 15:35:01 PST 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="006748.html">[antlr-interest] [PATCH] Fixes FOLLOW set computation
+</A></li>
+        <LI>Next message: <A HREF="006755.html">[antlr-interest] C# vs MSIL Output
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6749">[ date ]</a>
+              <a href="thread.html#6749">[ thread ]</a>
+              <a href="subject.html#6749">[ subject ]</a>
+              <a href="author.html#6749">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+On Mar 6, 2004, at 2:03 PM, Robin Green wrote:
+
+&gt;<i> This patch against 2.7.2 fixes (I think) an issue where ANTLR would
+</I>&gt;<i> sometimes fail to complete a FOLLOW set computation, resulting in a
+</I>&gt;<i> symptom of bogus &quot;unexpected token&quot; exceptions being thrown by the
+</I>&gt;<i> generated parser. (My grammar is unusual - it's a literalistic
+</I>&gt;<i> grammar for a YAML parser for Java - so I suspect I have triggered
+</I>&gt;<i> an unusual edge case here.)
+</I>&gt;<i>
+</I>&gt;<i> (The patch also includes some additional information I added to the
+</I>&gt;<i> debug statements, but that's not important.)
+</I>&gt;<i>
+</I>&gt;<i> Re-reading it, though, the pre-existing comment saying &quot;this is not
+</I>&gt;<i> crucial&quot; should probably be changed to say the exact opposite! It
+</I>&gt;<i> seems that this is the critical code path for breaking cycles, and the
+</I>&gt;<i> person who wrote the comment thought that it wasn't (maybe it wasn't
+</I>&gt;<i> then). Correct me if I'm wrong.
+</I>&gt;<i>
+</I>&gt;<i> In any case, IMHO documenting the contract of the containing method
+</I>&gt;<i> here would have avoided or mitigated this kind of issue. Either this
+</I>&gt;<i> code was at fault or a caller was - but without documentation it
+</I>&gt;<i> was hard to tell which was to blame.
+</I>
+Hi Robin,
+
+Yeah, the code sucks.  However, I believe my comments and intentions 
+align in the code included below.  The situation you are manipulating 
+is this: you need FOLLOW(r) and there is a cached value there.  If 
+there is a complete value (i.e., no cycles indicating partial 
+computations), then can just return the value.  Else, we pull out the 
+name of the rule, r2, whose FOLLOW was attempted but failed due to 
+cycle, leaving FOLLOW(r) partially computed.  We go to the FOLLOW(r2) 
+computation cache and see if it has a value.  If no value then it must 
+still be being computed (I believe that means that FOLLOW(r2) depends 
+on FOLLOW(r) which depends on FOLLOW(r2).  It is my *intention* that a 
+cycle cannot occur unless a computation is in progress.  So finding an 
+empty cache value means you still can't complete this computation.  
+Now, it could be that I'm not properly updating the cache or removing 
+the cycles from the cache.  It is more likely that I have a bug 
+elsewhere and your patch merely forces FOLLOW computation to begin 
+anew.  It may work in your case, but I'm just not sure about the 
+general solution without spending hours to regrok all this spaghetti.  
+It seems to me though that your
+
+                 end.cache[k] = FOLLOW (k, re);
+
+may not be completely correct.  It would replace FOLLOW(r) with purely 
+FOLLOW(r2), when in fact I designed the cache to store partial 
+computations and cycles so you may be blowing away any partial results. 
+  Since FOLLOW(r)==FOLLOW(r2) semantically you might be ok, but in the 
+code I'm not sure all the pieces of FOLLOW(r) would be cobbled together 
+properly.  Hmm...I might believe FOLLOW(k, end), however.  Can you send 
+me your test case you used to narrow this down or did you just look at 
+the code?  I found the same problem in my python front end recently but 
+couldn't get a small test case for some reason.
+
+         // Check to see if there is cached value
+         if (end.cache[k] != null) {
+             if (DEBUG_ANALYZER) {
+                 System.out.println(&quot;cache entry FOLLOW(&quot; + k + &quot;) for &quot; 
++ rule + &quot;: &quot; + end.cache[k].toString(&quot;,&quot;, charFormatter, grammar));
+             }
+             // if the cache is a complete computation then simply 
+return entry
+             if (end.cache[k].cycle == null) {
+                 return (Lookahead)end.cache[k].clone();
+             }
+             // A cache entry exists, but it is a reference to a cyclic 
+computation.
+             RuleSymbol rs = 
+(RuleSymbol)grammar.getSymbol(end.cache[k].cycle);
+             RuleEndElement re = rs.getBlock().endNode;
+             // The other entry may not exist because it is still being
+             // computed when this cycle cache entry was found here.
+             if (re.cache[k] == null) {
+                 // return the cycle...that's all we can do at the 
+moment.
+                 return (Lookahead)end.cache[k].clone();
+             }
+             else {
+                 // replace this cache entry with the entry from the 
+referenced computation.
+                 // Eventually, this percolates a complete (no cycle 
+reference) cache entry
+                 // to this node (or at least gets it closer and 
+closer).  This is not
+                 // crucial, but makes cache lookup faster as we might 
+have to look up
+                 // lots of cycle references before finding a complete 
+reference.
+                 end.cache[k] = re.cache[k];
+                 // Return the cache entry associated with the cycle 
+reference.
+                 return (Lookahead)re.cache[k].clone();
+             }
+         }
+
+Thanks a million for tracking this...if we can find the &quot;right&quot; fix 
+then I'll put in 2.7.3.
+
+Best regards,
+Terence
+--
+Professor Comp. Sci., University of San Francisco
+Creator, ANTLR Parser Generator, <A HREF="http://www.antlr.org">http://www.antlr.org</A>
+Cofounder, <A HREF="http://www.jguru.com">http://www.jguru.com</A>
+Cofounder, <A HREF="http://www.knowspam.net">http://www.knowspam.net</A> enjoy email again!
+Cofounder, <A HREF="http://www.peerscope.com">http://www.peerscope.com</A> pure link sharing
+
+
+
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+     <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+     <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+     <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="006748.html">[antlr-interest] [PATCH] Fixes FOLLOW set computation
+</A></li>
+	<LI>Next message: <A HREF="006755.html">[antlr-interest] C# vs MSIL Output
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#6749">[ date ]</a>
+              <a href="thread.html#6749">[ thread ]</a>
+              <a href="subject.html#6749">[ subject ]</a>
+              <a href="author.html#6749">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

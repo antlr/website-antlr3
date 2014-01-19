@@ -1,0 +1,164 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [stringtemplate-interest] &quot;rest&quot; and template recursion FIXED
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20%22rest%22%20and%20template%20recursion%20FIXED&In-Reply-To=%3C2AB4ED7A-1175-4DCB-A29A-4C687A105BB0%40cs.usfca.edu%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001494.html">
+   <LINK REL="Next"  HREF="001491.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[stringtemplate-interest] &quot;rest&quot; and template recursion FIXED</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20%22rest%22%20and%20template%20recursion%20FIXED&In-Reply-To=%3C2AB4ED7A-1175-4DCB-A29A-4C687A105BB0%40cs.usfca.edu%3E"
+       TITLE="[stringtemplate-interest] &quot;rest&quot; and template recursion FIXED">parrt at cs.usfca.edu
+       </A><BR>
+    <I>Mon Jun  2 19:01:38 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001494.html">[stringtemplate-interest] what is the use for embeddedInstances	?
+</A></li>
+        <LI>Next message: <A HREF="001491.html">[stringtemplate-interest] Fixed ST-33
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1490">[ date ]</a>
+              <a href="thread.html#1490">[ thread ]</a>
+              <a href="subject.html#1490">[ subject ]</a>
+              <a href="author.html#1490">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Ok, Fixed. THis test passes:
+
+	public void testReUseOfRestResult() throws Exception {
+		String templates =
+			&quot;group test;&quot; +newline+
+			&quot;a(names) ::= \&quot;&lt;b(rest(names))&gt;\&quot;&quot;+newline+
+			&quot;b(x) ::= \&quot;&lt;x&gt;, &lt;x&gt;\&quot;&quot;+newline
+			;
+		StringTemplateGroup group =
+			new StringTemplateGroup(new StringReader(templates));
+		StringTemplate e = group.getInstanceOf(&quot;a&quot;);
+		List names = new ArrayList();
+		names.add(&quot;Ter&quot;);
+		names.add(&quot;Tom&quot;);
+		e.setAttribute(&quot;names&quot;, names);
+		String expecting = &quot;Tom, Tom&quot;;
+		assertEquals(expecting, e.toString());
+	}
+
+and this one:
+
+	public void testReUseOfStripResult() throws Exception {
+		String templates =
+			&quot;group test;&quot; +newline+
+			&quot;a(names) ::= \&quot;&lt;b(strip(names))&gt;\&quot;&quot;+newline+
+			&quot;b(x) ::= \&quot;&lt;x&gt;, &lt;x&gt;\&quot;&quot;+newline
+			;
+		StringTemplateGroup group =
+			new StringTemplateGroup(new StringReader(templates));
+		StringTemplate e = group.getInstanceOf(&quot;a&quot;);
+		List names = new ArrayList();
+		names.add(&quot;Ter&quot;);
+		names.add(null);
+		names.add(&quot;Tom&quot;);
+		e.setAttribute(&quot;names&quot;, names);
+		String expecting = &quot;TerTom, TerTom&quot;;
+		assertEquals(expecting, e.toString());
+	}
+
+failed beforehand.
+
+Implemented trunc also:
+
+	public void testTruncOp() throws Exception {
+		StringTemplate e = new StringTemplate(
+				&quot;$trunc(names); separator=\&quot;, \&quot;$&quot;
+			);
+		e = e.getInstanceOf();
+		e.setAttribute(&quot;names&quot;, &quot;Ter&quot;);
+		e.setAttribute(&quot;names&quot;, &quot;Tom&quot;);
+		e.setAttribute(&quot;names&quot;, &quot;Sriram&quot;);
+		String expecting = &quot;Ter, Tom&quot;;
+		assertEquals(expecting, e.toString());
+	}
+
+edit //depot/code/stringtemplate/java/main/CHANGES.txt#15
+edit //depot/code/stringtemplate/java/main/src/org/antlr/ 
+stringtemplate/language/ASTExpr.java#47
+delete //depot/code/stringtemplate/java/main/src/org/antlr/ 
+stringtemplate/language/StripIterator.java#3
+edit //depot/code/stringtemplate/java/main/src/org/antlr/ 
+stringtemplate/test/TestStringTemplate.java#84
+Change 4977 submitted.
+
+Ter
+
+On May 31, 2008, at 4:39 PM, Terence Parr wrote:
+
+&gt;<i>
+</I>&gt;<i> On May 30, 2008, at 11:30 PM, Zenaan Harkness wrote:
+</I>&gt;<i>
+</I>&gt;&gt;<i> On Fri, May 30, 2008 at 11:05:22PM -0700, Sasha Crosland wrote:
+</I>&gt;&gt;&gt;<i> Thanks for the explanation, Terence.  A side-effect-free rest()
+</I>&gt;&gt;&gt;<i> does seem
+</I>&gt;&gt;&gt;<i> more in the spirit of StringTemplate, doesn't it?  I vote yes, for
+</I>&gt;&gt;&gt;<i> what it's
+</I>&gt;&gt;&gt;<i> worth.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> But would you actually need to make a copy of the list data?  If
+</I>&gt;&gt;&gt;<i> lists are
+</I>&gt;&gt;&gt;<i> immutable within a template, then couldn't you easily return a
+</I>&gt;&gt;&gt;<i> lightweight
+</I>&gt;&gt;&gt;<i> view of the sublist that reads through to the original list, just
+</I>&gt;&gt;&gt;<i> like with
+</I>&gt;&gt;&gt;<i> an iterator?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Vote thirded.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Recursion ought to Just Work (TM).
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I additionally vote for an addition to first,last,rest to fill the
+</I>&gt;&gt;<i> gap,
+</I>&gt;&gt;<i> perhaps &quot;front&quot; (all but last).
+</I>&gt;<i>
+</I>&gt;<i> I think i have trunc for that.
+</I>&gt;<i>
+</I>&gt;&gt;<i> Lightweight container wrapper is definitely the go here.
+</I>&gt;&gt;<i> ArrayList.clone(), or Collection.clone() should do what's needed.
+</I>&gt;<i>
+</I>&gt;<i> kewl. thanks.
+</I>&gt;<i> Ter
+</I>&gt;<i> _______________________________________________
+</I>&gt;<i> stringtemplate-interest mailing list
+</I>&gt;<i> <A HREF="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">stringtemplate-interest at antlr.org</A>
+</I>&gt;<i> <A HREF="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest</A>
+</I>
+</PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001494.html">[stringtemplate-interest] what is the use for embeddedInstances	?
+</A></li>
+	<LI>Next message: <A HREF="001491.html">[stringtemplate-interest] Fixed ST-33
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1490">[ date ]</a>
+              <a href="thread.html#1490">[ thread ]</a>
+              <a href="subject.html#1490">[ subject ]</a>
+              <a href="author.html#1490">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">More information about the stringtemplate-interest
+mailing list</a><br>
+</body></html>

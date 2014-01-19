@@ -1,0 +1,193 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [stringtemplate-interest] Renderer &quot;modes&quot;
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:stringtemplate-interest%40antlr.org?Subject=%5Bstringtemplate-interest%5D%20Renderer%20%22modes%22&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000501.html">
+   <LINK REL="Next"  HREF="000505.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[stringtemplate-interest] Renderer &quot;modes&quot;</H1>
+    <B>Kunle Odutola</B> 
+    <A HREF="mailto:stringtemplate-interest%40antlr.org?Subject=%5Bstringtemplate-interest%5D%20Renderer%20%22modes%22&In-Reply-To="
+       TITLE="[stringtemplate-interest] Renderer &quot;modes&quot;">Kunle_Odutola at hotmail.com
+       </A><BR>
+    <I>Tue Jun 20 16:33:41 PDT 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000501.html">[stringtemplate-interest] Renderer &quot;modes&quot;
+</A></li>
+        <LI>Next message: <A HREF="000505.html">[stringtemplate-interest] Renderer &quot;modes&quot;
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#503">[ date ]</a>
+              <a href="thread.html#503">[ thread ]</a>
+              <a href="subject.html#503">[ subject ]</a>
+              <a href="author.html#503">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Ter,
+
+&gt;<i> &gt; Formatter ojects are currently the prescribed way. See the types in
+</I>&gt;<i> &gt; the
+</I>&gt;<i> &gt; &quot;Antlr.StringTemplate.Utils&quot; namespace. You wrap each entry in your
+</I>&gt;<i> &gt; array.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Hey Kunle,
+</I>&gt;<i> &gt; Yeah, I considered that option, but it seems to me a little awkward.
+</I>&gt;<i>
+</I>&gt;<i> It is a pain to manually wrap each object before you inject.
+</I>
+Yep.
+
+&gt;<i> &gt; For instance, formatter/renderer combination makes this easy:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; $people:{
+</I>&gt;<i> &gt; &lt;h2&gt;$it.Name$&lt;/h2&gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; $it.Relations:{&lt;a onclick=&quot;registerRelation('$it.Value;
+</I>&gt;<i> &gt; format=&quot;js&quot;$');&quot;&gt;$it.Value$&lt;/a&gt; }$
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; }$
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Without using formatters on renderers, it would be possible, but
+</I>&gt;<i> &gt; the controller would be overly complex with several wrapper classes.
+</I>&gt;<i>
+</I>&gt;<i> Well, you'd need one for javascript but what others would you need?
+</I>
+I think he means several instances of the wrapper class. One per item in
+list.
+
+&gt;<i> &gt; Perhaps. I wonder if formalizing the concept of Formatters would be
+</I>&gt;<i> &gt; a better
+</I>&gt;<i> &gt; approach. Formatters expose arbitrary properties that ST templates can
+</I>&gt;<i> &gt; already access directly. All that is needed is a way to compose a
+</I>&gt;<i> &gt; renderer
+</I>&gt;<i> &gt; and a formatter before registering with ST. This would remove the
+</I>&gt;<i> &gt; formatter-per-attribute association as well.
+</I>&gt;<i>
+</I>&gt;<i> So you'd only have a singleton renderer as before but that accepted
+</I>&gt;<i> an Object *and* a formatter String:
+</I>&gt;<i>
+</I>&gt;<i> class StringRenderer implements AttributeRenderer {
+</I>&gt;<i>    toString(Object data) {...}
+</I>&gt;<i>    toString(Object data, String format) {...}
+</I>&gt;<i> }
+</I>&gt;<i>
+</I>&gt;<i> Is that what you mean?  If you registered a StringRenderer to deal
+</I>&gt;<i> with all Strings then $name$ would call the first method toString
+</I>&gt;<i> (name).  If you did $name; format=&quot;js&quot;$ then it would call toString
+</I>&gt;<i> (name, &quot;js&quot;).  Interesting...
+</I>
+Not quite. I thought we could just alter the following method:
+    rawGetObjectProperty(StringTemplate self, Object o, String propertyName)
+
+It would need to understand that an AttributeRender may also have a
+formatter that exposes additional properties.
+
+interface AttributeRenderer {
+    AttributeFormatter getFormatter();
+    string toString(Object data);
+}
+
+interface AttributeFormatter {
+    string toString(Object data, String propertyName);
+}
+
+class StringRenderer implements AttributeRenderer {
+    public StringRenderer() {}
+    public StringRenderer(AttributeFormatter formatter) {...}
+    AttributeFormatter getFormatter() { return formatter; }
+    toString(Object data) {...}
+}
+
+class JsAndHtmlStringRenderer implements AttributeFormatter {
+
+    toString(Object data, String propertyName) {
+        if ( propertyName.equals(&quot;js&quot;) )
+            return this.JsEncode(data);
+        else if ( propertyName.equals(&quot;url&quot;) )
+            return this.UrlEncode(data);
+        ...
+    }
+}
+
+1. The rawGetObjectProperty() method can check if renderer has a formatter
+(via AttributeRenderer's getFormatter() accessor) and if so, use it
+directly.
+2.  Not sure that the formatter needs to implement a specific interface or
+indeed be a separate object from the renderer.
+3. Perhaps we can mandate that the &quot;format string&quot; is actually an exposed
+property on the formatter, ST already has the machinery to query
+properties/methods on arbitary object instances.
+
+Haven't thought about any other options yet. Sean's idea is neat but it's
+use of attributes will require Java 1.5+. It doesn't quite equate to
+allowing passing arbitary strings to be passed from templates to controller
+though.
+
+&gt;<i> Instead, let's follow what I think you originally posted: registering
+</I>&gt;<i> formatter objects as renderers but we expose some properties.  The
+</I>&gt;<i> key efficiency thing here is that the wrapper/formatter can be a
+</I>&gt;<i> singleton now--you don't have to wrap every string in an formatter
+</I>&gt;<i> object.  $name.toUpper$ would be converted to
+</I>&gt;<i>
+</I>&gt;<i> r = renderer.get(&quot;String&quot;);
+</I>&gt;<i> r.toUpper(name);
+</I>&gt;<i>
+</I>&gt;<i> So, in the controller you register String-&gt;SeansHTMLRendererThingie
+</I>&gt;<i> and then call $name.seansMethodForManipulatingStringsInACoolWay$.
+</I>&gt;<i>
+</I>&gt;<i> This prevents the user from passing arbitrary data; the format string
+</I>&gt;<i> must be a valid method name, preventing methods called &quot;SELECT * FROM
+</I>&gt;<i> USER&quot;, though for a few cases, you could actually do this.  This hole
+</I>&gt;<i> already exists though.
+</I>&gt;<i>
+</I>&gt;<i> In summary, the syntax is identical but we'd have to modify
+</I>&gt;<i>
+</I>&gt;<i> ASTExpr:
+</I>&gt;<i>
+</I>&gt;<i> protected Object rawGetObjectProperty(StringTemplate self, Object o,
+</I>&gt;<i> String propertyName) {...}
+</I>&gt;<i>
+</I>&gt;<i> so that it checked for a renderer for o's type before doing anything
+</I>&gt;<i> else.  A renderer registered for o's type would take precedence over
+</I>&gt;<i> anything else even if o is a Map or StringTemplate.  This way we can
+</I>&gt;<i> automatically add properties essentially to any type of object.
+</I>&gt;<i>
+</I>&gt;<i> How does this sound?  I like it.
+</I>
+Sounds like you're saying the AtributeRenderer exposes the additional
+properties (i.e. renderer and formatter combined).
+
+
+Kunle
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000501.html">[stringtemplate-interest] Renderer &quot;modes&quot;
+</A></li>
+	<LI>Next message: <A HREF="000505.html">[stringtemplate-interest] Renderer &quot;modes&quot;
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#503">[ date ]</a>
+              <a href="thread.html#503">[ thread ]</a>
+              <a href="subject.html#503">[ subject ]</a>
+              <a href="author.html#503">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">More information about the stringtemplate-interest
+mailing list</a><br>
+</body></html>

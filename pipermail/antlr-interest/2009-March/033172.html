@@ -1,0 +1,183 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Confusing, hopefully-final, problems
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Confusing%2C%20hopefully-final%2C%20problems&In-Reply-To=%3C20090302073350.69C94341844D%40www.antlr.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="033168.html">
+   <LINK REL="Next"  HREF="033173.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Confusing, hopefully-final, problems</H1>
+    <B>Gavin Lambert</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Confusing%2C%20hopefully-final%2C%20problems&In-Reply-To=%3C20090302073350.69C94341844D%40www.antlr.org%3E"
+       TITLE="[antlr-interest] Confusing, hopefully-final, problems">antlr at mirality.co.nz
+       </A><BR>
+    <I>Sun Mar  1 23:33:24 PST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="033168.html">[antlr-interest] Confusing, hopefully-final, problems
+</A></li>
+        <LI>Next message: <A HREF="033173.html">[antlr-interest] Confusing, hopefully-final, problems
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#33172">[ date ]</a>
+              <a href="thread.html#33172">[ thread ]</a>
+              <a href="subject.html#33172">[ subject ]</a>
+              <a href="author.html#33172">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>At 11:21 2/03/2009, Sam Barnett-Cormack wrote:
+ &gt;NUMBER : ;
+
+Defining non-fragment rules that can succesfully match nothing 
+(ie. empty string) is Bad(tm).
+
+ &gt;BSTRING : '\'' BSTRINGCONT '\'B';
+[...]
+ &gt;HSTRING : '\'' HSTRINGCONT '\'H';
+
+These are going to give you grief.  The lexer cannot backtrack, 
+and since HSTRINGCONT/BSTRINCONT can be infinite length, it cannot 
+determine sufficient static lookahead to disambiguate these 
+automatically.
+
+What you should do is to define a generic 
+single-quoted-string-with-optional-trailing-B/H lexer rule, and 
+then either put some trailing code in the lexer rule to check the 
+content and change the type (or report an error), or defer that 
+until parse time.
+
+ &gt;fragment
+ &gt;CSTRINGNL : WSNONL* NL WSNONL* {setText(&quot;&quot;);};
+
+setText has no effect in fragment rules.
+
+ &gt;fragment
+ &gt;XMLATTVAL : XMLDATTVAL | XMLSATTVAL ;
+ &gt;
+ &gt;fragment
+ &gt;XMLATTRIB : XMLNAME '=' XMLATTVAL ;
+ &gt;
+ &gt;fragment
+ &gt;WSBLOCK : WS+;
+ &gt;
+ &gt;fragment
+ &gt;XMLATTRIBS
+ &gt;      : XMLATTRIB
+ &gt;      | (XMLATTRIB WS)=&gt;XMLATTRIB WSBLOCK XMLATTRIBS;
+ &gt;
+ &gt;fragment
+ &gt;XMLTAGATTS
+ &gt;      : WSBLOCK XMLATTRIBS ;
+ &gt;
+ &gt;fragment
+ &gt;XMLOPENTAG : '&lt;' XMLNAME XMLTAGATTS? WS* '&gt;';
+ &gt;
+ &gt;fragment
+ &gt;XMLCLOSETAG : '&lt;/' XMLNAME '&gt;';
+ &gt;
+ &gt;fragment
+ &gt;XMLSCLOSETAG : '&lt;' XMLNAME XMLTAGATTS? WS* '/&gt;';
+ &gt;
+ &gt;fragment
+ &gt;XMLNONEMPTYELEMENT : XMLOPENTAG XMLCONTENT XMLCLOSETAG;
+ &gt;
+ &gt;fragment
+ &gt;XMLEMPTYELEMENT : XMLSCLOSETAG;
+ &gt;
+ &gt;fragment
+ &gt;XMLELEMENT options {
+ &gt;  backtrack=true;
+ &gt;}
+ &gt;      : XMLEMPTYELEMENT | XMLNONEMPTYELEMENT ;
+ &gt;
+ &gt;fragment
+ &gt;XMLCONTENT : (XMLELEMENT | XMLENTREF | ~INVALIDINXML) *;
+ &gt;
+ &gt;XMLFRAG : XMLELEMENT;
+
+These really seem like they shouldn't be lexer rules.  (Or 
+possibly that you should go look at the island grammar example.)
+
+ &gt;extensionAdditionGroup : '[[' versionNumber componentTypeList 
+']]'
+ &gt;;
+[...]
+ &gt;tag : '[' encodingReference class classNumber ']' ;
+
+You should be very careful when using quoted literals in parser 
+rules (in fact if you're not used to their quirks you should 
+probably avoid using them).
+
+The above will define four new lexer rules, similar to these:
+T62: '[[';
+T63: ']]';
+T64: '[';
+T65: ']';
+
+In particular, note that the '[[' and ']]' produce unique tokens, 
+not two occurrences of the '[' or ']' token.  This in turn means 
+that if you happen to have [[ or ]] in your input where the 
+grammar is expecting [ [ or ] ], then it will fail.  (This, 
+incidentally, is the same issue behind C++s need to be careful 
+with &gt;s when nesting templates.)
+
+ &gt;[18:09:42] warning(200): ASN_1.g:518:15: Decision can match 
+input
+ &gt;such as &quot;'...'&quot; using multiple alternatives: 1, 2
+ &gt;As a result, alternative(s) 2 were disabled for that input
+ &gt;[18:09:42] error(201): ASN_1.g:518:15: The following 
+alternatives
+ &gt;can never be matched: 2
+
+This one is fairly self-explanatory.  The rule in question is 
+this:
+setType : '{' (componentTypeLists | extensionAndException 
+optionalExtensionMarker)? '}' ;
+
+Now, let's look at the alternatives.  extensionAndException must 
+begin with a '...' token.  It must match either 
+'componentTypeLists' or 'extensionAndException'.  Now let's drill 
+into componentTypeLists.  One of the alternatives is 
+ctlExtensionStuff; and that also begins with an 
+extensionAndException.  (It can also be followed by an 
+optionalExtensionMarker.)  So now that's two alts with a common 
+left prefix -- one must therefore die.  The second error is 
+basically saying that they don't just have a common prefix -- one 
+is actually a subset of the other.
+
+I'm sure you'll find that the other errors occur for similar 
+reasons.  (It's also interesting to note that most of them occur 
+in places where you've turned backtracking on.  You should usually 
+try to avoid doing that, in favour of rewriting your grammar to 
+remove the ambiguities.)
+
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="033168.html">[antlr-interest] Confusing, hopefully-final, problems
+</A></li>
+	<LI>Next message: <A HREF="033173.html">[antlr-interest] Confusing, hopefully-final, problems
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#33172">[ date ]</a>
+              <a href="thread.html#33172">[ thread ]</a>
+              <a href="subject.html#33172">[ subject ]</a>
+              <a href="author.html#33172">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

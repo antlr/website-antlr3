@@ -1,0 +1,182 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [stringtemplate-interest] Problem with newline chars
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:stringtemplate-interest%40antlr.org?Subject=%5Bstringtemplate-interest%5D%20Problem%20with%20newline%20chars&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000104.html">
+   <LINK REL="Next"  HREF="000102.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[stringtemplate-interest] Problem with newline chars</H1>
+    <B>Andrew Goodnough</B> 
+    <A HREF="mailto:stringtemplate-interest%40antlr.org?Subject=%5Bstringtemplate-interest%5D%20Problem%20with%20newline%20chars&In-Reply-To="
+       TITLE="[stringtemplate-interest] Problem with newline chars">Andrew.Goodnough at wicourts.gov
+       </A><BR>
+    <I>Thu Sep 22 08:38:25 PDT 2005</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000104.html">[stringtemplate-interest] counter in anonymous templates with
+	multi-valued attributes
+</A></li>
+        <LI>Next message: <A HREF="000102.html">[stringtemplate-interest] Problem with newline chars
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#101">[ date ]</a>
+              <a href="thread.html#101">[ thread ]</a>
+              <a href="subject.html#101">[ subject ]</a>
+              <a href="author.html#101">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>First of all, let me say that I am able to get my desired output with StringTemplate so I'm basically happy, but...(there's always a but)...
+ 
+I'm unable to create a test which verifies my output in an automated way.  The test is included below along with the template files.  The problem comes in the testDouble() method where I am creating two &quot;userTypes&quot;.  The expected and actual string output is visually identical but the test fails due to a difference in newline characters.  It appears that StringTemplate is returning an ASCII '10' which is CR, while my test is expecting a '13' or LF just after the first output of the printUserType template.
+ 
+Any ideas?  Maybe there's a simpler way to accomplish what I want too, I don't know.
+ 
+Andy
+ 
+==test.st=====
+&lt;userTypes; separator=&quot;\n\n&quot;&gt;
+ 
+GO
+
+==end test.st==
+ 
+==printUserType.st=====
+--USERTYPE &lt;userType&gt;
+EXEC sp_addtype '&lt;userType&gt;' char(5)
+==end printUserType.st==
+ 
+==Test.java==
+import java.io.IOException;
+import java.io.StringReader;
+ 
+import junit.framework.TestCase;
+ 
+import org.antlr.stringtemplate.StringTemplate;
+import org.antlr.stringtemplate.StringTemplateGroup;
+import org.antlr.stringtemplate.language.AngleBracketTemplateLexer;
+ 
+public class Test extends TestCase {
+ 
+    private static final String NEWLINE = System.getProperty(&quot;line.separator&quot;);
+    //private static final String NEWLINE = &quot;\n&quot;;
+    
+    
+    protected void setUp() throws Exception {
+        super.setUp();
+    }
+ 
+    protected void tearDown() throws Exception {
+        super.tearDown();
+    }
+ 
+    /*
+     * Test method testSingle
+     */
+    public void testSingle() throws Exception {
+        StringTemplateGroup templates = new StringTemplateGroup(&quot;myGroup&quot;, &quot;.&quot;, AngleBracketTemplateLexer.class);
+        StringTemplate fileTpl = templates.getInstanceOf(&quot;test&quot;);
+                
+        StringTemplate userTypeTpl = templates.getInstanceOf(&quot;printUserType&quot;);
+        userTypeTpl.setAttribute(&quot;userType&quot;, &quot;NewTypeT&quot;);
+        fileTpl.setAttribute(&quot;userTypes&quot;, userTypeTpl);
+        
+        String expected = 
+            &quot;--USERTYPE NewTypeT&quot; + NEWLINE +
+            &quot;EXEC sp_addtype 'NewTypeT' char(5)&quot; + NEWLINE +
+            NEWLINE +
+            &quot;GO&quot;;
+        
+        String actual = fileTpl.toString();
+ 
+        assertEquals(expected, actual);
+    }
+    
+    /*
+     * Test method testDouble
+     */
+    public void testDouble() throws Exception {
+        StringTemplateGroup templates = new StringTemplateGroup(&quot;myGroup&quot;, &quot;.&quot;, AngleBracketTemplateLexer.class);
+        StringTemplate fileTpl = templates.getInstanceOf(&quot;test&quot;);
+            
+        StringTemplate userTypeTpl = templates.getInstanceOf(&quot;printUserType&quot;);
+        userTypeTpl.setAttribute(&quot;userType&quot;, &quot;NewTypeT&quot;);
+        fileTpl.setAttribute(&quot;userTypes&quot;, userTypeTpl);
+        
+        userTypeTpl = templates.getInstanceOf(&quot;printUserType&quot;);
+        userTypeTpl.setAttribute(&quot;userType&quot;, &quot;AnotherTypeT&quot;);
+        fileTpl.setAttribute(&quot;userTypes&quot;, userTypeTpl);
+        
+        String expected = 
+            &quot;--USERTYPE NewTypeT&quot; + NEWLINE +
+            &quot;EXEC sp_addtype 'NewTypeT' char(5)&quot; + NEWLINE +
+            NEWLINE +
+            &quot;--USERTYPE AnotherTypeT&quot; + NEWLINE +
+            &quot;EXEC sp_addtype 'AnotherTypeT' char(5)&quot; + NEWLINE +
+            NEWLINE +
+            &quot;GO&quot;;
+        
+        String actual = fileTpl.toString();
+        
+        /* Shows that newline is the culprit
+        char[] expectedchars = expected.toCharArray();
+        char[] actualchars = actual.toCharArray();
+        for (int i = 0; i &lt; expectedchars.length; i++) {
+            System.out.println(&quot;Comparing &quot; + expectedchars[i] + &quot; to &quot; + actualchars[i]);
+            assertEquals(expectedchars[i],actualchars[i]);
+        }
+        */
+        
+        /* Shows ASCII 13 vs. ASCII 10
+        StringReader expectedReader = new StringReader(expected);
+        StringReader actualReader = new StringReader(actual);
+        int exp = 0;
+        int act = 0;
+        while ((exp = expectedReader.read()) != -1) {
+            act = actualReader.read();
+            System.out.println(&quot;Comparing &quot; + exp + &quot; to &quot; + act);
+            assertEquals(exp,act);
+        }
+        */
+        
+        assertEquals(expected, actual);
+    }
+ 
+}
+==End Test.java==
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20050922/8e39d880/attachment.html">http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20050922/8e39d880/attachment.html</A>
+</PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000104.html">[stringtemplate-interest] counter in anonymous templates with
+	multi-valued attributes
+</A></li>
+	<LI>Next message: <A HREF="000102.html">[stringtemplate-interest] Problem with newline chars
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#101">[ date ]</a>
+              <a href="thread.html#101">[ thread ]</a>
+              <a href="subject.html#101">[ subject ]</a>
+              <a href="author.html#101">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">More information about the stringtemplate-interest
+mailing list</a><br>
+</body></html>

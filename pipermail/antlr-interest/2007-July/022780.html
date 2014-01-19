@@ -1,0 +1,176 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Help controlling parser decisions
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Help%20controlling%20parser%20decisions&In-Reply-To=%3Cebc876d70707250252n657c7cfbs6fbe0a25225a2b1a%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="022753.html">
+   <LINK REL="Next"  HREF="022800.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Help controlling parser decisions</H1>
+    <B>Thomas Brandon</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Help%20controlling%20parser%20decisions&In-Reply-To=%3Cebc876d70707250252n657c7cfbs6fbe0a25225a2b1a%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Help controlling parser decisions">tbrandonau at gmail.com
+       </A><BR>
+    <I>Wed Jul 25 02:52:31 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="022753.html">[antlr-interest] Help controlling parser decisions
+</A></li>
+        <LI>Next message: <A HREF="022800.html">[antlr-interest] Help controlling parser decisions
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#22780">[ date ]</a>
+              <a href="thread.html#22780">[ thread ]</a>
+              <a href="subject.html#22780">[ subject ]</a>
+              <a href="author.html#22780">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On 7/25/07, Ted Villalba &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">ted.villalba at gmail.com</A>&gt; wrote:
+&gt;<i> Thanks for the responses.
+</I>&gt;<i> Seems straight forward enough to create the disambiguating semantic
+</I>&gt;<i> predicate, but perhaps Im not starting out with the right assumptions.
+</I>&gt;<i>
+</I>&gt;<i> If I want to accept near as a term if it begins( or ends) a sentence, then I
+</I>&gt;<i> thought I could do something like this:
+</I>&gt;<i>
+</I>&gt;<i> value   :  value_ -&gt; ^(VALUE value_) ;
+</I>&gt;<i>
+</I>&gt;<i> value_  :  keyBOOL terms* (operator^ value)*
+</I>&gt;<i>             | LPAREN! value RPAREN! ( operator^ value)*
+</I>&gt;<i>             ;
+</I>&gt;<i>
+</I>&gt;<i> keyBOOL : {input.LT(1).getText().equals(&quot;NEAR&quot;)}? terms;
+</I>&gt;<i>
+</I>&gt;<i> terms   : WCHAR+  -&gt; ^(TERMS WCHAR+ )
+</I>&gt;<i>            ;
+</I>&gt;<i>
+</I>&gt;<i> But when I try to enter SO=(NEAR apples oranges), the parser no likey.
+</I>&gt;<i> Still getting:
+</I>&gt;<i>      line 1:5 no viable alternative at input 'NEAR'.
+</I>&gt;<i>
+</I>&gt;<i> Am I missing an obvious puzzle piece ?
+</I>&gt;<i> I tried instead to assume all booleans were terms and then tested each of
+</I>&gt;<i> the terms in a similar approach, but wasn't successful yet at
+</I>&gt;<i> differentiating, on demand, the operators from the terms.
+</I>The problem in the above rules isn't obvious to me. Looks like it
+should work, though you seem to have some uneeded + and *'s given that
+term is already WCHAR+, but that shouldn't break it as far as I can
+see.
+Were you running it under the ANTLRWorks interpreter? That won't do
+actions so it won't work there. You need to use the debugger in this
+case.
+I got the following grammar to parse your example fine as well as to
+parse &quot;near=(near apples oranges)&quot;, correctly handling the first
+&quot;near&quot; as a tag and the second as a keyBool:
+grammar WQL;
+
+options{
+    output=AST;
+    ASTLabelType=CommonTree;
+}
+
+tokens{ TAG; VALUE; TERMS;} //imaginary token types
+
+@header{
+import java.util.HashMap ;
+}
+
+@members {
+HashMap fieldMap = new HashMap();
+}
+
+start
+   :(	query
+   		{System.out.println(&quot;AST:\n&quot;+$query.tree.toStringTree());}
+   	)+
+	;
+
+query
+	:	field
+    ;
+
+field
+	:	tag '=' LPAREN value RPAREN -&gt; ^('=' tag value)
+    |	tag '=' terms -&gt; ^('=' tag terms)
+    |	qid
+	;
+
+value
+	:	keyBOOL terms?
+    ;
+
+keyBOOL
+	:	near
+	|	far
+	;
+
+terms
+	:	WCHAR+  -&gt; ^(TERMS WCHAR+ )
+    ;
+
+tag	:	WCHAR
+    ;
+
+qid	: '#'! DIGIT
+    ;
+
+near:	{input.LT(1).getText().toLowerCase().equals(&quot;near&quot;)}? WCHAR
+	;
+
+far	:	{input.LT(1).getText().toLowerCase().equals(&quot;near&quot;)}? WCHAR
+	;
+
+DIGIT   : ('0'..'9');
+WS      : (' '|'\t'|'\r'|'\n')+ {skip();};
+LPAREN    : '(' ;
+RPAREN    : ')' ;
+QUOTE    : '&quot;';
+WCHAR   : ~('='|'('| ')'|'&quot;'|' '|'\t'|'\n'|'\r'|'#')+;
+
+AFAICT there are no changes to the basic method you gave. I removed
+some stuff to simplify putting together the grammar and I cleaned up
+some of the unneccessary +s and *s. But no major changes.
+
+Tom.
+&gt;<i>
+</I>&gt;<i> Thank you for the help,
+</I>&gt;<i> Ted
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I></PRE>
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="022753.html">[antlr-interest] Help controlling parser decisions
+</A></li>
+	<LI>Next message: <A HREF="022800.html">[antlr-interest] Help controlling parser decisions
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#22780">[ date ]</a>
+              <a href="thread.html#22780">[ thread ]</a>
+              <a href="subject.html#22780">[ subject ]</a>
+              <a href="author.html#22780">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

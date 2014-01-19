@@ -1,0 +1,169 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Fun with ANTLR3: mystery of the huge lexer (C#)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Fun%20with%20ANTLR3%3A%20mystery%20of%20the%20huge%20lexer%20%28C%23%29&In-Reply-To=%3Cce40b1470706300916y15083664sa9341d3564e92b40%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="021893.html">
+   <LINK REL="Next"  HREF="021899.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Fun with ANTLR3: mystery of the huge lexer (C#)</H1>
+    <B>David Piepgrass</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Fun%20with%20ANTLR3%3A%20mystery%20of%20the%20huge%20lexer%20%28C%23%29&In-Reply-To=%3Cce40b1470706300916y15083664sa9341d3564e92b40%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Fun with ANTLR3: mystery of the huge lexer (C#)">qwertie256 at gmail.com
+       </A><BR>
+    <I>Sat Jun 30 09:16:16 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="021893.html">[antlr-interest] C# runtime?
+</A></li>
+        <LI>Next message: <A HREF="021899.html">[antlr-interest] Fun with ANTLR3: mystery of the huge lexer (C#)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#21898">[ date ]</a>
+              <a href="thread.html#21898">[ thread ]</a>
+              <a href="subject.html#21898">[ subject ]</a>
+              <a href="author.html#21898">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>When I attempted to generate my &quot;first try&quot; at making a Lexer, ANTLR
+produced a 21.9 megabyte source file (310,643 lines) filled mostly
+with variables like dfa32_transition15; each transition array for the
+most part contains the same number repeated thousands of times.
+
+I was curious to know if the grammar actually worked, but after 15
+minutes Visual C# still had not finished compiling it, though it was
+using 1.6 GB of virtual memory. I killed it since the whole computer
+was unresponsive (a longstanding flaw in Windows).
+
+The problem seems related to these two rules, because without them, no
+transition arrays are created at all:
+
+ML_COMMENT:  '/*' (ML_COMMENT | .)* '*/' { $channel = HIDDEN; };
+
+PUNC: ( ('\\' WS_CHAR)=&gt;'\\'
+      | (':'|'.'|'~'|'!'|'@'|'$'|'%'|'^'|'&amp;'|'*'
+        |'-'|'+'|'='|'|'|','|'&lt;'|'&gt;'|'/'|'?')
+      )+;
+
+If PUNC is in the grammar but not ML_COMMENT, a 2.38 MB file comes
+out. If ML_COMMENT is present but not PUNC, a 8.16 MB file comes out.
+I get a strange warning for ML_COMMENT (when PUNC is absent; if PUNC
+is present, it gets even stranger):
+
+[08:35:47] warning(206): Huge.g:1:10: Alternative 4: after matching
+input such as '/''*''/''*''/''*''/''*''/'&lt;EOT&gt; decision cannot predict
+what comes next due to recursion overflow to ML_COMMENT from
+ML_COMMENT
+
+Puzzling, yes? But with some fiddling, another warning suggests that
+the problem has something to do with backslashes:
+
+warning(206): Huge.g:1:10: Alternative 4: after matching input such as
+'/''*''*''\\''/''*''*''\\''/''
+*''*''\\''/''*''*''\\''*'{'\u0000'..'\b', '\u000B'..'\f',
+'\u000E'..'\u001F', '!'..')', '+'..'.', '0
+'..'[', ']'..'\uFFFE'}'/''\u0000'..'\uFFFE' decision cannot predict
+what comes next due to recursion overflow to ML_COMMENT from
+ML_COMMENT
+
+I realize it comes from my regular expression rule:
+
+RE_STRING: {input.LA(2) != '*'}? '/' (RE_CHAR)+ '/'; //	| '@/'
+(RE_CHAR | WS_CHAR) '/';
+
+RE_STRING: '/' (RE_CHAR)+ '/';
+fragment RE_CHAR: RE_ESC | ~('/' | '\\' | '\r' | '\n' | ' ' | '\t' );
+fragment RE_ESC: '\\' .;
+
+So there's an ambiguity for something like /*\*/: is it a comment or a
+regex? So I try
+
+RE_STRING: {input.LA(2) != '*'}? '/' (RE_CHAR)+ '/';
+
+19 MB.
+
+ML_COMMENT: ('/*') =&gt; '/*' (ML_COMMENT | .)* '*/' { $channel = HIDDEN; };
+
+8.16 MB.
+
+In fact, this is all it takes to get a 19 MB output file:
+
+--------------------------------------------------------------------------
+lexer grammar Huge;
+options
+{
+	language = 'CSharp';
+	k = *;
+}
+fragment WS_CHAR: ' ' | '\t';
+ML_COMMENT: ('/*')=&gt; '/*' (ML_COMMENT | .)* '*/';
+RE_STRING: '/' (RE_CHAR)+ '/';
+fragment RE_CHAR: RE_ESC | ~('/' | '\\' | '\r' | '\n' | ' ' | '\t' );
+fragment RE_ESC: '\\' .;
+PUNC: ( ('\\' WS_CHAR)=&gt;'\\'
+      | (':'|'.'|'~'|'!'|'@'|'$'|'%'|'^'|'&amp;'|'*'
+        |'-'|'+'|'='|'|'|','|'&lt;'|'&gt;'|'/'|'?')
+      )+;
+--------------------------------------------------------------------------
+
+Remove PUNC and you still get 6.3 MB and this warning:
+
+[09:09:14] warning(206): Huge.g:1:10: Alternative 1: after matching
+input such as '/''*''*''\\''/''*''*''\\''/''*''*''\\''/''*''*''\\''*'{'\u0000'..'\b',
+'\u000B'..'\f', '\u000E'..'\u001F', '!'..')', '+'..'.', '0'..'[',
+']'..'\uFFFE'}'/''\u0000'..'\uFFFE' decision cannot predict what comes
+next due to recursion overflow to ML_COMMENT from ML_COMMENT
+
+The strange thing is, the Java target doesn't have a problem. This
+Lexer is &quot;only&quot; 30 KB in Java. I thought StringTemplate was just a
+somewhat superficial conversion process - why the big difference?
+
+And why doesn't the syntactic predicate help?
+
+There is no problem if ML_COMMENT is the only rule in the file, but in
+that case the rule doesn't work: apparently it never recognizes the
+closing &quot;*/&quot; as such. Luckily, this solves the problem:
+
+ML_COMMENT: ('/*')=&gt; '/*' (options{greedy=false;} : ML_COMMENT | .)* '*/';
+
+However, I am very curious to know how &quot;greedy=false&quot; affects the
+subrule &quot;ML_COMMENT&quot;; ANTLR would not let me use simply
+
+ML_COMMENT: ('/*')=&gt; '/*' (ML_COMMENT | options{greedy=false;} : .)* '*/';
+
+I know this has been long-winded but I hope someone could give me some
+advice about how to get ML_COMMENT, RE_STRING and PUNC to work
+together nicely.
+
+-- 
+- David
+<A HREF="http://qism.blogspot.com">http://qism.blogspot.com</A>
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="021893.html">[antlr-interest] C# runtime?
+</A></li>
+	<LI>Next message: <A HREF="021899.html">[antlr-interest] Fun with ANTLR3: mystery of the huge lexer (C#)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#21898">[ date ]</a>
+              <a href="thread.html#21898">[ thread ]</a>
+              <a href="subject.html#21898">[ subject ]</a>
+              <a href="author.html#21898">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

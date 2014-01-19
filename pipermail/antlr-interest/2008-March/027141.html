@@ -1,0 +1,338 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Retaining comments
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Retaining%20comments&In-Reply-To=%3C96AD91D781CCD511A66000B0D0D15C49043DAE39%40EXSVR1%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="027142.html">
+   <LINK REL="Next"  HREF="027143.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Retaining comments</H1>
+    <B>Stuart Watt</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Retaining%20comments&In-Reply-To=%3C96AD91D781CCD511A66000B0D0D15C49043DAE39%40EXSVR1%3E"
+       TITLE="[antlr-interest] Retaining comments">SWatt at infobal.com
+       </A><BR>
+    <I>Wed Mar 12 09:53:50 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="027142.html">[antlr-interest] postmortem
+</A></li>
+        <LI>Next message: <A HREF="027143.html">[antlr-interest] Retaining comments
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#27141">[ date ]</a>
+              <a href="thread.html#27141">[ thread ]</a>
+              <a href="subject.html#27141">[ subject ]</a>
+              <a href="author.html#27141">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Good points, Jim - and you're right, I have done no work on identifying time
+spent lexing/parsing/generating - I just notice some log steps take longer
+than others. Most of this is happening in memory, as I'm trying to do all
+this as a Perl XS module (not wanting to fork JVM from Perl, which is awful
+in almost every sense). I should probably better performance measurement,
+and try a better string output - although as I said, I'm trying out an
+event-based model which might well render all that obsolete.
+ 
+Actually, the really slow bit (which I didn't include) is fixing up the
+parse to actually handle C and C++ oddities and context-sensitivities. The
+grammar itself is k=1 (except in two rules with k=2) with no backtracking,
+and I'm not using any kind of treewalker. I probably should be, and it would
+be a better solution, but it would further complicate the fact that I really
+want some connection to the input text to be preserved. However, speed is
+not an issue for me, really: if it took 10 times as long I'd still be happy,
+if it kept the underlying text association, as at present I have to do the
+annotation by parsing the text all over again. (Also, I was doing everything
+until today on a vintage 1.5 GHz Pentium 4 - so  my newly arrived 4 core
+machine should take care of a lot of speed-up.)
+ 
+I don't think any vague performance comparison of an XML parser and ANTLR is
+fair, for all sorts of reasons. XML is essentially tiny and designed to be
+easy to parse (even on tiny devices) where with ANTLR (and XML schemas) it
+is possible to construct grammatical monsters. I was just indicating that
+considering core XML to be slower than ANTLR surprises me. If XML is not
+faster, given a comparison of equivalent size/complexity input, then it
+really should be (validation, schemas, URL-based entities, and DOM memory
+management aside). I admit the size/complexity of (most) Java XML parsing
+generally does surprise me, but small parsers for mobile devices will do
+most XML in about 10k of basic (CLDC) Java source code. It is validation,
+schemas, URL-based entities, and DOM than make XML slow, big, and nasty -
+and to be honest, none of these are especially important to its core
+purpose: marking up text. 
+ 
+The scenario I flagged is illustrative only of my particular task, where I
+want the best of an AST and of the text. This is not quite associating
+comments and structure, but of generating annotated/formatted text. I was
+just commenting that XML technologies can be very helpful for certain tasks
+(like these) and that combining ANTLR and XML for tasks like these ought to
+be easier than having to muck around at the text layer manually. I still
+hope this is possible, but if not, I'll maybe have to think how to manage
+the architecture better. 
+ 
+All the best
+Stuart
+
+-----Original Message-----
+From: Jim Idle [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">jimi at temporal-wave.com</A>]
+Sent: Wednesday, March 12, 2008 11:13 AM
+To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: Re: [antlr-interest] Retaining comments
+
+
+
+I would need to see your code to comment on why you feel that your XML
+generator is 5X slower than libxml, but do bear in mind the following:
+
+ 
+
+1)      ANTLR is for recognition of the things you specify via grammar, and
+the xml library is hand crafted to go straight at internal structure, hence
+it is likely using things like memchr to locate the next spot in the input
+it is concerned with and so on. This isn't a defense of the C runtime by the
+way, it should be obvious that when you know exactly what the input looks
+like, you can hand craft something that will be faster than a generic
+program;
+
+2)      You are generating the XML after reading in and lexing, parsing ;-)
+Hence it isn't quite a fair competition unless you are going to get libxml2
+to do something equivalent J
+
+3)      You might try the optimized scanning in the C runtime if you can
+pre-know the input encoding is 8 or 16 bits (I will provide a UTF32 version
+before too long). This skips calling a function to find the next input
+character and instead maintains a pointer into the input stream. See the
+Java parsing example in the downloads.
+
+4)      If you are using the built in string stuff, then note that you don't
+have to do that. It is generic and so when you ask for the text, it creates
+some memory and so on. If you are in fact building up a long output string,
+then you could easily write a function that given a pCOMMON_TOKEN, memcpy's
+the input text directly where you want it to go. This is a big advantage in
+ANTLR 3 as you are not forced into incurring penalties you do not need.
+Otherwise you are probably asking for the $text of a token, which is going
+to copy it from the input stream then appending it some buffer. There is no
+need for the intermediate step.
+
+5)      Make sure you are not using expensive predicates and backtracking of
+course.
+
+6)      If you want me to take a look, feel free to send me the code off
+list.
+
+ 
+
+So in short, I am sure that you can improve your performance quite a lot
+(perhaps using a profiler will help you here), but you probably can't
+compete with something that isn't really tokenizing anything if it is
+written well. Loring is correct in his assessment of XML processors in
+general though, according to my own experience, but that doesn't mean that
+there are not some good ones around ;-)
+
+ 
+
+My other thought here is that to accurately gauge a 5X performance with just
+your own 'gut feel' you would have to be parsing an input stream that is
+pretty huge. My own parsers don't take long enough for me to measure
+anything with a single input stream, it is just 'done' almost as soon as it
+is called in terms of human time spans. Are you by any chance traversing an
+input directory, where you must read the file from the filesystem, but then
+calling libxml2 with an in memory string? You might try breaking out the
+time for each component. For instance, when testing the C runtime against
+the Java runtime, I was parsing the whole of JDK 1.6. In the end, the time
+taken to get the files off disk was more than the parsing and until I found
+a way to remove this as a bottle neck, the C parser was only looking about
+50% faster as most of the time was reading from the file system for both
+Java and C. 
+
+ 
+
+ I will point out that while associating comments with code seems to be an
+easy task, you soon find out that it is almost impossible to get all the
+associations correct unless you are starting out with some pre-canned rules
+for what you are going to see, such as how doxygen works. There is a lot of
+information on this stuff elsewhere of course.
+
+ 
+
+Anyway, I am happy to hear you have been successful building your
+parser/toolset!
+
+ 
+
+Jim
+
+ 
+
+From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>
+[mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Stuart Watt
+Sent: Wednesday, March 12, 2008 7:46 AM
+To: 'Loring Craymer'; Stuart Watt; Terence Parr; <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">bmeike at speakeasy.net</A>
+Cc: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: Re: [antlr-interest] Retaining comments
+
+ 
+
+Yep, I see this, and I'm certainly no fan of XML from a user's perspective.
+I agree 110% with the rant. XML is not written for humans, nor should people
+have to read/write it. I have ranted myself against the semantic web
+community in much the same (they seem to imagine people can write not only
+XML, but RDF!!) But as a way of annotating text flexibly, I can't see much
+wrong with it. And I can't see why a parse tree of some kind (ideally with
+lexing information) at the least cannot be overlaid on the text in this
+manner. I suppose the question is: do you need to maintain association with
+the underlying text? If not, an AST is fine. If so, why not use a flexible
+text markup language. The comment issue seems (to me) to fit into the
+category of maintaining association with the underlying text. And it is not
+that hard - as far as I can tell, ANTLR could be made to do it just fine in
+a couple of hundred lines of code, in the tree writer. 
+
+ 
+
+Performance doesn't seem to match what I've been getting. I can slurp in
+immense amounts of XML fast using libxml2 - this is certainly (subjectively)
+quicker than parsing using ANTLR and the C runtime. However, I did choose
+libxml2 carefully (I led a project on the INEX XML information retrieval
+competition, and needed something capable of large-scale fast XML, as we
+were indexing the whole of Wikipedia). I've not benchmarked it, but my C
+parser feels about 5 times slower than reading the XML I generate from its
+back end. 
+
+ 
+
+It is the &quot;horizontal problems&quot; I'm actually working on, trying to integrate
+information from multiple interlocking source languages, many of which are
+(a) sloppily defined (C, C++, COBOL:, etc.) and (b) which embed each other
+in all sorts of interesting ways. This includes not only obvious stuff
+(&lt;script&gt; in HTML) but far less obvious ones - C strings that happen to be
+SQL queries. It is as if everything can be delegated (the obvious solution)
+- but this raises the interesting challenge of how to make sense of stuff
+that comes from multiple source languages, even within a single processing
+unit. However, if a group of people have written fast code for searching
+trees for patterns (this is not walking the tree, but searching it) this is
+useful technology to me. As an ex-IR person maybe my roots in the XML
+community are making me see things differently. 
+
+ 
+
+It may be that the task I am trying to solve involves a weak version of a
+grammar. Quite simply, I do not need to parse everything. I do need to
+tokenise everything, in some form, but rarely do I need a complete tree.
+With some languages (C, C++, COBOL:, etc.) parsing is a big enough challenge
+on its own that I'd rather not bother. For the processing I am doing, I do
+not care about control structures, for example. The C parser I developed
+(successfully in ANTLR) is skeletal to the point of not classifying most
+statements, but tracks nesting of parentheses, braces, etc. 
+
+ 
+
+XML does not equate to making huge files out of things. SAX is a perfectly
+good way of producing output, and being stream/event oriented, is great for
+filtering tasks. The design I've been playing with is a generic
+event-stream-oriented approach to parsing. That way I can (and do) stuff
+gigabytes of text into the parsing systems without actually writing them
+into files. 
+
+ 
+
+Consider the following scenario. Imagine I want to annotate C into HTML,
+making function calls into hyperlinks, and maybe a few other things, such as
+colorising comments. Two tasks: recognising function calls, and annotating
+the original text. To do this, the original text needs to be preserved, and
+the text parsed in some way. This feels like a non-trivial task, but surely
+it is not that unusual. It feels to me that an XML parse tree annotation on
+the original text would make this a trivial task, for what ought to be a
+modest additional to ANTLR. Obviously, if you felt strongly you could do it
+directly, but there are good (separation of concerns) reasons for not
+tangling the styling details into the parser, and XML would allow this kind
+of separation. 
+
+ 
+
+All the best
+
+Stuart
+
+-----Original Message-----
+From: Loring Craymer [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">lgcraymer at yahoo.com</A>]
+Sent: Wednesday, March 12, 2008 12:42 AM
+To: Stuart Watt; Terence Parr; <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">bmeike at speakeasy.net</A>
+Cc: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: Re: [antlr-interest] Retaining comments
+
+You can do XML and DOM--ANTLR 2 had an AST serializer built in--but there is
+not much point to doing so other than that you have some familiarity with
+the tools.  For any vertical translation problem (one language to
+translate), ANTLR will be faster (XML processing is _slow_ from a machine
+perspective), more powerful, and easier to use if you learn how to use ANTLR
+effectively.  There are horizontal problems--extracting information from a
+collection of trees generated by different source languages and different
+translators--for which XML is usable, but again this is not the way to go if
+you are comfortable with language processing technology.
+
+The value of XML is that it is an agreed upon format for structured text
+that is portable and can be adapted for general information retrieval (&quot;the
+semantic web&quot;)--or at least has that as a hoped for goal.  It is not a
+technology for language processing; indeed, the XML community seems to be
+almost allergic to language processing technology.  &quot;Everything is a  tree&quot;
+does not remove the need for grammars--the XML community calls them &quot;schema&quot;
+and writes applications in XSLT to convert from one schema to another
+without intermediate analysis.
+
+You might also take a look at Ter's rant on XML,
+<A HREF="http://www.ibm.com/developerworks/xml/library/x-sbxml.html">http://www.ibm.com/developerworks/xml/library/x-sbxml.html</A>
+&lt;<A HREF="http://www.ibm.com/developerworks/xml/library/x-sbxml.html">http://www.ibm.com/developerworks/xml/library/x-sbxml.html</A>&gt; .
+
+--Loring
+
+ 
+
+
+-- 
+This message was scanned by ESVA and is believed to be clean. 
+Click
+&lt;<A HREF="http://antispam.infobal.com/cgi-bin/learn-msg.cgi?id=E583727EE1.467FE">http://antispam.infobal.com/cgi-bin/learn-msg.cgi?id=E583727EE1.467FE</A>&gt; here
+to report this message as spam. 
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20080312/94da97cc/attachment-0001.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20080312/94da97cc/attachment-0001.html</A> 
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="027142.html">[antlr-interest] postmortem
+</A></li>
+	<LI>Next message: <A HREF="027143.html">[antlr-interest] Retaining comments
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#27141">[ date ]</a>
+              <a href="thread.html#27141">[ thread ]</a>
+              <a href="subject.html#27141">[ subject ]</a>
+              <a href="author.html#27141">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

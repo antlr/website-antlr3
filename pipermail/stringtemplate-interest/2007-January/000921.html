@@ -1,0 +1,165 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [stringtemplate-interest] bug in format option
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:stringtemplate-interest%40antlr.org?Subject=%5Bstringtemplate-interest%5D%20bug%20in%20format%20option&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000919.html">
+   <LINK REL="Next"  HREF="000924.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[stringtemplate-interest] bug in format option</H1>
+    <B>John Snyders</B> 
+    <A HREF="mailto:stringtemplate-interest%40antlr.org?Subject=%5Bstringtemplate-interest%5D%20bug%20in%20format%20option&In-Reply-To="
+       TITLE="[stringtemplate-interest] bug in format option">jjsnyders at rcn.com
+       </A><BR>
+    <I>Mon Jan 22 22:10:23 PST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000919.html">[stringtemplate-interest] StringTemplateGroup from String	vs.loaded with CommonGroupLoader: Inconsistent Rendering behaviour
+</A></li>
+        <LI>Next message: <A HREF="000924.html">[stringtemplate-interest] bug in format option
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#921">[ date ]</a>
+              <a href="thread.html#921">[ thread ]</a>
+              <a href="subject.html#921">[ subject ]</a>
+              <a href="author.html#921">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>This is a bug in the code I submitted for the format option feature.
+
+Each time a template is written it should produce the same output assuming
+the attributes have not changed. Right?
+
+With this contrived renderer (I first found the bug with a more reasonable
+renderer but this one makes the problem very obvious)
+
+public static class TestStringRenderer implements AttributeRenderer
+{
+    public String toString(Object o, String formatName)
+    {
+        String s = (String)o;
+        return &quot;(&quot; + formatName + &quot;:&quot; + s + &quot;)&quot;;
+    }
+...
+
+This code
+
+StringTemplate st = new StringTemplate(&quot;v1 is: $v1;format=\&quot;foo\&quot;$&quot;);
+st.registerRenderer(String.class, new TestStringRenderer());
+st.setAttribute(&quot;v1&quot;, &quot;value&quot;);
+System.out.println(st.toString());
+System.out.println(st.toString());
+System.out.println(st.toString());
+
+Produces this output
+v1 is: (foo:value)
+v1 is: ((foo:foo):value)
+v1 is: (((foo:foo):foo):value)
+
+I would expect this output:
+
+v1 is: (foo:value)
+v1 is: (foo:value)
+v1 is: (foo:value)
+
+There are other cases where a template can get used more than once such as
+when iterating over a list. These cases have the exact same problem.
+
+It doesn't even matter if the attribute changes value. Adding these lines
+after the first println
+  st.removeAttribute(&quot;v1&quot;);
+  st.setAttribute(&quot;v1&quot;, &quot;another Value&quot;);
+
+
+produces this which is still wrong:
+
+v1 is: (foo:value)
+v1 is: ((foo:foo):another Value)
+v1 is: (((foo:foo):foo):another Value)
+
+The problem is in ASTExpr.java method handleExprOptions. The problem is that
+the current formatString is used when evaluating the option value
+expressions. Now the other options (such as null) don't seem to have a
+similar problem even though the option already has a value when the template
+is used again. I only played around with null and separator. But I did find
+that format used with null and separator (and presumably the others that
+take arguments) causes a problem. For example, if the above template is
+changed to &quot;v1 is: $v1;format=\&quot;foo\&quot;,separator=\&quot;,\&quot;$&quot; and the value of v1
+is a list with items &quot;x&quot;, &quot;y&quot;, &quot;z&quot; then the output is:
+
+v1 is: (foo:x),(foo:y),(foo:z)
+v1 is: ((foo:foo):x)(foo:,)((foo:foo):y)(foo:,)((foo:foo):z)
+v1 is:
+(((foo:foo):foo):x)((foo:foo):,)(((foo:foo):foo):y)((foo:foo):,)(((foo:foo):
+foo):z)
+
+The null option when combined with format has the same problem.
+
+The solution is that the current value of formatString should not be used
+when evaluating the expressions of any of the options. The code change I
+made was to save off the current value of formatString before evaluating the
+options and put it back when done.
+
+String tempFormatString = formatString;
+formatString = null;
+StringTemplateAST wrapAST = (StringTemplateAST)getOption(&quot;wrap&quot;);
+if ( wrapAST!=null ) {
+    wrapString = evaluateExpression(self,wrapAST);
+...
+
+StringTemplateAST formatAST = (StringTemplateAST)getOption(&quot;format&quot;);
+if ( formatAST!=null ) {
+    // this gets assigned to the real formatString below
+    tempFormatString = evaluateExpression(self, formatAST);
+...
+
+formatString = tempFormatString;
+
+I have not yet sync'ed with the repository but have diffed my code with it
+and believe the same problem exists there. If anyone wants the whole file I
+can supply it.
+
+Let me know if you think there is a better solution.
+
+Thanks,
+-John
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20070123/75c2bf40/attachment.html">http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20070123/75c2bf40/attachment.html</A> 
+</PRE>
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000919.html">[stringtemplate-interest] StringTemplateGroup from String	vs.loaded with CommonGroupLoader: Inconsistent Rendering behaviour
+</A></li>
+	<LI>Next message: <A HREF="000924.html">[stringtemplate-interest] bug in format option
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#921">[ date ]</a>
+              <a href="thread.html#921">[ thread ]</a>
+              <a href="subject.html#921">[ subject ]</a>
+              <a href="author.html#921">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">More information about the stringtemplate-interest
+mailing list</a><br>
+</body></html>

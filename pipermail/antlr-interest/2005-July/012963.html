@@ -1,0 +1,230 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] How to resolve nondeterminism in treeparser ?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20How%20to%20resolve%20nondeterminism%20in%20treeparser%20%3F&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="012961.html">
+   <LINK REL="Next"  HREF="012964.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] How to resolve nondeterminism in treeparser ?</H1>
+    <B>Subhobroto  Sinha</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20How%20to%20resolve%20nondeterminism%20in%20treeparser%20%3F&In-Reply-To="
+       TITLE="[antlr-interest] How to resolve nondeterminism in treeparser ?">subhobrotosinha at rediffmail.com
+       </A><BR>
+    <I>Mon Jul  4 11:00:58 PDT 2005</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="012961.html">[antlr-interest] Lexor Alternative lose (or Newbie question)
+</A></li>
+        <LI>Next message: <A HREF="012964.html">[antlr-interest] Question on the protected keyword in lexer
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#12963">[ date ]</a>
+              <a href="thread.html#12963">[ thread ]</a>
+              <a href="subject.html#12963">[ subject ]</a>
+              <a href="author.html#12963">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE> &#160;
+Consider the grammar : <A HREF="http://www.geocities.com/subhobrotosinha/dsd.txt">http://www.geocities.com/subhobrotosinha/dsd.txt</A>
+Driver : <A HREF="http://www.geocities.com/subhobrotosinha/dsddriver.txt">http://www.geocities.com/subhobrotosinha/dsddriver.txt</A>
+
+Here's dsd.txt for the lazybones out there :
+////////////////////////////////////////
+/*
+	Parser for Input like : lowpass(3, 2.0, 4.56, 1.29, 4.78, 9, 4.99, 5.67, 4.89)
+	Produces Output : float a[8] = {2.0, 4.56, 1.29, 4.78, 9, 4.99, 5.67, 4.89 };
+*/
+header { #include &lt;iostream&gt; }
+
+options { language = Cpp; }
+
+/* Start of tree parser */
+
+class DSDTreeParser extends TreeParser;
+
+{
+	unsigned int m_uiCoeffCount;
+	bool m_bFirstPass;
+}
+
+firstPass
+{
+	m_uiCoeffCount = 0;
+	m_bFirstPass = true;
+}
+:<i> functionName order (csvCoeffs)+
+</I>{
+	std::cout&lt;&lt;&quot;\nfloat a[&quot;&lt;&lt;m_uiCoeffCount&lt;&lt;&quot;] = {&quot;;
+}
+;
+
+secondPass
+{
+	m_bFirstPass = false;
+}
+:<i> functionName order (csvCoeffs)+
+</I>;
+
+functionName : ID;
+
+order : INT;
+
+csvCoeffs : (coefficient)+;
+
+coefficient :	(i : INT
+			{
+				if(m_bFirstPass) ++m_uiCoeffCount;
+				else
+				{
+					--m_uiCoeffCount;
+					std::cout&lt;&lt;i-&gt;getText()&lt;&lt;((0 == m_uiCoeffCount) ? &quot; };&quot; : &quot;, &quot;);
+				}
+						
+			}
+			|
+			f : FLOAT
+			{
+				if(m_bFirstPass) ++m_uiCoeffCount;
+				else
+				{
+					--m_uiCoeffCount;
+					std::cout&lt;&lt;f-&gt;getText()&lt;&lt;((0 == m_uiCoeffCount) ? &quot; };&quot; : &quot;, &quot;);
+				}
+			}
+			)+;
+
+/** Start of parser */
+
+class DSDParser extends Parser;
+
+options {
+	genHashLines = true; // include line number information
+	buildAST = true; // uses CommonAST by default
+}
+
+startRule : functionName LPAREN! order COMMA! (csvCoeffs)+ RPAREN!;
+
+functionName : ID;
+
+order : INT;
+
+csvCoeffs : coefficient (COMMA! coefficient)*;
+
+coefficient :	(INT | FLOAT);
+
+/** Start of lexer */
+
+class DSDLexer extends Lexer;
+
+FLOAT_OR_INT :
+			( INT '.' ) =&gt; FLOAT { $setType(FLOAT); }
+			|
+			INT { $setType(INT); }
+			;
+
+protected INT
+options {
+	testLiterals = true;
+	paraphrase = &quot;a constant integer&quot;;
+}
+
+:<i> ('0' .. '9')+;
+</I>
+protected FLOAT
+options {
+	testLiterals = true;
+	paraphrase = &quot;a floating point value&quot;;
+}
+
+:<i> INT '.' INT;
+</I>
+ID
+options {
+	testLiterals = true;
+	paraphrase = &quot;a variable&quot;;
+}
+	:	('a'..'z'|'A'..'Z'|'_') ('a'..'z'|'A'..'Z'|'_'|'0'..'9')*
+	;
+
+COMMA : ',';
+
+SEMI : ';';
+
+PLUS : '+';
+
+MINUS : '-';
+
+LPAREN : '(';
+
+RPAREN : ')';
+
+WS : (
+	options { greedy = true; }
+
+	: '\r' '\n' {newline();}
+	| '\n' 	{newline();}
+	| '\t'
+	| ' '
+	)+
+	{ $setType(antlr::Token::SKIP); }
+;
+/* EOF */
+////////////////////////////////////////
+
+ANTLR is currently angry :
+
+DSD.g:40: warning:nondeterminism upon
+DSD.g:40:     k==1:INT,FLOAT
+DSD.g:40:     between alt 1 and exit branch of block
+DSD.g:42: warning:nondeterminism upon
+DSD.g:42:     k==1:INT
+DSD.g:42:     between alt 1 and exit branch of block
+DSD.g:42: warning:nondeterminism upon
+DSD.g:42:     k==1:FLOAT
+DSD.g:42:     between alt 2 and exit branch of block
+
+Altough my test cases are passing allright, I feel bad about ANTLR being so grumpy.
+
+Please clear my misconceptions ?
+
+PS : If anything above makes you feel queasy, let me know ! You can do it better ? Let me know !
+
+Regards
+
+Subhobroto Sinha
+<A HREF="http://www.geocities.com/subhobrotosinha">http://www.geocities.com/subhobrotosinha</A>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20050704/e96f9265/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20050704/e96f9265/attachment.html</A>
+</PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="012961.html">[antlr-interest] Lexor Alternative lose (or Newbie question)
+</A></li>
+	<LI>Next message: <A HREF="012964.html">[antlr-interest] Question on the protected keyword in lexer
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#12963">[ date ]</a>
+              <a href="thread.html#12963">[ thread ]</a>
+              <a href="subject.html#12963">[ subject ]</a>
+              <a href="author.html#12963">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

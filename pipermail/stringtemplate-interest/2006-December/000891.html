@@ -1,0 +1,225 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [stringtemplate-interest] Generating big documents
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:stringtemplate-interest%40antlr.org?Subject=%5Bstringtemplate-interest%5D%20Generating%20big%20documents&In-Reply-To=4592FBAC.3060802%40videx.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000889.html">
+   <LINK REL="Next"  HREF="000892.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[stringtemplate-interest] Generating big documents</H1>
+    <B>John Snyders</B> 
+    <A HREF="mailto:stringtemplate-interest%40antlr.org?Subject=%5Bstringtemplate-interest%5D%20Generating%20big%20documents&In-Reply-To=4592FBAC.3060802%40videx.com"
+       TITLE="[stringtemplate-interest] Generating big documents">jjsnyders at rcn.com
+       </A><BR>
+    <I>Wed Dec 27 16:45:47 PST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000889.html">[stringtemplate-interest] Generating big documents
+</A></li>
+        <LI>Next message: <A HREF="000892.html">[stringtemplate-interest] Generating big documents
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#891">[ date ]</a>
+              <a href="thread.html#891">[ thread ]</a>
+              <a href="subject.html#891">[ subject ]</a>
+              <a href="author.html#891">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I would have thought this would work but now I can see it doesn't.
+
+The problem is in ASTExpr.applyListOfAlternatingTemplates. It is trying to
+gather up the results of the first template. I think the reason it is doing
+this is because it is possible to nest the templates. The example from the
+documentation is
+&lt;ul&gt;
+$names:{&lt;b&gt;$it$&lt;/b&gt;}:{&lt;li&gt;$it$&lt;/li&gt;}$
+&lt;/ul&gt;First all the names are iterated over and a result list of string
+templates with arguments initialized is returned. Then the list of string
+templates is evaluated. In the first loop the values are it=0, it=1, it=2...
+in the second loop the values are it=&lt;b&gt;0&lt;/b&gt;, it=&lt;b&gt;1&lt;/b&gt;, ...
+I was surprised to see it done this way. I think it is very inefficient and
+clearly will not work for what you are trying to do. It would be nice if it
+could go depth first rather than breadth first. If not at least notice that
+there is no nested template to iterate in your case.
+
+Can someone comment on why nested iterations are handled this way?
+
+Note that $data$ does not have the same problem. The values are continually
+written to the DummyWriter. But this is not very helpful. A named template
+will also not work ex: $data:line()$
+
+I think your use case is an interesting and important one. Not sure if this
+issue can be resolved and there may be more issues beyond that.
+
+There are problems with using iterators directly. There are times when they
+need to be (even if ST isn't currently doing it) turned into a collection
+(or iterable). The reason is that iterators can't be used more than once.
+This is why Java 5 added the itertor interface to support the foreach
+construct. It needed a way to get an iterator multiple times when a foreach
+loop was nested. But this is not the key issue in what you are doing. You
+could change your example to be an infinite collection and run into the same
+problem.
+
+
+-John
+
+  -----Original Message-----
+  From: <A HREF="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">stringtemplate-interest-bounces at antlr.org</A>
+[mailto:<A HREF="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">stringtemplate-interest-bounces at antlr.org</A>]On Behalf Of Adam Bennett
+  Sent: Wednesday, December 27, 2006 6:03 PM
+  To: <A HREF="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">stringtemplate-interest at antlr.org</A>
+  Subject: Re: [stringtemplate-interest] Generating big documents
+
+
+  I think this gets me close, Nate.  I did not realize that StringTemplate
+treats iterators as multi-valued attributes.  Nice.  I could create an
+Iterator to wrap a JDBC ResultSet.  One problem however: I think
+StringTemplate is evaluating the iterator all at once (as opposed to
+iteratively).  For instance, this code causes an OutOfMemoryError:
+
+  public class Play
+  {
+    public static void main(String[] args)
+    {
+      StringTemplate template = new StringTemplate(&quot;$data:{$i$ ==
+$it$\n}$&quot;);
+      template.setAttribute(&quot;data&quot;, new InfiniteItr());
+
+      try
+      {
+        template.write(new DummyWriter());
+      }
+      catch (java.io.IOException ex)
+      {
+        ex.printStackTrace();
+      }
+     }
+
+    /**an infinite sequence of integers*/
+    static class InfiniteItr implements Iterator&lt;Integer&gt;
+    {
+      private int i = 0;
+      public boolean hasNext() {return true;}
+      public Integer next(){return new Integer(i++); }
+      public void remove(){}
+    }
+
+    /**a StringTemplateWriter that discards all output*/
+    static public class DummyWriter
+      implements StringTemplateWriter
+    {
+      public void popAnchorPoint() {}
+      public String popIndentation() {return &quot;&quot;;}
+      public void pushAnchorPoint(){}
+      public void pushIndentation(String string){}
+      public void setLineWidth(int _int){}
+      public int write(String string)
+        throws IOException
+      {
+        return string.length();
+      }
+      public int write(String string, String string1)
+        throws IOException
+      {
+        return string.length();
+      }
+      public int writeSeparator(String string)
+        throws IOException
+      {
+        return string.length();
+      }
+      public int writeWrapSeparator(String string)
+        throws IOException
+      {
+        return string.length();
+      }
+    }
+  }
+
+
+
+
+----------------------------------------------------------------------------
+    From: Nate [mailto:<A HREF="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">misc at n4te.com</A>]
+    To: Adam Bennett [mailto:<A HREF="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">adamb at videx.com</A>]
+    Cc: <A HREF="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">stringtemplate-interest at antlr.org</A>
+    Sent: Wed, 27 Dec 2006 11:04:39 -0800
+    Subject: Re: [stringtemplate-interest] Generating big documents
+
+    You could try something like this...
+
+    ArrayList list = new ArrayList();
+    list.add(&quot;10&quot;);
+    list.add(&quot;20&quot;);
+    list.add(&quot;30&quot;);
+    StringTemplate template = new StringTemplate(&quot;$data:{$i$ == $it$\n}$&quot;);
+    template.setAttribute(&quot;data&quot;, list.iterator());
+    System.out.println(template.toString());
+
+    Outputs...
+
+    1 == 10
+    2 == 20
+    3 == 30
+
+    -Nate
+
+
+    Adam Bennett wrote:
+    &gt; Our web application has the ability to generate reports as HTML or XML
+    &gt; documents. These documents are potentially very large (20MB with some
+    &gt; of our test data). Early on we had problems with the server running
+    &gt; out of memory while generating these because all the data was brought
+    &gt; into memory from the database. Our solution was to stream the results
+    &gt; from the database while generating the document.
+    &gt;
+    &gt; Can StringTemplate be used to generate such documents? I cannot see
+    &gt; how to avoid bringing all the data into memory because StringTemplate
+    &gt; requires all data to be passed as an attribute.
+
+
+  &gt; ------------------------------------------------------------------------
+    &gt;
+    &gt; _______________________________________________
+    &gt; stringtemplate-interest mailing list
+    &gt; <A HREF="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">stringtemplate-interest at antlr.org</A>
+    &gt; <A HREF="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest</A>
+    &gt;
+
+
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20061227/a5f8a77c/attachment.html">http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20061227/a5f8a77c/attachment.html</A> 
+</PRE>
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000889.html">[stringtemplate-interest] Generating big documents
+</A></li>
+	<LI>Next message: <A HREF="000892.html">[stringtemplate-interest] Generating big documents
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#891">[ date ]</a>
+              <a href="thread.html#891">[ thread ]</a>
+              <a href="subject.html#891">[ subject ]</a>
+              <a href="author.html#891">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">More information about the stringtemplate-interest
+mailing list</a><br>
+</body></html>

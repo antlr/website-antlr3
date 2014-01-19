@@ -1,0 +1,160 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] New article on StringTemplates and Treewalkers
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20New%20article%20on%20StringTemplates%20and%20Treewalkers&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="015052.html">
+   <LINK REL="Next"  HREF="015054.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] New article on StringTemplates and Treewalkers</H1>
+    <B>Andy Tripp</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20New%20article%20on%20StringTemplates%20and%20Treewalkers&In-Reply-To="
+       TITLE="[antlr-interest] New article on StringTemplates and Treewalkers">atripp at comcast.net
+       </A><BR>
+    <I>Tue Jan 10 21:00:45 PST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="015052.html">[antlr-interest] New article on StringTemplates and Treewalkers
+</A></li>
+        <LI>Next message: <A HREF="015054.html">[antlr-interest] New article on StringTemplates and Treewalkers
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#15053">[ date ]</a>
+              <a href="thread.html#15053">[ thread ]</a>
+              <a href="subject.html#15053">[ subject ]</a>
+              <a href="author.html#15053">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I must be driving you guys nuts by not posting any code, so here is some.
+
+On the issue of that we stumbled on of checking for &quot;if (x=5)&quot;, here's 
+what I
+do. I have a ForceToBooleanRule that checks for all the places that
+Java requires a boolean expression. At each of those, I use ANTLR to
+parse the expression into an AST, and then traverse that tree, changing 
+things
+from int to boolean type. That's a bit vague, I know. And the 
+lexer/parser/expressionChanger
+ code isn't even shown here, it's within the 
+ExpressionUtils.forceToBoolean() call.
+What is shown here is just the &quot;ForceToBooleanRule&quot; code: A rule that's 
+written
+in plain Java code, that looks for various patterns in a Token stream 
+(NOT an AST).
+
+As always, I do think I have a point here. That is the issue of &quot;where 
+would a Rule like this be
+invoked in the treewalker approach?&quot; Do you really want to go through 
+the bother
+of finding the right place for this inside the ANTLR C grammar?
+Is there even really a valid set of &quot;right places&quot; that represent the 
+four bullet items
+in the code below (beneath &quot;for&quot;, &quot;while&quot;, &quot;do-while&quot;, and &quot;if&quot;)?
+ I don't want to bother with all that. I'd rather do what this code does...
+just assume that we're looking through a sequence of Tokens, and do just 
+two checks:
+ Are we at a &quot;for&quot; (and if so, the expression is between the next &quot;;&quot; 
+and the following &quot;;&quot;)?
+ Are we at a &quot;while&quot; or &quot;if&quot; (if so the expression is everything between 
+the next &quot;(&quot; and its matching &quot;)&quot;.
+
+No AST tree structure knowledge required! Just write the rule code using
+the more intuitive &quot;sequence of tokens&quot; mental image.
+
+(Some background: the match() method is called on every Token in every C 
+file. If
+it returns true, then the apply() method is called to make the change. 
+The Source class
+has lots of methods for working with a sequence of Tokens.)
+--------------------------------------------------------------------------------------
+// certain places in Java require a boolean type, where C allows &quot;int&quot; type:
+// * for condition:  for (int i=0; b; i++)
+// * while:  while (b)
+// * do-while: do { } while (b);
+// * if: if (b)
+
+public class ForceToBooleanRule extends Rule {
+    private String newexpr;
+    private Token startToken = null;
+    private Token endToken = null;
+
+    // if we see one of the patterns listed above, set startToken and 
+endToken and return true.
+    public boolean match(Source source) {
+        String current = source.currentToken.getText();
+        if (current.equals(&quot;for&quot;)) {
+            startToken = source.findToken(&quot;;&quot;);
+            endToken = source.findToken(source.getTokenAt(startToken, 
++1), &quot;;&quot;);
+        }
+        else if (current.equals(&quot;while&quot;) ||
+                 current.equals(&quot;if&quot;)) {
+            startToken = source.getTokenAt(+1); // '('
+            endToken = source.findMatchingParen(startToken);
+        }
+        else {
+            return false;
+        }
+        String expr = source.getTextBetween(startToken, endToken);
+
+        // here is where the expression is parsed and changed to be 
+boolean type:
+        newexpr = ExpressionUtils.forceToBoolean(expr, source);
+        return !expr.equals(newexpr);
+    }
+
+    // change the expression:
+    public void apply(Source source) {
+        source.replaceTokenRange(startToken, endToken, 
+startToken.getText()+newexpr+endToken.getText());
+    }
+}
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="015052.html">[antlr-interest] New article on StringTemplates and Treewalkers
+</A></li>
+	<LI>Next message: <A HREF="015054.html">[antlr-interest] New article on StringTemplates and Treewalkers
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#15053">[ date ]</a>
+              <a href="thread.html#15053">[ thread ]</a>
+              <a href="subject.html#15053">[ subject ]</a>
+              <a href="author.html#15053">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

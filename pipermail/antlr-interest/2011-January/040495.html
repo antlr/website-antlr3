@@ -1,0 +1,119 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Tree Pattern Matching (filter=true) and the Wildcard...
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Tree%20Pattern%20Matching%20%28filter%3Dtrue%29%20and%20the%0A%20Wildcard...&In-Reply-To=%3C8AB7A4AC-C69F-4787-B0AA-CE4950F2D085%40me.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="040492.html">
+   <LINK REL="Next"  HREF="040493.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Tree Pattern Matching (filter=true) and the Wildcard...</H1>
+    <B>Kevin Wooten</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Tree%20Pattern%20Matching%20%28filter%3Dtrue%29%20and%20the%0A%20Wildcard...&In-Reply-To=%3C8AB7A4AC-C69F-4787-B0AA-CE4950F2D085%40me.com%3E"
+       TITLE="[antlr-interest] Tree Pattern Matching (filter=true) and the Wildcard...">kdubb at me.com
+       </A><BR>
+    <I>Mon Jan 10 20:13:59 PST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="040492.html">[antlr-interest] Tree Pattern Matching (filter=true) and the	Wildcard...
+</A></li>
+        <LI>Next message: <A HREF="040493.html">[antlr-interest] Need help vector in C generated code
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40495">[ date ]</a>
+              <a href="thread.html#40495">[ thread ]</a>
+              <a href="subject.html#40495">[ subject ]</a>
+              <a href="author.html#40495">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>So I couldn't really get the rules below to work because I have VDECL nodes that have IADECL and ISDECL nodes mixed inside them.  With apparently no way to match each subtree individually...
+
+Example:
+	Given Input - (VDECL  (TYPE ty) (IADECL a 9) (ISDECL b) (ISDECL c) (IADECL d 5))
+
+	I really wanting to match each &quot;sub-tree&quot; individually such as...
+
+	(VDECL (TYPE ty) (IADECL a 9)),
+	(VDECL (TYPE ty) (ISDECL b)),
+	(VDECL (TYPE ty) (ISDECL c)),
+	(VDECL (TYPE ty) (IADECL d 5))
+
+After (it didn't work) a little examination I realized I wasn't trying to match &quot;sub-trees&quot; at all but something more complicated.  So I tried a different approach, with a new single rule, that almost seemed to work...
+
+Rule-
+
+expand_declarations
+  : ^(VDECL ty=. ( ^( IADECL aids+=. bnds+=. ) | ^( ISDECL sids+=. ) )* ) -&gt; ^(VDECLS ^(VDECL ^(ARRAY $ty $bnds) $aids)* ^(VDECL $ty $sids)*)
+  ;
+
+Here I am doing all the matching in one rule and ANTLR matched all of my rules properly.
+
+Unfortunately ANTLR faulted on the rewrite part. After looking at the code I realized that it has no protection from the sizes of $bnds and $aids being different from $sids. Although according to ANTLR documentation it looks as if the cardinality of each should have take care of this, but it doesn't. 
+
+After adding 2 if statements to the generated rewrite code I got this rule to work (seemingly) perfectly.  Is there a better way? Is this a bug or am I using it incorrectly?
+
+
+On Jan 10, 2011, at 6:26 PM, Kevin Wooten wrote:
+
+&gt;<i> How do I get a wildcard to match a complete subtree? For example... (DECL name (ARRAY (TYPE float) 9))
+</I>&gt;<i> 
+</I>&gt;<i> Currently I can only get the wild card to match any flat node like: (DECL name float 9).
+</I>&gt;<i> 
+</I>&gt;<i> Here are my tree pattern match rules...
+</I>&gt;<i> 
+</I>&gt;<i> expand_array_declaration
+</I>&gt;<i> 	:	^(VDECL ty=. ^(IADECL id=. bnds=.)) 				-&gt; ^(VDECL ^(ARRAY $ty $bnds) $id)
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> expand_array_declarations
+</I>&gt;<i> 	: 	^(VDECL ty=. (^(IADECL id+=. bnds+=.))+) 			-&gt; ^(VDECLS ^(VDECL ^(ARRAY $ty $bnds) $id)+)
+</I>&gt;<i> 	;
+</I>&gt;<i> 	
+</I>&gt;<i> expand_scalar_declaration
+</I>&gt;<i> 	:	^(VDECL ty=. ^(ISDECL id=.)) 						-&gt; ^(VDECL $ty $id)
+</I>&gt;<i> 	;
+</I>&gt;<i> 	
+</I>&gt;<i> expand_scalar_declarations
+</I>&gt;<i> 	:	^(VDECL ty=. (^(ISDECL id+=.))+) 					-&gt; ^(VDECLS ^(VDECL $ty $id)+)
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> Also, as you can see, I have to versions that seem to account for a limitation (bug?) in the rewriting that only allows you to replace a node with a single node.  What these rules are doing is expanding type declarations so they are unified (e.g. float a, b[4], c, d[5]; -&gt; float a; float[4] b; float c; float[5] d;).  So I need to replace one child with many. Simplified version would be: (VDECL type id+) -&gt; (VDECL type id) (VDECL type id) (VDECL type id). Currently I have to do it in two separate rules and then I am guessing I will need a second pass to gather all the VDECLS + VDECL and flatten them out. Am I missing something obvious? Can (or should I be able to) replace on node with many?
+</I>&gt;<i> 
+</I>&gt;<i> Any help on these two issues is much appreciated.
+</I>&gt;<i> 
+</I>&gt;<i> Thanks,
+</I>&gt;<i> Kevin
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="040492.html">[antlr-interest] Tree Pattern Matching (filter=true) and the	Wildcard...
+</A></li>
+	<LI>Next message: <A HREF="040493.html">[antlr-interest] Need help vector in C generated code
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40495">[ date ]</a>
+              <a href="thread.html#40495">[ thread ]</a>
+              <a href="subject.html#40495">[ subject ]</a>
+              <a href="author.html#40495">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

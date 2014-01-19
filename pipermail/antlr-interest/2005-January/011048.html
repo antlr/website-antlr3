@@ -1,0 +1,199 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] ANTLR 3.0 tree construction proposal
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20ANTLR%203.0%20tree%20construction%20proposal&In-Reply-To=c548335d25a9297a19a8d7a7a9ef71ff%40cs.usfca.edu">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="011055.html">
+   <LINK REL="Next"  HREF="011036.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] ANTLR 3.0 tree construction proposal</H1>
+    <B>Micheal J</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20ANTLR%203.0%20tree%20construction%20proposal&In-Reply-To=c548335d25a9297a19a8d7a7a9ef71ff%40cs.usfca.edu"
+       TITLE="[antlr-interest] ANTLR 3.0 tree construction proposal">open.zone at virgin.net
+       </A><BR>
+    <I>Mon Jan 31 16:13:53 PST 2005</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="011055.html">[antlr-interest] ANTLR 3.0 tree construction proposal
+</A></li>
+        <LI>Next message: <A HREF="011036.html">[antlr-interest] ANTLR 3.0 is going to have Lexer as fast as FLEX ?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#11048">[ date ]</a>
+              <a href="thread.html#11048">[ thread ]</a>
+              <a href="subject.html#11048">[ subject ]</a>
+              <a href="author.html#11048">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>&gt;<i> After a lot of typing (and I mean a lot), you'll see my ANTLR 
+</I>&gt;<i> 3.0 tree 
+</I>&gt;<i> construction proposal.  After the proposal, you'll see my long stream 
+</I>&gt;<i> of consciousness as I wander through the design process (you can 
+</I>&gt;<i> probably ignore that part).
+</I>&gt;<i> 
+</I><A HREF="http://www.antlr.org/blog/antlr3/trees.tml">http://www.antlr.org/blog/antlr3/trees.tml</A>
+
+
+First thoughts that popped into my head:
+
+
+1 Why mess with existing syntax at all?
+---------------------------------------
+
+By this I mean, while I recognized the benefits of ^^, I'm also rather
+concerned that existing grammars would need to be rewritten and it wouldn't
+be doable in any automatic fashion.
+
+
+2 Rewrite rules are sexy!
+---------------------------------------
+
+I like the idea of rewrite rules. So much so in fact that I think they
+should be orthogonal to the existing inline notation used in ANTLR 2.x
+(mixing them [in a rule?] should be prevented). And they needn't be cryptic.
+How about these rewrites (no pun intended &lt;chuckle&gt;) of grammar fragments in
+your blog:
+
+decl 
+ : &quot;var&quot; (ID ':' type ';')+ 
+   $rewrite_rules
+   {
+   	^(&quot;var&quot; ^(':' ID type)+) 
+   }
+
+expr 
+ : left=mul_expr PLUS right=mul_expr
+   $rewrite_rules
+   {
+   	$condition(@right.type==INT &amp;&amp; Integer.parseInt(@right.text)==0 &amp;&amp;
+            @left.type==INT &amp;&amp; Integer.parseInt(@left.text)==0)
+        -&gt; $empty
+        
+        $condition(right.type==INT &amp;&amp; Integer.parseInt(@right.text)==0) 
+        -&gt; left
+        
+        $condition(left.type==INT &amp;&amp; Integer.parseInt(@left.text)==0)   
+        -&gt; right
+        
+        $default -&gt; ^(PLUS left right) // default case   
+        
+        // Alternatively, we can forego the $default keywords (as in not
+support it at all) thus:
+        // ^(PLUS left right) // default case   
+   }
+ ;
+
+
+3. Separate Token and AST node class declaration sections
+---------------------------------------------------------
+
+We've gone over this before but the TreeDL approach (it is meant as just a
+label, I know it wasn't invented/pioneered by TreeDL) of declaring node
+types should be adopted. Apart from the obvious benefits that we've
+discussed previously, it allows one to be even more language-agnostic. Take
+the 'expr' rule above. Occurences of &quot;Integer.parseInt()&quot; are just plain
+ugly from a langauge-neutral grammar perspective. 
+
+We could have something like this instead (based on ideas expressed in
+<A HREF="http://www.antlr.org/pipermail/antlr-interest/2004-November/010027.html">http://www.antlr.org/pipermail/antlr-interest/2004-November/010027.html</A>
+):
+
+grammar P;
+
+AST
+{
+    abstract node Expression
+    {
+    }
+
+    node BinaryExpression : Expression
+    {
+        child     left   : Expression;
+        child     right  : Expression;
+	  attribute lexeme : String;	  
+	  accessor  value  : int;  	// will generate:
+						//   -- getValue() in
+C++/Java_1.4-
+						//   -- readonly Value
+property in C#/Java_1.5+
+						// User needs to provide the
+implementation.
+						//
+					  	// [Perhaps ANTLR generates
+uncompilable code in the
+						//  body and a copy of the
+comment supplied with the 
+						//  declaration. This might
+read:
+						//     &quot;Returns the integer
+value of the lexeme.&quot;
+						// ]
+						// @see-also 'mutator'  -
+for setXX/XX
+						// @see-also 'property' -
+for getXX/XX and setXX/XX
+    }
+}
+
+tokens
+{
+   PLUS&lt;AST=BinaryExpression&gt;
+   MINUS&lt;AST=BinaryExpression&gt;
+}
+
+expr 
+ : left=mul_expr PLUS right=mul_expr
+   $rewrite_rules
+   {
+   	$condition(@right.type==INT &amp;&amp; @right.value==0 &amp;&amp;
+            @left.type==INT &amp;&amp; @left.value==0)
+        -&gt; $empty
+        
+        $condition(right.type==INT &amp;&amp; @right.value==0) 
+        -&gt; left
+        
+        $condition(left.type==INT &amp;&amp; @left.value==0)   
+        -&gt; right
+        
+        $default -&gt; ^(PLUS left right) // default case   
+   }
+ ;
+
+
+Cheers,
+
+Micheal
+ANTLR/C#
+
+
+</PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="011055.html">[antlr-interest] ANTLR 3.0 tree construction proposal
+</A></li>
+	<LI>Next message: <A HREF="011036.html">[antlr-interest] ANTLR 3.0 is going to have Lexer as fast as FLEX ?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#11048">[ date ]</a>
+              <a href="thread.html#11048">[ thread ]</a>
+              <a href="subject.html#11048">[ subject ]</a>
+              <a href="author.html#11048">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,145 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] DIY AST error recovery problem
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20DIY%20AST%20error%20recovery%20problem&In-Reply-To=028701c311fb%2454d7acf0%24542d32d2%40athlon900">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003772.html">
+   <LINK REL="Next"  HREF="003795.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] DIY AST error recovery problem</H1>
+    <B>Ric Klaren</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20DIY%20AST%20error%20recovery%20problem&In-Reply-To=028701c311fb%2454d7acf0%24542d32d2%40athlon900"
+       TITLE="[antlr-interest] DIY AST error recovery problem">klaren at cs.utwente.nl
+       </A><BR>
+    <I>Tue May  6 01:37:06 PDT 2003</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003772.html">[antlr-interest] DIY AST error recovery problem
+</A></li>
+        <LI>Next message: <A HREF="003795.html">[antlr-interest] DIY AST error recovery problem
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3794">[ date ]</a>
+              <a href="thread.html#3794">[ thread ]</a>
+              <a href="subject.html#3794">[ subject ]</a>
+              <a href="author.html#3794">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Sun, May 04, 2003 at 03:08:39PM +1000, Ross Bencina wrote:
+&gt;<i> I'm constructing my own AST (not using ANTLR's built in tree building) and
+</I>&gt;<i> have come accross a problem with my code when a parse error happens...
+</I>&gt;<i>
+</I>&gt;<i> ---
+</I>&gt;<i> ident           returns [ std::auto_ptr&lt;IdentifierNode&gt; result ]
+</I>&gt;<i>                 : a:IDENT
+</I>&gt;<i>                 {
+</I>&gt;<i>                     result.reset( new IdentifierNode(
+</I>&gt;<i>                         SRCLOC(a),
+</I>&gt;<i>                         Identifier( a-&gt;getText().c_str() );
+</I>&gt;<i>                 }
+</I>&gt;<i>                 ;
+</I>&gt;<i>
+</I>&gt;<i> name            returns [ std::auto_ptr&lt;NameDeclaration&gt; result ]
+</I>&gt;<i>                 {
+</I>&gt;<i>                     std::auto_ptr&lt;IdentifierNode&gt; a;
+</I>&gt;<i>                     SaolConstants::Width b = SaolConstants::SINGLE_VALUE;
+</I>&gt;<i>                 }
+</I>&gt;<i>                 : a=ident ( LBRACK b=arrayLength RBRACK )?
+</I>&gt;<i>                     {
+</I>&gt;<i>                         SourceLocation srcLoc = a-&gt;sourceLocation; //
+</I>&gt;<i> ***crash
+</I>&gt;<i>                         result.reset( new NameDeclaration( srcLoc, a, b ) );
+</I>&gt;<i>                     }
+</I>&gt;<i>                 ;
+</I>&gt;<i>
+</I>&gt;<i> The above code is for parsing declarations like the following:
+</I>&gt;<i>
+</I>&gt;<i> ivar x, illegal, y[10];
+</I>&gt;<i>
+</I>&gt;<i> The caller of name() looks like:
+</I>&gt;<i>
+</I>&gt;<i> namelist        returns [ std::auto_ptr&lt;NameList&gt; result ]
+</I>&gt;<i>                 {
+</I>&gt;<i>                     result.reset( new NameList() );
+</I>&gt;<i>                     std::auto_ptr&lt;NameDeclaration&gt; a, b;
+</I>&gt;<i>                 }
+</I>&gt;<i>                 : a=name { result-&gt;push_back( a.release() ); }
+</I>&gt;<i>                     ( COMMA b=name { result-&gt;push_back( b.release() ); }
+</I>&gt;<i>                     )*
+</I>&gt;<i>                 {
+</I>&gt;<i>                     result-&gt;sourceLocationBegin =
+</I>&gt;<i> result-&gt;front()-&gt;sourceLocation;
+</I>&gt;<i>                 }
+</I>&gt;<i>     ;
+</I>&gt;<i>
+</I>&gt;<i> Ideally, if ident() or name() fails, then the illegal NameDeclaration simply
+</I>&gt;<i> wouldn't be added to the NameList.
+</I>&gt;<i> ---
+</I>&gt;<i>
+</I>&gt;<i> At the moment, if the ident rule fails, then ident() returns an empty (null)
+</I>&gt;<i> auto_ptr and the a-&gt; expression in name() crashes. I could explicitly check
+</I>&gt;<i> return values for null before using them, but right now I don't understand
+</I>&gt;<i> the problem enough to know which return values to check - I would prefer not
+</I>&gt;<i> to have to check every rule's return value for NULL, although I have a
+</I>&gt;<i> sinking feeling that's what I will have to do.
+</I>
+I'm assuming you are using the default error handling mechanism? If the
+error over a IDENT is handled at the end of the ident rule by the default
+error handler it will return a null pointer.
+
+You might get away with turning of the default (or the complete)
+errorhandlers for the ident rule. That way the parse error is escalated to
+the name rule and the action for with the list will not be performed. Since
+ident's error is handled at the end of the name rule.
+
+ident returns [ std::auto_ptr&lt;IdentifierNode&gt; result ]
+        options { defaultErrorHandler = false; }
+:<i> .......		  
+</I>
+Depends a bit on other rules if this works 100%. Look at the generated code
+for ident to get a feel for the effect of this.
+
+Cheers,
+
+Ric
+--
+-----+++++*****************************************************+++++++++-------
+    ---- Ric Klaren ----- <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">j.klaren at utwente.nl</A> ----- +31 53 4893722  ----
+-----+++++*****************************************************+++++++++-------
+  Wo das Chaos auf die Ordnung trifft, gewinnt meist das Chaos, weil es
+  besser organisiert ist. --- Friedrich Nietzsche
+
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003772.html">[antlr-interest] DIY AST error recovery problem
+</A></li>
+	<LI>Next message: <A HREF="003795.html">[antlr-interest] DIY AST error recovery problem
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3794">[ date ]</a>
+              <a href="thread.html#3794">[ thread ]</a>
+              <a href="subject.html#3794">[ subject ]</a>
+              <a href="author.html#3794">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

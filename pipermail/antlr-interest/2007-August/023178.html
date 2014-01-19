@@ -1,0 +1,155 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] syntactic predicates in the lexer
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20syntactic%20predicates%20in%20the%20lexer&In-Reply-To=%3C051466DAA0D608439E196797955018D70235DE%40wavemachine.temporal-wave.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="023177.html">
+   <LINK REL="Next"  HREF="023215.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] syntactic predicates in the lexer</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20syntactic%20predicates%20in%20the%20lexer&In-Reply-To=%3C051466DAA0D608439E196797955018D70235DE%40wavemachine.temporal-wave.com%3E"
+       TITLE="[antlr-interest] syntactic predicates in the lexer">jimi at temporal-wave.com
+       </A><BR>
+    <I>Sat Aug 11 22:02:44 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="023177.html">[antlr-interest] syntactic predicates in the lexer
+</A></li>
+        <LI>Next message: <A HREF="023215.html">[antlr-interest] syntactic predicates in the lexer
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#23178">[ date ]</a>
+              <a href="thread.html#23178">[ thread ]</a>
+              <a href="subject.html#23178">[ subject ]</a>
+              <a href="author.html#23178">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>You need the latest and greatest to get rid of that macro error, however
+the answer to this does not lie specifically with the C target but just
+the lexing in general. The thing to do is to consider how/if you can
+write the rules without the predicates (which although they are 'always
+execute', can be discarded in the analysis phase if there appears to be
+just one decision.
+
+So, here you have a number of tokesn that start with '#' (well, 2 I
+guess) and the key is to key one rule from the '#' and then set the
+token type once you discover what comes next:
+
+// Make some fragments to define the token and avoid
+// the warning about tokens not being defined if they
+// are only specified as imaginary in the tokens{} section
+//
+fragment
+COMMENT: (~('\n'|'\r'))*;
+fragment
+INCLUDE: 'include;
+
+C_OR_I: '#'
+		(
+			  (('include')=&gt;'include')	{ $type =
+INCLUDE; }
+			| COMMENT				{ $type
+= COMMENT;}
+		)
+	;
+
+Should do what you wish (you can obviously modify the COMMENT rule if
+you wish it to consume the EOL sequence).
+
+Jim
+
+&gt;<i> -----Original Message-----
+</I>&gt;<i> From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:antlr-interest-
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">bounces at antlr.org</A>] On Behalf Of Matt Barringer
+</I>&gt;<i> Sent: Saturday, August 11, 2007 5:34 PM
+</I>&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> Subject: [antlr-interest] syntactic predicates in the lexer
+</I>&gt;<i> 
+</I>&gt;<i> Hi,
+</I>&gt;<i> 
+</I>&gt;<i> I'm trying to parse some strange syntax that looks like this:
+</I>&gt;<i> 
+</I>&gt;<i> # Comment
+</I>&gt;<i> #Comment
+</I>&gt;<i> #include &lt;file&gt;
+</I>&gt;<i> include &lt;file&gt;
+</I>&gt;<i> # include (this is a valid comment)
+</I>&gt;<i> 
+</I>&gt;<i> Where lines 1, 2, and 5 should be COMMENT tokens, as they need to
+</I>&gt;<i> remain
+</I>&gt;<i> on the main token stream with all the others, and lines 3 &amp; 4 need to
+</I>&gt;<i> be
+</I>&gt;<i> INCLUDE tokens.
+</I>&gt;<i> 
+</I>&gt;<i> With ANTLR2, I used a predicate like this, which worked fine:
+</I>&gt;<i> 
+</I>&gt;<i> COMMENT_OR_INCLUDE
+</I>&gt;<i> 	:
+</I>&gt;<i> ( '#' &quot;include&quot; (' '|'&lt;'))=&gt;INCLUDE
+</I>&gt;<i> 	{ $setType(INCLUDE); }
+</I>&gt;<i> | ( COMMENT{ $setType(COMMENT); } )
+</I>&gt;<i>         ;
+</I>&gt;<i> 
+</I>&gt;<i> Trying that predicate using the C target of ANTLR 3 causes a compiler
+</I>&gt;<i> error about a missing REWINDFULL() function or something, so I tried
+</I>&gt;<i> this
+</I>&gt;<i> with no success, as COMMENT tokens are all that are found:
+</I>&gt;<i> 
+</I>&gt;<i> COMMENT_OR_INCLUDE
+</I>&gt;<i> 	: '#' ('include')=&gt;INCLUDE
+</I>&gt;<i> 		{ $type = INCLUDE; }
+</I>&gt;<i> 	| '#' COMMENT
+</I>&gt;<i> 		{ $type=COMMENT; }
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> fragment
+</I>&gt;<i> COMMENT
+</I>&gt;<i> 	: (~('\n'|'\r'))* ('\n'|'\r'('\n')?)
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> Trying variations on this didn't work, either:
+</I>&gt;<i> 
+</I>&gt;<i> COMMENT_OR_INCLUDE
+</I>&gt;<i> 	: '#'
+</I>&gt;<i> 	( INCLUDE
+</I>&gt;<i> 	| COMMENT )
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> Does the lexer no longer support syntactic predicates?  Is there a
+</I>&gt;<i> better
+</I>&gt;<i> way to distinguish '# include' from '#include' in the lexer?
+</I>&gt;<i> 
+</I>&gt;<i> Thanks,
+</I>&gt;<i> Matt
+</I></PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="023177.html">[antlr-interest] syntactic predicates in the lexer
+</A></li>
+	<LI>Next message: <A HREF="023215.html">[antlr-interest] syntactic predicates in the lexer
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#23178">[ date ]</a>
+              <a href="thread.html#23178">[ thread ]</a>
+              <a href="subject.html#23178">[ subject ]</a>
+              <a href="author.html#23178">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

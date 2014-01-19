@@ -1,0 +1,176 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Best Practice type Question.
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Best%20Practice%20type%20Question.&In-Reply-To=%3C20090915085244.m0td04faecw8sogw%40webmail.palantir.co.za%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="035965.html">
+   <LINK REL="Next"  HREF="035964.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Best Practice type Question.</H1>
+    <B>craig at palantir.co.za</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Best%20Practice%20type%20Question.&In-Reply-To=%3C20090915085244.m0td04faecw8sogw%40webmail.palantir.co.za%3E"
+       TITLE="[antlr-interest] Best Practice type Question.">craig at palantir.co.za
+       </A><BR>
+    <I>Mon Sep 14 23:52:44 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="035965.html">[antlr-interest] Error running Graphviz Dot - CreateProcessError=5 access is denied
+</A></li>
+        <LI>Next message: <A HREF="035964.html">[antlr-interest] How to serialize a AST
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#35963">[ date ]</a>
+              <a href="thread.html#35963">[ thread ]</a>
+              <a href="subject.html#35963">[ subject ]</a>
+              <a href="author.html#35963">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+I have pasted the grammar.
+What I really need is for the sql template to be able to process paths one way
+to generate the join clauses, because I can get the table names from
+relativePath (the first part of the part) and the field name(s) from other
+parts of the relativePath. I need the sql template to call / use the other
+templates to generate first joins, and then where clauses.
+
+Because I am using -&gt; or(l={$p1.st}, r={$p2.st}) the templates are expanded in a
+particular way. I want to use the paths parameter to the sql template in
+different ways.
+
+
+xpath
+		: d+=declaration* p+=path
+		-&gt; sql(declarations={$d}, paths={$p})
+		;
+
+declaration	: ^('declare' nsName=QNAME ns=STRING)
+		-&gt; declaration(name={$nsName}, namespace={$ns})
+		;
+
+path		: ^('or' p1=path p2=path) -&gt; or(l={$p1.st}, r={$p2.st})
+		| ^('and' p1=path p2=path) -&gt; and(l={$p1.st}, r={$p2.st})
+		| ^('relative-path' rn=rangeExpr) { $xpath::tables.AddRange($rn.re); } -&gt;
+template(rn={$rn.st}) &quot;RN:[ &lt;rn&gt; ]&quot;
+		;
+
+rangeExpr
+returns [string[\] re]
+scope			{ List&lt;string&gt; path; }
+@init			{ $rangeExpr::path = new List&lt;string&gt;(); }
+			: rp+=relativePath*
+			{ $re = $rangeExpr::path.ToArray(); }
+			-&gt; template(rp={$rp}) &quot;RP:[ &lt;rp; separator=\&quot;, \&quot;&gt; ]&quot;
+			;
+
+relativePath
+	: ('//'|'/') (ns=QNAME ':')? nm=QNAME
+	{ $rangeExpr::path.Add( Convert.ToString(((XNamespace) (ns == null ?
+XNamespace.None : $ns.Text)) + $nm.Text )); }
+	| dot='.' -&gt; {%{$dot.text}}
+	| STRING -&gt; {%{$STRING.text}}
+	| '@' qn=QNAME -&gt; {%{$QNAME.text}}
+	| cm=comp -&gt; template(c={$cm.st}) &quot;&lt;c&gt;&quot;
+	;
+
+comp	: ^('comparison' (op='=' | op='&lt;' | op='&gt;' | op='like') lv=relativePath
+rv=relativePath)
+	-&gt; comparison(path={$rangeExpr::path}, lv={$lv.st}, rv={$rv.st}, op={$op})
+	;
+
+[moving to ST interest]
+
+Hi. Are you saying that you want to process the same data with multiple
+templates? or are you saying you want a template to be sensitive to the kind of
+data it's applied to?
+Ter
+On Sep 14, 2009, at 2:12 AM, <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">craig at palantir.co.za</A> wrote:
+
+&gt;<i> Hi,
+</I>&gt;<i>
+</I>&gt;<i> I have a tree grammar that is walking a parsed tree and outputting SQL
+</I>&gt;<i> statements using templates.
+</I>&gt;<i>
+</I>&gt;<i> At particular points in the tree I need to generate join clauses and
+</I>&gt;<i> where clauses. The template looks something like this.
+</I>&gt;<i>
+</I>&gt;<i> sql(tables, paths) ::= &lt;&lt;
+</I>&gt;<i> &lt;tables&gt;
+</I>&gt;<i> WHERE
+</I>&gt;<i> &lt;paths&gt;
+</I>&gt;&gt;&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> or(l, r) ::= &lt;&lt;
+</I>&gt;<i> &lt;l&gt;
+</I>&gt;<i> OR
+</I>&gt;<i> &lt;r&gt;
+</I>&gt;&gt;&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> and(l, r) ::= &lt;&lt;
+</I>&gt;<i> &lt;l&gt;
+</I>&gt;<i> AND
+</I>&gt;<i> &lt;r&gt;
+</I>&gt;&gt;&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> comparison(path, lv, rv, op) ::= &lt;&lt;
+</I>&gt;<i> &lt;path&gt; {&lt;lv&gt;} &lt;op&gt; {&lt;rv&gt;}
+</I>&gt;&gt;&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> paths generates nested OR/AND sections.
+</I>&gt;<i> My problem is that tables and paths are essentially the same thing.
+</I>&gt;<i> The
+</I>&gt;<i> templates need to generate a set of JOIN clauses for the tables part,
+</I>&gt;<i> and the set of OR/AND where conditions for the paths part. Only these
+</I>&gt;<i> are exactly the same thing.
+</I>&gt;<i>
+</I>&gt;<i> There seems to be no general way of saying &quot;generate the template once
+</I>&gt;<i> in mode 'a', and then again in mode 'b'&quot;. I hope I am not being too
+</I>&gt;<i> vague. I have the OR/AND clauses generating perfectly and am in the
+</I>&gt;<i> process of hacking the table names into a list to generate that part
+</I>&gt;<i> of the template. I feel there must be a better way.
+</I>&gt;<i>
+</I>&gt;<i> Thanks
+</I>&gt;<i> Regards
+</I>&gt;<i> Craig.
+</I>&gt;<i>
+</I>
+
+----------------------------------------------------------------
+This message was sent using IMP, the Internet Messaging Program.
+
+
+</PRE>
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="035965.html">[antlr-interest] Error running Graphviz Dot - CreateProcessError=5 access is denied
+</A></li>
+	<LI>Next message: <A HREF="035964.html">[antlr-interest] How to serialize a AST
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#35963">[ date ]</a>
+              <a href="thread.html#35963">[ thread ]</a>
+              <a href="subject.html#35963">[ subject ]</a>
+              <a href="author.html#35963">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

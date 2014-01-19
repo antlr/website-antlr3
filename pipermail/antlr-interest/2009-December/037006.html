@@ -1,0 +1,230 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] How to skip to end of line on error?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20How%20to%20skip%20to%20end%20of%20line%20on%20error%3F&In-Reply-To=%3C620a2bc48ed5474bad28472f52f0382e%40temporal-wave.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="037005.html">
+   <LINK REL="Next"  HREF="037007.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] How to skip to end of line on error?</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20How%20to%20skip%20to%20end%20of%20line%20on%20error%3F&In-Reply-To=%3C620a2bc48ed5474bad28472f52f0382e%40temporal-wave.com%3E"
+       TITLE="[antlr-interest] How to skip to end of line on error?">jimi at temporal-wave.com
+       </A><BR>
+    <I>Thu Dec 10 16:39:05 PST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="037005.html">[antlr-interest] How to skip to end of line on error?
+</A></li>
+        <LI>Next message: <A HREF="037007.html">[antlr-interest] newbie roblem about expressions &amp; number	representations
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37006">[ date ]</a>
+              <a href="thread.html#37006">[ thread ]</a>
+              <a href="subject.html#37006">[ subject ]</a>
+              <a href="author.html#37006">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I did write this up at:
+ 
+<A HREF="http://www.antlr.org/wiki/display/ANTLR3/Custom+Syntax+Error+Recovery">http://www.antlr.org/wiki/display/ANTLR3/Custom+Syntax+Error+Recovery</A>
+ 
+If you look in the sync java routine in the article - we are looking at making this generic and adding to ANTLR - you will see that there is a marker there for printing errors. If you set a flag to say you have printed an error, then just print an error the first time you consume a token, you can get the line number etc from the token that you consume. You could also add a string parameter to the reSync routine which is a template or format for your message so you can say what type of construct you were parsing at the time. And pass this to the Java routine. 
+ 
+Jim
+ 
+From: Rick Schumeyer [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">rschumeyer at gmail.com</A>] 
+Sent: Thursday, December 10, 2009 4:26 PM
+To: Jim Idle
+Cc: antlr-interest
+Subject: Re: [antlr-interest] How to skip to end of line on error?
+ 
+I used Jim's code which works well.
+
+I would like to make one change: when an error is encountered, I just want to print something like &quot;problem on line 45&quot; (and then continue with the next line).
+
+Thanks for any help!
+On Sun, Nov 29, 2009 at 1:54 PM, Jim Idle &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">jimi at temporal-wave.com</A>&gt; wrote:
+This is something I need to write a Wiki article on as it comes up a lot and the solutions are not obvious. Basically, you need to prevent the parsing loop from dropping all the way out of the current rule because it finds an error (in your case within the article rule.) You will also find this much easier if rather than trying to accommodate files without a terminating NL, you just always add an NL to the incoming input, then you will not need the trailing article NL? But can have (article NL)* EOF.
+ 
+So, when an error occurs in the article rule, it will drop out of that rule, but may not resync, so you want to force the resync to the NL when the article rule returns. This is pretty simple, but requires quite a bit of 'inside' knowledge of the ANTLR behavior. What you need to do is create a rule with just the epsilon (nothing) alt, and invoke it directly before the article call but more especially directly after it:
+ 
+articleList
+    : reSync  (article reSync NL)* EOF // Assuming that this is where EOF should be
+    ;
+ 
+Next, in your resSync rule, you want to resync to the follow set that will now be on the stack, which is actually the same as the first set for the following rule (because ruleSync is empty). Here we know that the followSet will only be NL, so you could hard code that, but this is a generally good technique to know, so let's use it generically). If you don't really understand this, don't worry too much, you can just copy the code and empty rule and it will work:
+ 
+reSync
+@init
+{
+    syncToFirstSet(); // Consume tokens until LA(1) is in the followset at the top of the followSet stack
+}
+:<i> // Deliberately match nothing, but will be invoked anyway
+</I>;
+ 
+Then in your superClass (best) or @members, implement the syncToFirstSet method:
+ 
+    protected void syncToFirstSet ()
+    {
+        // Compute the followset that is in context where ever we are in the
+        // rule chain/stack
+        //
+         BitSet follow = state.following[state._fsp]; //computeContextSensitiveRuleFOLLOW();
+ 
+         syncToFirstSet (follow);
+    }
+ 
+    protected void syncToFirstSet (BitSet follow)
+    {
+        int mark = -1;
+ 
+        try {
+ 
+            mark = input.mark();
+ 
+            // Consume all tokens in the stream until we find a member of the follow
+            // set, which means the next production should be guarenteed to be happy.
+            //
+            while (! follow.member(input.LA(1)) ) {
+ 
+                if  (input.LA(1) == Token.EOF) {
+ 
+                    // Looks like we didn't find anything at all that can help us here
+                    // so we need to rewind to where we were and let normal error handling
+                    // bail out.
+                    //
+                    input.rewind();
+                    mark = -1;
+                    return;
+                }
+                input.consume();
+            }
+        } catch (Exception e) {
+ 
+          // Just ignore any errors here, we will just let the recognizer
+          // try to resync as normal - something must be very screwed.
+          //
+        }
+        finally {
+ 
+            // Always release the mark we took
+            //
+            if  (mark != -1) {
+                input.release(mark);
+            }
+        }
+ 
+    }
+ 
+And that's it. Every time you mention reSync in a rule, it will resync the input to a member of the current followSet, which will be the first set of the rule that follows reSync in the current production and you will therefore not drop out of the parsing loop, but reenter your article rule. The first invocation is just in case there is junk before the first article starts (depending on how this rule is invoked, you may need to resync before the articleList rule).
+ 
+I will make a wiki article of this soon as it is commonly required and not particularly obvious.
+ 
+Jim
+ 
+ 
+ 
+From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Rick Schumeyer
+Sent: Saturday, November 28, 2009 5:20 PM
+To: antlr-interest
+Subject: [antlr-interest] How to skip to end of line on error?
+ 
+I've read the section on error reporting and recovery from &quot;the book&quot; but still can't figure out what may be a simple problem.
+
+I want to parse a file that consists of bibliographic entries.  Each entry is on one line (so each record ends with \n).
+
+If a record does not match, I just want to print an error message, and skip to the end of line and start again with the next record.
+
+If I understand chapter 10 correctly, then '\n' should be in the resynchronization set, and the parser will consume tokens until it finds one.
+
+This isn't happening.  Once I get an error, the parser never recovers.  I get a bunch of NoViableAlt exceptions.  I'm hoping someone can explain what I'm doing wrong.
+
+Here is a sample input file.  The 1st and 3rd lines are ok, the 2nd line is an error.
+
+Name. &quot;Title,&quot; Periodical, 2005, v41(3,Oct), 217-240.
+Name. &quot;Title,&quot; Periodical, 2005, v41(3,Oct), Article 2.
+Name. &quot;Title,&quot; Periodical, 2005, v41(3,Oct), 217-240.
+
+Here is the grammar:
+
+grammar Periodical;
+
+article_list 
+    :    (article NL)* article NL?
+    ;
+
+article
+    :    a=authors PERIOD SPACE QUOTE t=title COMMA QUOTE SPACE j=journal COMMA SPACE y=year COMMA SPACE v=volume COMMA SPACE p=pages PERIOD SPACE*
+    ;
+
+authors    :    (~QUOTE)+;
+
+title    :    (~QUOTE)+;
+
+journal    :    (LETTER|SPACE|COMMA|DASH)+;
+
+volume    :    (LETTER|DIGIT)+
+    |    (LETTER|DIGIT)+ '(' (LETTER|DIGIT|SLASH|COMMA)+ ')' 
+    ;
+
+year    :    DIGIT DIGIT DIGIT DIGIT;
+
+pages    :    DIGIT+ DASH DIGIT+;
+
+
+
+PERIOD    :    '.';
+QUOTE    :    '&quot;';
+COMMA    :    ',';
+SPACE    :    ' ';
+DIGIT    :    '0'..'9';
+LETTER  :    ('a'..'z')|('A'..'Z');
+DASH    :    '-';
+SLASH    :    '/';
+NL    :    '\r'? '\n';
+
+
+List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+ 
+
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20091210/7ac75791/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20091210/7ac75791/attachment.html</A> 
+</PRE>
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="037005.html">[antlr-interest] How to skip to end of line on error?
+</A></li>
+	<LI>Next message: <A HREF="037007.html">[antlr-interest] newbie roblem about expressions &amp; number	representations
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37006">[ date ]</a>
+              <a href="thread.html#37006">[ thread ]</a>
+              <a href="subject.html#37006">[ subject ]</a>
+              <a href="author.html#37006">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

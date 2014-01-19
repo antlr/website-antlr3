@@ -1,0 +1,360 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] completed an ANTLR-based cpp preprocessor (#include, #if, #define, etc)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20completed%20an%20ANTLR-based%20cpp%20preprocessor%20%28%23include%2C%20%23if%2C%20%23define%2C%20etc%29&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="008802.html">
+   <LINK REL="Next"  HREF="008779.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] completed an ANTLR-based cpp preprocessor (#include, #if, #define, etc)</H1>
+    <B>thrutchy</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20completed%20an%20ANTLR-based%20cpp%20preprocessor%20%28%23include%2C%20%23if%2C%20%23define%2C%20etc%29&In-Reply-To="
+       TITLE="[antlr-interest] completed an ANTLR-based cpp preprocessor (#include, #if, #define, etc)">eric_mahurin at yahoo.com
+       </A><BR>
+    <I>Thu Jul 22 13:42:05 PDT 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="008802.html">[antlr-interest] Re: SQL grammar, keywords that can be
+	identifiers
+</A></li>
+        <LI>Next message: <A HREF="008779.html">New antlr-interest member
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#8778">[ date ]</a>
+              <a href="thread.html#8778">[ thread ]</a>
+              <a href="subject.html#8778">[ subject ]</a>
+              <a href="author.html#8778">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I just completed a go at cpp (C PreProcessor) using an ANTLR lexer. 
+It could be integrated with an existing lexer.  It handles all of the
+hard stuff: #define/#undef, macro calls, #ifdef/#ifndef/#else/#elsif,
+and #include.  I know it doesn't follow the cpp spec to a T, but it
+has all of the major features.  I'm doing a preprocessor similar to
+cpp and thought I'd make a cpp let you guys have this.
+
+This was more difficult than I expected, specially since this is my
+first experience with Java (and I just learned C++ too).  I welcome
+input to improve this.  I didn't see how to get rid of the &quot;deprecated
+API&quot; and use StringReader.
+
+Anyways, here it is (sorry if the lines get split):
+
+// Author: Eric Mahurin
+// License: just give me credit
+
+options {
+    language=&quot;Java&quot;;
+}
+
+{
+
+import java.io.*;
+import java.util.*;
+import antlr.*;
+
+class cpp implements cppLexerTokenTypes {
+    public static TokenStreamSelector selector = new
+TokenStreamSelector();
+    public static void main(String[] args) {
+        try {
+            // will need a stack of lexers for #include and macro calls
+            cppLexer mainLexer = new cppLexer(new
+DataInputStream(System.in));
+            mainLexer.selector = selector;
+            selector.select(mainLexer);
+            for (;;) {
+                Token t = selector.nextToken();
+                if (t.getType()==Token.EOF_TYPE) break;
+                System.out.print(t.getText());
+            }
+        } catch(Exception e) {
+            System.err.println(&quot;exception: &quot;+e);
+        }
+    }
+}
+
+}
+
+class cppLexer extends Lexer;
+
+options {
+    testLiterals = false;
+    k = 4;
+}
+
+tokens {
+    ENDIF ;
+}
+
+{
+    public static TokenStreamSelector selector; // must be assigned
+externally
+    protected static Integer ifState = 1; // -1: no-else false, 0:
+false, 1: true
+    protected static List ifStates = new ArrayList(); // holds nested
+if conditions
+    protected static Map defines = new Hashtable(); // holds the defines
+    protected Map defineArgs = new Hashtable(); // holds the args for
+a macro call
+    public void uponEOF() throws TokenStreamException,
+CharStreamException {
+        try {
+            selector.pop(); // return to old lexer/stream
+            selector.retry();
+        } catch (NoSuchElementException e) {
+            // return a real EOF if nothing in stack
+        }
+    }
+}
+
+DIRECTIVE {
+    List args = new ArrayList();
+    boolean condition = true;
+} : '#'
+    ( &quot;include&quot; (WS)? includeFile:STRING { if (ifState==1) {
+        // found this in examples/java/includeFile
+        String name = includeFile.getText();
+        name = name.substring(1,name.length()-1);
+        try {
+            cppLexer sublexer = new cppLexer(new DataInputStream(new
+FileInputStream(name)));
+            sublexer.defines = defines; // want defines to be persistent
+            sublexer.setFilename(name);
+            selector.push(sublexer);
+            selector.retry();
+        } catch (FileNotFoundException fnf) {
+            System.err.println(&quot;cannot find file &quot;+name);
+        }
+    }}
+    | &quot;define&quot; WS defineMacro:RAW_IDENTIFIER
+    {
+        args.add(&quot;&quot;); // first element will hold the macro text
+    }
+        (
+            ( '(' // get arguments if you find them (no spaces before
+left paren)
+                (WS)? defineArg0:RAW_IDENTIFIER (WS)?
+{args.add(defineArg0.getText());}
+                ( COMMA (WS)? defineArg1:RAW_IDENTIFIER (WS)?
+{args.add(defineArg1.getText());} )*
+              ')'
+            | ' '|'\t'|'\f'
+            )
+            ( options{greedy=true;}: ' '|'\t'|'\f' )*
+            // store the text verbatim - tokenize when called
+            defineText:MACRO_TEXT {args.set(0,defineText.getText());}
+        )? '\n' {newline();}
+    { if (ifState==1) {
+        defines.put( defineMacro.getText(), args );
+        $setType(Token.SKIP);
+    }}
+    | &quot;undef&quot; WS undefMacro:RAW_IDENTIFIER { if (ifState==1) {
+        defines.remove(undefMacro.getText());
+        $setType(Token.SKIP);
+    }}
+    | (&quot;ifdef&quot;|&quot;ifndef&quot;{condition=false;})
+        WS ifMacro:RAW_IDENTIFIER
+    {
+        ifStates.add(ifState);
+        if (ifState==1) {
+            condition =
+(defines.containsKey(ifMacro.getText())==condition);
+            ifState = condition?1:0;
+        } else {
+            ifState = -1;
+        }
+        if (ifState==1) {
+            $setType(Token.SKIP);
+        } else {
+            // gobble up tokens until ENDIF (could be caused by else)
+            for (;;) {
+                try {
+                    if (selector.nextToken().getType()==ENDIF) break;
+                } catch (TokenStreamRetryException r) {
+                    // just continue if someone tried retry
+                }
+            }
+            // retry in case we switched lexers
+            selector.retry();
+        }
+    }
+    |
+        ( &quot;else&quot; // treat like elsif (true)
+        | &quot;elsif&quot; WS elsifMacro:RAW_IDENTIFIER {
+            condition=defines.containsKey(elsifMacro.getText());
+        }
+        )
+    {
+        if (ifState==1) {
+            // previous if/elsif was taken - discard rest
+            ifState = -1;
+            for (;;) {
+                try {
+                    if (selector.nextToken().getType()==ENDIF) break;
+                } catch (TokenStreamRetryException r) {
+                    // just continue if someone tried retry
+                }
+            }
+            // retry in case we switched lexers
+            selector.retry();
+        } else if (ifState==0 &amp;&amp; condition) {
+            // &quot;elsif&quot; (true) or &quot;else&quot;
+            $setType(ENDIF);
+            ifState = 1;
+        }
+    }
+    | &quot;endif&quot; {
+        condition = (ifState==1);
+        try {
+            // return to previous if state
+            ifState = (Integer)ifStates.remove(ifStates.size()-1);
+            if (condition) {
+                $setType(Token.SKIP);
+            } else {
+                // tell if/else/elsif to stop discarding tokens
+                $setType(ENDIF);
+            }
+        } catch (ArrayIndexOutOfBoundsException e) {
+            // endif with no if
+        }
+    }
+    );
+
+IDENTIFIER options {testLiterals=true;} {
+    List define = new ArrayList();
+    List args = new ArrayList();
+} :
+    identifier:RAW_IDENTIFIER
+    {
+        // see if this is a macro argument
+        define = (List)defineArgs.get(identifier.getText());
+        if (_createToken &amp;&amp; define==null) {
+            // see if this is a macro call
+            define = (List)defines.get(identifier.getText());
+        }
+    }
+    ( { (define!=null) &amp;&amp; (define.size()&gt;1) }? (WS|COMMENT)?
+        // take in arguments if macro call requires them
+        '('
+        callArg0:EXPR {args.add(callArg0.getText());}
+        ( COMMA callArg1:EXPR {args.add(callArg1.getText());} )*
+        { args.size()==define.size()-1 }? // better have right amount
+        ')'
+    | { !((define!=null) &amp;&amp; (define.size()&gt;1)) }?
+    )
+{ if (define!=null) {
+    String defineText = (String)define.get(0);
+    if (!_createToken) {
+        // just substitute text if called from EXPR - no token created
+        $setText(defineText);
+    } else {
+        // create a new lexer to handle the macro text
+        cppLexer sublexer = new cppLexer(new DataInputStream(new
+StringBufferInputStream(defineText)));
+        for (int i=0;i&lt;args.size();++i) {
+            // treat macro arguments similar to local defines
+            List arg = new ArrayList();
+            arg.add((String)args.get(i));
+            sublexer.defineArgs.put( (String)define.get(1+i), arg );
+        }
+        selector.push(sublexer);
+        // retry in new lexer
+        selector.retry();
+    }
+}};
+
+STRING
+    : '&quot;' ( '\\' . | ~('\\'|'&quot;') )* '&quot;' // double quoted string
+    | '\'' ( '\\' . | ~('\\'|'\'') )* '\'' // single quoted string
+    ;
+
+protected MACRO_TEXT :
+    ( '\\'! '\n' {newline();} // escaped newline
+    | ~'\n'
+    )*;
+
+
+WS :
+    ( ' '
+    | '\t'
+    | '\f'
+    | '\n' {newline();}
+    ) { /*$setType(Token.SKIP);*/ };
+
+COMMENT :
+    ( &quot;//&quot; (~'\n')* '\n' {newline();} // single line comment
+    | &quot;/*&quot; ( options{greedy=false;} : '\n' {newline();} | ~('\n') )*
+&quot;*/&quot; // multi-line comment
+    ) { /*$setType(Token.SKIP);*/ };
+
+protected RAW_IDENTIFIER : ('a'..'z'|'A'..'Z'|'_')
+('a'..'z'|'A'..'Z'|'_'|'0'..'9')* ;
+
+NUMBER : ('0'..'9') ('0'..'9'|'a'..'z'|'A'..'Z'|'_')* ; // allow ahpha
+suffixes on numbers (i.e. L:long)
+
+// group symbols into categories to parse EXPR
+LEFT  : '(' | '[' | '{' ;
+RIGHT : ')' | ']' | '}' ;
+COMMA : ',' ;
+OPERATOR : '!' | '#' | '$' | '%' | '&amp;' | '*' | '+' | '-' | '.' | '/' |
+':' | ';' | '&lt;' | '=' | '&gt;' | '?' | '@' | '\\' | '^' | '`' | '|' | '~' ;
+
+protected EXPR // allow just about anything without being ambiguous
+    : (WS)? (NUMBER|IDENTIFIER)?
+        (
+            ( LEFT EXPR ( COMMA EXPR )* RIGHT
+            | STRING
+            | OPERATOR // quotes, COMMA, LEFT, and RIGHT not in here
+            )
+            EXPR
+        )?
+    ;
+
+
+
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+    <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+    <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+    <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="008802.html">[antlr-interest] Re: SQL grammar, keywords that can be
+	identifiers
+</A></li>
+	<LI>Next message: <A HREF="008779.html">New antlr-interest member
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#8778">[ date ]</a>
+              <a href="thread.html#8778">[ thread ]</a>
+              <a href="subject.html#8778">[ subject ]</a>
+              <a href="author.html#8778">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

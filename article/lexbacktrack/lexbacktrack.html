@@ -1,0 +1,250 @@
+<html>
+
+<head>
+<title>We Are Talking Really Big Lexical Lookahead Here</title>
+</head>
+
+<body bgcolor="#FFFFFF">
+
+<i>Terence Parr</i>
+
+<p>
+
+<p>ANTLR supports large finite and, in fact, infinite lookahead (via
+syntactic predicates), which means that even lexers can do some fairly
+interesting things. In this field guide entry, my goal is to
+demonstrate the effectiveness of syntactic predicates for lexing while
+solving a useful problem at the same time.
+
+<h3>Parsing HTML &lt;form&gt; Data</h3>
+
+<p>
+How many times have you wanted to build a quick form page for data
+entry on the Web and then parse that tag/value pairs coming in to do
+something useful?  I often use the email rather than cgi-bin action
+for &lt;form&gt; tags because I can move the page anywhere without having to
+wonder about the particular host's cgi-bin mechanism.  I have built a
+tool that creates an HTML page echoing back the tag/value pairs.  The
+tool also generates an index.html file listing every HTML file created
+from the previous tool invocations.  The output of the tool is a page
+that looks like:
+
+<p>
+<hr>
+<font face="Arial"><table border=0>
+<tr>
+<td valign=top width=175>
+<b>Company</b>
+</td>
+<td width=400>
+BigCo<br></td>
+</tr>
+<tr>
+<td valign=top width=175>
+<b>salesperson</b>
+</td>
+<td width=400>
+Eric<br></td>
+</tr>
+<tr>
+<td valign=top width=175>
+<b>instructor</b>
+</td>
+<td width=400>
+Wile E. Coyote<br></td>
+</tr>
+<tr>
+<td valign=top width=175>
+<b>techcontact</b>
+</td>
+<td width=400>
+Johnboy<br></td>
+</tr>
+<tr>
+<td valign=top width=175>
+<b>techcontactphone</b>
+</td>
+<td width=400>
+555-2772<br></td>
+</tr>
+<tr>
+<td valign=top width=175>
+<b>shipaddress</b>
+</td>
+<td width=400>
+Johnboy<br>232 Oak St<br>San Francisco CA 94666<br></td>
+</tr>
+</table>
+</font>
+<hr>
+
+<p>
+The output index.html file would link to this page.
+
+<p>My first thought was to use PERL for this, but I quickly found that
+no line-oriented tool could handle this problem easily because it
+would constantly have to maintain state or mode information--ick! My
+ANTLR solution uses 1 character of finite lookahead and backtracking
+(arbitrary lookahead).</p>
+
+<p>Take a look at the type of input you get from an HTML form that has
+been emailed to you:</p>
+
+<tt><pre>Company=BigCo
+salesguy=Eric
+instructor=Wile E Coyote
+</pre></tt>
+
+<p>These field and value pairs come from text fields in the HTML
+form. So far, this problem just screams for an AWK or PERL
+solution. However, when you consider text areas, you get the following
+kind of data:</p>
+
+<tt><pre>
+address=1000 Washington Ave
+NYC NY 94123
+</pre></tt>
+
+<p>This does not seem like a problem until you realize that the
+newline character is no longer the end of &quot;value&quot;
+delimiter. In fact the start of the next field looks like part of the
+address data:</p>
+
+<tt><pre>address=1000 Washington Ave
+NYC NY 94123
+phone=201 555 1212
+</pre></tt>
+
+<h3>Recognizing Tags Versus Values</h3>
+
+<p>The question is: how you get the lexer to stop consuming input for
+the address before the 'p' of &quot;phone&quot;? The answer is that
+you have to scan way ahead to see the '='. Because ANTLR only allows
+you to have syntactic predicates in rules with more than one
+alternative, you cannot create a rule such as:</p>
+
+<tt><pre>
+TAG : ( TAG '=' ) =&gt; TAG '=' ;
+</pre></tt>
+
+<p>You must create a rule that specifies the difference between a tag
+and a value:</p>
+
+<tt><pre>
+FORMTOKEN
+    :   ( TAG '=' ) =&gt; TAG '='!     {$setType(TAG);}
+    |   .                           {$setType(CHAR);}
+    ;
+
+// rule protected because only want it seen by FORMTOKEN
+// not by nextToken
+protected
+TAG :   ('a'..'z'|'A'..'Z'|'0'..'9')+
+    ;
+</pre></tt>
+
+<p>
+FORMTOKEN returns a character rather than a string for the elements
+of a value token because it is hard to write a (...)* loop that
+knows to stop when it sees a valid tag coming down the road. For
+example, the following rule stops only after it has seen the equal
+rather than the tag before the equal, which is not what we want.</p>
+
+<tt><pre>
+VALUE : (~'=')+ ; // bad: scarfs past tags.
+</pre></tt>
+
+<p>On the other hand, as you can see, it is quite easy to do the
+inverse: testing for the special case of a valid tag, leaving
+everything else as part of a value token.</p>
+
+<p>The parser for form data is straightforward:</p>
+
+<tt><pre>
+data
+{
+    String s;
+}
+    :   ( TAG s=string )+
+    ;
+
+string returns [String s]
+{
+    s=null;
+    StringBuffer sbuf = new StringBuffer();
+}
+    :   (   c:CHAR
+            {sbuf.append(c.getText());}
+        )+
+        {s=sbuf.toString();}
+    ;
+</pre></tt>
+
+<h3>Translating Tag/Value Pairs to HTML</h3>
+
+<p>In order to do the translation of tag/value pairs to HTML, we need
+to embed actions within the grammar. As a general design principal it
+is often a good idea to pass in a so-called behavior object with
+methods that perform the actual work. You are able to use this grammar
+for multiple translators in this manner (you can even change the
+behavior at parse-time). Three behavior functions are sufficient for
+this example: enter(), dataPair(), and exit():</p>
+
+<tt><pre>
+data
+{
+    String s;
+    behavior.enter();
+}
+    :   (   t:TAG s=string
+            {behavior.dataPair(t.getText(), s);}
+        )+
+        {behavior.exit();}
+    ;
+</pre></tt>
+
+<p>where behavior is of type FormDataBehavior:</p>
+
+<tt><pre>
+public interface FormDataBehavior {
+  public void dataPair(String tag, String value); // another tag/value
+  public void enter();
+  public void exit();
+}
+</pre></tt>
+
+<p>To specify the translation, it suffices to provide an
+implementation of this interface. I have provided an implementation
+called BuildPageIndex, that uses Serialization to maintain an index
+of HTML files generated by the separate invocations of the
+program. The index.html file is regenerated for each invocation of
+the program and a file called index.objects is the serialization
+of my vector of label/URL pairs.  The code is fairly obvious, but the
+important points are that:</p>
+
+<ul>
+<li>You must pass in a label which is used as the entry in the index page that is generated.
+
+<li>You can pass in a hash table of tag translations. For example
+you may want tag &quot;Company&quot; to appear as &quot;Which
+Company?&quot; In the resulting HTML page representing the form data.
+</ul>
+
+<h3>Source</h3>
+
+<ul>
+<li><a href="data.g">data.g</a>
+<li><a href="BuildPageIndex.java">BuildPageIndex.java</a>
+<li><a href="Main.java">Main.java</a>
+</ul>
+
+<h3>Samples</h3>
+<ul>
+<li><a href="input">input file</a>
+<li><a href="index.html">index.html</a>
+<li><a href="t0-23-1998-763.html">test tag/value page</a>
+</ul>
+
+</font>
+</body>
+</html>

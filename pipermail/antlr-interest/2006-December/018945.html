@@ -1,0 +1,311 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Latest antlr (bug?) incorrect parsing
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Latest%20antlr%20%28bug%3F%29%20incorrect%20parsing&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="018955.html">
+   <LINK REL="Next"  HREF="018946.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Latest antlr (bug?) incorrect parsing</H1>
+    <B>Ilia Kantor</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Latest%20antlr%20%28bug%3F%29%20incorrect%20parsing&In-Reply-To="
+       TITLE="[antlr-interest] Latest antlr (bug?) incorrect parsing">ilia at obnovlenie.ru
+       </A><BR>
+    <I>Wed Dec 27 13:39:38 PST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="018955.html">[antlr-interest] virtual semicolons again: JavaScript,	ECMAScript, ActionScript
+</A></li>
+        <LI>Next message: <A HREF="018946.html">[antlr-interest] Latest antlr (bug?) incorrect parsing
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#18945">[ date ]</a>
+              <a href="thread.html#18945">[ thread ]</a>
+              <a href="subject.html#18945">[ subject ]</a>
+              <a href="author.html#18945">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+I run my old grammars on antlr 3b5
+
+Here is a rule:
+
+text returns [String value] :
+ (TEXT {$value = $TEXT.text;}) | (WS {$value = $WS.text;})
+
+There is no substutution in second alt for $WS in code:
+
+..... java code for first alt ......
+TEXT14=(Token)input.LT(1);
+.....
+retval.value = TEXT14.getText();
+
+..... java code for second alt ......
+WS15=(Token)input.LT(1);
+...........
+retval.value =$WS.text;  // COMPILE ERROR
+-----
+
+There clearly should be WS15 instead of $WS in second alt.
+
+Same thing happens with this rule:
+expr_no_semi returns [StringRuleResult value]
+	:	
+		(expr_simple {$value=$expr_simple.value;}) | (curly_block 
+{$value=$curly_block.value; }) 
+	;
+
+That is: $curly_block is output into java code just like $WS.
+
+
+
+============ The whole grammar just in case anyone needs it to test ==========
+
+
+grammar CommonRule;
+
+options {
+    output=AST;
+}
+
+@parser::header {
+    package grammar.parser;
+    
+	import grammar.*;	
+	import grammar.parser.*;
+	import grammar.parser.exception.*;
+
+    import org.apache.log4j.Logger;
+    import java.util.Stack;
+    import java.util.ArrayList;
+}
+
+@rulecatch { }
+
+@parser::members {
+
+    private static Logger logger = Logger.getLogger(CommonRuleParser.class);
+
+    Stack&lt;Integer&gt; caseCountersStack = new Stack&lt;Integer&gt;();
+
+    // checks condition, if its false then case syntax error
+    protected void checkCaseCounter(Boolean cond, Token token) throws 
+RuleRecognitionException {
+    	if (!cond) {
+    		throw new RuleRecognitionException(&quot;Case syntax error near &quot;+token, 
+token);
+		}
+    }
+    
+    protected void mismatch(IntStream input, int ttype, BitSet follow) throws 
+RecognitionException {
+        MismatchedTokenException mte = new MismatchedTokenException(ttype, 
+input);
+        throw mte;
+    }
+    
+    protected RuleInterpreter ruleInterpreter;
+
+    public void setRuleInterpreter(RuleInterpreter ruleInterpreter) {
+        this.ruleInterpreter = ruleInterpreter;
+    }
+    
+    
+
+}
+
+
+
+@lexer::header {
+    package grammar.parser;	
+    import grammar.*;
+    
+}
+
+LCURL	:	'{';
+RCURL	:	'}';
+
+CONTROL	:	 '~';
+
+IF	:	'If';
+THEN:	'Then';
+CASE:	'Case';
+ELSE:	'Else';
+
+
+TEXT:  (~('~' | ';' | '#' | '{' | '}' | ' '|'\r'|'\t'|'\u000C'|'\n'))*;
+
+
+RULE_CALL : '#' ID;
+
+WS  :
+       (' '|'\r'|'\t'|'\u000C'|'\n' )+
+    ;
+
+SEMI	:  ';';
+
+fragment ID : NAMECHAR+;
+
+
+fragment NAMECHAR
+    : ALPHA_NUM | '_'
+    ;
+
+fragment ALPHA_NUM
+	:	DIGIT | LETTER_ENG;
+
+fragment DIGIT
+    :    '0'..'9'
+    ;
+
+fragment LETTER_ENG
+    : 'a'..'z'
+    | 'A'..'Z'
+    ;
+    
+    
+
+document returns [StringRuleResult value]: LCURL exprs { 
+$value=$exprs.value; } RCURL
+;
+
+
+exprs returns [StringRuleResult value]
+@init {
+	String sum=&quot;&quot;;
+}:
+	(expr { sum = sum+$expr.value.getStringValue(); } )+
+{
+	$value = new StringRuleResult(sum);
+	logger.info(&quot;exprs value &quot;+$value);
+}
+;
+
+exprs_no_semi returns [StringRuleResult value]
+@init {
+	String sum=&quot;&quot;;
+}
+	:	(e=expr_no_semi { sum = sum + $e.value.getStringValue(); } )+
+{
+	$value = new StringRuleResult(sum);
+	logger.info(&quot;exprs_no_semi value &quot;+$value);
+}
+;
+
+
+exprs_simple returns [StringRuleResult value]
+@init {
+	String sum=&quot;&quot;;
+}
+	:	(e=expr_simple { sum = sum+$e.value.getStringValue(); } )+
+{
+	$value = new StringRuleResult(sum);
+	logger.info(&quot;exprs_simple value &quot;+$value);
+}
+	;
+	
+	
+expr_no_semi returns [StringRuleResult value]
+	:	
+		(expr_simple {$value=$expr_simple.value;}) | (curly_block 
+{$value=$curly_block.value; }) 
+	;
+
+/* expression without curl at start and ; */
+expr_simple returns [StringRuleResult value]
+	:
+	(
+	//command {$value=$command.value;} |
+	rule_call {$value=$rule_call.value;} |
+	text {$value=$text.value; } 
+	)
+	{
+	logger.info(&quot;expr_simple value &quot;+$value);
+	}
+;	
+	
+
+
+expr returns [StringRuleResult value]:
+(
+	(e=expr_no_semi {$value=$e.value;}) | (SEMI {$value=new 
+StringRuleResult($SEMI.text);})
+)
+
+	;
+
+
+rule_call returns [StringRuleResult value]:
+	RULE_CALL
+{
+	$value = ruleInterpreter.doRule($RULE_CALL, $RULE_CALL.text.substring(1));
+	logger.info(&quot;rule_call value &quot; + $value);
+}
+;
+
+
+curly_block returns [StringRuleResult value]:
+	LCURL exprs RCURL
+{
+	$value = new StringRuleResult($LCURL.text + $exprs.value.getStringValue() + 
+$RCURL.text);
+	logger.info(&quot;curly_block value &quot;+$value);
+}
+;
+
+
+text returns [StringRuleResult value] :
+ (TEXT {$value = new StringRuleResult($TEXT.text);}) | (WS {$value = new 
+StringRuleResult($WS.text);})
+{	
+	logger.info(&quot;text value &quot;+$value);
+};
+
+
+
+
+
+
+
+
+
+
+
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="018955.html">[antlr-interest] virtual semicolons again: JavaScript,	ECMAScript, ActionScript
+</A></li>
+	<LI>Next message: <A HREF="018946.html">[antlr-interest] Latest antlr (bug?) incorrect parsing
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#18945">[ date ]</a>
+              <a href="thread.html#18945">[ thread ]</a>
+              <a href="subject.html#18945">[ subject ]</a>
+              <a href="author.html#18945">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

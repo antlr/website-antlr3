@@ -1,0 +1,242 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Text attribute for tree parser rule not working
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Text%20attribute%20for%20tree%20parser%20rule%20not%20working&In-Reply-To=%3CAANLkTinPHHY6sID2khXaSb5DnNWFnHPfg0COwOYIjhU0%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="039027.html">
+   <LINK REL="Next"  HREF="039029.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Text attribute for tree parser rule not working</H1>
+    <B>Jan F</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Text%20attribute%20for%20tree%20parser%20rule%20not%20working&In-Reply-To=%3CAANLkTinPHHY6sID2khXaSb5DnNWFnHPfg0COwOYIjhU0%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Text attribute for tree parser rule not working">netjan42 at gmail.com
+       </A><BR>
+    <I>Fri Jun 25 03:14:24 PDT 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="039027.html">[antlr-interest] Text attribute for tree parser rule not working
+</A></li>
+        <LI>Next message: <A HREF="039029.html">[antlr-interest] Reposting an email about a baby latex parser
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#39035">[ date ]</a>
+              <a href="thread.html#39035">[ thread ]</a>
+              <a href="subject.html#39035">[ subject ]</a>
+              <a href="author.html#39035">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I am a bit smarter, so posting an update.
+
+The problem seems to be in the basic AST creation for rules that recurse,
+such as mine:
+
+leftHandSideExpression
+    :  DOT Identifier        -&gt; ^( BYFIELD $leftHandSideExpression
+Identifier )
+    ;
+
+In  the generated parser, the corresponding method for the rule calls
+&quot;adaptor.setTokenBoundaries(retval.tree, retval.start, retval.stop);&quot; at its
+end, which updates the token start/stop indexes for the rule's result. Works
+perfectly fine, except for the case when the recursion occurs (such as
+matching &quot;item.field.field2&quot;) - in this case the method is actually not
+called recursively, but loops inside, and the setTokenBoundaries is only
+called once for the outer CommonTree node - the internal nodes representing
+the BYFIELD token keep their -1 values for startIndex/stopIndex.
+
+So now for the $1000 question - how should I fix this? :-) Any ideas?
+
+BTW. If anybody is debugging bugs in the AST creation, I can highly
+recommend taking the time and implementing a debug tool that visualizes the
+token list and AST tree. Suddenly so many issues (and that typically there
+would be multiple ones at the same time) become clear.
+
+I have created Eclipse view that is synced with the source editor and
+displays list of tokens and the two AST trees I have (CommonTree-based and
+DLTK ASTNode-based one) - when I click in the view, the corresponding code
+in the source is selected. Great tool to fix problems with positions, among
+others.
+
+I could make it available (sans the code that hooks it up to the parser, as
+this is specific for everyone) if there is an interest.
+
+-Jan
+
+
+On Thu, Jun 24, 2010 at 7:33 PM, Jan F &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">netjan42 at gmail.com</A>&gt; wrote:
+
+&gt;<i> I spent most of today debugging this and putting together a view for
+</I>&gt;<i> Eclipse to display a tree of the two ASTs that I deal with (the ANTLR one
+</I>&gt;<i> and then a second one that I create using tree walker that is fed into
+</I>&gt;<i> Eclipse DLTK platform).
+</I>&gt;<i>
+</I>&gt;<i> So far it is clear, that the problem is that some nodes in the AST have a
+</I>&gt;<i> pseudo token which is not in the original token stream and has -1 as the
+</I>&gt;<i> token index (and no positioning info). Those pseudo tokens are created for
+</I>&gt;<i> some imaginary tokens, and only sometime.
+</I>&gt;<i>
+</I>&gt;<i> Per Andrew's suggestion I traced what is happening inside the addChild, and
+</I>&gt;<i> actually before it. The corresponding code in the generated parser is:
+</I>&gt;<i>
+</I>&gt;<i>     root_1 = (Object)adaptor.becomeRoot((Object)adaptor.create(BYFIELD,
+</I>&gt;<i> &quot;BYFIELD&quot;), root_1);
+</I>&gt;<i>     adaptor.addChild(root_1, stream_retval.nextTree());
+</I>&gt;<i>     adaptor.addChild(root_1, stream_Identifier.nextNode());
+</I>&gt;<i>     adaptor.addChild(root_0, root_1);
+</I>&gt;<i>
+</I>&gt;<i> and the adaptor.create (BYFIELD, ...) creates the new pseudo token, that is
+</I>&gt;<i> not in the token stream.
+</I>&gt;<i>
+</I>&gt;<i> From looking at the CommonTreeAdaptor.createToken method JavaDoc, it
+</I>&gt;<i> explains that for imaginary tokens something extra needs to be done
+</I>&gt;<i>
+</I>&gt;<i> I am still looking into what the best approach is here, as I have not quite
+</I>&gt;<i> figured out the whole picture yet .
+</I>&gt;<i>
+</I>&gt;<i> -Jan
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> On Wed, Jun 23, 2010 at 7:45 PM, Andrew Bradnan &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">andrew.bradnan at gmail.com</A>&gt;wrote:
+</I>&gt;<i>
+</I>&gt;&gt;<i> Yeah, CC the list.  I keep thinking it's automatic.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I just haven't crawled through the generated code enough to fully
+</I>&gt;&gt;<i> understand when an AST node has a token and when it doesn't.  You should
+</I>&gt;&gt;<i> probably just trace through the AddChild code.  It tries to keep the
+</I>&gt;&gt;<i> children in a list when it can, but changes to real children of a nil node
+</I>&gt;&gt;<i> at some magical point.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Re object.field.anotherfield   For my FIELD rule I just updated an Id
+</I>&gt;&gt;<i> field on my custom AST node.  You could always update the start/end index
+</I>&gt;&gt;<i> yourself, or add some custom ones if those are private.
+</I>&gt;&gt;<i> I haven't seen a thing documentation wise, so I look forward to seeing
+</I>&gt;&gt;<i> what you find out.
+</I>&gt;&gt;<i> On Wed, Jun 23, 2010 at 9:49 AM, Jan F &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">netjan42 at gmail.com</A>&gt; wrote:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> Hmm, that shows that I have not really gotten a good understanding of how
+</I>&gt;&gt;&gt;<i> the rule/subrule attributes work.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> I have been fighting pretty hard with obtaining the position boundaries
+</I>&gt;&gt;&gt;<i> for AST elements, and what I ended up with, which works in most cases, is
+</I>&gt;&gt;&gt;<i> the trick with updating the positions in the @after section of each rule,
+</I>&gt;&gt;&gt;<i> based on the $rule.start position and $rule.text length.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> In my code below, I actually do want the boundaries of the
+</I>&gt;&gt;&gt;<i> memberExpression (which is like &quot;object.field&quot; reference) rule to be around
+</I>&gt;&gt;&gt;<i> the whole text (that is the parenLeftHandSideExpression (matches the
+</I>&gt;&gt;&gt;<i> &quot;object&quot; part) and Identifier (matches the &quot;field&quot; part) - so passing it
+</I>&gt;&gt;&gt;<i> from subrules as a return value does not really work - the BYFIELD is just
+</I>&gt;&gt;&gt;<i> an imaginary token.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> Actually a bit more context - the positions are correct if I parse text
+</I>&gt;&gt;&gt;<i> with &quot;object.field&quot;, but stop working if I have a chain like
+</I>&gt;&gt;&gt;<i> &quot;obejct.field.anotherfield&quot; - so perhaps the problem could be somewhere
+</I>&gt;&gt;&gt;<i> else?
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> BTW. I just noticed that you sent this only to me directly, would you
+</I>&gt;&gt;&gt;<i> mind if I cc the list on further replies?
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> -Jan
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> On Wed, Jun 23, 2010 at 6:21 PM, Andrew Bradnan &lt;
+</I>&gt;&gt;&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">andrew.bradnan at gmail.com</A>&gt; wrote:
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> Only the AST's that actually matched one token will have the token
+</I>&gt;&gt;&gt;&gt;<i> information filled out.  Subrules with multiple children are blank.  I
+</I>&gt;&gt;&gt;&gt;<i> haven't actually tested those conditions extensively but just go with the
+</I>&gt;&gt;&gt;&gt;<i> fixes below when the token information is missing.
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> To get around this I've either passed the values back from the subrules
+</I>&gt;&gt;&gt;&gt;<i> in the grammar using returns or in the subrule I have updated a field on the
+</I>&gt;&gt;&gt;&gt;<i> AST for the root (like on AST node for BYFIELD).  To update the AST node,
+</I>&gt;&gt;&gt;&gt;<i> you need to have a custom AST class.  See setting options { ASTLabelType =
+</I>&gt;&gt;&gt;&gt;<i> MyASTNode; }
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> Hopefully that will get you going again.
+</I>&gt;&gt;&gt;&gt;<i> Andrew
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i>   On Wed, Jun 23, 2010 at 7:53 AM, Jan F &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">netjan42 at gmail.com</A>&gt; wrote:
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;<i>  Hello fellow ANTLRs, I have a problem with obtaining text and
+</I>&gt;&gt;&gt;&gt;&gt;<i> positions for
+</I>&gt;&gt;&gt;&gt;&gt;<i> one of my rules ion a tree walker, and since I ran out of ideas on what
+</I>&gt;&gt;&gt;&gt;&gt;<i> might be wrong I am here to ask :-)
+</I>&gt;&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;<i> My rule looks like this:
+</I>&gt;&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;<i> memberExpression returns [ Expression expression = null ]
+</I>&gt;&gt;&gt;&gt;&gt;<i> @after { post ($expression, $memberExpression.start,
+</I>&gt;&gt;&gt;&gt;&gt;<i> $memberExpression.text); }
+</I>&gt;&gt;&gt;&gt;&gt;<i>    : ^( BYINDEX parenLeftHandSideExpression expressionSt ) {
+</I>&gt;&gt;&gt;&gt;&gt;<i>       $expression = new NIndexRefExpression (0, 0,
+</I>&gt;&gt;&gt;&gt;&gt;<i> $parenLeftHandSideExpression.expression, $expressionSt.statement);
+</I>&gt;&gt;&gt;&gt;&gt;<i>  }
+</I>&gt;&gt;&gt;&gt;&gt;<i>    | ^( BYFIELD parenLeftHandSideExpression Identifier ) {
+</I>&gt;&gt;&gt;&gt;&gt;<i>       $expression = new NFieldRefExpression (0, 0,
+</I>&gt;&gt;&gt;&gt;&gt;<i> $parenLeftHandSideExpression.expression, $Identifier.text);
+</I>&gt;&gt;&gt;&gt;&gt;<i>     }
+</I>&gt;&gt;&gt;&gt;&gt;<i>    ;
+</I>&gt;&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;<i> and the problem is that $memberExpression.text returns empty string,
+</I>&gt;&gt;&gt;&gt;&gt;<i> caused
+</I>&gt;&gt;&gt;&gt;&gt;<i> by the fact that $memberExpression.start has the start/stop indexes as
+</I>&gt;&gt;&gt;&gt;&gt;<i> -1.
+</I>&gt;&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;<i> I have a second rule for something else, which looks very similar, and
+</I>&gt;&gt;&gt;&gt;&gt;<i> that
+</I>&gt;&gt;&gt;&gt;&gt;<i> one (as well as all others) work perfectly fine, the $rule.text
+</I>&gt;&gt;&gt;&gt;&gt;<i> containing
+</I>&gt;&gt;&gt;&gt;&gt;<i> the text corresponding to what the rule matched.
+</I>&gt;&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;<i> Any ideas why this may be happening?
+</I>&gt;&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;<i> -Jan
+</I>&gt;&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;&gt;&gt;&gt;&gt;<i> Unsubscribe:
+</I>&gt;&gt;&gt;&gt;&gt;<i> <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> --
+</I>&gt;&gt;&gt;&gt;<i> /Andrew
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> --
+</I>&gt;&gt;<i> /Andrew
+</I>&gt;&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I></PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="039027.html">[antlr-interest] Text attribute for tree parser rule not working
+</A></li>
+	<LI>Next message: <A HREF="039029.html">[antlr-interest] Reposting an email about a baby latex parser
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#39035">[ date ]</a>
+              <a href="thread.html#39035">[ thread ]</a>
+              <a href="subject.html#39035">[ subject ]</a>
+              <a href="author.html#39035">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

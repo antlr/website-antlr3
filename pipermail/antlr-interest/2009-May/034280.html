@@ -1,0 +1,154 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] &quot;explosion&quot; rewrite
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%22explosion%22%20rewrite&In-Reply-To=%3C1241222935.3426.99.camel%40localhost.localdomain%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="034275.html">
+   <LINK REL="Next"  HREF="034282.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] &quot;explosion&quot; rewrite</H1>
+    <B>Steve Ebersole</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%22explosion%22%20rewrite&In-Reply-To=%3C1241222935.3426.99.camel%40localhost.localdomain%3E"
+       TITLE="[antlr-interest] &quot;explosion&quot; rewrite">steve at hibernate.org
+       </A><BR>
+    <I>Fri May  1 17:08:55 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="034275.html">[antlr-interest] &quot;explosion&quot; rewrite
+</A></li>
+        <LI>Next message: <A HREF="034282.html">[antlr-interest] &quot;explosion&quot; rewrite
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#34280">[ date ]</a>
+              <a href="thread.html#34280">[ thread ]</a>
+              <a href="subject.html#34280">[ subject ]</a>
+              <a href="author.html#34280">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+sortKey : expression;
+
+expression
+    : QUOTED_IDENTIFIER -&gt; ^( COLUMN ALIAS_REF[Template.TEMPLATE]
+QUOTED_IDENTIFIER[$QUOTED_IDENTIFIER] )
+    // we treat the so-called standard functions differently because
+they are handled differently by the HQL lexer which we also use here...
+    | standardFunction
+    | literal
+    // not identDotIdentStructure because we dont want
+QUOTED_IDENTIFIERs is here
+    | ( IDENTIFIER ( DOT IDENTIFIER )* LEFT_PAREN ) =&gt; generalFunction
+    // otherwise we fully expect a dot-identifier series, and then we
+just need to decode the semantic of that structure
+    | identDotIdentStructure
+        -&gt; { ( isFunctionName($identDotIdentStructure.text) ) }?
+              // we have a function with parens (thus no args)
+              ^( FUNCTION[$identDotIdentStructure.start,
+$identDotIdentStructure.text] )
+        -&gt; { ( isPropertyName($identDotIdentStructure.text) ) }?
+              // we have a reference to a mapped property
+              { buildPropertyColumns( $identDotIdentStructure.tree ) }
+        -&gt; { ( $identDotIdentStructure.tree.getType() == DOT ) }?
+              // we have a reference to a column which is already
+qualified
+              identDotIdentStructure
+        -&gt;
+              // we have a reference to a column which is not qualified
+              ^( COLUMN ALIAS_REF[Template.TEMPLATE]
+IDENTIFIER[$identDotIdentStructure.start,$identDotIdentStructure.text] )
+    ;
+
+
+The piece of interest here is fragment in expression that reads
+
+-&gt; { ( isPropertyName($identDotIdentStructure.text) ) }?
+              // we have a reference to a mapped property
+              { buildPropertyColumns( $identDotIdentStructure.tree ) }
+
+buildPropertyColumns() is a java action where I account for the fact
+that in Hibernate a single property might map to multiple columns; in
+that case buildPropertyColumns() returns the VECTOR_EXPR
+
+
+On Fri, 2009-05-01 at 13:50 -0700, Jim Idle wrote:
+&gt;<i> Steve Ebersole wrote:
+</I>&gt;<i> &gt; Is there a syntax to &quot;explode&quot; a subrule result (sorry don't know a
+</I>&gt;<i> &gt; better term).
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; I have a rule:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; sortSpecification
+</I>&gt;<i> &gt;     : sortKey collationSpecification? orderingSpecification?
+</I>&gt;<i> &gt;         -&gt; ^( SORT_SPEC sortKey collationSpecification?
+</I>&gt;<i> &gt; orderingSpecification? )
+</I>&gt;<i> &gt;     ;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; The result of the sortKey subrule could be a Tree of type VECTOR_EXPR
+</I>&gt;<i> &gt; (its a &quot;row value constructor&quot; for those familiar with SQL). 
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; In terms of eventual output, this rule translates as &quot;(sort_key1,
+</I>&gt;<i> &gt; sort_key2) asc&quot; where &quot;sort_key1, sort_key2)&quot; is the VECTOR_EXPR.  
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Instead what I need to have happen is &quot;sort_key1 asc, sort_key2 asc&quot;.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; I started down the path of trying an @after in the sortSpecification and
+</I>&gt;<i> &gt; calling out to some java code to mutate the tree manually.  But I'd
+</I>&gt;<i> &gt; prefer to keep this in the grammar if at all possible.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;   
+</I>&gt;<i> I would need to see your sortKey rule but you can do things like this:
+</I>&gt;<i> 
+</I>&gt;<i> x : a+=something x? y? -&gt;^(NODE $a $x? $y)+
+</I>&gt;<i> 
+</I>&gt;<i> That will probably get you on track. Also, you could reorder the tree 
+</I>&gt;<i> and more easily pick up the order:
+</I>&gt;<i> 
+</I>&gt;<i> -&gt; ^( SORT_SPEC collationSpecification?
+</I>&gt;<i> orderingSpecification? sortKey)
+</I>&gt;<i> 
+</I>&gt;<i> Assuming the first two optional sequences have a root node. Then you could assume that the elements in sortKey have whatever you have established in the ordering.
+</I>&gt;<i> 
+</I>&gt;<i> If what you are trying to do is parse a SQL statement you could try inputting this into my online SQL parser and looking at the tree output:
+</I>&gt;<i> 
+</I>&gt;<i> <A HREF="http://www.temporal-wave.com">http://www.temporal-wave.com</A>
+</I>&gt;<i> 
+</I>&gt;<i> Jim
+</I>&gt;<i> 
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>-- 
+Steve Ebersole &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">steve at hibernate.org</A>&gt;
+Hibernate.org
+
+</PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="034275.html">[antlr-interest] &quot;explosion&quot; rewrite
+</A></li>
+	<LI>Next message: <A HREF="034282.html">[antlr-interest] &quot;explosion&quot; rewrite
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#34280">[ date ]</a>
+              <a href="thread.html#34280">[ thread ]</a>
+              <a href="subject.html#34280">[ subject ]</a>
+              <a href="author.html#34280">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

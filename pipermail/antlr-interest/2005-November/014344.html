@@ -1,0 +1,224 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Upgrade a token/AST from inside the parser.
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Upgrade%20a%20token/AST%20from%20inside%20the%20parser.&In-Reply-To=12720.82.92.2.221.1132240476.squirrel%40webmail.xs4all.nl">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="014343.html">
+   <LINK REL="Next"  HREF="014345.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Upgrade a token/AST from inside the parser.</H1>
+    <B>Peggy Fieland</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Upgrade%20a%20token/AST%20from%20inside%20the%20parser.&In-Reply-To=12720.82.92.2.221.1132240476.squirrel%40webmail.xs4all.nl"
+       TITLE="[antlr-interest] Upgrade a token/AST from inside the parser.">madcapmaggie at yahoo.com
+       </A><BR>
+    <I>Thu Nov 17 07:45:02 PST 2005</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="014343.html">[antlr-interest] Upgrade a token/AST from inside the parser.
+</A></li>
+        <LI>Next message: <A HREF="014345.html">[antlr-interest] Upgrade a token/AST from inside the parser.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#14344">[ date ]</a>
+              <a href="thread.html#14344">[ thread ]</a>
+              <a href="subject.html#14344">[ subject ]</a>
+              <a href="author.html#14344">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>You'll need to disambiguate dotted names.
+
+I didn't do it this way  but I've been thinking about
+pushing the 
+business with the dot qualifier into the lexer and
+then letting the
+parser split the names into pieces as needed and tag
+the pieces 
+with SCHEMA, TABLE, COLUMN qualifiers. 
+
+You want to avoid the syntactic predicates:
+(a.b) =&gt;
+
+and use instead semantic predicates.  
+{ LT(1)-&gt;getText() == &quot;a&quot; &amp;&amp; LT(2)-&gt;getText() == &quot;.&quot; 
+&amp;&amp; LT(3)-&gt;getText() == &quot;b&quot;}?
+
+There's been a lot of discussion about this on the
+list -- check the archives.
+
+
+
+--- &quot;Jan H. van der Ven&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">jhvdven at xs4all.nl</A>&gt; wrote:
+
+&gt;<i> And the race condition is in
+</I>&gt;<i> ASTFactory:
+</I>&gt;<i>     public AST make(AST[] nodes) {
+</I>&gt;<i>         if (nodes == null || nodes.length == 0)
+</I>&gt;<i> return null;
+</I>&gt;<i>         AST root = nodes[0];
+</I>&gt;<i>         AST tail = null;
+</I>&gt;<i>         if (root != null) {
+</I>&gt;<i>             root.setFirstChild(null);	// don't leave
+</I>&gt;<i> any old pointers set
+</I>&gt;<i>         }
+</I>&gt;<i>         // link in children;
+</I>&gt;<i>         for (int i = 1; i &lt; nodes.length; i++) {
+</I>&gt;<i>             if (nodes[i] == null) continue;	//
+</I>&gt;<i> ignore null nodes
+</I>&gt;<i>             if (root == null) {
+</I>&gt;<i>                 // Set the root and set it up for a
+</I>&gt;<i> flat list
+</I>&gt;<i>                 root = tail = nodes[i];
+</I>&gt;<i>             }
+</I>&gt;<i>             else if (tail == null) {
+</I>&gt;<i>                 root.setFirstChild(nodes[i]);
+</I>&gt;<i>                 tail = root.getFirstChild();
+</I>&gt;<i>             }
+</I>&gt;<i>             else {
+</I>&gt;<i>                 tail.setNextSibling(nodes[i]);
+</I>&gt;<i>                 tail = tail.getNextSibling();
+</I>&gt;<i>             }
+</I>&gt;<i> ----&gt;            // Chase tail to last sibling
+</I>&gt;<i> ----&gt;            while (tail.getNextSibling() !=
+</I>&gt;<i> null) {
+</I>&gt;<i> ----&gt;                tail = tail.getNextSibling();
+</I>&gt;<i> ----&gt;            }
+</I>&gt;<i> // bites its own tail
+</I>&gt;<i>         }
+</I>&gt;<i>         return root;
+</I>&gt;<i>     }
+</I>&gt;<i> 
+</I>&gt;<i> &lt;quote who=&quot;Jan H. van der Ven&quot;&gt;
+</I>&gt;<i> &gt; Sorry my first response went out to you
+</I>&gt;<i> personally. Luckily the others did
+</I>&gt;<i> &gt; not get my newbie response.
+</I>&gt;<i> &gt; In the meantime i did some reading and coding and
+</I>&gt;<i> headstomping.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; My simplified statement parser now sometimes knows
+</I>&gt;<i> when it is dealing with
+</I>&gt;<i> &gt; a table or a column but when i have a common
+</I>&gt;<i> construction like select
+</I>&gt;<i> &gt; table.column from table my cpu rises to 100% even
+</I>&gt;<i> though my ambiguities on
+</I>&gt;<i> &gt; this (there are 2 that I think do not matter) are
+</I>&gt;<i> resolved.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; I have attached my .g. The trouble is with the
+</I>&gt;<i> dbObject I think.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; The statement that's giving me headaches is:
+</I>&gt;<i> SELECT a.b from C (see how
+</I>&gt;<i> &gt; far I am already ;-)
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Please advise.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; &lt;quote who=&quot;Peggy Fieland&quot;&gt;
+</I>&gt;<i> &gt;&gt; I use different token types in the parser, eg
+</I>&gt;<i> &gt;&gt;   SQL_E_COLUMN_NAME
+</I>&gt;<i> &gt;&gt;   SQL_E_TABLE_NAME
+</I>&gt;<i> &gt;&gt; usually in the case of column names, the actual
+</I>&gt;<i> name
+</I>&gt;<i> &gt;&gt; is a child of this node:
+</I>&gt;<i> &gt;&gt; Here is part of the column_name definition for
+</I>&gt;<i> one of
+</I>&gt;<i> &gt;&gt; the databases:
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;  o0:schema_name DOT!
+</I>&gt;<i> &gt;&gt;             t0:table_name DOT! c0:column_name_ref
+</I>&gt;<i> &gt;&gt;             { ## = #([SQL_E_COLUMN_NAME,
+</I>&gt;<i> &gt;&gt; &quot;COLUMN_NAME&quot;], #c0, #t0, #o0); }
+</I>&gt;<i> &gt;&gt; ...
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; --- &quot;Jan H. van der Ven&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">jhvdven at xs4all.nl</A>&gt;
+</I>&gt;<i> wrote:
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; Hi,
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; I am currently working on a SQL parser (we want
+</I>&gt;<i> to
+</I>&gt;<i> &gt;&gt;&gt; support all databases,
+</I>&gt;<i> &gt;&gt;&gt; but I am taking baby steps). I used the MS SQL
+</I>&gt;<i> &gt;&gt;&gt; select statement from
+</I>&gt;<i> &gt;&gt;&gt; Tomasz Jastrzebski that can be downloaded from
+</I>&gt;<i> &gt;&gt;&gt; antlr.org. It checks my
+</I>&gt;<i> &gt;&gt;&gt; statements ok, but that is not the only result I
+</I>&gt;<i> am
+</I>&gt;<i> &gt;&gt;&gt; looking for.
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; What I want is that after the parsing the tokens
+</I>&gt;<i> &gt;&gt;&gt; contain extra information
+</I>&gt;<i> &gt;&gt;&gt; about their syntactic nature. For instance, the
+</I>&gt;<i> &gt;&gt;&gt; parser will find out that
+</I>&gt;<i> &gt;&gt;&gt; a certain 'identifier' is actually a column and
+</I>&gt;<i> I
+</I>&gt;<i> &gt;&gt;&gt; would like that
+</I>&gt;<i> &gt;&gt;&gt; knowledge to become part of the token or the
+</I>&gt;<i> AST.
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; I am new to all of this, so if this is something
+</I>&gt;<i> you
+</I>&gt;<i> &gt;&gt;&gt; guys do all day
+</I>&gt;<i> &gt;&gt;&gt; please let me know.
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; If it is not, could you point me in the right
+</I>&gt;<i> &gt;&gt;&gt; direction.
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; Kind regards,
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; Jan van der Ven
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="014343.html">[antlr-interest] Upgrade a token/AST from inside the parser.
+</A></li>
+	<LI>Next message: <A HREF="014345.html">[antlr-interest] Upgrade a token/AST from inside the parser.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#14344">[ date ]</a>
+              <a href="thread.html#14344">[ thread ]</a>
+              <a href="subject.html#14344">[ subject ]</a>
+              <a href="author.html#14344">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

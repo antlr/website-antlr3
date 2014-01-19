@@ -1,0 +1,239 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] tokenVocab option leads to incomplete DFA in lexer
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20tokenVocab%20option%20leads%20to%20incomplete%20DFA%20in%20lexer&In-Reply-To=%3Cf4dc39b90801240357g3d57219v886a8b1cc0672d1c%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="025950.html">
+   <LINK REL="Next"  HREF="025947.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] tokenVocab option leads to incomplete DFA in lexer</H1>
+    <B>l33t</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20tokenVocab%20option%20leads%20to%20incomplete%20DFA%20in%20lexer&In-Reply-To=%3Cf4dc39b90801240357g3d57219v886a8b1cc0672d1c%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] tokenVocab option leads to incomplete DFA in lexer">discontinuum at gmail.com
+       </A><BR>
+    <I>Thu Jan 24 03:57:09 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="025950.html">[antlr-interest] [C Target]: comment processing
+</A></li>
+        <LI>Next message: <A HREF="025947.html">[antlr-interest] Anyone has a LISP ANTLR3 grammar and can	contribute it to Drools?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25946">[ date ]</a>
+              <a href="thread.html#25946">[ thread ]</a>
+              <a href="subject.html#25946">[ subject ]</a>
+              <a href="author.html#25946">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi.
+
+I'm rewriting an old ANTLR v2 grammar to ANTLR v3, but I've
+encountered problems while importing token vocabulary.
+Basically, what I need is to instruct lexer to generate a particular token
+type when it sees a certain literal. For instance: the lexer sees 'define
+' for which it creates a new token. I want it to create a token with a
+prescribed type, say
+101.
+
+The old ANTLR2 grammar named *T.g* contains this piece of code:
+
+options {
+  importVocab = TImport;
+}
+
+and the *TImportTokenTypes.txt* file contains lines like this:
+
+TDImport
+
+...
+DEFINE=&quot;define&quot;=101
+...
+
+Everything works flawlessly, in *TLexer.java* there is a literal.put(&quot;abort&quot;,
+101) construct and both *TLexTokenTypes.java* and *TTokenTypes.java*
+ contain int DEFINE = 101;
+
+
+
+Now, I have created an ANTLR3 grammar which looks like this
+
+grammar E;
+
+options {
+  output = AST;
+  ASTLabelType = CommonTree;
+}
+
+program : ( statement )+  ;
+statement
+  : 'define' ID '=' INT ';'
+  | 'declare' ID ';'
+  ;
+
+ID: ('a'..'z'|'A'..'Z')+;
+INT: '0'..'9'+;
+WS: ( '\n' | '\r' | ' ' | '\t' )+ { $channel = HIDDEN; };
+
+
+This simple grammar accepts sentences like define x = 10; declare
+aaa;.I generate lexer and parser, run a test
+on a *sample input*:
+define x=8;define y=12;
+declare z ;
+and everything works just fine. At least until I try to instruct ANTLR3 to
+assign a token type 101 to the literal 'define'. At first, I went for the
+obvious:
+
+grammar E;
+
+options {
+  tokenVocab = Basic;
+  output = AST;
+  ASTLabelType = CommonTree;
+}
+// The rest of the grammar is the same
+
+with *Basic.tokens* containing lines
+
+'define'=101
+...
+
+When I generated the grammar (java org.antlr.Tool -lib . E.g) everything
+seemed ok, but it was not.
+When I tried to test it on the same sample input I obtained the following
+error:
+line 1:0 required (...)+ loop did not match anything at input 'define'
+
+When I opened the *ELexer.java* to study it, there was no trace of the '
+define' literal at all.
+While in the first case (without the tokenVocab option) the lexer contained
+stuff like this:
+
+// $ANTLR start T7
+public final void mT7() throws RecognitionException {
+  try {
+    int _type = T7;
+    // E.g:3:4: ( 'define' )
+    // E.g:3:6: 'define'
+    {
+      match(&quot;define&quot;);
+    }
+    this.type = _type;
+  }
+  ...
+}
+// $ANTLR end T7
+
+
+and the *E.tokens* contained
+
+INT=5
+WS=6
+ID=4
+'declare'=10
+*'define'=7*
+'='=8
+';'=9
+
+which is correct, in the second case (with the tokenVocab option specified)
+the *E.tokens* file was correct, ie. 'define' had 101 assigned
+
+INT=103
+WS=104
+ID=102
+'declare'=107
+*'define'=101*
+'='=105
+';'=106
+
+but *ELexer.java* did not have a mT101()method. Separating lexer and
+parser grammar did not solve the problem.
+Neither did the following trick where *Basic.tokens* contained just
+
+DEFINE=101
+
+and the grammar used tokenVocab and tokens definition:
+
+grammar E;
+
+options {
+  output = AST;
+  ASTLabelType = CommonTree;
+  tokenVocab = Basic;
+}
+
+tokens {
+  AST_define='define';
+}
+
+This fails during grammar generation with this exception:
+
+ANTLR Parser Generator Version 3.0.1 (August 13, 2007) 1989-2007
+error(10): internal error: E.g : java.lang.NullPointerException
+org.antlr.tool.AssignTokenTypesWalker.aliasTokenIDsAndLiterals(
+AssignTokenTypesWalker.java:257)
+org.antlr.tool.AssignTokenTypesWalker.assignTypes(
+AssignTokenTypesWalker.java:211)
+org.antlr.tool.AssignTokenTypesWalker.grammar(AssignTokenTypesWalker.java
+:<i>375)
+</I>org.antlr.tool.Grammar.setGrammarContent(Grammar.java:547)
+org.antlr.tool.Grammar.&lt;init&gt;(Grammar.java:456)
+org.antlr.Tool.getGrammar(Tool.java:331)
+org.antlr.Tool.process(Tool.java:267)
+org.antlr.Tool.main(Tool.java:70)
+
+
+
+Is it possible that there is a bug in ANTLR 3.0.1 and the DFA is not
+generated properly? Or is it just me doing something wrong? Or is there
+another way to assign a particular token type to a ceratin literal?
+
+As for versions, I'm using *antlr-3.0.1*, *stringtemplate-3.1b1*.
+
+Erik Kratochvil
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20080124/be262dfa/attachment-0001.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20080124/be262dfa/attachment-0001.html</A> 
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="025950.html">[antlr-interest] [C Target]: comment processing
+</A></li>
+	<LI>Next message: <A HREF="025947.html">[antlr-interest] Anyone has a LISP ANTLR3 grammar and can	contribute it to Drools?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25946">[ date ]</a>
+              <a href="thread.html#25946">[ thread ]</a>
+              <a href="subject.html#25946">[ subject ]</a>
+              <a href="author.html#25946">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

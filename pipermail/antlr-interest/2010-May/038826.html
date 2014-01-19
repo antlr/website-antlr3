@@ -1,0 +1,228 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Solution for specialStateTransition exceeding	65k
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Solution%20for%20specialStateTransition%20exceeding%0A%0965k&In-Reply-To=%3CAANLkTilQxUj2FUGVsQjicch6tLFFoxgOiXTQj7nxzh7D%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="038822.html">
+   <LINK REL="Next"  HREF="038819.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Solution for specialStateTransition exceeding	65k</H1>
+    <B>Marcus Klimstra</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Solution%20for%20specialStateTransition%20exceeding%0A%0965k&In-Reply-To=%3CAANLkTilQxUj2FUGVsQjicch6tLFFoxgOiXTQj7nxzh7D%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Solution for specialStateTransition exceeding	65k">mgb.klimstra at gmail.com
+       </A><BR>
+    <I>Thu May 27 08:06:34 PDT 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="038822.html">[antlr-interest] Solution for specialStateTransition exceeding	65k
+</A></li>
+        <LI>Next message: <A HREF="038819.html">[antlr-interest] ANTLR3 C Target Runtime Error
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#38826">[ date ]</a>
+              <a href="thread.html#38826">[ thread ]</a>
+              <a href="subject.html#38826">[ subject ]</a>
+              <a href="author.html#38826">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Jim,
+
+Basically the language has string literals which can contain
+'placeholders'; expressions surrounded by angle brackets:
+
+stringLiteral
+    :    SQUOTE! stringPart* SQUOTE!
+    ;
+
+stringPart
+    :    STRCONT
+    |    LT! expr XGT!
+    ;
+
+expr can also be a string, so 'foo &lt;bar('baz')&gt; quux' would be a valid
+expression. The only exception is that '&gt; is not allowed within
+placeholders.
+
+The lexer handles this with a stack of 'modes'. All operators and
+keywords have a predicate that the current mode must be 'normal' (i.e.
+outside a string or in a placeholder). When inside a placeholder the
+'&gt;' character yields a XGT token instead of the normal GT, to prevent
+it from being cobbled up by a relational expression.
+
+PLUS         :    {inNormal}?=&gt;    '+'        ;
+MINUS        :    {inNormal}?=&gt;    '-'        ;
+MUL          :    {inNormal}?=&gt;    '*'        ;
+DIV          :    {inNormal}?=&gt;    '/'        ;
+MOD          :    {inNormal}?=&gt;    '%'        ;
+//etc
+NOT          :    {inNormal}?=&gt;    'not'      ;
+OR           :    {inNormal}?=&gt;    'or'       ;
+AND          :    {inNormal}?=&gt;    'and'      ;
+TRUE         :    {inNormal}?=&gt;    'true'     ;
+FALSE        :    {inNormal}?=&gt;    'false'    ;
+//etc
+
+SQUOTE
+    :    {inNormal}?=&gt;        '\''    { pushMode(MODE_STRING); }
+    |    {inString}?=&gt;        '\''    { popMode(); }
+    ;
+
+XGT :    {inPlaceholder}?=&gt;   '&gt;'     { popMode(); }
+    ;
+
+GT  :    {inNormal}?=&gt;        '&gt;'
+    ;
+
+LT  :                         '&lt;'     { if (inString) {
+pushMode(MODE_NORMAL); } }
+    ;
+
+STRCONT
+    :    {inString}?=&gt;        ('a'..'z'|'A'..'Z'|'0'..'9'|' '|'_')+
+    ;
+
+As you can see, at the moment strings can only contain /[a..z][0..9]
+_/i, since using (~('\''|'&lt;'))+ results in an OutOfMemoryError...
+
+inNormal, inString and inPlaceholder are booleans which are updated by
+pushMode and popMode:
+
+private void updateMode() {
+    Integer mode    = stack.peekFirst();
+    inNormal        = (stack.isEmpty() || mode == MODE_NORMAL);
+    inString        = (mode == MODE_STRING);
+    inPlaceholder   = (mode == MODE_NORMAL);
+}
+
+Although my current approach seems to work pretty well, I am ofcourse
+open for suggestions. I can't really wait for ANTLR v4 however :)
+
+Thanks,
+
+- Marcus
+
+On Thu, May 27, 2010 at 3:50 PM, Jim Idle &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">jimi at temporal-wave.com</A>&gt; wrote:
+&gt;<i> There is &#160;quite often a way to rejig the lexer to avoid the huge expansion, if you post your grammar, maybe we can help. I think that such issues will go away in v4 :-)
+</I>&gt;<i>
+</I>&gt;<i> Jim
+</I>&gt;<i>
+</I>&gt;&gt;<i> -----Original Message-----
+</I>&gt;&gt;<i> From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:antlr-interest-
+</I>&gt;&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">bounces at antlr.org</A>] On Behalf Of Marcus Klimstra
+</I>&gt;&gt;<i> Sent: Thursday, May 27, 2010 2:19 AM
+</I>&gt;&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;&gt;<i> Subject: [antlr-interest] Solution for specialStateTransition exceeding
+</I>&gt;&gt;<i> 65k
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Hi,
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I ran into the problem of the huge specialStateTransition bytecode size
+</I>&gt;&gt;<i> when using many gated semantic predicates in the lexer (in all my lexer
+</I>&gt;&gt;<i> rules actually). &#160;After a google search I found that this is a known
+</I>&gt;&gt;<i> issue to which there are some workarounds, but no real solutions. At
+</I>&gt;&gt;<i> first I used the workaround to manually add local variables for the
+</I>&gt;&gt;<i> outer-class references, but at some point even that no longer worked.
+</I>&gt;&gt;<i> Therefore I changed the Java code generator to create seperate methods
+</I>&gt;&gt;<i> for each switch-case. This works quite well for me, so I wanted to
+</I>&gt;&gt;<i> share it with the community. Note that I only tested this in the lexer,
+</I>&gt;&gt;<i> since my parser has no specialStateTransition-method at the moment. I
+</I>&gt;&gt;<i> also added annotations to suppress the useless warnings in the
+</I>&gt;&gt;<i> generated code. A diff-file with these changes is attached.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> - Marcus
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i>
+</I>-------------- next part --------------
+===========================================================
+
+stringLiteral
+    :    SQUOTE! stringPart* SQUOTE!
+    ;
+
+stringPart
+    :    STRCONT
+    |    LT! expr XGT!
+    ;
+
+===========================================================
+
+PLUS         :    {inNormal}?=&gt;    '+'        ;
+MINUS        :    {inNormal}?=&gt;    '-'        ;
+MUL          :    {inNormal}?=&gt;    '*'        ;
+DIV          :    {inNormal}?=&gt;    '/'        ;
+MOD          :    {inNormal}?=&gt;    '%'        ;
+//etc
+NOT          :    {inNormal}?=&gt;    'not'      ;
+OR           :    {inNormal}?=&gt;    'or'       ;
+AND          :    {inNormal}?=&gt;    'and'      ;
+TRUE         :    {inNormal}?=&gt;    'true'     ;
+FALSE        :    {inNormal}?=&gt;    'false'    ;
+//etc
+
+SQUOTE
+    :    {inNormal}?=&gt;        '\''    { pushMode(MODE_STRING); }
+    |    {inString}?=&gt;        '\''    { popMode(); }
+    ;
+
+XGT :    {inPlaceholder}?=&gt;   '&gt;'     { popMode(); }
+    ;
+    
+GT  :    {inNormal}?=&gt;        '&gt;'
+    ;
+    
+LT  :                         '&lt;'     { if (inString) { pushMode(MODE_NORMAL); } }
+    ;
+
+STRCONT
+    :    {inString}?=&gt;        ('a'..'z'|'A'..'Z'|'0'..'9'|' '|'_')+
+    ;
+
+===========================================================
+
+private void updateMode() {
+    Integer mode    = stack.peekFirst();
+    inNormal        = (stack.isEmpty() || mode == MODE_NORMAL);
+    inString        = (mode == MODE_STRING);
+    inPlaceholder   = (mode == MODE_NORMAL);
+}
+
+===========================================================
+</PRE>
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="038822.html">[antlr-interest] Solution for specialStateTransition exceeding	65k
+</A></li>
+	<LI>Next message: <A HREF="038819.html">[antlr-interest] ANTLR3 C Target Runtime Error
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#38826">[ date ]</a>
+              <a href="thread.html#38826">[ thread ]</a>
+              <a href="subject.html#38826">[ subject ]</a>
+              <a href="author.html#38826">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

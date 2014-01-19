@@ -1,0 +1,202 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Infinite loop after upgrade to 3.3
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Infinite%20loop%20after%20upgrade%20to%203.3&In-Reply-To=%3CCABnXfUgv2o%3DiwNONb-Z0mmUVkx_LZgzOxcpGfVwQUqfnPKTc%3DQ%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="042875.html">
+   <LINK REL="Next"  HREF="042883.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Infinite loop after upgrade to 3.3</H1>
+    <B>Ben Dotte</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Infinite%20loop%20after%20upgrade%20to%203.3&In-Reply-To=%3CCABnXfUgv2o%3DiwNONb-Z0mmUVkx_LZgzOxcpGfVwQUqfnPKTc%3DQ%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Infinite loop after upgrade to 3.3">ben.dotte at gmail.com
+       </A><BR>
+    <I>Tue Oct 11 14:11:55 PDT 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="042875.html">[antlr-interest] Infinite loop after upgrade to 3.3
+</A></li>
+        <LI>Next message: <A HREF="042883.html">[antlr-interest] Infinite loop after upgrade to 3.3
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#42876">[ date ]</a>
+              <a href="thread.html#42876">[ thread ]</a>
+              <a href="subject.html#42876">[ subject ]</a>
+              <a href="author.html#42876">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I don't see anything like that, but I wouldn't be surprised if the grammar
+could be improved. I pasted it below incase that is any help. Thanks for
+your suggestions.
+
+
+/*----------------------------------------------------------------
+ * PARSER RULES
+ *----------------------------------------------------------------*/
+
+search : orSearch
+;
+
+orSearch: andSearch (OR^ andSearch)*
+;
+
+andSearch
+:<i> (implicitAndSearch AND)=&gt; implicitAndSearch (AND^ implicitAndSearch)*
+</I>|<i> implicitAndSearch
+</I>;
+
+implicitAndSearch
+:<i> (f=fieldSearch -&gt; $f)
+</I>(f2=fieldSearch -&gt; ^(AND $implicitAndSearch $f2))*
+;
+
+fieldSearch
+:<i> (TEXT ':'^)? (subSearch | negationSearch)
+</I>;
+
+negationSearch
+:<i> ('-'^)? (quotedSearch | dateRangeSearch | comparisonSearch | idSearch |
+</I>wildcardSearch | term)
+;
+
+wildcardSearch
+:<i> TEXT_WITH_WILDCARD -&gt; ^(WILDCARD TEXT_WITH_WILDCARD)
+</I>;
+
+idSearch
+:<i> '#'^ TEXT
+</I>;
+
+comparisonSearch
+:<i> '&gt;'^ TEXT
+</I>|<i> '&lt;'^ TEXT
+</I>;
+
+quotedSearch
+:<i> QUOTED_STRING -&gt; ^(QUOTED QUOTED_STRING)
+</I>;
+
+dateRangeSearch
+:<i> '[' DATE TO DATE ']' -&gt; ^(DATE_BETWEEN DATE+)
+</I>|<i> '[' AFTER DATE ']' -&gt; ^(DATE_AFTER DATE)
+</I>|<i> '[' BEFORE DATE ']' -&gt; ^(DATE_BEFORE DATE)
+</I>;
+
+subSearch
+:<i> '('! orSearch ')'!
+</I>;
+
+term : SEPARATOR* (t=anyText -&gt; $t)
+(SEPARATOR t2=anyText -&gt; ^(AND $term $t2))*
+SEPARATOR*
+;
+
+anyText : (TO | AFTER | BEFORE | DATE | TEXT)
+;
+
+
+/*----------------------------------------------------------------
+ * LEXER RULES
+ *----------------------------------------------------------------*/
+
+AND : ('a'|'A')('n'|'N')('d'|'D') ;
+OR : ('o'|'O')('r'|'R') ;
+TO : ('t'|'T')('o'|'O') ;
+AFTER : ('a'|'A')('f'|'F')('t'|'T')('e'|'E')('r'|'R') ;
+BEFORE : ('b'|'B')('e'|'E')('f'|'F')('o'|'O')('r'|'R')('e'|'E') ;
+
+fragment NUM
+:<i> ('0'..'9') ;
+</I>DATE : ('0'..'1')? NUM '/' ('0'..'3')? NUM '/' NUM NUM NUM NUM ;
+
+fragment WHITESPACE_CHAR
+:<i> (' '|'\t'|'\n'|'\r') ;
+</I>fragment SEPARATOR_CHAR
+:<i> '_' ;
+</I>CONTROL_CHAR // not a fragment so . matches to these as well
+:<i> ('#'|'&gt;'|'&lt;'|'['|']'|'/'|'('|')'|':'|'*'|'&quot;') ;
+</I>
+QUOTED_STRING
+:<i> '&quot;' .+ '&quot;' { setText(getText().substring(1, getText().length() - 1)); } ;
+</I>// strip quotes from output
+
+WHITESPACE
+:<i> (WHITESPACE_CHAR)+ {$channel = HIDDEN;} ;
+</I>SEPARATOR
+:<i> (SEPARATOR_CHAR)+ ;
+</I>
+fragment TEXT_CHAR
+:<i> (WHITESPACE_CHAR|SEPARATOR_CHAR|CONTROL_CHAR) ;
+</I>TEXT : ~('-'|TEXT_CHAR) (~(TEXT_CHAR))* ;
+TEXT_WITH_WILDCARD
+:<i> (('*' TEXT)|(TEXT '*')) ;
+</I>
+
+On Tue, Oct 11, 2011 at 3:54 PM, Terence Parr &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">parrt at cs.usfca.edu</A>&gt; wrote:
+
+&gt;<i> maybe an empty lexer rule or one that could match nothign?
+</I>&gt;<i> Ter
+</I>&gt;<i> On Oct 11, 2011, at 1:16 PM, Ben Dotte wrote:
+</I>&gt;<i>
+</I>&gt;<i> &gt; Sorry, it has been a while since I worked with Antlr!
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; In that case, no I do not see any.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; On Tue, Oct 11, 2011 at 3:11 PM, Terence Parr &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">parrt at cs.usfca.edu</A>&gt;
+</I>&gt;<i> wrote:
+</I>&gt;<i> &gt; hi. semantic preds look like {..}? :)
+</I>&gt;<i> &gt; Ter
+</I>&gt;<i> &gt; On Oct 11, 2011, at 1:08 PM, Ben Dotte wrote:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; &gt; Yes, there are a couple rules with semantic predicates:
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; fieldSearch
+</I>&gt;<i> &gt; &gt; : (TEXT ':'^)? (subSearch | negationSearch)
+</I>&gt;<i> &gt; &gt; ;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; negationSearch
+</I>&gt;<i> &gt; &gt; : ('-'^)? (quotedSearch | dateRangeSearch | comparisonSearch | idSearch
+</I>&gt;<i> |
+</I>&gt;<i> &gt; &gt; wildcardSearch | term)
+</I>&gt;<i> &gt; &gt; ;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> &gt; Unsubscribe:
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i> &gt;
+</I>&gt;<i>
+</I>&gt;<i>
+</I></PRE>
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="042875.html">[antlr-interest] Infinite loop after upgrade to 3.3
+</A></li>
+	<LI>Next message: <A HREF="042883.html">[antlr-interest] Infinite loop after upgrade to 3.3
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#42876">[ date ]</a>
+              <a href="thread.html#42876">[ thread ]</a>
+              <a href="subject.html#42876">[ subject ]</a>
+              <a href="author.html#42876">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

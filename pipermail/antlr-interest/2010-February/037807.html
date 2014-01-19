@@ -1,0 +1,174 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Python How To Convert from Java
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Python%20How%20To%20Convert%20from%20Java&In-Reply-To=%3C4CBF225D-E792-47AD-A011-D34F20ACB04B%40gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="037795.html">
+   <LINK REL="Next"  HREF="037812.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Python How To Convert from Java</H1>
+    <B>Bob Adolf</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Python%20How%20To%20Convert%20from%20Java&In-Reply-To=%3C4CBF225D-E792-47AD-A011-D34F20ACB04B%40gmail.com%3E"
+       TITLE="[antlr-interest] Python How To Convert from Java">rdadolf at gmail.com
+       </A><BR>
+    <I>Fri Feb 26 12:04:18 PST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="037795.html">[antlr-interest] Python How To Convert from Java
+</A></li>
+        <LI>Next message: <A HREF="037812.html">[antlr-interest] Python How To Convert from Java
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37807">[ date ]</a>
+              <a href="thread.html#37807">[ thread ]</a>
+              <a href="subject.html#37807">[ subject ]</a>
+              <a href="author.html#37807">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Remy,
+
+I think you'll be surprised at how similar the python and java  
+versions actually are. You made things a little more difficult for  
+yourself than you needed. I've put some comments in-line with your  
+original python code and finished off the end.
+
+&gt;<i> import antlr3
+</I>&gt;<i> import antlr3.tree
+</I>&gt;<i> from sqltestLexer import sqltestLexer
+</I>&gt;<i> from sqltestParser import sqltestParser
+</I>&gt;<i> #import sqltest ?                                    won't import
+</I>The grammar sqltest.g actually doesn't produce an sqltest file or  
+class, so you just need the first two.
+
+&gt;<i> import sys
+</I>&gt;<i> #from sqltest import sqltest
+</I>&gt;<i> #sys.argv[1]
+</I>&gt;<i> char_stream = antlr3.ANTLRStringStream(&quot;SELECT * FROM BOOKS;&quot;)
+</I>Your grammar actually doesn't parse this phrase, but I assume you just  
+forgot to replace the place-holder string with something else. I used  
+this instead:
+char_stream = antlr3.ANTLRStringStream(&quot;CREATE TABLE foo ( bar int ) ;&quot;)
+which (not knowing SQL) seems to fit your grammar at least.
+
+It seems like you tried using an input file first. I'm assuming that  
+you want something like your original java file that selects between a  
+file or a string. Well, it looks very much like the java version:
+if( len(sys.argv)&gt;1 ):
+   char_stream = antlr3.ANTLRFileStream(sys.argv[1])
+else:
+   char_stream = antlr3.ANTLRStringStream(raw_input(&quot;SQL&gt;&quot;))
+
+&gt;<i> lexer = sqltestLexer(char_stream)
+</I>&gt;<i> tokens = antlr3.CommonTokenStream(lexer)
+</I>&gt;<i> parser = sqltestParser(tokens)
+</I>&gt;<i>
+</I>&gt;<i> r = parser.createtablestmt_return()
+</I>You'll actually want to call the function itself. The types are  
+handled automatically, so you can focus on the work that's actually  
+being done. The function parser.createtablestmt (which you can look at  
+directly in sqltestParser.py) is ANTLR's translation of your root- 
+level grammar rule. You can walk through the logic in the python  
+source as it tries to match against input tokens and recursively  
+invokes the other rules.
+r = parser.createtablestmt()
+
+Interestingly enough, this is where your java version stops. You just  
+print out the tree element.
+# System.out.println(&quot;tablename =&quot;+ 
+((Tree)r.tree).getChild(2).toString());
+# System.out.println(&quot;tree=&quot;+((Tree)r.tree).toStringTree());
+
+You can do the same thing in python!
+print &quot;tablename = &quot; + r.tree.children[2].toString()
+print &quot;tree = &quot; + r.tree.toStringTree()
+
+
+&gt;<i>
+</I>&gt;<i> # this is the root of the AST
+</I>&gt;<i> root = r.tree
+</I>&gt;<i>
+</I>&gt;<i> nodes = antlr3.tree.CommonTreeNodeStream(root)
+</I>&gt;<i> nodes.setTokenStream(tokens)
+</I>&gt;<i>
+</I>&gt;<i> #walker = sqltest(nodes)
+</I>&gt;<i> #  STUCK!
+</I>
+As for the rest of this, it looks like you started trying to implement  
+a tree walker. If you're serious about munging the AST, you'll  
+probably want to do this later, but for simple things like just  
+dumping the tree, you don't need to. Likewise, if you're just doing a  
+simple extraction of SQL snippets or some easy translation, you can do  
+it directly by inserting actions into your parser at the appropriate  
+place.
+
+If you do decide that a tree walker is what you need, then you'll need  
+to create a separate grammar for that (and this is why you got stuck,  
+there was nothing you could invoke because you hadn't written a tree  
+parser). You should probably run through the python examples (<A HREF="http://www.antlr.org/download/examples-v3.tar.gz">http://www.antlr.org/download/examples-v3.tar.gz</A> 
+) or the ANTLR book if you're going to do that.
+
+Hope this helps.
+
+
+   -Bob
+
+
+
+For clarity, here's the whole file I used (driver.py):
+import antlr3
+from sqltestLexer import sqltestLexer
+from sqltestParser import sqltestParser
+import sys
+
+if( len(sys.argv)&gt;1 ):
+   char_stream = antlr3.ANTLRFileStream(sys.argv[1])
+else:
+   char_stream = antlr3.ANTLRStringStream(raw_input(&quot;SQL&gt;&quot;))
+lexer = sqltestLexer(char_stream)
+tokens = antlr3.CommonTokenStream(lexer)
+parser = sqltestParser(tokens)
+
+r = parser.createtablestmt()
+
+# System.out.println(&quot;tablename =&quot;+ 
+((Tree)r.tree).getChild(2).toString());
+# System.out.println(&quot;tree=&quot;+((Tree)r.tree).toStringTree());
+print &quot;tablename = &quot; + r.tree.children[2].toString()
+print &quot;tree = &quot; + r.tree.toStringTree()
+
+And the output:
+tablename = foo
+tree = CREATE TABLE foo ( bar int )
+
+</PRE>
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="037795.html">[antlr-interest] Python How To Convert from Java
+</A></li>
+	<LI>Next message: <A HREF="037812.html">[antlr-interest] Python How To Convert from Java
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37807">[ date ]</a>
+              <a href="thread.html#37807">[ thread ]</a>
+              <a href="subject.html#37807">[ subject ]</a>
+              <a href="author.html#37807">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

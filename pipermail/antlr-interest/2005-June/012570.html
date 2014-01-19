@@ -1,0 +1,181 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Help with pesky Lexer determinism
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Help%20with%20pesky%20Lexer%20determinism&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="012634.html">
+   <LINK REL="Next"  HREF="012571.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Help with pesky Lexer determinism</H1>
+    <B>Mark Bednarczyk</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Help%20with%20pesky%20Lexer%20determinism&In-Reply-To="
+       TITLE="[antlr-interest] Help with pesky Lexer determinism">voytechs at yahoo.com
+       </A><BR>
+    <I>Mon Jun  6 14:32:52 PDT 2005</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="012634.html">[antlr-interest] Q re use of Semantic Predicates
+</A></li>
+        <LI>Next message: <A HREF="012571.html">[antlr-interest] Help with pesky Lexer determinism
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#12570">[ date ]</a>
+              <a href="thread.html#12570">[ thread ]</a>
+              <a href="subject.html#12570">[ subject ]</a>
+              <a href="author.html#12570">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I'm re writing my custom language NPL to ANTLR. I've inherited
+all of the Java 1.3 grammar (java.g) and added my own custom
+statements. All the grammar is Java compatible so this was
+wonderful. Now I'm adding some special low level LITERALs and
+constant data types and adding those to the existing grammar is
+no trivial task.
+
+I'm currently adding IP address and I keep getting the following
+warning, although it works. Just can't get the definition clean
+enough to get rid of the warning. Any ideas?
+
+    [antlr] ANTLR Parser Generator   Version 2.7.5 (20050128)
+1989-2005 jGuru.com
+    [antlr]
+/home/markbe/prjs/jnetutils-0.1.0/src/antlr/npl/npl.g:861:
+warning:lexical nondeterminism between alts 2 and 3 of block
+upon
+    [antlr]
+/home/markbe/prjs/jnetutils-0.1.0/src/antlr/npl/npl.g:861:
+k==1:'1'..'9'
+    [antlr]
+/home/markbe/prjs/jnetutils-0.1.0/src/antlr/npl/npl.g:861:
+k==2:'.','0'..'9'
+    [antlr]
+/home/markbe/prjs/jnetutils-0.1.0/src/antlr/npl/npl.g:861:
+k==3:'.','0'..'9'
+    [antlr]
+/home/markbe/prjs/jnetutils-0.1.0/src/antlr/npl/npl.g:861:
+k==4:'.','0'..'9'
+
+I used a semantic predicate to differentiate the fact that IP
+address will have a prefix of NUM . NUM . meaning more than one
+period as opposed to some float or double, but its not doing the
+job I expect it to.
+
+Here is the grammar excerpt. The top portion of NUM_INT rule is
+exact copy of the one in java.g I downloaded form antlr.org
+website. The bottom block that starts with NUM_3DIGITS (a little
+rule to to help out since IP can only have 3 digit number
+between periods) is what I added to the overall rule:
+
+// a numeric literal
+NUM_INT
+    {boolean isDecimal=false; Token t=null;}
+    :   '.' {_ttype = DOT;}
+            (   ('0'..'9')+ (EXPONENT)? (f1:FLOAT_SUFFIX
+{t=f1;})?
+                {
+                if (t != null &amp;&amp;
+t.getText().toUpperCase().indexOf('F')&gt;=0) {
+                    _ttype = NUM_FLOAT;
+                }
+                else {
+                    _ttype = NUM_DOUBLE; // assume double
+                }
+                }
+            )?
+
+
+    |   (   '0' {isDecimal = true;} // special case for just '0'
+            (   ('x'|'X')
+                (                                           //
+hex
+                    // the 'e'|'E' and float suffix stuff look
+                    // like hex digits, hence the (...)+ doesn't
+                    // know when to stop: ambig.  ANTLR resolves
+                    // it correctly by matching immediately.  It
+                    // is therefor ok to hush warning.
+                    options {
+                        warnWhenFollowAmbig=false;
+                    }
+                :   HEX_DIGIT
+                )+
+
+            |   //float or double with leading zero
+                (('0'..'9')+ ('.'|EXPONENT|FLOAT_SUFFIX)) =&gt;
+('0'..'9')+
+
+            |   ('0'..'7')+                                 //
+octal
+            )?
+        |   ('1'..'9') ('0'..'9')*  {isDecimal=true;}       //
+non-zero decimal
+        )
+        (   ('l'|'L') { _ttype = NUM_LONG; }
+
+        // only check to see if it's a float if looks like
+decimal so far
+        |   {isDecimal}?
+            (   '.' ('0'..'9')* (EXPONENT)? (f2:FLOAT_SUFFIX
+{t=f2;})?
+            |   EXPONENT (f3:FLOAT_SUFFIX {t=f3;})?
+            |   f4:FLOAT_SUFFIX {t=f4;}
+            )
+            {
+            if (t != null &amp;&amp; t.getText().toUpperCase()
+.indexOf('F') &gt;= 0) {
+                _ttype = NUM_FLOAT;
+            }
+            else {
+                _ttype = NUM_DOUBLE; // assume double
+            }
+            }
+        )?
+    |   (NUM_3DIGIT '.' NUM_3DIGIT '.' NUM_3DIGIT '.'
+NUM_3DIGIT)=&gt;
+        (
+            NUM_3DIGIT '.' NUM_3DIGIT '.' NUM_3DIGIT '.'
+NUM_3DIGIT
+            { _ttype = IP_V4; }
+        )
+    ;
+
+protected NUM_3DIGIT: ('0'..'9') (('0'..'9') ('0'..'9')?)?
+    ;
+
+
+Any ideas from more experienced ANTLR user?
+
+
+
+</PRE>
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="012634.html">[antlr-interest] Q re use of Semantic Predicates
+</A></li>
+	<LI>Next message: <A HREF="012571.html">[antlr-interest] Help with pesky Lexer determinism
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#12570">[ date ]</a>
+              <a href="thread.html#12570">[ thread ]</a>
+              <a href="subject.html#12570">[ subject ]</a>
+              <a href="author.html#12570">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

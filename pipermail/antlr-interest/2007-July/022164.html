@@ -1,0 +1,213 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Trouble with syntactic predicates for	parenthesized expressions
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Trouble%20with%20syntactic%20predicates%20for%0A%09parenthesized%20expressions&In-Reply-To=%3C468E9391.1040708%40comp.cz%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="022163.html">
+   <LINK REL="Next"  HREF="022165.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Trouble with syntactic predicates for	parenthesized expressions</H1>
+    <B>Vaclav Barta</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Trouble%20with%20syntactic%20predicates%20for%0A%09parenthesized%20expressions&In-Reply-To=%3C468E9391.1040708%40comp.cz%3E"
+       TITLE="[antlr-interest] Trouble with syntactic predicates for	parenthesized expressions">vbar at comp.cz
+       </A><BR>
+    <I>Fri Jul  6 12:10:09 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="022163.html">[antlr-interest] Referring tree nodes in rules
+</A></li>
+        <LI>Next message: <A HREF="022165.html">[antlr-interest] Trouble parsing a language where '{' has too many	meanings
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#22164">[ date ]</a>
+              <a href="thread.html#22164">[ thread ]</a>
+              <a href="subject.html#22164">[ subject ]</a>
+              <a href="author.html#22164">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+continuing with my SQL experiments, should the grammar below (again, 
+ported from 
+<A HREF="http://www.antlr.org/grammar/1062280680642/MS_SQL_SELECT.html">http://www.antlr.org/grammar/1062280680642/MS_SQL_SELECT.html</A> and 
+simplified to demonstrate a point) parse &quot;(a = b)&quot; (without the quotes, 
+obviously)?
+
+grammar Detail;
+
+options
+{
+	language=CSharp;
+}
+
+@lexer::namespace
+{
+	Detail
+}
+
+@parser::namespace
+{
+	Detail
+}
+
+@rulecatch {
+}
+
+searchCondition:
+	subSearchCondition ( (AND | OR) subSearchCondition )*
+	;
+
+subSearchCondition:
+	(LPAREN searchCondition RPAREN) =&gt;
+		LPAREN searchCondition RPAREN
+	| predicate
+	;
+
+predicate:
+	expression comparisonOperator expression
+	;
+
+expression:
+	subExpression (binaryOperator subExpression)*
+  	;
+
+subExpression:
+	( unaryOperator )? (
+		LPAREN expression RPAREN
+		| dbObject
+		| caseFunction
+	)
+	;
+
+caseFunction:
+	CASE ( expression ( WHEN expression THEN expression )+
+         | ( WHEN searchCondition THEN expression )+ )
+		( ELSE expression )? END
+	;
+
+dbObject:
+	identifier
+	( DOT identifier )*
+	;
+
+identifier:
+	NonQuotedIdentifier
+	;
+
+unaryOperator:
+	PLUS
+	| MINUS
+	| TILDE
+	;
+
+binaryOperator:
+     PLUS | MINUS | STAR | DIVIDE | MOD
+     ;
+
+comparisonOperator:
+	ASSIGNEQUAL | NOTEQUAL1 | NOTEQUAL2 | LESSTHANOREQUALTO1
+	| LESSTHANOREQUALTO2 | LESSTHAN | GREATERTHANOREQUALTO1
+	| GREATERTHANOREQUALTO2 | GREATERTHAN
+	;
+
+AND : 'and' ;
+CASE : 'case' ;
+ELSE : 'else' ;
+END : 'end' ;
+NOT : 'not' ;
+OR : 'or' ;
+THEN : 'then' ;
+WHEN : 'when' ;
+
+DOT : '.' ;
+COMMA : ',' ;
+LPAREN : '(' ;
+RPAREN : ')' ;
+
+ASSIGNEQUAL : '=' ;
+NOTEQUAL1 : '&lt;&gt;' ;
+NOTEQUAL2 : '!=' ;
+LESSTHANOREQUALTO1 : '&lt;=' ;
+LESSTHANOREQUALTO2 : '!&gt;' ;
+LESSTHAN : '&lt;' ;
+GREATERTHANOREQUALTO1 : '&gt;=' ;
+GREATERTHANOREQUALTO2 : '!&lt;' ;
+GREATERTHAN : '&gt;' ;
+
+DIVIDE : '/' ;
+PLUS : '+' ;
+MINUS : '-' ;
+STAR : '*' ;
+MOD : '%' ;
+
+TILDE : '~' ;
+
+fragment
+Letter : 'a'..'z' | '_' ;
+
+fragment
+Digit : '0'..'9' ;
+
+Whitespace : ( '\t' | ' ' | '\r' | '\n' )+ 	{ $channel = HIDDEN; }
+	;
+
+NonQuotedIdentifier : Letter (Letter | Digit)* ;
+
+I think it should - but ANTLR disagrees... :-( antlrworks-1.0.2 
+generates the C# lexer &amp; parser without warnings, the generated files 
+compile cleanly, but
+
+             DetailLexer lexer = new DetailLexer(
+                 new ANTLRStringStream(text));
+             DetailParser parser = new DetailParser(new 	
+		CommonTokenStream(lexer));
+             parser.searchCondition();
+
+fails with
+
+NoViableAltException(21!=[25:1: subSearchCondition : ( ( LPAREN 
+searchCondition RPAREN )=&gt; LPAREN searchCondition RPAREN | predicate );])
+
+It isn't an isolated problem. It happens in lots of SQL expression 
+grammar variants I've tried to write, appearing and going away after the 
+most random (to me) changes - for example removing the caseFunction 
+alternative from subExpression in the grammar above makes &quot;(a = b)&quot; 
+parse OK, using an extra rule instead of LPAREN expr RPAREN generally 
+improves results etc. Is it a bug in ANTLR?
+
+	Bye
+		Vasek
+
+
+</PRE>
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="022163.html">[antlr-interest] Referring tree nodes in rules
+</A></li>
+	<LI>Next message: <A HREF="022165.html">[antlr-interest] Trouble parsing a language where '{' has too many	meanings
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#22164">[ date ]</a>
+              <a href="thread.html#22164">[ thread ]</a>
+              <a href="subject.html#22164">[ subject ]</a>
+              <a href="author.html#22164">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

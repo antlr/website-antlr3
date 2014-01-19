@@ -1,0 +1,154 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] controlling tree sequence in a parser
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20controlling%20tree%20sequence%20in%20a%20parser&In-Reply-To=OF6CD77E54.FEAFB179-ONC1257150.0024AE92-C1257150.0026BDA3%40Axi.be">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="016009.html">
+   <LINK REL="Next"  HREF="015997.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] controlling tree sequence in a parser</H1>
+    <B>Bryan Ewbank</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20controlling%20tree%20sequence%20in%20a%20parser&In-Reply-To=OF6CD77E54.FEAFB179-ONC1257150.0024AE92-C1257150.0026BDA3%40Axi.be"
+       TITLE="[antlr-interest] controlling tree sequence in a parser">ewbank at gmail.com
+       </A><BR>
+    <I>Fri Apr 14 11:05:37 PDT 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="016009.html">[antlr-interest] Re: ANTLR Works and compiler settings...
+</A></li>
+        <LI>Next message: <A HREF="015997.html">[antlr-interest] controlling tree sequence in a parser
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#15978">[ date ]</a>
+              <a href="thread.html#15978">[ thread ]</a>
+              <a href="subject.html#15978">[ subject ]</a>
+              <a href="author.html#15978">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Oh, that's what you're asking; thanks for the clarification...
+
+To rearrange the children of a node, you must build the node directly
+- ANTLR's default is that everything is linked as siblings from
+left-to-right, unless you use the &quot;^&quot; marker.  Right now, you must be
+building the tree for the &lt;select_statement&gt;... something like this, I
+hope:
+
+    // use the &quot;select&quot; as the root node for the tree; discard &quot;into&quot;
+and &quot;from&quot; keywords
+    select_expression :
+        &quot;select&quot;^ select_list
+        &quot;into&quot;!   variable_list
+        &quot;from&quot;!   table_reference_list
+        ;
+
+Or, perhaps, this (I tend toward this style):
+
+    // use an artificial node for the root node, discard all keywords
+    select_expression :
+        &quot;select&quot;! select_list
+        &quot;into&quot;!   variable_list
+        &quot;from&quot;!   table_reference_list
+        {
+            ## = #( #[SELECT_EXPR,&quot;SELECT_EXPR&quot;], ##);
+        }
+        ;
+
+To build the tree as you want it (with the table_reference_list item
+first, you have to be more explicit:
+
+    // create an artificial node for the expression, discard the unnecessary
+    // keywords the items are placed in the generated tree in the order
+    // directed by the ## statement, so change it as necessary.
+    select_expression :
+        &quot;select&quot;! slist:select_list
+        &quot;into&quot;!   vlist:variable_list
+        &quot;from&quot;!   tlist:table_reference_list
+        {
+            ## = #( #[SELECT_EXPR,&quot;SELECT_EXPR&quot;],
+                    #tlist,
+                    #slist,
+                    #vlist);
+        }
+        ;
+
+Caveat/Disclaimer:  The above discussion assumes that select_list,
+variable_list, and table_reference_list all produce a single tree
+rather than a list of trees.  I assumed this from the diagrams that
+you drew, and it's really the only way to produce a regular tree from
+the description of the language I assumed based on what's here.
+
+Hope this helps!
+- Bryan Ewbank
+
+On 4/14/06, Michiel Vermandel &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">Michiel_Vermandel at axi.be</A>&gt; wrote:
+&gt;<i> Consider this statement:
+</I>&gt;<i>
+</I>&gt;<i>   SELECT dummy
+</I>&gt;<i>   FROM     dual
+</I>&gt;<i>
+</I>&gt;<i> With my current grammar I get an AST tree like this:
+</I>&gt;<i>
+</I>&gt;<i>    start_rule [4]
+</I>&gt;<i>        select_statement [14]
+</I>&gt;<i>            select_list [15]
+</I>&gt;<i>                column_reference [50]
+</I>&gt;<i>                    dummy[299]
+</I>&gt;<i>            table_list [16]
+</I>&gt;<i>                table_reference [46]
+</I>&gt;<i>                    dual [299]
+</I>
+&gt;<i> ... I wanted to change the AST tree to the following and in this way have the
+</I>&gt;<i> table reference registered before the column:
+</I>&gt;<i>
+</I>&gt;<i>   start_rule [4]
+</I>&gt;<i>       select_statement [14]
+</I>&gt;<i>           table_list [16]
+</I>&gt;<i>               table_reference [46]
+</I>&gt;<i>                   dual [299]
+</I>&gt;<i>           select_list [15]
+</I>&gt;<i>               column_reference [50]
+</I>&gt;<i>                   dummy[299]
+</I>&gt;<i>
+</I>&gt;<i> So, how can I move up the result of the table_list subrule?
+</I>
+&gt;<i>  &gt; select_expression
+</I>&gt;<i>  &gt;             :
+</I>&gt;<i>  &gt;          &quot;select&quot;  select_list
+</I>&gt;<i>  &gt;          &quot;into&quot;       variable_list
+</I>&gt;<i>  &gt;          &quot;from&quot;     table_reference_list^   //  &lt;-- not  accepted
+</I>&gt;<i>  &gt;             ;
+</I></PRE>
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="016009.html">[antlr-interest] Re: ANTLR Works and compiler settings...
+</A></li>
+	<LI>Next message: <A HREF="015997.html">[antlr-interest] controlling tree sequence in a parser
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#15978">[ date ]</a>
+              <a href="thread.html#15978">[ thread ]</a>
+              <a href="subject.html#15978">[ subject ]</a>
+              <a href="author.html#15978">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

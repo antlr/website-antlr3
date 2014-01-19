@@ -1,0 +1,300 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] MismatchedTokenException encountered when moving	from literal to lexical token
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20MismatchedTokenException%20encountered%20when%20moving%0A%09from%20literal%20to%20lexical%20token&In-Reply-To=%3CBAY117-F22632F44B08316F43335F1F8BC0%40phx.gbl%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="023745.html">
+   <LINK REL="Next"  HREF="023741.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] MismatchedTokenException encountered when moving	from literal to lexical token</H1>
+    <B>Randall Barnhart</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20MismatchedTokenException%20encountered%20when%20moving%0A%09from%20literal%20to%20lexical%20token&In-Reply-To=%3CBAY117-F22632F44B08316F43335F1F8BC0%40phx.gbl%3E"
+       TITLE="[antlr-interest] MismatchedTokenException encountered when moving	from literal to lexical token">randall_barnhart at hotmail.com
+       </A><BR>
+    <I>Fri Sep 14 12:36:32 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="023745.html">[antlr-interest] Adding antlr to Visual Studio C#
+</A></li>
+        <LI>Next message: <A HREF="023741.html">[antlr-interest] MismatchedTokenException encountered when	moving from literal to lexical token
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#23740">[ date ]</a>
+              <a href="thread.html#23740">[ thread ]</a>
+              <a href="subject.html#23740">[ subject ]</a>
+              <a href="author.html#23740">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hey ANTLR Folks,
+
+I am trying to generate a grammar for a Prolog like language, and I am 
+running into a problem when I try to provide more than 1 token alternative 
+for a comma separated list.  I've provided the full grammar below for 
+reference, but here is the rule that has the problem:
+
+When I changed -
+body
+	: subStatement (','^ subStatement)*
+	;
+
+to the following -
+body
+	: subStatement (CONJ^ subStatement)*
+	;
+
+where -
+CONJ : 'AND' | 'and' | ',' ;
+
+I now get a MismatchedTokenException when I use a ',' whereas before it was 
+recognizing it just fine.  Specifically:
+
+recoverFromMismatchedToken
+BR.recoverFromMismatchedToken
+line 2:24 mismatched input ',' expecting ENDSTMT
+
+Using the following input to match on the &quot;clause&quot; rule:
+pred1(cp1, np1, dp1) :-
+	cp1 := &quot;predicateCode1&quot;,
+	np1 := 2 * 3 / 10,
+	dp1 := 12/31/2007 12:00 AM
+	;
+
+Also, I don't get the error if I use 'AND' or 'and'.  Ultimately I think it 
+is a conflict with some of the other rules that use ',' to signifiy a list 
+of expressions, because when I change those to different symbols then I 
+don't get this error.
+
+I think I should maybe use a syntactic or semantic predicate, but I'm not 
+real sure on how to go about doing this.  Does anyone have any specific 
+solutions, ideas, or advice that might lead me in the right direction?
+
+Thanks,
+Randall Barnhart
+
+
+
+grammar Test;
+
+options {
+	output=AST;
+}
+
+tokens {
+	RULE;
+	HEAD;
+	BODY;
+	STMTCONJ;
+	STMTDISJ;
+	FACT;
+	VARLIST;
+	LITLIST;
+	NEGATE;
+	EXPR;
+	VARDECL;
+	VARASSIGN;
+	PREDCALL;
+	EXPRLIST;
+}
+
+clause
+	: rule
+	| fact
+	;
+
+rule
+	: head ':-' body ENDSTMT
+	  -&gt; ^(RULE head ^(BODY body))
+	;
+
+head
+	: predicateName '(' varList ')'
+	  -&gt; ^(HEAD predicateName varList)
+	;
+
+body
+	: subStatement (CONJ^ subStatement)*
+	;
+
+fact
+	: predicateName '(' literalList ')' ENDSTMT
+	  -&gt; ^(FACT predicateName literalList)
+	;
+
+predicateName
+	: ID
+	;
+
+varDecl
+	: type ID
+	  -&gt; ^(VARDECL type ID)
+	;
+
+varAssign
+	: ID ':=' expr
+	  -&gt; ^(VARASSIGN ID expr)
+	;
+
+varList
+	: ID (',' ID)* -&gt; ^(VARLIST ID+)
+	;
+
+type
+	: 'Code'
+	| 'Numeric'
+	| 'Date'
+	;
+
+predicateInvocation
+	: predicateName '(' exprList ')'
+	  -&gt; ^(PREDCALL predicateName exprList)
+	;
+
+subStatement
+	: expr -&gt; ^(EXPR expr)
+	| varDecl
+	| varAssign
+	| predicateInvocation
+	;
+
+exprList
+	: expr (',' expr)*
+	  -&gt; ^(EXPRLIST expr+)
+	;
+
+expr
+	: boolAndExpr (OR^ boolAndExpr)*
+	;
+
+boolAndExpr
+	: equalityExpr (AND^ equalityExpr)*
+	;
+
+equalityExpr
+	: relationalExpr ((EQUALS|NOTEQUALS)^ relationalExpr)*
+	;
+
+relationalExpr
+	: addExpr ((LT|LTEQ|GT|GTEQ)^ addExpr)*
+	;
+
+addExpr
+	: multExpr ((PLUS|MINUS)^ multExpr)*
+	;
+
+multExpr
+	: powExpr ((MULT|DIV|MOD)^ powExpr)*
+	;
+
+powExpr
+	: unaryExpr (POW^ unaryExpr)*
+	;
+
+unaryExpr
+	: primaryExpr
+	| NOT^ primaryExpr
+	| MINUS primaryExpr -&gt; ^(NEGATE primaryExpr)
+	;
+
+primaryExpr
+	: '('! expr ')'!
+	| literal
+	;
+
+literalList
+	: literal (',' literal)*
+	  -&gt; ^(LITLIST literal+)
+	;
+
+literal
+	: BOOLEAN
+	| CODE
+	| NUMERIC
+	| DATE
+	| ID
+	;
+
+OR	: '||';
+AND	: '&amp;&amp;';
+EQUALS	: '==' ;
+NOTEQUALS
+	: '!=' ;
+LT	: '&lt;' ;
+LTEQ	: '&lt;=' ;
+GT	: '&gt;' ;
+GTEQ	: '&gt;=' ;
+PLUS	: '+' ;
+MINUS	: '-' ;
+MULT	: '*' ;
+DIV	: '/' ;
+MOD	: '%' ;
+POW	: '^' ;
+NOT	: '!' | 'NOT' | 'not';
+
+BOOLEAN : 'true' | 'false' ;
+CODE	: '\&quot;' ('a'..'z'|'A'..'Z'|'_') ('a'..'z'|'A'..'Z'|'0'..'9'|'_')* '\&quot;' ;
+NUMERIC	: ('0'..'9')+ ('.' ('0'..'9')+)? ;
+DATE	: MO1 MO2 '/' D1 D2 '/' YEAR ' ' H1 H2 ':' MI1 MI2 ' ' ('AM'|'PM') ;
+
+fragment
+MO1	: ('0'..'1') ;
+fragment
+MO2	: ('0'..'9') ;
+fragment
+D1	: ('0'..'3') ;
+fragment
+D2	: ('0'..'9') ;
+fragment
+YEAR	: ('0'..'9') ('0'..'9') ('0'..'9') ('0'..'9') ;
+fragment
+H1	: ('0'..'1') ;
+fragment
+H2	: ('0'..'9') ;
+fragment
+MI1	: ('0'..'5') ;
+fragment
+MI2	: ('0'..'9') ;
+
+ENDSTMT	: ';' ;
+CONJ	: 'AND' | 'and' | ',';
+DISJ	: 'OR' | 'or';
+
+
+ID	: ('a'..'z'|'A'..'Z'|'_') ('a'..'z'|'A'..'Z'|'0'..'9'|'_')* ;
+
+WS	: (' '|'\r'|'\t'|'\u000C'|'\n') {$channel=HIDDEN;} ;
+
+_________________________________________________________________
+Kick back and relax with hot games and cool activities at the Messenger 
+Caf&#233;. <A HREF="http://www.cafemessenger.com?ocid=TXT_TAGHM_SeptHMtagline1">http://www.cafemessenger.com?ocid=TXT_TAGHM_SeptHMtagline1</A>
+
+</PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="023745.html">[antlr-interest] Adding antlr to Visual Studio C#
+</A></li>
+	<LI>Next message: <A HREF="023741.html">[antlr-interest] MismatchedTokenException encountered when	moving from literal to lexical token
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#23740">[ date ]</a>
+              <a href="thread.html#23740">[ thread ]</a>
+              <a href="subject.html#23740">[ subject ]</a>
+              <a href="author.html#23740">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

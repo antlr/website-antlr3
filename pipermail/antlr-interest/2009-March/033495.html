@@ -1,0 +1,398 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Small example of local variable semantic analysis	for an IDE
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Small%20example%20of%20local%20variable%20semantic%20analysis%0A%09for%20an%20IDE&In-Reply-To=%3C86403CA0939415448BCCB83855EFE09AA67B9B%40Bloodymary.ironwillgames.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="033523.html">
+   <LINK REL="Next"  HREF="033499.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Small example of local variable semantic analysis	for an IDE</H1>
+    <B>Sam Harwell</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Small%20example%20of%20local%20variable%20semantic%20analysis%0A%09for%20an%20IDE&In-Reply-To=%3C86403CA0939415448BCCB83855EFE09AA67B9B%40Bloodymary.ironwillgames.com%3E"
+       TITLE="[antlr-interest] Small example of local variable semantic analysis	for an IDE">sharwell at pixelminegames.com
+       </A><BR>
+    <I>Thu Mar 19 12:59:08 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="033523.html">[antlr-interest] How can I use 3 predicates in one rule?
+</A></li>
+        <LI>Next message: <A HREF="033499.html">[antlr-interest] Small example of local variable semantic	analysis for an IDE
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#33495">[ date ]</a>
+              <a href="thread.html#33495">[ thread ]</a>
+              <a href="subject.html#33495">[ subject ]</a>
+              <a href="author.html#33495">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>For those of you that don't want to read this long message, a screenshot
+of what I did is at the end of this message. Syntax highlighting is
+available if you read this message in HTML format, and there is a lot of
+code so it's probably helpful to do so. :) This code isn't optimal, but
+it shows how I was able to drop in some useful messages in Visual Studio
+in about 20 minutes from when I decided to try it. My goal was to detect
+and report the following items. Since my first task is getting feedback
+about the new features from our users, it was more important to &quot;show
+the possibilities&quot; with a simple implementation than have a perfect
+analysis.
+
+ 
+
+*         Unreferenced local variables
+
+*         Local variables that are assigned but not used
+
+*         Local variables that are referenced before they are
+initialized
+
+ 
+
+I started by adding a scope to the functionBlock rule in my tree walker
+that keeps track of the first time each local is initialized and
+referenced.
+
+ 
+
+functionBlock
+
+scope
+
+{
+
+        // store the first location where the local is initialized
+
+        Dictionary&lt;CommonToken, CommonToken&gt; initializedLocals;
+
+        // store the first location where the local is referenced
+
+        Dictionary&lt;CommonToken, CommonToken&gt; referencedLocals;
+
+}
+
+@init
+
+{
+
+        $functionBlock::initializedLocals = new Dictionary&lt;CommonToken,
+CommonToken&gt;();
+
+        $functionBlock::referencedLocals = new Dictionary&lt;CommonToken,
+CommonToken&gt;();
+
+}
+
+@after
+
+{
+
+        CheckVariableUsage();
+
+}
+
+ 
+
+Assuming these are properly manipulated (which I'll show in a bit), the
+CheckVariableUsage() function is quickly implemented like this. Note the
+comments about some (big) remaining issues; also keep in mind the
+language is case-insensitive.
+
+ 
+
+void CheckVariableUsage()
+
+{
+
+    var scope = functionBlock_stack.Peek();
+
+    var referencedLocals = scope.referencedLocals;
+
+    var initializedLocals = scope.initializedLocals;
+
+ 
+
+    // check for unreferenced local variables
+
+    foreach ( var unreferencedLocal in referencedLocals.Where( local =&gt;
+local.Value == null &amp;&amp; initializedLocals[local.Key] == null ) )
+
+    {
+
+        // this warning is positioned at the declaration
+
+        AddWarning( string.Format( &quot;'{0}' : unreferenced local
+variable&quot;, unreferencedLocal.Key.Text.ToUpperInvariant() ),
+unreferencedLocal.Key );
+
+    }
+
+    // now check referenced but not initialized
+
+    // TODO: this needs to handle right-to-left operators (r = r + 3;)
+and check whether the initialization occurred before the reference
+
+    // TODO: this should be a better check inside conditional blocks
+
+    foreach ( var referencedLocal in referencedLocals.Where( local =&gt;
+local.Value != null &amp;&amp; initializedLocals[local.Key] == null ) )
+
+    {
+
+        // this warning is positioned at the first usage of the
+uninitialized variable
+
+        AddWarning( string.Format( &quot;'{0}' : local variable not
+initialized before use&quot;, referencedLocal.Key.Text.ToUpperInvariant() ),
+referencedLocal.Value );
+
+    }
+
+    // now check assigned but not used
+
+    foreach ( var unreferencedLocal in referencedLocals.Where( local =&gt;
+local.Value == null &amp;&amp; initializedLocals[local.Key] != null ) )
+
+    {
+
+        // this warning is positioned at the declaration
+
+        AddWarning( string.Format( &quot;'{0}' : local variable assigned but
+not used&quot;, unreferencedLocal.Key.Text.ToUpperInvariant() ),
+unreferencedLocal.Key );
+
+    }
+
+    // TODO: check for assignment to self
+
+}
+
+ 
+
+When the tree walker encounters a variable declaration, it adds the
+declaration token to the list of variables for the functionBlock.
+
+ 
+
+functionLocal
+
+scope
+
+{
+
+        CommonToken name;
+
+}
+
+        :       ^(
+
+                        UK_LOCAL
+
+                        varType
+
+                        docComment
+
+                        (
+
+                                // the scope variable 'name' is
+initialized in localNameAndDim so I
+
+                                // can handle combined declarations like
+&quot;int i, j;&quot;
+
+                                localNameAndDim
+
+                                {
+
+ 
+$functionBlock::referencedLocals.Add( $functionLocal::name, null );
+
+ 
+$functionBlock::initializedLocals.Add( $functionLocal::name, null );
+
+                                }
+
+                        )+
+
+                )
+
+        ;
+
+ 
+
+The actual analysis is then handled after the tree walker parses an
+expression.
+
+ 
+
+expression
+
+@after
+
+{
+
+        CheckLocalReferences( $start );
+
+}
+
+        :       // stuff goes here
+
+        ;
+
+ 
+
+void CheckLocalReferences( CommonTree tree )
+
+{
+
+    string varname = tree.Token.Text;
+
+    CommonToken vartoken = null;
+
+    if ( functionBlock_stack.Count &gt; 0 )
+
+    {
+
+        var scope = functionBlock_stack.Peek();
+
+        vartoken = scope.referencedLocals.Keys.FirstOrDefault( local =&gt;
+local.Text.Equals( varname, StringComparison.OrdinalIgnoreCase ) );
+
+    }
+
+ 
+
+    // return if no variable matches the name of this expression token
+
+    if ( vartoken == null )
+
+        return;
+
+ 
+
+    // make sure we don't treat 'someObject.i' as a reference to local
+variable 'i'
+
+    if ( tree.Parent.Type != UcGrammarLexer.AST_MEMBER ||
+tree.ChildIndex == 0 )
+
+    {
+
+        bool assignment = false;
+
+        switch ( tree.Parent.Type )
+
+        {
+
+        // include all of the language's assignment operators
+
+        // TODO: check for initialization via 'out' parameters of
+function calls
+
+        case UcGrammarLexer.EQ:
+
+        case UcGrammarLexer.PLUSEQ:
+
+        case UcGrammarLexer.MINUSEQ:
+
+        case UcGrammarLexer.TIMESEQ:
+
+            if ( tree.ChildIndex == 0 )
+
+            {
+
+                assignment = true;
+
+                if (
+functionBlock_stack.Peek().initializedLocals[vartoken] == null )
+
+ 
+functionBlock_stack.Peek().initializedLocals[vartoken] =
+(CommonToken)tree.Token;
+
+            }
+
+ 
+
+            break;
+
+ 
+
+        default:
+
+            break;
+
+        }
+
+ 
+
+        if ( !assignment &amp;&amp;
+functionBlock_stack.Peek().referencedLocals[vartoken] == null )
+
+            functionBlock_stack.Peek().referencedLocals[vartoken] =
+(CommonToken)tree.Token;
+
+    }
+
+}
+
+ 
+
+And here is the result:
+
+ 
+
+ 
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20090319/bcadd748/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20090319/bcadd748/attachment.html</A> 
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: not available
+Type: image/png
+Size: 27417 bytes
+Desc: image001.png
+Url : <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20090319/bcadd748/attachment.png">http://www.antlr.org/pipermail/antlr-interest/attachments/20090319/bcadd748/attachment.png</A> 
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="033523.html">[antlr-interest] How can I use 3 predicates in one rule?
+</A></li>
+	<LI>Next message: <A HREF="033499.html">[antlr-interest] Small example of local variable semantic	analysis for an IDE
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#33495">[ date ]</a>
+              <a href="thread.html#33495">[ thread ]</a>
+              <a href="subject.html#33495">[ subject ]</a>
+              <a href="author.html#33495">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,203 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Bug in ASTFactory.cpp, version 2.7.3
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Bug%20in%20ASTFactory.cpp%2C%20version%202.7.3&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="010828.html">
+   <LINK REL="Next"  HREF="010826.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Bug in ASTFactory.cpp, version 2.7.3</H1>
+    <B>Waldemar Sauer</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Bug%20in%20ASTFactory.cpp%2C%20version%202.7.3&In-Reply-To="
+       TITLE="[antlr-interest] Bug in ASTFactory.cpp, version 2.7.3">waldemarsauer at hotmail.com
+       </A><BR>
+    <I>Thu Dec 30 05:26:16 PST 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="010828.html">[antlr-interest] uh, ok,
+	so mailman is dropping vastquantities of mail for me
+</A></li>
+        <LI>Next message: <A HREF="010826.html">[antlr-interest] Bug in ASTFactory.cpp, version 2.7.3
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#10825">[ date ]</a>
+              <a href="thread.html#10825">[ thread ]</a>
+              <a href="subject.html#10825">[ subject ]</a>
+              <a href="author.html#10825">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi there
+ 
+I am bumping into some infinite loops in ASTFactory.cpp, and I was
+wondering if this is a bug in that code, or if there is maybe something
+about the antlr grammar that I'm not understanding. I think rather the
+former, because the compiled compiler should never run into an infinite
+loop, but rather cast exceptions if there are problems that it is
+experiencing.
+ 
+One grammar fragment that is causing this is as follows:
+primaryExpr:
+        literal_value 
+      | id:ident (ap:actualParams)? {
+            if (#ap.get() != NULL) {
+                  #primaryExpr = #([MEM_CALL, &quot;MEM_CALL&quot;], #id, #ap);
+            } else {
+                  #primaryExpr = #id;
+            } // if
+        }
+      // array index, post-increment, post-decrement, typeof, checked,
+unchecked, and
+      // new.
+      //    new has it's own challenges, in that we have to call
+&quot;release&quot; when
+      //    the object goes out of scope.
+      ;
+ 
+actualParams!: LPAREN (apl:actualParamList)? RPAREN {
+      #actualParams = #([APARAMS, &quot;APARAMS&quot;], #apl);
+};
+actualParamList: expression (COMMA^ expression)*
+ 
+Like I said, I've seen this problem before, and usually there is a way I
+can get out of it by redefining what I would like to be doing, just in
+this case, I haven't found the workaround in the grammar yet.
+ 
+It seems as though the &quot;#primaryExpr = #([MEM_CALL .&quot; expression is
+generating a list of AST nodes by using the ASTArray::add function to
+add AST nodes to itself as the compiled code of the above statement
+demonstrates:
+      primaryExpr_AST =
+ANTLR_USE_NAMESPACE(antlr)RefAST(astFactory-&gt;make((new
+ANTLR_USE_NAMESPACE(antlr)ASTArray(3))-&gt;add(astFactory-&gt;create(MEM_CALL,
+&quot;MEM_CALL&quot;))-&gt;add(id_AST)-&gt;add(ap_AST)));
+The right sibling of the id_AST node is the ap_AST node by the time
+ASTFactory::make is called. ASTFactory::make then has code that turns
+the nodes in the list (nodes parameter to ASTFactory::make) into
+siblings of a tree node (local parameter 'root'). The problem is that
+ap_AST becomes it's own right sibling, and the code that searches for
+the last sibling in the list (&quot;// RK: I cannot fathom why this missing
+check didn't bite anyone else&quot;) then runs into an infinite loop.
+ 
+I resolved the issue by patching the ASTFactory::make code to check for
+this condition (see end of posting), but I need someone to look at the
+code, and say if it is the right thing to do, or if there is an issue
+with my definition of the grammar.
+ 
+Thanks in advance
+ - Waldemar
+ 
+ 
+ 
+----------------- 8&lt; -----------------------------------------
+/** Make a tree from a list of nodes.  The first element in the
+ * array is the root.  If the root is null, then the tree is
+ * a simple list not a tree.  Handles null children nodes correctly.
+ * For example, make(a, b, null, c) yields tree (a b c).  make(null,a,b)
+ * yields tree (nil a b).
+ */
+RefAST ASTFactory::make(ANTLR_USE_NAMESPACE(std)vector&lt;RefAST&gt;&amp; nodes)
+{
+      if ( nodes.size() == 0 )
+            return RefAST(nullASTptr);
+ 
+      RefAST root = nodes[0];
+      RefAST tail = RefAST(nullASTptr);
+ 
+      if( root )
+            root-&gt;setFirstChild(RefAST(nullASTptr));  // don't leave any
+old pointers set
+ 
+      // link in children;
+      for(unsigned int i = 1; i &lt; nodes.size(); i++ )
+      {
+            if ( nodes[i] == 0 )          // ignore null nodes
+                  continue;
+ 
+            if ( root == 0 )              // Set the root and set it up
+for a flat list
+                  root = tail = nodes[i];
+            else if ( tail == 0 )
+            {
+                  root-&gt;setFirstChild(nodes[i]);
+                  tail = root-&gt;getFirstChild();
+            }
+            else
+            {
+                  tail-&gt;setNextSibling(nodes[i]);
+                  tail = tail-&gt;getNextSibling();
+            }
+ 
+            if( tail )  // RK: I cannot fathom why this missing check
+didn't bite anyone else...
+            {
+                  // Chase tail to last sibling, 
+                  //    but stop if the tail's sibling is in nodes
+                  RefAST node;
+                  while (node = tail-&gt;getNextSibling()) {
+                        bool found = false;
+                        for (unsigned int j=0; j&lt;nodes.size(); j++) {
+                              if ((i != j) &amp;&amp; (node == nodes[j])) {
+                                    found = true;
+                                    break;
+                              } // if
+                        } // for
+                        if (found)
+                              break; // stop further traversal. We
+either have dealt with this node, 
+ 
+//  or will still deal with it.
+                        tail = node;
+                  }
+            }
+      }
+ 
+      return root;
+}
+ 
+ 
+PS: this message is a re-post, because it looks like my first message
+didn't go through. (Haven't subscribed at that time yet).
+ 
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20041230/45946ec0/attachment-0001.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20041230/45946ec0/attachment-0001.html</A>
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="010828.html">[antlr-interest] uh, ok,
+	so mailman is dropping vastquantities of mail for me
+</A></li>
+	<LI>Next message: <A HREF="010826.html">[antlr-interest] Bug in ASTFactory.cpp, version 2.7.3
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#10825">[ date ]</a>
+              <a href="thread.html#10825">[ thread ]</a>
+              <a href="subject.html#10825">[ subject ]</a>
+              <a href="author.html#10825">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

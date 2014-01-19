@@ -1,0 +1,187 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [stringtemplate-interest] IAttributeRenderer and Type	Inheritancein C#
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20IAttributeRenderer%20and%20Type%0A%09Inheritancein%20C%23&In-Reply-To=%3CDAE8224D-ABD0-40DA-883E-8C4A650B680B%40buhacoff.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002326.html">
+   <LINK REL="Next"  HREF="002329.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[stringtemplate-interest] IAttributeRenderer and Type	Inheritancein C#</H1>
+    <B>Jonathan Buhacoff</B> 
+    <A HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20IAttributeRenderer%20and%20Type%0A%09Inheritancein%20C%23&In-Reply-To=%3CDAE8224D-ABD0-40DA-883E-8C4A650B680B%40buhacoff.net%3E"
+       TITLE="[stringtemplate-interest] IAttributeRenderer and Type	Inheritancein C#">jonathan at buhacoff.net
+       </A><BR>
+    <I>Thu Oct 22 10:22:07 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002326.html">[stringtemplate-interest] IAttributeRenderer and Type	Inheritancein C#
+</A></li>
+        <LI>Next message: <A HREF="002329.html">[stringtemplate-interest] IAttributeRenderer and Type	Inheritancein C#
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2328">[ date ]</a>
+              <a href="thread.html#2328">[ thread ]</a>
+              <a href="subject.html#2328">[ subject ]</a>
+              <a href="author.html#2328">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>If it's integrated with the class renderers as I showed in my diff,   
+there's a little extra work to do. On the other hand,  most classes  
+only implement handful of interfaces, and since this code doesn't do  
+any string processing it will probably be fast enough.
+
+Or, if it's implemented as a separate map of renderers, then it will  
+only slow down processing if the programmer has registered any  
+interface renderers.  But that seems a little messy to me, maybe more  
+messy than the speed savings is worth.
+
+Finally, the other issue with interface renderers is priority -  as  
+proposed now, we have  no control over which renderer will be found  
+first, and if a class implements more than one interface with a  
+registered renderer, the output will be non-deterministic.  I think  
+that's a bad thing.
+
+The way to control that would be to have a complete interface to  
+manage the priority of interface renderers, or to have ST implement  
+something like  
+registerInterfaceAttributeRenderers(List&lt;AttributeRenderer&gt;  
+renderers);     so the programmer can specify the order of the  
+renderers.
+
+So the loop would change to iterating through the registered interface  
+renderers and checking if the value implements each one (and they  
+would be in priority order).
+
+That makes things deterministic again, and would require the use of a  
+list of interface renders separate from the map of class renderers,  
+which means only people who use interface renderers would incur any  
+performance penalty.
+
+I'm still trying to think of a case where this scheme would be better  
+than wrapping everything with an adapter and registering a renderer  
+for that, because automatically wrapping certain classes that  
+implement an interface automatically is so easy to do by subclassing  
+StringTemplate.   I'm still thinking along the lines of  
+internationalization, units of measure, stuff like that.   Vincent can  
+you provide a real world case?
+
+
+On Oct 22, 2009, at 9:45 AM, Sam Harwell wrote:
+
+&gt;<i> Hi Vincent,
+</I>&gt;<i>
+</I>&gt;<i> My first thought is this changes an O(1) algorithm that has to run for
+</I>&gt;<i> every rendered item into an O(n) algorithm. I would have to run this
+</I>&gt;<i> through the instrumenting profiler to make sure it isn't slowing down
+</I>&gt;<i> the rendering process before I could include it. There are a few other
+</I>&gt;<i> ways to approach the problem, but I'm not yet sure which one would  
+</I>&gt;<i> work
+</I>&gt;<i> out best.
+</I>&gt;<i>
+</I>&gt;<i> Sam
+</I>&gt;<i>
+</I>&gt;<i> -----Original Message-----
+</I>&gt;<i> From: <A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">stringtemplate-interest-bounces at antlr.org</A>
+</I>&gt;<i> [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">stringtemplate-interest-bounces at antlr.org</A>] On Behalf Of  
+</I>&gt;<i> Vincent
+</I>&gt;<i> DARON
+</I>&gt;<i> Sent: Thursday, October 22, 2009 10:12 AM
+</I>&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">stringtemplate-interest at antlr.org</A>
+</I>&gt;<i> Subject: [stringtemplate-interest] IAttributeRenderer and Type
+</I>&gt;<i> Inheritancein C#
+</I>&gt;<i>
+</I>&gt;<i> Hi
+</I>&gt;<i>
+</I>&gt;<i> I would like to be able to register an IAttributeRenderer for objects
+</I>&gt;<i> implementing an Interface.
+</I>&gt;<i>
+</I>&gt;<i> Part of current implementation of GetAttributeRenderer
+</I>&gt;<i>
+</I>&gt;<i>        public virtual IAttributeRenderer GetAttributeRenderer( Type
+</I>&gt;<i> attributeClassType )
+</I>&gt;<i>        {
+</I>&gt;<i>            IAttributeRenderer renderer = null;
+</I>&gt;<i>            if ( _attributeRenderers != null )
+</I>&gt;<i>            {
+</I>&gt;<i>                if ( !_attributeRenderers.TryGetValue(
+</I>&gt;<i> attributeClassType, out renderer ) )
+</I>&gt;<i>                    renderer = null;
+</I>&gt;<i>            }
+</I>&gt;<i> // ...snip ... //
+</I>&gt;<i>        }
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> My proposal (untested, but should be ok)
+</I>&gt;<i>
+</I>&gt;<i>        public virtual IAttributeRenderer GetAttributeRenderer( Type
+</I>&gt;<i> attributeClassType )
+</I>&gt;<i>        {
+</I>&gt;<i>            IAttributeRenderer renderer = null;
+</I>&gt;<i>            if ( _attributeRenderers != null )
+</I>&gt;<i>            {
+</I>&gt;<i> 		foreach(Type key in _attributeRenderers.Keys)
+</I>&gt;<i> 		{
+</I>&gt;<i> 			if(key.IsAssignableFrom(attributeClassType))
+</I>&gt;<i> 			{
+</I>&gt;<i> 				renderer = _attributeRenderers[key];
+</I>&gt;<i> 				break;
+</I>&gt;<i> 			}
+</I>&gt;<i> 		}
+</I>&gt;<i>            }
+</I>&gt;<i> // ...snip ... //
+</I>&gt;<i>        }
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> It will allow to register Attribute Renderer for objects implementing
+</I>&gt;<i> interfaces
+</I>&gt;<i>
+</I>&gt;<i>    RegisterAttributeRenderer(typeof(IFormatProvider), ...);
+</I>&gt;<i>
+</I>&gt;<i> Goot idea ?
+</I>&gt;<i>
+</I>&gt;<i> Second question, is it possible to have access to source using Source
+</I>&gt;<i> Control (Subversion, Hg, Git, ...) ? It would be far easier to test  
+</I>&gt;<i> and
+</I>&gt;<i> create patches.
+</I>&gt;<i>
+</I>&gt;<i> Thanks for answer/comments
+</I>&gt;<i>
+</I>&gt;<i> Vincent
+</I>&gt;<i> _______________________________________________
+</I>&gt;<i> stringtemplate-interest mailing list
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">stringtemplate-interest at antlr.org</A>
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">http://www.antlr.org/mailman/listinfo/stringtemplate-interest</A>
+</I>&gt;<i> _______________________________________________
+</I>&gt;<i> stringtemplate-interest mailing list
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">stringtemplate-interest at antlr.org</A>
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">http://www.antlr.org/mailman/listinfo/stringtemplate-interest</A>
+</I>
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002326.html">[stringtemplate-interest] IAttributeRenderer and Type	Inheritancein C#
+</A></li>
+	<LI>Next message: <A HREF="002329.html">[stringtemplate-interest] IAttributeRenderer and Type	Inheritancein C#
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2328">[ date ]</a>
+              <a href="thread.html#2328">[ thread ]</a>
+              <a href="subject.html#2328">[ subject ]</a>
+              <a href="author.html#2328">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">More information about the stringtemplate-interest
+mailing list</a><br>
+</body></html>

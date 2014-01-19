@@ -1,0 +1,479 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Has anyone seen this kind of stack trace?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Has%20anyone%20seen%20this%20kind%20of%20stack%20trace%3F&In-Reply-To=%3C6F9E57B1-9DB2-4DDA-A2E5-8319F8FC686F%40toolazydogs.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="043429.html">
+   <LINK REL="Next"  HREF="043434.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Has anyone seen this kind of stack trace?</H1>
+    <B>Alan D. Cabrera</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Has%20anyone%20seen%20this%20kind%20of%20stack%20trace%3F&In-Reply-To=%3C6F9E57B1-9DB2-4DDA-A2E5-8319F8FC686F%40toolazydogs.com%3E"
+       TITLE="[antlr-interest] Has anyone seen this kind of stack trace?">list at toolazydogs.com
+       </A><BR>
+    <I>Tue Nov 29 12:12:21 PST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="043429.html">[antlr-interest] Has anyone seen this kind of stack trace?
+</A></li>
+        <LI>Next message: <A HREF="043434.html">[antlr-interest] Has anyone seen this kind of stack trace?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#43430">[ date ]</a>
+              <a href="thread.html#43430">[ thread ]</a>
+              <a href="subject.html#43430">[ subject ]</a>
+              <a href="author.html#43430">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Lua.g:
+
+/**
+ * Copyright 2009-2011 (C) Alan D. Cabrera
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    <A HREF="http://www.apache.org/licenses/LICENSE-2.0">http://www.apache.org/licenses/LICENSE-2.0</A>
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+grammar Lua;
+options
+{
+    output=AST;
+    backtrack=true;
+}
+
+tokens {
+    ARGS;
+    ARGSWITHSELF;
+    ASSIGN;
+    BLOCK;
+    BREAK;
+    CHUNK;
+    ELSEIF;
+    EXPLIST;
+    DEREF;
+    FOR;
+    FORIN;
+    FNAME;
+    FNAMETHIS;
+    FUNCALL;
+    FUNCTION;
+    FUNCBODY;
+    IF;
+    LOCAL;
+    NAMELIST;
+    NEGATE;
+    NUMBER;
+    PARAMETERS;
+    PATH;
+    REPEAT;
+    RETURN;
+    SINGLE;
+    STRING;
+    TBLCTOR;
+    TBLFIELD;
+    VAR;
+    VARLIST;
+    WHILE;
+}
+
+@header
+{
+package com.toolazydogs.lua4j;
+}
+@lexer::header
+{
+/**
+ * Copyright 2009-2011 (C) Alan D. Cabrera
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    <A HREF="http://www.apache.org/licenses/LICENSE-2.0">http://www.apache.org/licenses/LICENSE-2.0</A>
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.toolazydogs.lua4j;
+
+import java.io.UnsupportedEncodingException;
+}
+@lexer::members
+{
+protected boolean isLongBracketOpen(int length)
+{
+    if (input.LA(1) != ']') return true;
+
+    for (int i = 0; i != length; ++i)
+    {
+        if (input.LA(i + 2) != '=') return true;
+    }
+
+    return (input.LA(length + 2) != ']');
+}
+
+protected void matchLongBracketClose(int length) throws MismatchedTokenException
+{
+    StringBuilder builder = new StringBuilder();
+
+    builder.append(']');
+    for (int i = 0; i != length; ++i) builder.append('=');
+    builder.append(']');
+
+    match(builder.toString());
+}
+
+protected String toAscii(String... d) throws RecognitionException
+{
+    StringBuilder sb = new StringBuilder(d[0]);
+    for (int i=1; i&lt;d.length; i++) sb.append(d[i]);
+        
+    byte[] b = new byte[1];
+
+    b[0] = (byte)Integer.parseInt(sb.toString());
+
+    try
+    {
+        return new String(b, &quot;ASCII&quot;);
+    }
+    catch (UnsupportedEncodingException e)
+    {
+        throw new RecognitionException();
+    }
+}
+}
+
+chunk
+    : (stat ';'?)* (laststat ';'?)? -&gt; ^(CHUNK stat* laststat?)
+    ;
+
+block
+    : chunk
+    ;
+
+stat
+    : varlist '=' explist -&gt; ^(ASSIGN varlist explist)
+    | functioncall
+    | 'do' block 'end' -&gt; block
+    | 'while' exp 'do' block 'end' -&gt; ^(WHILE exp block)
+    | lc='repeat' block 'until' exp -&gt; ^(REPEAT[$lc,&quot;REPEAT&quot;] block exp)
+    | 'if' exp 'then' block 'end' -&gt; ^(IF exp block)
+    | 'if' exp 'then' ifblock=block 'else' elseblock=block 'end' -&gt; ^(IF exp $ifblock $elseblock)
+    | 'if' exp 'then' ifblock=block elseif+ 'end' -&gt; ^(IF exp $ifblock elseif+)
+    | 'if' exp 'then' ifblock=block elseif+ 'else' elseblock=block 'end' -&gt; ^(IF exp $ifblock elseif+ $elseblock)
+    | 'for' NAME '=' exp1=exp ',' exp2=exp ',' exp3=exp 'do' block 'end' -&gt; ^(FOR NAME $exp1 $exp2 $exp3 block)
+    | 'for' NAME '=' exp1=exp ',' exp2=exp 'do' block 'end' -&gt; ^(FOR NAME $exp1 $exp2 block)
+    | 'for' namelist 'in' explist 'do' block 'end' -&gt; ^(FORIN namelist explist block)
+    | 'function' funcname funcbody -&gt; ^(FUNCTION funcname funcbody)
+    | 'local' namelist ('=' explist)? -&gt; ^(LOCAL namelist explist?)
+    | 'local' 'function' NAME funcbody -&gt; ^(LOCAL  ^(NAMELIST NAME) ^(EXPLIST funcbody))
+    ;
+
+elseif
+    : ('elseif' exp 'then' block)+ -&gt; ^(ELSEIF exp block)+
+    ;
+
+laststat
+    : 'return' -&gt; ^(RETURN)
+    | 'return' explist -&gt; ^(RETURN explist)
+    | 'break' -&gt; BREAK
+    ;
+
+funcname
+@init{boolean hasThis = false;}
+    : f=NAME ('.' p+=NAME)* (':' t=NAME {hasThis = true;})?
+        -&gt; {hasThis}? ^(FNAMETHIS $f $p* $t)
+        -&gt; ^(FNAME $f $p*)
+    ;
+
+varlist
+    : var (',' var)* -&gt; ^(VARLIST var+)
+    ;
+
+var
+    : (varPrefix varDeref -&gt; ^(DEREF varPrefix varDeref)) (vd=varDeref -&gt; ^(DEREF $var $vd))*
+    | NAME -&gt; ^(VAR NAME)
+    ;
+
+varDeref
+    : '[' exp ']' -&gt; exp
+    | '.' NAME -&gt; ^(STRING NAME)
+    ;
+
+varPrefix
+    : (NAME nameAndArgs-&gt; ^(FUNCALL NAME nameAndArgs)) (naa=nameAndArgs -&gt; ^(FUNCALL $varPrefix $naa))+
+    | NAME nameAndArgs-&gt; ^(FUNCALL NAME nameAndArgs)
+    | '(' exp ')' -&gt; ^(SINGLE exp)
+    | NAME -&gt; ^(VAR NAME)
+    ;
+    
+prefixexp
+    : (varOrExp nameAndArgs -&gt; ^(FUNCALL varOrExp nameAndArgs)) (naa=nameAndArgs -&gt;  ^(FUNCALL $prefixexp $naa))*
+    | varOrExp
+    ;
+
+functioncall
+    : (varOrExp nameAndArgs -&gt; ^(FUNCALL varOrExp nameAndArgs)) (naa=nameAndArgs -&gt;  ^(FUNCALL $functioncall $naa))*
+    ;
+
+varOrExp
+    : var
+    | '(' exp ')' -&gt; ^(SINGLE exp)
+    ;
+
+nameAndArgs
+    : args -&gt; ^(ARGS args)
+    | ':' NAME args -&gt; ^(ARGSWITHSELF NAME args)
+    ;
+
+args
+    : '(' ')' -&gt; ^(EXPLIST)
+    | '(' explist ')' -&gt; explist
+    | tableconstructor
+    | string
+    ;
+
+namelist
+    : NAME (',' NAME)* -&gt; ^(NAMELIST NAME+)
+    ;
+
+explist
+    : exp (',' exp)* -&gt; ^(EXPLIST exp+)
+    ;
+
+exp
+    : or ('or' or)+ -&gt; ^('or' or+)
+    | or
+    ;
+
+or
+    : and ('and' and)+ -&gt; ^('and' and+)
+    | and
+    ;
+
+and
+    : compare (compare_op^ compare)*
+    ;
+
+compare
+    : concatenation ('..' concatenation)+ -&gt; ^('..' concatenation+)
+    | concatenation
+    ;
+
+concatenation
+    : add_sub (add_sub_op^ add_sub)*
+    ;
+
+add_sub
+    : b (b_op^ b)*
+    ;
+
+b
+    : unary_op^ unary
+    | unary
+    ;
+
+unary : atom ('^'^ atom)* ;
+
+atom 	: 'nil'
+        | 'false'
+        | 'true'
+        | number
+        | string
+        | function
+        | prefixexp
+        | tableconstructor
+        | '...'
+	;
+
+unary_op : 'not' | '#' | '-' -&gt; NEGATE ;
+
+b_op : '*' | '/' | '%' ;
+
+compare_op : '&lt;' | '&lt;=' | '&gt;' | '&gt;=' | '==' | '~=' ;
+
+add_sub_op : '+' | '-' ;
+
+function
+    : 'function' funcbody -&gt; funcbody
+    ;
+
+funcbody
+    : '(' parlist? ')' block 'end' -&gt; ^(FUNCBODY parlist? block)
+	;
+
+parlist
+    : namelist -&gt; ^(PARAMETERS namelist)
+    | namelist ',' '...' -&gt; ^(PARAMETERS namelist '...')
+    | '...' -&gt; ^(PARAMETERS '...')
+    ;
+
+tableconstructor
+    : '{' fieldlist? '}' -&gt; ^(TBLCTOR fieldlist?)
+    ;
+
+fieldlist
+    : field (fieldsep! field)* fieldsep!?
+    ;
+
+field
+    : '[' exp ']' '=' exp -&gt; ^(TBLFIELD exp exp)
+    | NAME '=' exp -&gt; ^(TBLFIELD NAME exp)
+    | exp -&gt; ^(TBLFIELD exp)
+    ;
+
+fieldsep
+    : ','
+    | ';'
+    ;
+
+NAME
+	: ('a'..'z' | 'A'..'Z' | '_') ('a'..'z' | 'A'..'Z' | '_' | '0'..'9')*
+	;
+
+number
+    : INTEGER&lt;IntNode&gt;
+    | FLOAT&lt;FloatNode&gt;
+    | EXPONENT&lt;FloatNode&gt;
+    | HEX&lt;IntNode&gt;
+    ;
+
+INTEGER
+    : DIGIT+
+    ;
+
+FLOAT
+    : DIGIT+ '.' DIGIT+
+    ;
+
+EXPONENT
+    : (INTEGER | FLOAT) ('e' | 'E') '-'? INTEGER
+    ;
+
+HEX
+    : '0x' ('0'..'9' | 'a'..'f')+
+    ;
+
+fragment
+DIGIT : ('0'..'9') ;
+
+string
+    : s=NORMAL_STRING -&gt; ^(STRING $s)
+    | s=CHAR_STRING -&gt; ^(STRING $s)
+    | s=LONG_STRING -&gt; ^(STRING $s)
+    ;
+
+NORMAL_STRING         
+@init{StringBuilder sb = new StringBuilder();}
+    :   
+        '&quot;' 
+        ( escaped=ESCAPE_SEQUENCE { sb.append(getText()); } | 
+          normal=~('&quot;' | '\\')    { sb.appendCodePoint(normal); } )* 
+        '&quot;'     
+        { setText(sb.toString()); }
+    ;
+
+CHAR_STRING         
+@init{ StringBuilder sb = new StringBuilder(); }
+    :   
+        '\'' 
+        ( escaped=ESCAPE_SEQUENCE { sb.append(getText()); } | 
+             normal=~('\'' | '\\')    { sb.appendCodePoint(normal); } )* 
+        '\''     
+        { setText(sb.toString()); }
+    ;
+
+LONG_STRING
+    : LONG_BRACKET
+    ;
+
+fragment
+ESCAPE_SEQUENCE
+    : '\\' 
+    	( 'a'  { setText(&quot;\0007&quot;); }
+    	| 'b'  { setText(&quot;\b&quot;); }
+    	| 'f'  { setText(&quot;\f&quot;); }
+    	| 'n'  { setText(&quot;\n&quot;); }
+    	| 'r'  { setText(&quot;\r&quot;); }
+    	| 't'  { setText(&quot;\t&quot;); }
+    	| 'v'  { setText(&quot;\013&quot;); }
+    	| '&quot;'  { setText(&quot;\&quot;&quot;); }
+    	| '\'' { setText(&quot;\'&quot;); }
+    	| '\\' { setText(&quot;\\&quot;); }
+    	)
+    | ASCII_ESCAPE
+    ;
+
+fragment
+ASCII_ESCAPE
+    : '\\' d1=DIGIT d2=DIGIT d3=DIGIT { setText(toAscii(d1.getText(), d2.getText(), d3.getText())); }
+    | '\\' d1=DIGIT d2=DIGIT { setText(toAscii(d1.getText(), d2.getText())); }
+    | '\\' d1=DIGIT { setText(toAscii(d1.getText())); }
+    ;
+
+LONG_COMMENT
+    : '--' LONG_BRACKET { skip(); }
+    ;
+
+fragment
+LONG_BRACKET
+@init { int n = 0; }
+    : ('['('=' {++n;})*'[') ({isLongBracketOpen(n)}? =&gt; .)* 
+    { 
+        matchLongBracketClose(n);
+        String text = getText().substring(n+2, getText().length()-(n+2));
+        if (text.charAt(0) == '\n') text = text.substring(1, text.length());
+        setText(text);
+    }
+    ;
+
+LINE_COMMENT
+    : '--' ~('\n' | '\r')* '\r'? '\n' { skip(); }
+    ;
+
+WS :  (' ' | '\t' | '\u000C') { skip(); } ;
+
+NEWLINE : ('\r')? '\n' { skip(); } ;
+
+</PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="043429.html">[antlr-interest] Has anyone seen this kind of stack trace?
+</A></li>
+	<LI>Next message: <A HREF="043434.html">[antlr-interest] Has anyone seen this kind of stack trace?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#43430">[ date ]</a>
+              <a href="thread.html#43430">[ thread ]</a>
+              <a href="subject.html#43430">[ subject ]</a>
+              <a href="author.html#43430">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

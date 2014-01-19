@@ -1,0 +1,155 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [stringtemplate-interest] Why an == operator is sometimes	necessary, and how to implement it (ST3/C#)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20Why%20an%20%3D%3D%20operator%20is%20sometimes%0A%09necessary%2C%20and%20how%20to%20implement%20it%20%28ST3/C%23%29&In-Reply-To=%3CA0F904A5-0790-4E84-B5BC-18E6DC80A69B%40cs.usfca.edu%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002638.html">
+   <LINK REL="Next"  HREF="002639.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[stringtemplate-interest] Why an == operator is sometimes	necessary, and how to implement it (ST3/C#)</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20Why%20an%20%3D%3D%20operator%20is%20sometimes%0A%09necessary%2C%20and%20how%20to%20implement%20it%20%28ST3/C%23%29&In-Reply-To=%3CA0F904A5-0790-4E84-B5BC-18E6DC80A69B%40cs.usfca.edu%3E"
+       TITLE="[stringtemplate-interest] Why an == operator is sometimes	necessary, and how to implement it (ST3/C#)">parrt at cs.usfca.edu
+       </A><BR>
+    <I>Tue Mar 23 14:26:58 PDT 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002638.html">[stringtemplate-interest] Why an == operator is sometimes necessary, and how to implement it (ST3/C#)
+</A></li>
+        <LI>Next message: <A HREF="002639.html">[stringtemplate-interest] UTF-8 not displaying correctly
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2651">[ date ]</a>
+              <a href="thread.html#2651">[ thread ]</a>
+              <a href="subject.html#2651">[ subject ]</a>
+              <a href="author.html#2651">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Harald, it still seems to me that deciding what replacements to do is part of the model not the view. I encapsulate the translation rules primarily in the model unless they are fixed one-to-one mappings, in which case I can do a static map in the template group file.   personally, I figure out what to generate and then ask ST to dump it out in the right format.
+
+Ter
+On Mar 12, 2010, at 11:15 AM, Harald Mueller wrote:
+
+&gt;<i> Hi -
+</I>&gt;<i> 
+</I>&gt;<i> as we all know, ST does not have any expression operators in its language, and that is almost always a good thing. However, in a well-worn code generator we use to create triggers in an SQL database, we finally got to the point where we needed an equals operator in $if(...)$. Here is why; and how we implemented it.
+</I>&gt;<i> 
+</I>&gt;<i> The problem is as follows: Input to the generation is (a) a list of SQL tables; (b) the FROM part of an SQL statement, which is a tree of join nodes; each join node points to a table (and of course has information about the joined columns and inner/outer etc., but that's not important); and (c) a replacement string (typically &quot;INSERTED&quot; or &quot;DELETED&quot;; but there are more).
+</I>&gt;<i> The job to do is to write a trigger for each table in the join tree, such that the table itself is replaced with the replacement string.
+</I>&gt;<i> 
+</I>&gt;<i> A small example:
+</I>&gt;<i> (a) T1, T2
+</I>&gt;<i> (b) ... FROM T1 INNER JOIN T2 INNER JOIN T3
+</I>&gt;<i> (c) &quot;INSERTED&quot;
+</I>&gt;<i> Result:
+</I>&gt;<i> ... FROM INSERTED INNER JOIN T2 INNER JOIN T3
+</I>&gt;<i> ... FROM T1 INNER JOIN INSERTED INNER JOIN T3
+</I>&gt;<i> 
+</I>&gt;<i> The example below is a simplified version of the above, however, its ST template marks nodes in a tree with an arrow (&lt;--) if the node's &quot;table name&quot; is equal to the &quot;replacement table&quot;.
+</I>&gt;<i> 
+</I>&gt;<i> Here is the model, together with the &quot;equals operator&quot;:
+</I>&gt;<i> 
+</I>&gt;<i>    public class Table {
+</I>&gt;<i>        public string Name;
+</I>&gt;<i>    }
+</I>&gt;<i> 
+</I>&gt;<i>    public class Join {
+</I>&gt;<i>        public readonly string Name;
+</I>&gt;<i>        public readonly Table JoinedTable;
+</I>&gt;<i>        public readonly List&lt;Join&gt; Children;
+</I>&gt;<i>        public Join(string name, Table joinedTable, params Join[] children) {
+</I>&gt;<i>            Name = name;
+</I>&gt;<i>            JoinedTable = joinedTable;
+</I>&gt;<i>            Children = new List&lt;Join&gt;(children);
+</I>&gt;<i>        }
+</I>&gt;<i>    }
+</I>&gt;<i> 
+</I>&gt;<i> Here are the templates - first the Main template, then the recursive one for printing the tree.
+</I>&gt;<i> 
+</I>&gt;<i> Main(Target, Tables) ::= &lt;&lt;
+</I>&gt;<i>    $Tables:PrintTreeReplacingTable(Target=Target,Replace=it)$
+</I>&gt;&gt;&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> PrintTreeReplacingTable(Target,Replace) ::= &lt;&lt;
+</I>&gt;<i>    $Target.Name$ $if(Target.NameIsReplace.(Replace.Name))$ &lt;--	$endif$
+</I>&gt;<i> 	$Target.Children:PrintTreeReplacingTable(Target=it,Replace=Replace)$
+</I>&gt;<i> 
+</I>&gt;&gt;&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> The important idea here is the expression
+</I>&gt;<i> 
+</I>&gt;<i>    Target.NameIsReplace.(Replace.Name)
+</I>&gt;<i> 
+</I>&gt;<i> where .NameEquals is a property that returns an IDictionary. The (Replacement.Name) then passes in a value which is in effect the parameter of a single-arg function which implements &quot;Target.Name == Replace.Name&quot; - that's the whole trick.
+</I>&gt;<i> 
+</I>&gt;<i> So we extend Join with the following additional property
+</I>&gt;<i> 
+</I>&gt;<i>    public IDictionary NameEquals {
+</I>&gt;<i>        get {
+</I>&gt;<i>            return new Equals(JoinedTable.Name);
+</I>&gt;<i>        }
+</I>&gt;<i>    }
+</I>&gt;<i> 
+</I>&gt;<i> and the class Equals, which is implemented as follows:
+</I>&gt;<i> 
+</I>&gt;<i>    class Equals : DictionaryBase, IDictionary {
+</I>&gt;<i>        private readonly string _tn;
+</I>&gt;<i> 
+</I>&gt;<i>        public Equals(string tn) {
+</I>&gt;<i>            _tn = tn;
+</I>&gt;<i>        }
+</I>&gt;<i> 
+</I>&gt;<i>        bool IDictionary.Contains(object key) {
+</I>&gt;<i>            return key.ToString() == _tn;
+</I>&gt;<i>        }
+</I>&gt;<i> 
+</I>&gt;<i>        object IDictionary.this[object key] {
+</I>&gt;<i>            get {
+</I>&gt;<i>                return key.ToString() == _tn;
+</I>&gt;<i>            }
+</I>&gt;<i>            set { throw new NotImplementedException(); }
+</I>&gt;<i>        }
+</I>&gt;<i>    }
+</I>&gt;<i> 
+</I>&gt;<i> That's it. Maybe it helps someone.
+</I>&gt;<i> And maybe someone's got an idea how this works without that IDictionary trick - but we didn't see how!
+</I>&gt;<i> 
+</I>&gt;<i> Regards
+</I>&gt;<i> Harald M.
+</I>&gt;<i> 
+</I>&gt;<i> -- 
+</I>&gt;<i> GRATIS f&#252;r alle GMX-Mitglieder: Die maxdome Movie-FLAT!
+</I>&gt;<i> Jetzt freischalten unter <A HREF="http://portal.gmx.net/de/go/maxdome01">http://portal.gmx.net/de/go/maxdome01</A>
+</I>&gt;<i> _______________________________________________
+</I>&gt;<i> stringtemplate-interest mailing list
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">stringtemplate-interest at antlr.org</A>
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">http://www.antlr.org/mailman/listinfo/stringtemplate-interest</A>
+</I>
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002638.html">[stringtemplate-interest] Why an == operator is sometimes necessary, and how to implement it (ST3/C#)
+</A></li>
+	<LI>Next message: <A HREF="002639.html">[stringtemplate-interest] UTF-8 not displaying correctly
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2651">[ date ]</a>
+              <a href="thread.html#2651">[ thread ]</a>
+              <a href="subject.html#2651">[ subject ]</a>
+              <a href="author.html#2651">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">More information about the stringtemplate-interest
+mailing list</a><br>
+</body></html>

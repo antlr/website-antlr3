@@ -1,0 +1,250 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Help with pesky Lexer determinism
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Help%20with%20pesky%20Lexer%20determinism&In-Reply-To=PLENJLPIEOPEDJJNCHDHCECJFIAA.voytechs%40yahoo.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="012577.html">
+   <LINK REL="Next"  HREF="012653.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Help with pesky Lexer determinism</H1>
+    <B>Nigel Sheridan-Smith</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Help%20with%20pesky%20Lexer%20determinism&In-Reply-To=PLENJLPIEOPEDJJNCHDHCECJFIAA.voytechs%40yahoo.com"
+       TITLE="[antlr-interest] Help with pesky Lexer determinism">nbsherid at secsme.org.au
+       </A><BR>
+    <I>Tue Jun  7 03:52:55 PDT 2005</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="012577.html">[antlr-interest] Help with pesky Lexer determinism
+</A></li>
+        <LI>Next message: <A HREF="012653.html">[antlr-interest] Help with pesky Lexer determinism
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#12585">[ date ]</a>
+              <a href="thread.html#12585">[ thread ]</a>
+              <a href="subject.html#12585">[ subject ]</a>
+              <a href="author.html#12585">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+Hey Mark,
+
+Something to be aware of: IPv6 addressing rules are very flexible... I came
+across this a few months ago...
+
+&gt;<i>From RFC 2373 (<A HREF="http://www.ietf.org/rfc/rfc2373.txt">http://www.ietf.org/rfc/rfc2373.txt</A>), the following are all
+</I>valid addresses:
+
+         1080:0:0:0:8:800:200C:417A  a unicast address
+         FF01:0:0:0:0:0:0:101        a multicast address
+         0:0:0:0:0:0:0:1             the loopback address
+         0:0:0:0:0:0:0:0             the unspecified addresses
+
+shortened versions:
+        1080::8:800:200C:417A       a unicast address
+         FF01::101                   a multicast address
+         ::1                         the loopback address
+         ::                          the unspecified addresses
+
+And IPv4 equivalence:
+
+	   0:0:0:0:0:0:13.1.68.3
+
+         0:0:0:0:0:FFFF:129.144.52.38
+
+      or in compressed form:
+
+         ::13.1.68.3
+
+         ::FFFF:129.144.52.38
+
+
+and then there are prefixes and things to contend with as well, depending on
+your language.
+
+Currently, my language supports IPv4/v6 addressing to some degree, but its
+not finished and I've chosen to use '#' delimiters to avoid conflicts with
+numerical types. To deal with this issue, I just used a generic token
+matcher (that disambiguates IPv4, IPv6, dates and 'hashed' or binary data,
+which all use the '#' delimiters), and then I'll add some more semantic
+checks further down the chain. However, you may not be at the same liberty
+in having such delimiters (depending on your requirements handed to you),
+and so you will hit non-determinisms pretty quickly!
+
+The best way to deal with this sort of thing is start with a protected lexer
+definitions, and combine them into one rule:
+
+   IPADDRHASHDATE: (IPV4) =&gt; IPV4
+{$setType(IPV4);}
+                 | (IPV6HASH) =&gt; IPV6HASH
+{$setType(IPV6HASH);}
+                 | (DATEVALUE) =&gt; DATEVALUE
+{$setType(DATEVALUE);};
+
+   protected DATEVALUE: '#'! ( ( (DIGIT)+ FSLASH ) =&gt; (DIGIT)+ FSLASH
+(DIGIT)+ 
+								( FSLASH
+(DIGIT)+ )? WS )? 
+							 (DIGIT)+ COLON
+(DIGIT)+ 
+								(COLON
+(DIGIT)+ (DOT (DIGIT)+ )? )?
+						'#'!;
+         
+   protected IPV4: '#'! (DIGIT)+ DOT (DIGIT)+ DOT (DIGIT)+ DOT (DIGIT)+ 
+						(FSLASH (DIGIT)+ )? '#'!;
+   /* Too messy to do IPv6 addresses any other way */
+   protected IPV6HASH: '#'! (':' | '.' | HEX | &quot;#\\&quot;! WS! &quot;#&quot;! )+ 
+						(FSLASH (DIGIT)+ )? '#'!;
+
+
+I'm going to add action code then, which checks the tokens to ensure that
+they are 'valid'. 
+
+Of course, you might hit performance difficulties if a large number of
+tokens pass through your syntatic predicate, but if you put the most common
+token type first you will not be so severely affected.
+
+I'll try and get back to you shortly with a more thorough answer/solution...
+maybe someone else here has some ideas? Some of the grammars on the ANTLR
+site have very long lexer definitions to deal with these sorts of issues. Of
+course, that makes them very difficult to understand for everyone but the
+author ;)
+
+Nigel
+
+--
+Nigel Sheridan-Smith
+PhD research student
+
+Faculty of Engineering
+University of Technology, Sydney
+Phone: 02 9514 7946
+Fax: 02 9514 2435
+ 
+
+&gt;<i> -----Original Message-----
+</I>&gt;<i> From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:antlr-interest-
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">bounces at antlr.org</A>] On Behalf Of Mark Bednarczyk
+</I>&gt;<i> Sent: Tuesday, 7 June 2005 10:16 AM
+</I>&gt;<i> To: ANTLR Interest
+</I>&gt;<i> Subject: RE: [antlr-interest] Help with pesky Lexer determinism
+</I>&gt;<i> 
+</I>&gt;<i> Well I have another problem that is a little more involved so
+</I>&gt;<i> maybe I can just get a couple of quick pointers. Same issue but
+</I>&gt;<i> now with IPv6 address that actually steps of the toes on the
+</I>&gt;<i> IDENT rule since IPv6 address is comprised of HEX digits so
+</I>&gt;<i> 'a'..'f' overlap with IDENT rule of 'a'..'z'.
+</I>&gt;<i> 
+</I>&gt;<i> BTW: here is the format of IPv6 for those not familiar, (HEX HEX
+</I>&gt;<i> COLON (COLON HEX HEX)+) in simple case.
+</I>&gt;<i> 
+</I>&gt;<i> This is what I'm trying to do, but not really sure how to code
+</I>&gt;<i> it.
+</I>&gt;<i> 
+</I>&gt;<i> 1) Add the IPv6 block to NUM_INT rule with appropriate predicate
+</I>&gt;<i> of (NUM_HEX_2DIGIT COLON NUM_HEX_2DIGIT COLON) and I do not get
+</I>&gt;<i> any warning from NUM_INT rule.
+</I>&gt;<i> 
+</I>&gt;<i> 2) Add propriate predicate to IDENT rele for IPv6 format (same
+</I>&gt;<i> as #1) and provide an empty condition block or tell some how
+</I>&gt;<i> based on the predicate to fail the IDENT rule so it will move on
+</I>&gt;<i> and try NUM_INT which should succeed.
+</I>&gt;<i> 
+</I>&gt;<i> Somehow I need the IDENT rule to fail on IPv6 address while
+</I>&gt;<i> matching on NUM_INT. Almost looks like I need to move both rules
+</I>&gt;<i> into a bigger common rule and manually set the token type.
+</I>&gt;<i> 
+</I>&gt;<i> Errors I'm getting now:
+</I>&gt;<i>     [antlr] ANTLR Parser Generator   Version 2.7.5 (20050128)
+</I>&gt;<i> 1989-2005 jGuru.com
+</I>&gt;<i>     [antlr]
+</I>&gt;<i> /home/markbe/prjs/jnetutils-0.1.0/src/antlr/npl/npl.g:
+</I>&gt;<i> warning:lexical nondeterminism between rules IDENT and NUM_INT
+</I>&gt;<i> upon
+</I>&gt;<i>     [antlr]
+</I>&gt;<i> /home/markbe/prjs/jnetutils-0.1.0/src/antlr/npl/npl.g:
+</I>&gt;<i> k==1:'A'..'F','a'..'f'
+</I>&gt;<i>     [antlr]
+</I>&gt;<i> /home/markbe/prjs/jnetutils-0.1.0/src/antlr/npl/npl.g:
+</I>&gt;<i> k==2:&lt;end-of-token&gt;,'0'..'9','A'..'F','L','X','a'..'f','l','x'
+</I>&gt;<i>     [antlr]
+</I>&gt;<i> /home/markbe/prjs/jnetutils-0.1.0/src/antlr/npl/npl.g:
+</I>&gt;<i> k==3:&lt;end-of-token&gt;,'0'..'9','A'..'F','L','a'..'f','l'
+</I>&gt;<i>     [antlr]
+</I>&gt;<i> /home/markbe/prjs/jnetutils-0.1.0/src/antlr/npl/npl.g:
+</I>&gt;<i> k==4:&lt;end-of-token&gt;,'0'..'9','A'..'F','L','a'..'f','l'
+</I>&gt;<i>     [antlr] warning: public lexical rule IDENT is optional (can
+</I>&gt;<i> match &quot;nothing&quot;)
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> And relative portion of the NUM_INT skipping the bottom since
+</I>&gt;<i> its not the problem and exactly the same as in java.g
+</I>&gt;<i> 
+</I>&gt;<i> IDENT
+</I>&gt;<i> options {
+</I>&gt;<i>     testLiterals=true;
+</I>&gt;<i> }
+</I>&gt;<i>     :   (NUM_HEX_2DIGIT COLON NUM_HEX_2DIGIT COLON)=&gt;
+</I>&gt;<i>         // EMPTY match
+</I>&gt;<i>     |   ('a'..'z'|'A'..'Z'|'_'|'$')
+</I>&gt;<i> ('a'..'z'|'A'..'Z'|'_'|'0'..'9'|'$')*
+</I>&gt;<i>     ;
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> // a numeric literal
+</I>&gt;<i> NUM_INT
+</I>&gt;<i>     {boolean isDecimalulse; Token t=null;}
+</I>&gt;<i>     :   (NUM_3DIGIT '.' NUM_3DIGIT '.' NUM_3DIGIT '.'
+</I>&gt;<i> NUM_3DIGIT)=&gt;
+</I>&gt;<i>         (
+</I>&gt;<i>             NUM_3DIGIT '.' NUM_3DIGIT '.' NUM_3DIGIT '.'
+</I>&gt;<i> NUM_3DIGIT
+</I>&gt;<i>             { _ttype = IP_V4; }
+</I>&gt;<i>         )
+</I>&gt;<i>     |   (NUM_HEX_2DIGIT COLON NUM_HEX_2DIGIT COLON)=&gt;
+</I>&gt;<i>         (
+</I>&gt;<i>             NUM_HEX_2DIGIT (COLON NUM_HEX_2DIGIT)+
+</I>&gt;<i>             { _ttype = IP_V6; }
+</I>&gt;<i>         )
+</I>&gt;<i>  &lt; T R U N K A T E D&gt;
+</I>&gt;<i> 
+</I>&gt;<i> protected NUM_HEX_2DIGIT: HEX_DIGIT (HEX_DIGIT)?
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>
+
+</PRE>
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="012577.html">[antlr-interest] Help with pesky Lexer determinism
+</A></li>
+	<LI>Next message: <A HREF="012653.html">[antlr-interest] Help with pesky Lexer determinism
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#12585">[ date ]</a>
+              <a href="thread.html#12585">[ thread ]</a>
+              <a href="subject.html#12585">[ subject ]</a>
+              <a href="author.html#12585">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

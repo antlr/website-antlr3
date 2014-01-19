@@ -1,0 +1,247 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] if-then-else - Grammar generates faulty
+	parser code
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20if-then-else%20-%20Grammar%20generates%20faulty%0A%09parser%20code&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="007562.html">
+   <LINK REL="Next"  HREF="007567.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] if-then-else - Grammar generates faulty
+	parser code</H1>
+    <B>Jeff Vincent</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20if-then-else%20-%20Grammar%20generates%20faulty%0A%09parser%20code&In-Reply-To="
+       TITLE="[antlr-interest] if-then-else - Grammar generates faulty
+	parser code">JVincent at Novell.Com
+       </A><BR>
+    <I>Thu Apr 22 09:01:12 PDT 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="007562.html">'netiquette (was: [antlr-interest] Again help with pl/sql grammar)
+</A></li>
+        <LI>Next message: <A HREF="007567.html">[antlr-interest] if-then-else - Grammar generates faulty parser code
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#7563">[ date ]</a>
+              <a href="thread.html#7563">[ thread ]</a>
+              <a href="subject.html#7563">[ subject ]</a>
+              <a href="author.html#7563">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Here is my if-then-else.  I didn't let ANTLR build the AST directly, I
+did it myself to get things rooted the way I wanted with some imaginary
+tokens.  I also didn't create special rules for the 'then' or the 'else'
+part.  The ifFalseblock will be null if the else is omitted.
+ 
+statement options {defaultErrorHandler=true;} :
+  ( 
+    ...
+
+  |! stateIf:IF LPAREN! ifcond:expression RPAREN! iftrueblock:combo 
+        ( options { greedy = true; } : ELSE! iffalseblock:combo )?
+   {    #statement = #(#stateIf, #(#[EXPRESSION, &quot;EXPRESSION&quot;],
+#ifcond), 
+            #(#[COMBO, &quot;COMBO&quot;], #iftrueblock), #(#[COMBO, &quot;COMBO&quot;],
+#iffalseblock)); 
+    }
+ 
+    ...
+    ) ;
+  
+This has worked since ANTLR 2.7.0 (or 2.7.1? - ack! - I can't recall)
+and I am currently using ANTLR 2.7.3.
+ 
+If you care, I also rolled my own AST parser rules for all conditional
+expressions (for, if-then-else, while, do-while, switch-case,
+try-catch-finally) so I can control when the conditional parts actually
+get parsed.  I am using all this as part of a run-time scripting
+language (initially based loosly on 'C' w/ some Java-isms) using ANTLR
+at the core.  The code that does the work is built into the AST parser
+(action code), so the act of running the parser causes the actual
+run-time execution.  I therefore had to only let the AST parser parse
+things that actually should be &quot;executed&quot;.  Here is a snippet of the AST
+parser rule for my IF-THEN-ELSE statement:
+ 
+statement :
+(
+ ...
+ 
+   | #( astIF:IF
+     {
+      MyResult result = null;
+      AST cond = null, ifTrue = null, ifFalse = null;
+ 
+      //
+      //Pull individual IF components of AST
+      //
+      cond = #astIF.getFirstChild();
+      ifTrue = cond.getNextSibling();
+      ifFalse = ifTrue.getNextSibling();
+ 
+      cond = cond.getFirstChild();
+      ifTrue = ifTrue.getFirstChild();
+      ifFalse = ifFalse.getFirstChild();
+ 
+      //
+      //Execute the IF condition
+      //
+      result = assignmentExpression(cond); //&lt;-- ANTLR parses
+(executes) conditional
+ 
+      if (result.getType() == BOOL) {
+         if (result.getBooleanValue() == true)
+            combo(ifTrue);   //&lt;-- ANTLR parses (executes) &quot;then&quot;
+block
+         else if (ifFalse != null) //optional ELSE block
+            combo(ifFalse);  //&lt;-- ANTLR parses (executes) &quot;else&quot;
+block
+      }
+      else
+       throw new RecognitionException(&quot;Error: TreeParser.statement:
+malformed IF: condition MUST evaluate as BOOLEAN&quot;);
+     }
+    . )
+     |
+ 
+  ...
+ 
+) ;
+ 
+I have similar rules for the other conditional statements.  If I do say
+so myself, it works really well!  The ANTLR experts out there may have a
+slicker way to do it, and I am open to suggestions.  I assume I would
+need to semantic predicates somehow.  However, getting into the looping
+structures I wasn't sure how to handle those, not to mention my
+try-catch-finally rule.  Not sure if that helped or not.
+ 
+Enjoy!
+
+&gt;&gt;&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">poornima.prakash at cgi.com</A> 4/22/2004 1:16:48 AM &gt;&gt;&gt;
+</I>
+We have a classic 'if-then-else' rule in the grammar file. The 
+problem we are facing is with the ANTLR versions 2.7.2 and 2.7.4rc1.
+
+The 'rule' in the grammar file is defined as follows :
+
+  rule options { defaultErrorHandler = true;} :
+    ifPart thenPart 
+    (options {warnWhenFollowAmbig = false;} :
+        elsePart
+        )?;
+        
+  ifPart: &quot;if&quot;^ LPARENTHESIS! conditional_expression RPARENTHESIS!;
+    
+  thenPart  : &quot;then&quot;^ stmt_blk;
+    
+  elsePart  :&quot;else&quot;^ stmt_blk;
+
+Since the 'else' part is optional, when we give an input rule with 
+only the 'if-then' and without the 'else', AST is not generated 
+correctly. It stops at the root node!
+
+However, if we manipulate the generated C# code, AST is correctly 
+generated. We have to  move the line &quot;rule_AST = currentAST.root;&quot; in 
+the generated sources such that it is traversed even when only 'if-
+then' input rule is given. 
+
+To be more precise, the line &quot;rule_AST = currentAST.root;&quot;  at the 
+end of the 'try' block in the below (automatically generated parser) 
+code has to be moved into the 'default' case of switch-case for the 
+correct AST to get generated.
+
+public void rule() //throws RecognitionException, TokenStreamException
+{
+        
+        returnAST = null;
+        ASTPair currentAST = new ASTPair();
+        AST rule_AST = null;
+        
+        try {      // for error handling
+            ifPart();
+            astFactory.addASTChild(currentAST, returnAST);
+            thenPart();
+            astFactory.addASTChild(currentAST, returnAST);
+            {
+                switch ( LA(1) )
+                {
+                case LITERAL_else:
+                {
+                    elsePart();
+                    astFactory.addASTChild
+(currentAST, returnAST);
+                    break;
+                }
+                case LITERAL_if:
+                ....
+                case IDENTIFIER:
+                {
+                    break;
+                }
+                default:
+                {
+                    throw new NoViableAltException
+(LT(1), getFilename());
+                }
+                }
+            }
+            rule_AST = currentAST.root;
+        }
+        catch (RecognitionException ex)
+        {...
+        }
+        returnAST = rule_AST;
+    }
+
+
+Please advice the required grammar change such that the AST gets 
+generated properly without moving around the generated code.
+
+Looking forward to your reply.
+
+regards,
+Poornima and Raghu.
+    
+
+
+
+
+
+
+Yahoo! Groups Links
+
+
+
+
+
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20040422/c68f7e3f/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20040422/c68f7e3f/attachment.html</A>
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="007562.html">'netiquette (was: [antlr-interest] Again help with pl/sql grammar)
+</A></li>
+	<LI>Next message: <A HREF="007567.html">[antlr-interest] if-then-else - Grammar generates faulty parser code
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#7563">[ date ]</a>
+              <a href="thread.html#7563">[ thread ]</a>
+              <a href="subject.html#7563">[ subject ]</a>
+              <a href="author.html#7563">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

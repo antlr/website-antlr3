@@ -1,0 +1,252 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Embedded token stream technique
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Embedded%20token%20stream%20technique&In-Reply-To=16529.17618.206071.826461%40SWAN.PSY.cmu.edu">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="007695.html">
+   <LINK REL="Next"  HREF="007691.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Embedded token stream technique</H1>
+    <B>Monty Zukowski</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Embedded%20token%20stream%20technique&In-Reply-To=16529.17618.206071.826461%40SWAN.PSY.cmu.edu"
+       TITLE="[antlr-interest] Embedded token stream technique">monty at codetransform.com
+       </A><BR>
+    <I>Thu Apr 29 11:24:27 PDT 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="007695.html">[antlr-interest] Embedded token stream technique
+</A></li>
+        <LI>Next message: <A HREF="007691.html">[antlr-interest] missing class in 2.7.3 - ASTFrame$MyTreeSelectionListener
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#7696">[ date ]</a>
+              <a href="thread.html#7696">[ thread ]</a>
+              <a href="subject.html#7696">[ subject ]</a>
+              <a href="author.html#7696">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I've used a similar approach before, this will work.
+
+Monty
+
+On Apr 29, 2004, at 11:09 AM, <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">FranklinChen at cmu.edu</A> wrote:
+
+&gt;<i> I asked earlier in several messages about a variety of lexer
+</I>&gt;<i> techniques I tried in order to do what I need to do... I never got any
+</I>&gt;<i> feedback about any of it, but I think I have come up with an
+</I>&gt;<i> interesting hack, and am interested whether it introduces unforeseen
+</I>&gt;<i> problems:
+</I>&gt;<i>
+</I>&gt;<i> Say I am parsing and currently use a lexer that has a token FLOAT,
+</I>&gt;<i> which is FLOAT_INTEGER DOT FLOAT_FRACTION (assume all protected).  Now
+</I>&gt;<i> assume that my parser wants to get the subparts of the token.  (Never
+</I>&gt;<i> mind that in this toy example this makes no sense: in real examples,
+</I>&gt;<i> where the token is actually recursive, I do want access to subparts of
+</I>&gt;<i> a token, for reparsing in the right context.)
+</I>&gt;<i>
+</I>&gt;<i> I've implemented a trick as follows (relevant excerpt
+</I>&gt;<i> follows). Comments?
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> header {
+</I>&gt;<i>     import java.util.LinkedList;
+</I>&gt;<i> }
+</I>&gt;<i>
+</I>&gt;<i> class FloatParser extends Parser;
+</I>&gt;<i>
+</I>&gt;<i> options {
+</I>&gt;<i>     buildAST = true;
+</I>&gt;<i> }
+</I>&gt;<i>
+</I>&gt;<i> tokens {
+</I>&gt;<i>     NUMBER;
+</I>&gt;<i> }
+</I>&gt;<i>
+</I>&gt;<i> number
+</I>&gt;<i>     :
+</I>&gt;<i>         i:FLOAT_INTEGER
+</I>&gt;<i>         DOT!
+</I>&gt;<i>         f:FLOAT_FRACTION
+</I>&gt;<i>         {
+</I>&gt;<i>           #number = #([NUMBER], #number);
+</I>&gt;<i>         }
+</I>&gt;<i>     ;
+</I>&gt;<i>
+</I>&gt;<i> class FloatLexer extends Lexer;
+</I>&gt;<i>
+</I>&gt;<i> {
+</I>&gt;<i>     /** Queue of tokens. */
+</I>&gt;<i>     protected LinkedList insertedTokens = new LinkedList();
+</I>&gt;<i> }
+</I>&gt;<i>
+</I>&gt;<i> // Want to push tokens back on the stream in order to treat as
+</I>&gt;<i> // &quot;integer&quot; followed by &quot;fraction&quot;.
+</I>&gt;<i> FLOAT
+</I>&gt;<i>     :
+</I>&gt;<i>         i:FLOAT_INTEGER
+</I>&gt;<i>         {
+</I>&gt;<i>             LinkedList queue = new LinkedList();
+</I>&gt;<i>             queue.add(i);
+</I>&gt;<i>         }
+</I>&gt;<i>         d:DOT
+</I>&gt;<i>         {
+</I>&gt;<i>             queue.add(d);
+</I>&gt;<i>         }
+</I>&gt;<i>         f:FLOAT_FRACTION
+</I>&gt;<i>         {
+</I>&gt;<i>             queue.add(f);
+</I>&gt;<i>         }
+</I>&gt;<i>
+</I>&gt;<i>         {
+</I>&gt;<i>             // Have to manually kick off the token stream.
+</I>&gt;<i>             Token token = (Token) queue.removeFirst();
+</I>&gt;<i>             $setToken(token);
+</I>&gt;<i>             System.err.println(&quot;*** inserting tokens: &quot; + queue);
+</I>&gt;<i>             insertedTokens.addAll(queue);
+</I>&gt;<i>         }
+</I>&gt;<i>     ;
+</I>&gt;<i>
+</I>&gt;<i> protected
+</I>&gt;<i> FLOAT_INTEGER
+</I>&gt;<i>     :
+</I>&gt;<i>         ('0'..'9')+
+</I>&gt;<i>     ;
+</I>&gt;<i>
+</I>&gt;<i> protected
+</I>&gt;<i> FLOAT_FRACTION
+</I>&gt;<i>     :
+</I>&gt;<i>         ('0'..'9')+
+</I>&gt;<i>     ;
+</I>&gt;<i>
+</I>&gt;<i> protected
+</I>&gt;<i> DOT
+</I>&gt;<i>     :
+</I>&gt;<i>         '.'
+</I>&gt;<i>     ;
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> import java.io.InputStream;
+</I>&gt;<i> import java.io.Reader;
+</I>&gt;<i>
+</I>&gt;<i> import antlr.Token;
+</I>&gt;<i> import antlr.TokenStreamException;
+</I>&gt;<i> import antlr.InputBuffer;
+</I>&gt;<i> import antlr.LexerSharedInputState;
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> /**
+</I>&gt;<i>  * Use queue of tokens before the existing token stream.
+</I>&gt;<i>  */
+</I>&gt;<i> public class InsertedFloatLexer extends FloatLexer {
+</I>&gt;<i>     public InsertedFloatLexer(InputStream in) {
+</I>&gt;<i>         super(in);
+</I>&gt;<i>     }
+</I>&gt;<i>
+</I>&gt;<i>     public InsertedFloatLexer(Reader in) {
+</I>&gt;<i>         super(in);
+</I>&gt;<i>     }
+</I>&gt;<i>
+</I>&gt;<i>     public InsertedFloatLexer(InputBuffer ib) {
+</I>&gt;<i>         super(ib);
+</I>&gt;<i>     }
+</I>&gt;<i>
+</I>&gt;<i>     public InsertedFloatLexer(LexerSharedInputState state) {
+</I>&gt;<i>         super(state);
+</I>&gt;<i>     }
+</I>&gt;<i>
+</I>&gt;<i>     public Token nextToken() throws TokenStreamException {
+</I>&gt;<i>         if (insertedTokens.size() == 0) {
+</I>&gt;<i>             return super.nextToken();
+</I>&gt;<i>         }
+</I>&gt;<i>         else {
+</I>&gt;<i>             return (Token) insertedTokens.removeFirst();
+</I>&gt;<i>         }
+</I>&gt;<i>     }
+</I>&gt;<i> }
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> import antlr.TokenStream;
+</I>&gt;<i> import antlr.Token;
+</I>&gt;<i> import antlr.TokenStreamException;
+</I>&gt;<i>
+</I>&gt;<i> public class FloatDriver {
+</I>&gt;<i>     public static void main(String[] args) {
+</I>&gt;<i>         try {
+</I>&gt;<i>             InsertedFloatLexer lexer = new 
+</I>&gt;<i> InsertedFloatLexer(System.in);
+</I>&gt;<i>             FloatParser parser = new FloatParser(lexer);
+</I>&gt;<i>
+</I>&gt;<i>             parser.start();
+</I>&gt;<i>         }
+</I>&gt;<i>         catch (Exception e) {
+</I>&gt;<i>             System.err.println(e.getMessage());
+</I>&gt;<i>         }
+</I>&gt;<i>     }
+</I>&gt;<i> }
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> -- 
+</I>&gt;<i> Franklin
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Yahoo! Groups Links
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>Monty Zukowski
+
+ANTLR &amp; Java Consultant -- <A HREF="http://www.codetransform.com">http://www.codetransform.com</A>
+ANSI C/GCC transformation toolkit -- 
+<A HREF="http://www.codetransform.com/gcc.html">http://www.codetransform.com/gcc.html</A>
+Embrace the Decay -- <A HREF="http://www.codetransform.com/EmbraceDecay.html">http://www.codetransform.com/EmbraceDecay.html</A>
+
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+     <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+     <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+     <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="007695.html">[antlr-interest] Embedded token stream technique
+</A></li>
+	<LI>Next message: <A HREF="007691.html">[antlr-interest] missing class in 2.7.3 - ASTFrame$MyTreeSelectionListener
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#7696">[ date ]</a>
+              <a href="thread.html#7696">[ thread ]</a>
+              <a href="subject.html#7696">[ subject ]</a>
+              <a href="author.html#7696">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,149 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Scanning Perl-style quoted	strings	q{foo{bar}quux}?!
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Scanning%20Perl-style%20quoted%0A%09strings%09q%7Bfoo%7Bbar%7Dquux%7D%3F%21&In-Reply-To=%3C20090730172643.GA94507%40engelschall.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="035384.html">
+   <LINK REL="Next"  HREF="035382.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Scanning Perl-style quoted	strings	q{foo{bar}quux}?!</H1>
+    <B>Ralf S. Engelschall</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Scanning%20Perl-style%20quoted%0A%09strings%09q%7Bfoo%7Bbar%7Dquux%7D%3F%21&In-Reply-To=%3C20090730172643.GA94507%40engelschall.com%3E"
+       TITLE="[antlr-interest] Scanning Perl-style quoted	strings	q{foo{bar}quux}?!">rse+antlr-interest at engelschall.com
+       </A><BR>
+    <I>Thu Jul 30 10:26:43 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="035384.html">[antlr-interest] Scanning Perl-style quoted	strings	q{foo{bar}quux}?!
+</A></li>
+        <LI>Next message: <A HREF="035382.html">[antlr-interest] OOPS 2010 Call for Papers
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#35386">[ date ]</a>
+              <a href="thread.html#35386">[ thread ]</a>
+              <a href="subject.html#35386">[ subject ]</a>
+              <a href="author.html#35386">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Thu, Jul 30, 2009, Ralf S. Engelschall wrote:
+
+&gt;<i> [...]
+</I>&gt;<i> My current solution is now:
+</I>&gt;<i>
+</I>&gt;<i>                     /* Perl-style quoted string */
+</I>&gt;<i> QSTRING             : 'q' (QS_ANGLE | QS_BRACE | QS_BRACK | QS_PAREN | QS_OTHER);
+</I>&gt;<i> fragment QS_ANGLE   : '&lt;' (('\\' '&lt;') =&gt; '\\' '&lt;' | QS_ANGLE | ~('&lt;' | '&gt;'))* '&gt;';
+</I>&gt;<i> fragment QS_BRACE   : '{' (('\\' '{') =&gt; '\\' '{' | QS_BRACE | ~('{' | '}'))* '}';
+</I>&gt;<i> fragment QS_BRACK   : '[' (('\\' '[') =&gt; '\\' '[' | QS_BRACK | ~('[' | '}'))* ']';
+</I>&gt;<i> fragment QS_PAREN   : '(' (('\\' '(') =&gt; '\\' '(' | QS_PAREN | ~('(' | ')'))* ')';
+</I>&gt;<i> fragment QS_OTHER_CH: ~('&lt;'|'&gt;'|'{'|'}'|'['|']'|'('|')'|'a'..'z'|'A'..'Z'|'0'..'9');
+</I>&gt;<i> fragment QS_OTHER   : delimiter=QS_OTHER_CH
+</I>&gt;<i>                       ( '\\' { input.LT(1) == $delimiter.text.charAt(0) }? =&gt; .
+</I>&gt;<i>                       |      { input.LT(1) != $delimiter.text.charAt(0) }? =&gt; .
+</I>&gt;<i>                       )*
+</I>&gt;<i>                       { input.LT(1) == $delimiter.text.charAt(0) }? =&gt; .;
+</I>&gt;<i>
+</I>&gt;<i> This already correctly recognizes all qX...X constructs. I now just have
+</I>&gt;<i> to filter out the escape sequences and remove the leading qX and the
+</I>&gt;<i> trailing X...
+</I>
+After many attempts to add the escape character filtering I now also
+have a solution for this:
+
+                  /* Perl-style quoted string */
+QSTRING           @init { StringBuilder sb = new StringBuilder(); }
+                  : 'q'
+                    ( '&lt;' QS_ANGLE[sb] '&gt;'
+                    | '{' QS_BRACE[sb] '}'
+                    | '[' QS_BRACK[sb] ']'
+                    | '(' QS_PAREN[sb] ')'
+                    | QS_OTHER[sb]
+                    )                                        { setText(sb.toString()); }
+                  ;
+fragment QS_ANGLE [StringBuilder sb]
+                  : ( ('\\' '&lt;') =&gt; '\\' c='&lt;'               { sb.appendCodePoint($c); }
+                    | ('\\' '&gt;') =&gt; '\\' c='&gt;'               { sb.appendCodePoint($c); }
+                    | c='&lt;'                                  { sb.appendCodePoint($c); }
+                      QS_ANGLE[sb]
+                      c='&gt;'                                  { sb.appendCodePoint($c); }
+                    | c=~('&lt;' | '&gt;')                         { sb.appendCodePoint($c); }
+                    )*
+                  ;
+fragment QS_BRACE [StringBuilder sb]
+                  : ( ('\\' '{') =&gt; '\\' c='{'               { sb.appendCodePoint($c); }
+                    | ('\\' '}') =&gt; '\\' c='}'               { sb.appendCodePoint($c); }
+                    | c='{'                                  { sb.appendCodePoint($c); }
+                      QS_BRACE[sb]
+                      c='}'                                  { sb.appendCodePoint($c); }
+                    | c=~('{' | '}')                         { sb.appendCodePoint($c); }
+                    )*
+                  ;
+fragment QS_BRACK [StringBuilder sb]
+                  : ( ('\\' '[') =&gt; '\\' c='['               { sb.appendCodePoint($c); }
+                    | ('\\' ']') =&gt; '\\' c=']'               { sb.appendCodePoint($c); }
+                    | c='['                                  { sb.appendCodePoint($c); }
+                      QS_BRACE[sb]
+                      c=']'                                  { sb.appendCodePoint($c); }
+                    | c=~('[' | ']')                         { sb.appendCodePoint($c); }
+                    )*
+                  ;
+fragment QS_PAREN [StringBuilder sb]
+                  : ( ('\\' '(') =&gt; '\\' c='('               { sb.appendCodePoint($c); }
+                    | ('\\' ')') =&gt; '\\' c=')'               { sb.appendCodePoint($c); }
+                    | c='('                                  { sb.appendCodePoint($c); }
+                      QS_BRACE[sb]
+                      c=')'                                  { sb.appendCodePoint($c); }
+                    | c=~('(' | ')')                         { sb.appendCodePoint($c); }
+                    )*
+                  ;
+fragment QS_OTHER [StringBuilder sb]
+                  : d=('!'|'&quot;'|'#'|'$'|'%'|'&amp;'
+                      |'\''|'*'|'+'|','|'-'|'.'|'/'
+                      |':'|';'|'='|'?'|'@'|'\\'|'^'
+                      |'_'|'`'|'|'|'~'
+                      )
+                    ( { input.LT(1) == '\\' &amp;&amp;
+                        input.LT(2) == $d     }? =&gt; '\\' c=. { sb.appendCodePoint($c); }
+                    | { input.LT(1) != $d     }? =&gt;      c=. { sb.appendCodePoint($c); }
+                    )*
+                    { input.LT(1) == $d }? =&gt; .
+                  ;
+
+This now is the most complete ANTLR lexical rule set for parsing
+Perl-style q/.../ constructs. Unfortunately, it is no longer really
+short and concise, but it now seems to finally work as expected.
+
+Thanks for all the help.
+                                       Ralf S. Engelschall
+                                       <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">rse at engelschall.com</A>
+                                       www.engelschall.com
+
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="035384.html">[antlr-interest] Scanning Perl-style quoted	strings	q{foo{bar}quux}?!
+</A></li>
+	<LI>Next message: <A HREF="035382.html">[antlr-interest] OOPS 2010 Call for Papers
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#35386">[ date ]</a>
+              <a href="thread.html#35386">[ thread ]</a>
+              <a href="subject.html#35386">[ subject ]</a>
+              <a href="author.html#35386">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

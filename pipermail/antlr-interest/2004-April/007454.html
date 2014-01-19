@@ -1,0 +1,172 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Re: How to make antlr parse this
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20How%20to%20make%20antlr%20parse%20this&In-Reply-To=1082169867.4328.9.camel%40workstation.mn.mtu.net">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="007449.html">
+   <LINK REL="Next"  HREF="007455.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Re: How to make antlr parse this</H1>
+    <B>Mark</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20How%20to%20make%20antlr%20parse%20this&In-Reply-To=1082169867.4328.9.camel%40workstation.mn.mtu.net"
+       TITLE="[antlr-interest] Re: How to make antlr parse this">markl at glyphic.com
+       </A><BR>
+    <I>Sat Apr 17 13:12:56 PDT 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="007449.html">[antlr-interest] Re: How to make antlr parse this
+</A></li>
+        <LI>Next message: <A HREF="007455.html">[antlr-interest] Re: How to make antlr parse this
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#7454">[ date ]</a>
+              <a href="thread.html#7454">[ thread ]</a>
+              <a href="subject.html#7454">[ subject ]</a>
+              <a href="author.html#7454">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>&gt;<i> Ah yes, now I see the error of my ways.  In the case you show I want
+</I>&gt;<i> just the last c to match typeDefinition.  So my grammar is more like
+</I>&gt;<i> this:
+</I>&gt;<i> compilationUnit
+</I>&gt;<i>   :
+</I>&gt;<i>  ( (javadocComment)* packageDefinition ) =&gt; (javadocComment)*
+</I>&gt;<i> packageDefinition // Thanks Loring that took care of the ones above
+</I>&gt;<i> packages
+</I>&gt;<i>  | /* nothing */
+</I>&gt;<i>  )
+</I>&gt;<i> (javadocComment | import)*
+</I>&gt;<i> ( (invariantCondition)? typeDefinition)*
+</I>&gt;<i> EOF
+</I>&gt;<i> 
+</I>&gt;<i> Of course antlr still informs me that this is non-deterministic, likely
+</I>&gt;<i> due to k being 2 and javadocComment being longer than 2 tokens.  Am I
+</I>&gt;<i> right on that one?
+</I>Nope.  It is still inherently non-deterministic:
+
+u : (((c)* p) =&gt; c* p | ) (c|i)* ((c)? t)*
+
+again, c c c c t
+does (c|i)* match three or four of the comments, leaving one or zero for (c)?
+
+Also, the syntatic predicate does nothing:  Let's see why:
+
+I'm going to rewrite your grammar somewhat for illustration:
+
+unit : start middle end ;
+start : (comment)* package | empty ;
+middle : (comment | import)* ;
+end : ((invariant)? typedef)* ;
+invariant : comment { some code here } ;
+empty : ;
+
+Notice that invariant is just comment, which to the parser it is, except that it does some 
+semantic processing.
+
+This grammar doesn't treat comments matched in start or comments matched in middle 
+any differently.  In other words, if you see three comments at the start of an input, you're 
+not going to care if they eventually match the comment reference in start or the reference 
+in middle.  Because of the way you written the grammar, it is the presence of a package, 
+**after a potentially huge number of comments** that determines if those comments 
+should match in start or middle.  The syntactic predicate helps by effectively doing a run-
+time large look ahead.  But, in the end you don't care where they get matched.
+
+So, the first re-write of the grammar is:
+
+unit: pre start middle end ;
+pre: (comment)* ;
+start : (package (comment)*)? ;
+middle : (import (comment)*)* ;
+end : ((invariant)? typedef)* ;
+invariant : comment { some code here } ;
+empty : ;
+
+This parses the same grammar, but it pushes as many comments into pre as it possible 
+can, then as many into start as it can, etc...  Since you don't need to semantically treat 
+these comments differently, it doesn't matter where they get matched.  Notice that each 
+rule that is optional ( (...)? or (...)* rules) starts with a fixed length unique sequence so the 
+parser can tell if that rule is to be used.
+
+Now the problem with this grammar is that sequence that matches invariant before the 
+typedef will also match the comment in any of pre, start, or middle.  And since we've made 
+the grammar be hungry and match as much as possible, this grammar will never see the 
+optional invariant in the end rule - it will have been eaten by some other (comment)* 
+sequence.  This is legal based on the grammar, since it is non-deterministic, but it is not 
+how you want to resolve the non-determinism.
+
+HERE is the case to use a syntactic predicate: You are trying to make a parse decision (is it 
+an invariant or a comment) based on syntax that **follows** the sequence in question.  
+The solution is that we don't want any of the (comment)* sequences to match the last 
+comment if it followed by a typedef, because we want to resolve the non-determinism in 
+favor of matching the invariant.  Which leads us to:
+
+unit: pre start middle end ;
+pre: fluff ;
+start : (package fluff)? ;
+middle : (import fluff)* ;
+end : ((invariant)? typedef)* ;
+fluff : 
+    (comment)=&gt; ( (invariant typedef)=&gt; empty | comment fluff )
+    | empty ;
+invariant : comment { some code here } ;
+empty : ;
+
+So, fluff is a sequence of zero or more comments, but doesn't include the last comment 
+that could be an invariant if if is followed by a typedef.  Alas, this is tail recursive, but that 
+may or may not be a concern for you.  (Do you expect to parse things with thousands of 
+consecutive comment blocks?)
+
+To get rid of tail recursion, we want something like this:
+
+fluff : ((comment comment)=&gt; comment)* flufftail
+flufftail : (comment)=&gt; ( (invariant typedef)=&gt; empty | comment ) | empty ;
+
+But, alas, Antlr doesn't support syntactic predicates as predictors of (...)* loops.
+(Terence, are you listening?)
+
+  - Mark
+
+
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+     <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+     <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+     <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="007449.html">[antlr-interest] Re: How to make antlr parse this
+</A></li>
+	<LI>Next message: <A HREF="007455.html">[antlr-interest] Re: How to make antlr parse this
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#7454">[ date ]</a>
+              <a href="thread.html#7454">[ thread ]</a>
+              <a href="subject.html#7454">[ subject ]</a>
+              <a href="author.html#7454">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

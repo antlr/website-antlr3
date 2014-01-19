@@ -1,0 +1,146 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Number tokenizer vs. number grammar
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Number%20tokenizer%20vs.%20number%20grammar&In-Reply-To=%3C904774730811160938y2674dee2q6b5530dec4ddc048%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="031590.html">
+   <LINK REL="Next"  HREF="031588.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Number tokenizer vs. number grammar</H1>
+    <B>Todd O'Bryan</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Number%20tokenizer%20vs.%20number%20grammar&In-Reply-To=%3C904774730811160938y2674dee2q6b5530dec4ddc048%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Number tokenizer vs. number grammar">toddobryan at gmail.com
+       </A><BR>
+    <I>Sun Nov 16 09:38:15 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="031590.html">[antlr-interest] Confused about backtracking in lexer rules
+</A></li>
+        <LI>Next message: <A HREF="031588.html">[antlr-interest] Import--can someone explain how to make it work
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#31586">[ date ]</a>
+              <a href="thread.html#31586">[ thread ]</a>
+              <a href="subject.html#31586">[ subject ]</a>
+              <a href="author.html#31586">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Thanks for that advice. I think I figured it out. I created a
+tokenizer that grabs all the possible number sequences, then I have a
+parser rule that, if it receives a RATIONAL or COMPLEX number, splits
+it appropriately and sends each part back through the number rule to
+correctly parse each part.
+
+Here are the lexical rules, if anyone is interested.
+
+fragment DIGIT : '0'..'9';
+POS_INT : DIGIT+;
+NEG_INT : '-' POS_INT;
+POS_DECIMAL : DIGIT+ '.' DIGIT* | '.' DIGIT+;
+NEG_DECIMAL : '-' POS_DECIMAL;
+POS_RATIONAL : POS_INT '/' (POS_INT | NEG_INT);
+NEG_RATIONAL : '-' POS_RATIONAL;
+fragment POS_REAL : POS_DECIMAL | POS_INT | POS_RATIONAL;
+fragment NEG_REAL : NEG_DECIMAL | NEG_INT | NEG_RATIONAL;
+
+COMPLEX : (POS_REAL | NEG_REAL) '+' POS_REAL? 'i'
+  | (POS_REAL | NEG_REAL) (NEG_REAL | '-') 'i'
+  ;
+
+WS : (' ' | '\t' | '\n' | '\r') { $channel = HIDDEN; }
+  ;
+
+And here's how the number rule handles a couple of examples. (I
+translated to Java for the sake of being most useful to most people,
+so there may be some typos.)
+
+number returns [MyNumber value]
+  : (POS_INT | NEG_INT) { $value = new MyInt($text); }
+  | COMPLEX {
+      int sep = Math.max($text.lastIndexOf('+'), $text.lastIndexOf('-'));
+      String real = $text.substring(0, sep)
+      String imag = $text.substring(sep+1)
+      if (imag.equals(&quot;&quot;)) {
+          imag = &quot;1&quot;;
+      }
+      if ($text.charAt(sep) == '-') {
+          imag = '-' + imag
+      }
+      Parser real_parser =
+NumberParser(CommonTokenStream(numberLexer(ANTLRStringStream(real))));
+      Parser imag_parser  =
+NumberParser(CommonTokenStream(numberLexer(ANTLRStringStream(imag))));
+      $value = new Complex(real_parser.number().getValue(),
+imag_parser.number().getValue());
+    }
+  ;
+
+I'm still having problems trying to include this grammar in another
+grammar, but that's the subject of a forthcoming email.
+
+Thanks again!
+Todd
+
+On Sun, Nov 16, 2008 at 1:30 AM, Gavin Lambert &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr at mirality.co.nz</A>&gt; wrote:
+&gt;<i> At 09:50 16/11/2008, Todd O'Bryan wrote:
+</I>&gt;&gt;<i>Assume that that both 2 * 3+2i and 2*3+2i should lex as NUMBER OP
+</I>&gt;&gt;<i>NUMBER. What does that determine about my possible approaches? :-)
+</I>&gt;<i>
+</I>&gt;<i> It implies that you're going to experience pain with &quot;2+3+2i&quot; (or &quot;2/3+2i&quot;,
+</I>&gt;<i> for that matter, given that you've already said that this ought to be a
+</I>&gt;<i> single NUMBER).  :)
+</I>&gt;<i>
+</I>&gt;<i> If you can require that whitespace is significant (ie. &quot;2 / 3+2i&quot; is two
+</I>&gt;<i> NUMBERs and a division, but &quot;2/3+2i&quot; is a single NUMBER, and &quot;2 /3+2i&quot; is
+</I>&gt;<i> simply illegal), then probably the simplest way to deal with this (and avoid
+</I>&gt;<i> duplication) is to define NUMBER as any sequence with a leading digit and
+</I>&gt;<i> any combination of digits and operators afterwards, with no whitespace:
+</I>&gt;<i>
+</I>&gt;<i> fragment DIGIT : '0'..'9';
+</I>&gt;<i> NUMBER : '-'? '.'? DIGIT (DIGIT | '+' | '-' | '/' | '.' | 'i')* ;
+</I>&gt;<i>
+</I>&gt;<i> This will of course be able to match invalid constructs as well, but you can
+</I>&gt;<i> deal with that at the parser / tree parser / driver code level (which
+</I>&gt;<i> permits better error messages anyway).
+</I>&gt;<i>
+</I>&gt;<i>
+</I></PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="031590.html">[antlr-interest] Confused about backtracking in lexer rules
+</A></li>
+	<LI>Next message: <A HREF="031588.html">[antlr-interest] Import--can someone explain how to make it work
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#31586">[ date ]</a>
+              <a href="thread.html#31586">[ thread ]</a>
+              <a href="subject.html#31586">[ subject ]</a>
+              <a href="author.html#31586">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

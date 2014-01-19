@@ -1,0 +1,187 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] The Classic else (Non-)Ambiguity
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20The%20Classic%20else%20%28Non-%29Ambiguity&In-Reply-To=%3Cx2w30dde8ce1005031056oeeabeddr4e3899fc6f85595a%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="038547.html">
+   <LINK REL="Next"  HREF="038537.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] The Classic else (Non-)Ambiguity</H1>
+    <B>Ron Burk</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20The%20Classic%20else%20%28Non-%29Ambiguity&In-Reply-To=%3Cx2w30dde8ce1005031056oeeabeddr4e3899fc6f85595a%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] The Classic else (Non-)Ambiguity">ronburk at gmail.com
+       </A><BR>
+    <I>Mon May  3 10:56:23 PDT 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="038547.html">[antlr-interest] Actions and non-LL(*) rules ??
+</A></li>
+        <LI>Next message: <A HREF="038537.html">[antlr-interest] The Classic else (Non-)Ambiguity
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#38536">[ date ]</a>
+              <a href="thread.html#38536">[ thread ]</a>
+              <a href="subject.html#38536">[ subject ]</a>
+              <a href="author.html#38536">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Something that has been bugging me:
+
+Why do virtually all parser generators produce a warning
+for the classic case of if-else ambiguity? It's only technically
+ambiguous: there is absolutely only one resolution to the
+ambiguity that could possibly make any sense at all,
+so warning the user that an ambiguity exists just
+wastes the users time -- this is a class of ambiguity
+for which the parser generator can make the correct
+choice with 100% confidence.
+
+Indeed, it wastes a huge amount of user time even
+if you only measure the time spent posting and answering
+the same &quot;why is this else ambiguous&quot; question over
+and over again (as a quick Google will show). This is
+not, as is often claimed, a situation where using a
+default of &quot;consuming more input&quot; is &quot;usually what
+you want&quot;. This particular example is a case where
+there is only one possible choice that could be right.
+
+Part of the problem is people keep explaining the problem
+utterly incorrectly. For example, the yacc manual goes
+into the if-else ambiguity in great detail, and claims
+that the problem is that the else can bind to either
+an inner or outer if. That is wrong. The else can only
+bind to the inner if.
+
+One can demonstrate that point by taking the example
+if-else grammar from the yacc manual and then using
+%prec to force it to choose to reduce instead of shift
+when it encounters an &quot;else&quot; token. The result is a parser
+that produces a syntax error whenever it sees an &quot;else&quot;
+token -- no &quot;else&quot; token can ever be consumed. There
+were never really two possible choices that could
+make sense, there was never any possibility of matching
+an &quot;else&quot; to an outer if. There is only one *valid* choice
+between the two *technically* ambiguous choices since
+the other alternative is, as the Dragon Book says,
+&quot;surely wrong&quot;.
+
+There is no doubt that this particular &quot;ambiguity&quot; can
+be resolved with 100% confidence 100% automatically,
+without wasting endless hours of user time by informing
+them that it was &quot;ambiguous&quot;. The only interesting question
+is, what is the general category this case belongs to?
+
+Roughly speaking, I think the category is simply those
+situations where ambiguity arises because, effectively,
+you have the same optional non-terminal adjacent to
+itself:
+        N? N?
+
+For example, in this grammar:
+
+%token IF ELSE EXPR
+%%
+
+stmt
+    : if
+    | EXPR
+    ;
+
+if
+    : IF EXPR stmt else_opt
+    ;
+
+else_opt    /* optional else */
+    : ELSE stmt
+    |
+    ;
+
+The ambiguity could be identified (by either a top-down
+or bottom up parser generator) as occurring in the &quot;if&quot;
+production right after &quot;stmt&quot; has been recognized.
+However, it can be automatically determined that
+the cause is the fact that &quot;stmt&quot; can end with an
+optional else, putting two optional else nonterminals
+adjacent to each other, which matches the previously
+mentioned category -- therefore this is a false
+ambiguity.
+
+One can see the problem simplified here:
+
+%token DIGIT
+%%
+digits
+    : '(' DIGIT digit_opt digit_opt ')'
+digit_opt  /* optional digit */
+    : DIGIT
+    | /* epsilon */
+    ;
+
+Only one choice for the &quot;ambiguity&quot; can possibly be right;
+the alternative is that the parser would never be able to
+match any of the optional digits. It will always be the case
+when you have two adjacent optional non-terminals that
+there is a technically ambiguous choice between either
+consuming input, or rendering illegal a token that obviously
+should be legal at that point. The correct choice is always
+clear, and the alternative could never make sense.
+
+There are many other (at least vaguely related)
+cases where a warning absolutely should be
+issued, of course:
+     N* N*
+for example, or
+    N* N
+or even
+    N? O?
+where FIRST(N) and FIRST(O) intersect (I'm all for
+warning if there's the slightest possibility the user
+isn't going to understand what's going to happen).
+But for this category I've identified as pseudo
+ambiguities, there is no possibility of user confusion,
+there is no actual alternative that could ever
+possibly make any sense. It is a mere curiosity,
+not a true ambiguity.
+
+IMHO, modern parser generators should not be
+wasting enormous amounts of total user time by
+warning about this class of pseudo ambiguities.
+And modern parser generator documentation
+should not repeat the utterly incorrect if-else
+explanation that implies there is a different
+choice that produces anything sensible
+whatsoever.
+
+I feel better now. :-)
+</PRE>
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="038547.html">[antlr-interest] Actions and non-LL(*) rules ??
+</A></li>
+	<LI>Next message: <A HREF="038537.html">[antlr-interest] The Classic else (Non-)Ambiguity
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#38536">[ date ]</a>
+              <a href="thread.html#38536">[ thread ]</a>
+              <a href="subject.html#38536">[ subject ]</a>
+              <a href="author.html#38536">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

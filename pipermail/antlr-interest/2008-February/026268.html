@@ -1,0 +1,147 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] idea: lexer &quot;sync points&quot;
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20idea%3A%20lexer%20%22sync%20points%22&In-Reply-To=%3C47AB4919.5090603%40math.purdue.edu%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="026267.html">
+   <LINK REL="Next"  HREF="026270.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] idea: lexer &quot;sync points&quot;</H1>
+    <B>J Chapman Flack</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20idea%3A%20lexer%20%22sync%20points%22&In-Reply-To=%3C47AB4919.5090603%40math.purdue.edu%3E"
+       TITLE="[antlr-interest] idea: lexer &quot;sync points&quot;">jflack at math.purdue.edu
+       </A><BR>
+    <I>Thu Feb  7 10:08:25 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="026267.html">[antlr-interest] Antlr v2 question
+</A></li>
+        <LI>Next message: <A HREF="026270.html">[antlr-interest] idea: lexer &quot;sync points&quot;
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#26268">[ date ]</a>
+              <a href="thread.html#26268">[ thread ]</a>
+              <a href="subject.html#26268">[ subject ]</a>
+              <a href="author.html#26268">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+In some previous thread I glimpsed a statement passing by suggesting
+that ANTLR 3 currently generates a lexer that tokenizes the entire
+input before parsing begins.
+
+1. Did I hear that right?  (If not, can someone give a quick summary of
+    the right way to understand how an ANTLR 3 lexer really does manage
+    its input character stream and output token stream buffers?  In that
+    case, some of the rest of this message may become moot.)
+
+2. If I did, there are a couple of concerns that raises for me.  The
+    first is already often mentioned, that it is hard to build a
+    stateful lexer taking cues from the parser, if the lexer runs
+    arbitrarily far ahead.
+
+    The second concern is one I haven't seen mentioned here lately, so
+    here it is: what if I want my program, with an ANTLR-parsed input
+    language, to work in a coprocess setting?
+
+    Here is a simple example, using the Korn shell on Solaris 9, doing a
+    calculation too big for ksh itself:
+
+    $ bc |&amp;
+    $ print -p &quot;sqrt(12345678987654321)&quot;
+    $ read -p result
+    $ print $result
+    111111111
+    $ print -p &quot;sqrt(12345679012345678987654320987654321)&quot;
+    $ read -p result
+    $ print $result
+    111111111111111111
+
+    With this technique I can write a shell script that does any amount
+    of arbitrary-precision arithmetic but only spends the cost of
+    starting a bc subprocess once (in a Unix-like environnment that's a
+    significant cost, so reusing one process is a win).  The
+    technique generalizes; any program can use it, but not every program
+    can be used as a subprocess--sometimes for good reasons, sometimes
+    not. Here's one that won't work, for no good reason:
+
+    $ tr '[a-z]' '[A-Z]' |&amp;
+    $ print -p &quot;i'm not shouting&quot;
+    $ read -p result
+    [deadlock]
+
+    The version of tr on this system uses a braindamaged input buffering
+    strategy. Its read() call has completed and given it a perfectly
+    good short result to operate on--pipes and the I/O calls are
+    specifically designed to work that way--but the programmer has
+    insisted on blindly filling an arbitrarily-sized buffer before doing
+    anything useful. The result is a program that is unusable as a
+    coprocess.
+
+When developing a program with a generated lexer/parser, two things are
+essential to ensuring that the program won't deadlock that way:
+
+1. The language facilities (InputStream, Reader, etc.) used by the
+    program to supply input to the generated lexer have to be chosen and
+    used carefully to avoid blindly blocking for more data when a
+    partial buffer is available. Generally the language features are
+    designed so that this requirement can be met if the programmer pays
+    attention.
+
+2. The lexer generator has to generate code that avoids unnecessary
+    blocking calls on its input source.  (I once had to give up on an
+    ANTLR competitor for a given project, because there was NO WAY to
+    make it generate a lexer with this property.)
+
+I had a thought on a lexer-grammar feature that could be useful for
+both of these issues (stateful lexing, and coprocess usability).
+Suppose you could mark, at chosen points in the lexer grammar, a SYNC
+POINT. This is a point beyond which the generated lexer will buffer no
+more tokens, and make no more blocking calls on input, until the parser
+has caught up the token buffer and requested another token. For
+stateful lexing you would plant a sync point at the spots where the
+parser might want to switch the lexing behavior. For deadlock avoidance
+your sync points would be at newlines or semicolons or whatever could
+terminate an independently executable statement in your language.
+
+The generator should be able to analyze the parser and lexer to warn of
+any decisions where lookahead would have to cross a sync point.
+
+I think this could be a quite useful feature. Comments?
+
+Chapman Flack
+</PRE>
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="026267.html">[antlr-interest] Antlr v2 question
+</A></li>
+	<LI>Next message: <A HREF="026270.html">[antlr-interest] idea: lexer &quot;sync points&quot;
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#26268">[ date ]</a>
+              <a href="thread.html#26268">[ thread ]</a>
+              <a href="subject.html#26268">[ subject ]</a>
+              <a href="author.html#26268">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

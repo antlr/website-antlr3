@@ -1,0 +1,359 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Help needed upgrading java.g to support Generics
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Help%20needed%20upgrading%20java.g%20to%20support%20Generics&In-Reply-To=170826586F3BD511910D0200C110AAA80540220D%40memail03.bco-home.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003314.html">
+   <LINK REL="Next"  HREF="003332.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Help needed upgrading java.g to support Generics</H1>
+    <B>Matt Quail</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Help%20needed%20upgrading%20java.g%20to%20support%20Generics&In-Reply-To=170826586F3BD511910D0200C110AAA80540220D%40memail03.bco-home.com"
+       TITLE="[antlr-interest] Help needed upgrading java.g to support Generics">matt at cortexebusiness.com.au
+       </A><BR>
+    <I>Thu Mar 13 13:45:10 PST 2003</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003314.html">[antlr-interest] Help needed upgrading java.g to support Gene
+	rics
+</A></li>
+        <LI>Next message: <A HREF="003332.html">[antlr-interest] Help needed upgrading java.g to support  Generics
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3319">[ date ]</a>
+              <a href="thread.html#3319">[ thread ]</a>
+              <a href="subject.html#3319">[ subject ]</a>
+              <a href="author.html#3319">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Monty,
+
+Thanks Monty! That has definitely given me something to think about. I will try 
+what you suggest, and remove the &quot;&gt;&gt;&quot;, etc. tokens and parser them as GT GT 
+instead.
+
+So we may have a parser rule:
+
+sr: GT GT;
+
+The one issue with this is that it will allow WS between the two &quot;&gt;&quot; characters 
+in the &quot;&gt;&gt;&quot; operator (which Java does not allow). I might have a play with this 
+approach, in any case. I may be able to solve this problem by changing WS from 
+&quot;skip&quot; tokens to a {option ignore=WS;}. Will need to think some more on that 
+one; any ideas?
+
+The other idea I was tinkering with last night was to leave SR as is, and have 
+some rule like this for matching the end of a &quot;double-nested&quot; template:
+
+.... (GT GT | SR)
+
+Then for &quot;triple-nested&quot; we might have something like
+
+.... (GT GT GT | SR GT | GT SR | BSR)
+
+But I'm not sure what the &quot;....&quot; would be :) Maybe I need to use some semantic 
+predicates and actually count the number of &quot;&gt;&quot; I need to match. Something like 
+this:
+
+typeArgs: typeArgsBody typeArgsEnd;
+
+typeArgsBody:
+   LT {ltCount++;}
+   ReferenceType
+   (typeArsgBody)?
+   ;
+
+typeArgsEnd:
+( // match 0,1,2 or 3 '&gt;'
+    {ltCount == 0}=&gt;
+|<i>  {ltCount == 1}=&gt; GT {ltCount-=1;}
+</I>|<i>  {ltCount == 2}=&gt; (GT GT | SR) {ltCount-=2;}
+</I>|<i>  {ltCount == 3}=&gt;
+</I>       (GT GT GT | SR GT | GT SR | BSR) {ltCount-=3;}
+)
+// if there are more, match some more
+{ltCount &gt; 0}=&gt; typeArgsEnd
+;
+
+(Hmmm... it is ugly to have to use a semantic predicate... but this may be a 
+&quot;quick win&quot;.)
+
+I will try your suggestion and my idea above and report back to this list.
+
+=Matt
+
+<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">mzukowski at yci.com</A> wrote:
+&gt;<i> I'm not sure that's the best approach.  I haven't thought it through but it
+</I>&gt;<i> seems like it would work in the LR world but not in the LL world.  I would
+</I>&gt;<i> suggest trying this instead:
+</I>&gt;<i> 
+</I>&gt;<i> 1. Eliminate &quot;&gt;&gt;&quot;, &quot;&gt;&gt;=&quot;, &quot;&gt;&gt;&gt;&quot;, and &quot;&gt;&gt;&gt;=&quot; as tokens, make them all &quot;&gt;&quot;.
+</I>&gt;<i> Then make parser rules sr: &quot;&gt;&quot; &quot;&gt;&quot; and zr:&quot;&gt;&quot; &quot;&gt;&quot; &quot;&gt;&quot;.  Modify grammar to
+</I>&gt;<i> use grammar rules instead of the tokens for those operators.
+</I>&gt;<i> 
+</I>&gt;<i> 2. Compile, inspect and test.  Syntactic predicates may be necessary and may
+</I>&gt;<i> need to be manually hoisted.
+</I>&gt;<i> 
+</I>&gt;<i> 3. If that works then add in your generic stuff and test it out.  Only use
+</I>&gt;<i> &quot;&gt;&quot; for your generics, don't use sr or zr.
+</I>&gt;<i> 
+</I>&gt;<i> 4. There might be a better approach than this.  Can generics be initialized?
+</I>&gt;<i> Then you have to worry about &quot;&gt;&gt;=&quot; as well.
+</I>&gt;<i> 
+</I>&gt;<i> Email me privately if you would like to discuss this over the phone.
+</I>&gt;<i> 
+</I>&gt;<i> Monty
+</I>&gt;<i> 
+</I>&gt;<i> -----Original Message-----
+</I>&gt;<i> From: Matt Quail [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">matt at cortexebusiness.com.au</A>]
+</I>&gt;<i> Sent: Wednesday, March 12, 2003 7:20 PM
+</I>&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>
+</I>&gt;<i> Subject: [antlr-interest] Help needed upgrading java.g to support
+</I>&gt;<i> Generics
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> Hi all,
+</I>&gt;<i> 
+</I>&gt;<i> I'm trying to update the java.g grammar with support for Generics (as
+</I>&gt;<i> defined 
+</I>&gt;<i> by JSR14, grab the pdf spec at 
+</I>&gt;<i> <A HREF="http://www.jcp.org/aboutJava/communityprocess/review/jsr014/index.html">http://www.jcp.org/aboutJava/communityprocess/review/jsr014/index.html</A> ). My
+</I>&gt;<i> 
+</I>&gt;<i> intent is to upgrade the grammar and submit a patch back to the &quot;offical&quot; 
+</I>&gt;<i> java.g; so any help will hopefully help us all.
+</I>&gt;<i> 
+</I>&gt;<i> The MAJOR problem is that JDK1.5 will allow this:
+</I>&gt;<i> 
+</I>&gt;<i> List&lt;List&lt;String&gt;&gt; x = ...;
+</I>&gt;<i>                  ^^
+</I>&gt;<i> The problem is that the lexer will match &quot;&gt;&gt;&quot; as a shift-right token, but we
+</I>&gt;<i> 
+</I>&gt;<i> really want to parse it as two GT tokens in this context. The JSR pdf has a
+</I>&gt;<i> BNF 
+</I>&gt;<i> grammar that solves this problem, at it is that pattern that I am trying to 
+</I>&gt;<i> implement in ANTLR. (A re-cap of this trick is given at the end of the
+</I>&gt;<i> email.)
+</I>&gt;<i> 
+</I>&gt;<i> (Note that there is also a problem lexing &quot;&gt;&gt;&gt;&quot;, but lets just confine 
+</I>&gt;<i> ourselves to &quot;&gt;&gt;&quot; for the moment.)
+</I>&gt;<i> 
+</I>&gt;<i> Okay, after a few false starts, I've come up with the following grammar
+</I>&gt;<i> (note 
+</I>&gt;<i> that it is not the full JavaRecogniser parser, just enough to parse a
+</I>&gt;<i> SEMICOLON 
+</I>&gt;<i> seperated list of types) (it uses the standard JavaLexer):
+</I>&gt;<i> 
+</I>&gt;<i> --------
+</I>&gt;<i> compilationUnit
+</I>&gt;<i> 	:
+</I>&gt;<i>          ( type SEMI ) *
+</I>&gt;<i> 		EOF!
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> type
+</I>&gt;<i> 	:	referenceType
+</I>&gt;<i> 	|	builtInType (arrayDecl)?
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> referenceType:
+</I>&gt;<i>          identifier
+</I>&gt;<i>          (  arrayDecl
+</I>&gt;<i>          |  LT referenceTypeList1
+</I>&gt;<i>          )?
+</I>&gt;<i>      ;
+</I>&gt;<i> 
+</I>&gt;<i> referenceTypeList1:
+</I>&gt;<i>          (referenceType1)=&gt; referenceType1
+</I>&gt;<i>      |
+</I>&gt;<i>          (options{greedy=false;}: referenceType COMMA)+
+</I>&gt;<i>          referenceType1
+</I>&gt;<i>      ;
+</I>&gt;<i> 
+</I>&gt;<i> referenceType1:
+</I>&gt;<i>          (referenceType GT)=&gt; referenceType GT
+</I>&gt;<i>      |
+</I>&gt;<i>          identifier LT referenceTypeList2
+</I>&gt;<i>      ;
+</I>&gt;<i> 
+</I>&gt;<i> referenceTypeList2 :
+</I>&gt;<i>          (referenceType2)=&gt; referenceType2
+</I>&gt;<i>      |
+</I>&gt;<i>          (options{greedy=false;}: referenceType COMMA)+
+</I>&gt;<i>          referenceType2
+</I>&gt;<i>      ;
+</I>&gt;<i> 
+</I>&gt;<i> referenceType2:
+</I>&gt;<i>          referenceType SR
+</I>&gt;<i>      ;
+</I>&gt;<i> 
+</I>&gt;<i> arrayDecl:
+</I>&gt;<i>          (LBRACK RBRACK)+
+</I>&gt;<i>      ;
+</I>&gt;<i> // The primitive types.
+</I>&gt;<i> builtInType
+</I>&gt;<i> 	:	&quot;void&quot;
+</I>&gt;<i> 	|	&quot;boolean&quot;
+</I>&gt;<i> 	|	&quot;byte&quot;
+</I>&gt;<i> 	|	&quot;char&quot;
+</I>&gt;<i> 	|	&quot;short&quot;
+</I>&gt;<i> 	|	&quot;int&quot;
+</I>&gt;<i> 	|	&quot;float&quot;
+</I>&gt;<i> 	|	&quot;long&quot;
+</I>&gt;<i> 	|	&quot;double&quot;
+</I>&gt;<i> 	;
+</I>&gt;<i> 
+</I>&gt;<i> identifier
+</I>&gt;<i> 	:	IDENT ( DOT^ IDENT)*
+</I>&gt;<i> 	;
+</I>&gt;<i> --------
+</I>&gt;<i> 
+</I>&gt;<i> This grammar will sucessfully parse these constructs:
+</I>&gt;<i> --------
+</I>&gt;<i> String;
+</I>&gt;<i> java.lang.String;
+</I>&gt;<i> int;
+</I>&gt;<i> float;
+</I>&gt;<i> int[];
+</I>&gt;<i> String[];
+</I>&gt;<i> float[][][];
+</I>&gt;<i> List&lt;String&gt;;
+</I>&gt;<i> List&lt;String[]&gt;;
+</I>&gt;<i> List&lt;List&lt;String[]&gt; &gt;;
+</I>&gt;<i> List&lt;List&lt;String[]&gt;&gt;;
+</I>&gt;<i> 
+</I>&gt;<i> Map&lt;String,Integer&gt;;
+</I>&gt;<i> Map&lt;String,List&lt;Integer&gt; &gt;;
+</I>&gt;<i> Map&lt;String,List&lt;Integer&gt;&gt;;
+</I>&gt;<i> Map&lt;List&lt;Integer&gt;,String&gt;;
+</I>&gt;<i> Map&lt;List&lt;Integer&gt;,List&lt;String&gt;&gt;;
+</I>&gt;<i> 
+</I>&gt;<i> Map3&lt;String,Integer,Float&gt;;
+</I>&gt;<i> 
+</I>&gt;<i> Map&lt;Map&lt;String,String&gt;,Map3&lt;String,Integer,Float&gt;&gt;;
+</I>&gt;<i> Map&lt;List&lt;String&gt;,List&lt;Integer&gt;&gt;;
+</I>&gt;<i> --------
+</I>&gt;<i> 
+</I>&gt;<i> But it will not parse these:
+</I>&gt;<i> Map3&lt;List&lt;String&gt;,List&lt;Integer&gt;,List&lt;Float&gt;&gt;;
+</I>&gt;<i> Map3&lt;String,List&lt;Integer&gt;,Float&gt;;
+</I>&gt;<i> 
+</I>&gt;<i> The errors are:
+</I>&gt;<i> G1.java:20:18: unexpected token: Integer
+</I>&gt;<i> and
+</I>&gt;<i> G1.java:24:24: unexpected token: Integer
+</I>&gt;<i> 
+</I>&gt;<i> Now, I can see why this is happening, it is caused by my non-greedy rules in
+</I>&gt;<i> 
+</I>&gt;<i> referenceTypeList1 and referenceTypeList2. But I need them to be non-greedy
+</I>&gt;<i> (in 
+</I>&gt;<i> some fashion), because I don't want them to match the last &quot;referenceType&quot;
+</I>&gt;<i> that 
+</I>&gt;<i>   preceeds the next GT or SR token.
+</I>&gt;<i> 
+</I>&gt;<i> (Making them both greedy means that it matches too many times...)
+</I>&gt;<i> 
+</I>&gt;<i> I'm starting to get to the limits of my understanding of ANTLR... I started 
+</I>&gt;<i> thinking it was a look-ahead problem... but it really requires &quot;lots&quot; of 
+</I>&gt;<i> lookahead, that's why I have those syntactic predicates everywhere).
+</I>&gt;<i> 
+</I>&gt;<i> Any help will be greatly appreciated! Have I gone down the wrong track?
+</I>&gt;<i> 
+</I>&gt;<i> =Matt
+</I>&gt;<i> 
+</I>&gt;<i> PS: The 'trick' JSR14 uses to parse &quot;&gt;&gt;&quot; and &quot;&gt;&gt;&gt;&quot;:
+</I>&gt;<i> The 'naive' grammar for parameterized type declarations (using the notation 
+</I>&gt;<i> used in the JLS) is:
+</I>&gt;<i> 
+</I>&gt;<i> ReferenceType ::= ClassOrInterfaceType
+</I>&gt;<i>                  | ArrayType
+</I>&gt;<i>                  | TypeVariable
+</I>&gt;<i> 
+</I>&gt;<i> TypeVariable ::= Identifier
+</I>&gt;<i> 
+</I>&gt;<i> ClassOrInterfaceType ::= ClassOrInterface TypeArgumentsOpt
+</I>&gt;<i> 
+</I>&gt;<i> ClassOrInterface ::= Identifier
+</I>&gt;<i>                     | ClassOrInterfaceType . Identifier
+</I>&gt;<i> 
+</I>&gt;<i> TypeArguments ::= &lt; ReferenceTypeList &gt;
+</I>&gt;<i> 
+</I>&gt;<i> ReferenceTypeList ::= ReferenceType
+</I>&gt;<i>                      | ReferenceTypeList , ReferenceType
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> The &quot;trick&quot; is as folows (copied verbatim from the JSR14 spec)
+</I>&gt;<i> 
+</I>&gt;<i> ReferenceType ::= ClassOrInterfaceType
+</I>&gt;<i>                  | ArrayType
+</I>&gt;<i>                  | TypeVariable
+</I>&gt;<i> 
+</I>&gt;<i> ClassOrInterfaceType ::= Name
+</I>&gt;<i>                         | Name &lt; ReferenceTypeList1
+</I>&gt;<i> 
+</I>&gt;<i> ReferenceTypeList1 ::= ReferenceType1
+</I>&gt;<i>                       | ReferenceTypeList , ReferenceType1
+</I>&gt;<i> 
+</I>&gt;<i> ReferenceType1 ::= ReferenceType &gt;
+</I>&gt;<i>                   | Name &lt; ReferenceTypeList2
+</I>&gt;<i> 
+</I>&gt;<i> ReferenceTypeList2 ::= ReferenceType2
+</I>&gt;<i>                       | ReferenceTypeList , ReferenceType2
+</I>&gt;<i> 
+</I>&gt;<i> ReferenceType2 ::= ReferenceType &gt;&gt;
+</I>&gt;<i>                   | Name &lt; ReferenceTypeList3
+</I>&gt;<i> 
+</I>&gt;<i> ReferenceTypeList3 ::= ReferenceType3
+</I>&gt;<i>                       | ReferenceTypeList , ReferenceType3
+</I>&gt;<i> 
+</I>&gt;<i> ReferenceType3 ::= ReferenceType &gt;&gt;&gt;
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i>  
+</I>&gt;<i> 
+</I>&gt;<i> Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i>  
+</I>&gt;<i> 
+</I>&gt;<i> Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>
+
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003314.html">[antlr-interest] Help needed upgrading java.g to support Gene
+	rics
+</A></li>
+	<LI>Next message: <A HREF="003332.html">[antlr-interest] Help needed upgrading java.g to support  Generics
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3319">[ date ]</a>
+              <a href="thread.html#3319">[ thread ]</a>
+              <a href="subject.html#3319">[ subject ]</a>
+              <a href="author.html#3319">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,448 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Evaluation boolean expressions
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Evaluation%20boolean%20expressions&In-Reply-To=001201c591e3%24c3e844f0%2479f53951%40thedude">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="013185.html">
+   <LINK REL="Next"  HREF="013189.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Evaluation boolean expressions</H1>
+    <B>Tarun Khanna</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Evaluation%20boolean%20expressions&In-Reply-To=001201c591e3%24c3e844f0%2479f53951%40thedude"
+       TITLE="[antlr-interest] Evaluation boolean expressions">tarunkhanna at gmail.com
+       </A><BR>
+    <I>Tue Jul 26 08:35:21 PDT 2005</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="013185.html">[antlr-interest] Evaluation boolean expressions
+</A></li>
+        <LI>Next message: <A HREF="013189.html">[antlr-interest] Evaluation boolean expressions
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#13188">[ date ]</a>
+              <a href="thread.html#13188">[ thread ]</a>
+              <a href="subject.html#13188">[ subject ]</a>
+              <a href="author.html#13188">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+Here is the changed grammar. Seems to work fine. I hope you'll notice the 
+changes...
+
+The first one is in atom, atom: LPAREN logicalOrExpression RPAREN
+
+Then in the TreeParser, I have added a new rule lexpr.
+
+Parse the tree using logicalOrExpression as the starting point. Then use the 
+lexpr to walk the tree.
+
+-----------------------------
+class ExprParser extends Parser;
+
+options {
+
+buildAST = true;
+
+defaultErrorHandler = false;
+
+}
+
+logicalOrExpression: logicalAndExpression (OR^ logicalAndExpression)*
+
+;
+
+logicalAndExpression: bexpr (AND^ bexpr)*
+
+;
+
+bexpr: expr ((EQUALS^|NOT_EQUALS^|GT^|GTE^|LT^|LTE^) expr)*
+
+;
+
+expr: mexpr ((PLUS^|MINUS^) mexpr)*
+
+;
+
+mexpr
+
+:<i> atom ((MULT^|DIV^) atom)*
+</I>
+;
+
+atom: INT
+
+|<i> LPAREN! logicalOrExpression RPAREN!
+</I>
+// | LPAREN! logicalOrExpression RPAREN!
+
+;
+
+class ExprLexer extends Lexer;
+
+options {
+
+k = 2; // two characters of lookahead
+
+}
+
+/* Integers */
+
+INT : ('0'..'9')+ ;
+
+/* Ignored characters */
+
+WS : ( ' '
+
+|<i> '\r' '\n'
+</I>
+|<i> '\n'
+</I>
+|<i> '\t'
+</I>
+)
+
+{$setType(Token.SKIP);}
+
+;
+
+/* Logical operators */
+
+OR : &quot;OR&quot;;
+
+AND : &quot;AND&quot;;
+
+/* Comparison operators */
+
+EQUALS : &quot;==&quot;;
+
+NOT_EQUALS : &quot;&lt;&gt;&quot;;
+
+GT : '&gt;';
+
+GTE : &quot;&gt;=&quot;;
+
+LT : '&lt;';
+
+LTE : &quot;&lt;=&quot;;
+
+/* Arithmetic operators */
+
+PLUS : '+';
+
+MINUS : '-';
+
+MULT : '*';
+
+DIV : '/';
+
+/* Parentheses */
+
+LPAREN : '(';
+
+RPAREN : ')';
+
+class ExprTreeParser extends TreeParser;
+
+options {
+
+importVocab=ExprParser;
+
+}
+
+expr returns [int r=0] { int a,b;}
+
+:<i> #(PLUS a=expr b=expr) { r = a + b;}
+</I>
+|<i> #(MINUS a=expr b=expr) { r = a - b; }
+</I>
+|<i> #(MULT a=expr b=expr) { r = a * b; }
+</I>
+|<i> #(DIV a=expr b=expr) { r = a / b; }
+</I>
+
+|<i> i:INT {r = (int)Integer.parseInt(i.getText());}
+</I>
+;
+
+bexpr returns [boolean r=false] { int a,b; }
+
+:<i> #(EQUALS a=expr b=expr) {r = (a == b);}
+</I>
+|<i> #(NOT_EQUALS a=expr b=expr) {r = (a != b);}
+</I>
+|<i> #(GT a=expr b=expr) {r = (a &gt; b);}
+</I>
+|<i> #(GTE a=expr b=expr) {r = (a &gt;= b);}
+</I>
+|<i> #(LT a=expr b=expr) {r = (a &lt; b);}
+</I>
+|<i> #(LTE a=expr b=expr) {r = (a &lt;= b);}
+</I>
+;
+
+lexpr returns [boolean r= false] {boolean a, b;}
+:<i> #(OR a=bexpr b=bexpr) { r = a || b; }
+</I>
+|<i> #(AND a=bexpr b=bexpr) { r = a &amp;&amp; b; }
+</I>
+;
+
+
+
+
+On 7/26/05, Xavier Benveniste &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">xavier.benveniste at free.fr</A>&gt; wrote:
+&gt;<i> 
+</I>&gt;<i> Hi,
+</I>&gt;<i>  I (hardly) succeeded in building a very simple int calculator.
+</I>&gt;<i> Then, I succeeded in building an int 'equality' evaluator :
+</I>&gt;<i> for instance, if I enter :
+</I>&gt;<i> 5+(4*3) &gt; 10 + 9
+</I>&gt;<i> 
+</I>&gt;<i> I have the following result :
+</I>&gt;<i> 
+</I>&gt;<i> ( &gt; ( + 5 ( * 4 3 ) ) ( + 10 9 ) )
+</I>&gt;<i> 
+</I>&gt;<i> false
+</I>&gt;<i> 
+</I>&gt;<i> So far, so good.
+</I>&gt;<i> Now, what I'm trying to do is to evaluate expression like :
+</I>&gt;<i> (4 + (5*2) &gt; 15) OR (4&gt;1).
+</I>&gt;<i> But, here I'm stuck.
+</I>&gt;<i>  You 'll find below the grammar I wrote.
+</I>&gt;<i> I'm sure it's pretty straightforward but I can't manage to achieve it.
+</I>&gt;<i> If any ANTLR's guru could help me.
+</I>&gt;<i> Thanks.
+</I>&gt;<i> * 
+</I>&gt;<i> 
+</I>&gt;<i> class
+</I>&gt;<i> * ExprParser *extends* Parser;* 
+</I>&gt;<i> 
+</I>&gt;<i> options
+</I>&gt;<i> * { 
+</I>&gt;<i> 
+</I>&gt;<i> buildAST = 
+</I>&gt;<i> *true*; 
+</I>&gt;<i> 
+</I>&gt;<i> defaultErrorHandler = 
+</I>&gt;<i> *false*; 
+</I>&gt;<i> 
+</I>&gt;<i> }
+</I>&gt;<i> 
+</I>&gt;<i> //logicalOrExpression: logicalAndExpression (OR^ logicalAndExpression)*
+</I>&gt;<i> 
+</I>&gt;<i> // ;
+</I>&gt;<i> 
+</I>&gt;<i> //logicalAndExpression: bexpr (AND^ bexpr)*
+</I>&gt;<i> 
+</I>&gt;<i> // ;
+</I>&gt;<i> 
+</I>&gt;<i> bexpr: expr ((EQUALS^|NOT_EQUALS^|GT^|GTE^|LT^|LTE^) expr)*
+</I>&gt;<i> 
+</I>&gt;<i> ;
+</I>&gt;<i> 
+</I>&gt;<i> expr: mexpr ((PLUS^|MINUS^) mexpr)*
+</I>&gt;<i> 
+</I>&gt;<i> ;
+</I>&gt;<i> 
+</I>&gt;<i> mexpr
+</I>&gt;<i> 
+</I>&gt;<i> : atom ((MULT^|DIV^) atom)*
+</I>&gt;<i> 
+</I>&gt;<i> ;
+</I>&gt;<i> 
+</I>&gt;<i> atom: INT
+</I>&gt;<i> 
+</I>&gt;<i> | LPAREN! expr RPAREN!
+</I>&gt;<i> 
+</I>&gt;<i> // | LPAREN! logicalOrExpression RPAREN!
+</I>&gt;<i> 
+</I>&gt;<i> ;
+</I>&gt;<i> * 
+</I>&gt;<i> 
+</I>&gt;<i> class
+</I>&gt;<i> * ExprLexer *extends* Lexer;* 
+</I>&gt;<i> 
+</I>&gt;<i> options
+</I>&gt;<i> * { 
+</I>&gt;<i> 
+</I>&gt;<i> k = 2; 
+</I>&gt;<i> // two characters of lookahead 
+</I>&gt;<i> 
+</I>&gt;<i> }
+</I>&gt;<i> 
+</I>&gt;<i> /* Integers */
+</I>&gt;<i> 
+</I>&gt;<i> INT : (
+</I>&gt;<i> '0'..'9')+ ; 
+</I>&gt;<i> 
+</I>&gt;<i> /* Ignored characters */
+</I>&gt;<i> 
+</I>&gt;<i> WS : ( 
+</I>&gt;<i> ' ' 
+</I>&gt;<i> 
+</I>&gt;<i> | 
+</I>&gt;<i> '\r' '\n' 
+</I>&gt;<i> 
+</I>&gt;<i> | 
+</I>&gt;<i> '\n' 
+</I>&gt;<i> 
+</I>&gt;<i> | 
+</I>&gt;<i> '\t' 
+</I>&gt;<i> 
+</I>&gt;<i> )
+</I>&gt;<i> 
+</I>&gt;<i> {$setType(Token.SKIP);}
+</I>&gt;<i> 
+</I>&gt;<i> ;
+</I>&gt;<i> 
+</I>&gt;<i> /* Logical operators */
+</I>&gt;<i> 
+</I>&gt;<i> OR : 
+</I>&gt;<i> &quot;OR&quot;; 
+</I>&gt;<i> 
+</I>&gt;<i> AND : 
+</I>&gt;<i> &quot;AND&quot;; 
+</I>&gt;<i> 
+</I>&gt;<i> /* Comparison operators */
+</I>&gt;<i> 
+</I>&gt;<i> EQUALS : 
+</I>&gt;<i> &quot;==&quot;; 
+</I>&gt;<i> 
+</I>&gt;<i> NOT_EQUALS : 
+</I>&gt;<i> &quot;&lt;&gt;&quot;; 
+</I>&gt;<i> 
+</I>&gt;<i> GT : 
+</I>&gt;<i> '&gt;'; 
+</I>&gt;<i> 
+</I>&gt;<i> GTE : 
+</I>&gt;<i> &quot;&gt;=&quot;; 
+</I>&gt;<i> 
+</I>&gt;<i> LT : 
+</I>&gt;<i> '&lt;'; 
+</I>&gt;<i> 
+</I>&gt;<i> LTE : 
+</I>&gt;<i> &quot;&lt;=&quot;; 
+</I>&gt;<i> 
+</I>&gt;<i> /* Arithmetic operators */
+</I>&gt;<i> 
+</I>&gt;<i> PLUS : 
+</I>&gt;<i> '+'; 
+</I>&gt;<i> 
+</I>&gt;<i> MINUS : 
+</I>&gt;<i> '-'; 
+</I>&gt;<i> 
+</I>&gt;<i> MULT : 
+</I>&gt;<i> '*'; 
+</I>&gt;<i> 
+</I>&gt;<i> DIV : 
+</I>&gt;<i> '/'; 
+</I>&gt;<i> 
+</I>&gt;<i> /* Parentheses */
+</I>&gt;<i> 
+</I>&gt;<i> LPAREN : 
+</I>&gt;<i> '('; 
+</I>&gt;<i> 
+</I>&gt;<i> RPAREN : 
+</I>&gt;<i> ')';* 
+</I>&gt;<i> 
+</I>&gt;<i> class
+</I>&gt;<i> * ExprTreeParser *extends* TreeParser;* 
+</I>&gt;<i> 
+</I>&gt;<i> options
+</I>&gt;<i> * { 
+</I>&gt;<i> 
+</I>&gt;<i> importVocab=ExprParser;
+</I>&gt;<i> 
+</I>&gt;<i> }
+</I>&gt;<i> 
+</I>&gt;<i> expr 
+</I>&gt;<i> *returns* [*int* r=0] { *int* a,b;} 
+</I>&gt;<i> 
+</I>&gt;<i> : #(PLUS a=expr b=expr) { r = a + b;}
+</I>&gt;<i> 
+</I>&gt;<i> | #(MINUS a=expr b=expr) { r = a - b; }
+</I>&gt;<i> 
+</I>&gt;<i> | #(MULT a=expr b=expr) { r = a * b; }
+</I>&gt;<i> 
+</I>&gt;<i> | #(DIV a=expr b=expr) { r = a / b; }
+</I>&gt;<i> 
+</I>&gt;<i> | i:INT {r = (
+</I>&gt;<i> *int*)Integer.parseInt(i.getText());} 
+</I>&gt;<i> 
+</I>&gt;<i> ;
+</I>&gt;<i> 
+</I>&gt;<i> bexpr 
+</I>&gt;<i> *returns* [*boolean* r=*false*] { *int* a,b; } 
+</I>&gt;<i> 
+</I>&gt;<i> : #(EQUALS a=expr b=expr) {r = (a == b);}
+</I>&gt;<i> 
+</I>&gt;<i> | #(NOT_EQUALS a=expr b=expr) {r = (a != b);} 
+</I>&gt;<i> 
+</I>&gt;<i> | #(GT a=expr b=expr) {r = (a &gt; b);}
+</I>&gt;<i> 
+</I>&gt;<i> | #(GTE a=expr b=expr) {r = (a &gt;= b);}
+</I>&gt;<i> 
+</I>&gt;<i> | #(LT a=expr b=expr) {r = (a &lt; b);}
+</I>&gt;<i> 
+</I>&gt;<i> | #(LTE a=expr b=expr) {r = (a &lt;= b);}
+</I>&gt;<i> 
+</I>&gt;<i> ;
+</I>&gt;<i> 
+</I>&gt;<i> //logicalAndExpression returns [boolean r=false] { boolean a,b; }
+</I>&gt;<i> 
+</I>&gt;<i> // : #(AND a=bexpr b=bexpr) {r = (a &amp;&amp; b); }
+</I>&gt;<i> 
+</I>&gt;<i> // ;
+</I>&gt;<i> 
+</I>&gt;<i> //logicalOrExpression returns [boolean r=false] {boolean a,b; }
+</I>&gt;<i> 
+</I>&gt;<i> // : #(OR a=logicalAndExpression b=logicalAndExpression) {r = (a || b);}
+</I>&gt;<i> 
+</I>&gt;<i> // ;
+</I>&gt;<i> 
+</I>
+
+
+-- 
+Tarun Khanna
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20050726/dac6e57f/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20050726/dac6e57f/attachment.html</A>
+</PRE>
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="013185.html">[antlr-interest] Evaluation boolean expressions
+</A></li>
+	<LI>Next message: <A HREF="013189.html">[antlr-interest] Evaluation boolean expressions
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#13188">[ date ]</a>
+              <a href="thread.html#13188">[ thread ]</a>
+              <a href="subject.html#13188">[ subject ]</a>
+              <a href="author.html#13188">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

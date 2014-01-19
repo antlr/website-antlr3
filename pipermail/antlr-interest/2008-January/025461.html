@@ -1,0 +1,199 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Line delimted grammar
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Line%20delimted%20grammar&In-Reply-To=%3C20080101172527.895A511ECEC%40www.antlr.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="025469.html">
+   <LINK REL="Next"  HREF="025462.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Line delimted grammar</H1>
+    <B>Harald M. M&#252;ller</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Line%20delimted%20grammar&In-Reply-To=%3C20080101172527.895A511ECEC%40www.antlr.org%3E"
+       TITLE="[antlr-interest] Line delimted grammar">harald_m_mueller at gmx.de
+       </A><BR>
+    <I>Tue Jan  1 09:25:20 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="025469.html">[antlr-interest] More, Status of C++ backend?
+</A></li>
+        <LI>Next message: <A HREF="025462.html">[antlr-interest] simple query language EBNF
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25461">[ date ]</a>
+              <a href="thread.html#25461">[ thread ]</a>
+              <a href="subject.html#25461">[ subject ]</a>
+              <a href="author.html#25461">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi - here is a simple line-delimited grammar.
+The only &quot;interesting thing&quot; is that a &quot;statement&quot; = &quot;line&quot; may end with an
+NL (newline/end of line) AS WELL AS a COMMENT_TO_NL. This makes it easier to
+write the COMMENT_TO_NL token - it munches up all chars including the
+end-of-line chars; and hence can represent an end-of-line.
+If you need the white-space also in your result (AST or whatever), the whole
+thing is more work, but still easy - the &quot;emtpy line&quot; then will be about
+
+    line : WS (stmt WS)? WS? (COMMENT_TO_NL | NL);
+
+Regards
+Harald
+
+grammar LineDelimited;
+
+options {
+	language=CSharp;
+	output=AST;
+}
+
+@header {
+	#pragma warning disable 0219
+}
+
+file
+    : line* EOF!
+    ;
+
+line
+    : stmt? (COMMENT_TO_NL! | NL!)
+    ;
+    
+stmt
+    : 'dir'^ filepattern
+    | 'for'^ VAR 'in'! '('! filepattern ')'! 'do'! stmt
+    | ID^ filepattern*
+    ;
+
+filepattern
+    : ( ID | '*' )
+      ( '.'!
+        (ID | '*')
+      )?
+    ;
+
+COMMENT_TO_NL
+    : '#' ~('\r'|'\n')* NL
+    ;
+
+ID  : ('a'..'z'|'0'..'9'|'_')+
+	;
+	
+VAR : '%' ID
+    ;
+
+WS  :  (' '|'\t')+ { $channel=HIDDEN; };
+
+NL  : '\r' '\n'
+    | '\r' 
+    | '\n' 
+    ;
+
+===================
+
+using System;
+using System.Collections.Generic;
+using Antlr.Runtime;
+using Antlr.Runtime.Tree;
+
+namespace Interpreter {
+    class Program {
+        static void Main() {
+            ParseAndInterpret(@&quot;
+ 
+                dir *.bak   # only bak files
+
+
+                for %f in (*.bak) do del *.bak # now they are gone ...
+                
+                dir *.bak   
+                run *.*
+
+                &quot;);
+
+            Console.In.Read();
+        }
+
+        private static void ParseAndInterpret(string input) {
+            // Setup lexer and parser
+            ICharStream cs = new ANTLRStringStream(input);
+            LineDelimitedLexer lexer = new LineDelimitedLexer(cs);
+            CommonTokenStream ts = new CommonTokenStream(lexer);
+            LineDelimitedParser parser = new LineDelimitedParser(ts);
+
+            CommonTree tree = (CommonTree) parser.file().Tree;
+            Console.Out.WriteLine(tree.ToStringTree());
+        }
+   }
+}
+
+
+
+&gt;<i> -----Original Message-----
+</I>&gt;<i> From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> 
+</I>&gt;<i> [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Thad
+</I>&gt;<i> Sent: Monday, December 03, 2007 7:14 PM
+</I>&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> Subject: [antlr-interest] Line delimted grammar
+</I>&gt;<i> 
+</I>&gt;<i> For a certain project I am working on I need to parse a 
+</I>&gt;<i> complex configuration file. 
+</I>&gt;<i> 
+</I>&gt;<i> Two propeties of the file are: it is line delimited, and 
+</I>&gt;<i> blank lines are ignored.
+</I>&gt;<i> 
+</I>&gt;<i> I tried to do this a while ago and encountered problems with 
+</I>&gt;<i> the line delimitaion.
+</I>&gt;<i> 
+</I>&gt;<i> Can someone recommend a simple antlr example for a line 
+</I>&gt;<i> delimited language with blank lines ignored? ( It seems to be 
+</I>&gt;<i> the combination of the two that causes me problems. ) 
+</I>&gt;<i> 
+</I>&gt;<i> If you can't then can someone post a grammar for a simple 
+</I>&gt;<i> language? Something like:
+</I>&gt;<i> each program is a list of statements, statements are one 
+</I>&gt;<i> line, whitespace is ignored, blank lines are ignored, 
+</I>&gt;<i> anything after a # is a comment, lines of the form 
+</I>&gt;<i> letter=integer are statements?
+</I>&gt;<i> 
+</I>&gt;<i> Thanks
+</I>&gt;<i> Thad
+</I>&gt;<i> 
+</I>&gt;<i> PS.
+</I>&gt;<i> Is there some simple way to search the archives for old 
+</I>&gt;<i> messages? I can help but think that there is something on 
+</I>&gt;<i> line delimited grammars in there.
+</I>&gt;<i> 
+</I>
+</PRE>
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="025469.html">[antlr-interest] More, Status of C++ backend?
+</A></li>
+	<LI>Next message: <A HREF="025462.html">[antlr-interest] simple query language EBNF
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25461">[ date ]</a>
+              <a href="thread.html#25461">[ thread ]</a>
+              <a href="subject.html#25461">[ subject ]</a>
+              <a href="author.html#25461">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

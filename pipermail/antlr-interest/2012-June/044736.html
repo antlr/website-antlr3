@@ -1,0 +1,237 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] emitting multiple tokens (INDENT/DEDENT)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20emitting%20multiple%20tokens%20%28INDENT/DEDENT%29&In-Reply-To=%3CFA21EA835C1467498B3E0B904C9CF2020F07DED9%40TK5EX14MBXC283.redmond.corp.microsoft.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="044740.html">
+   <LINK REL="Next"  HREF="044738.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] emitting multiple tokens (INDENT/DEDENT)</H1>
+    <B>Scobie Smith (Insight Global)</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20emitting%20multiple%20tokens%20%28INDENT/DEDENT%29&In-Reply-To=%3CFA21EA835C1467498B3E0B904C9CF2020F07DED9%40TK5EX14MBXC283.redmond.corp.microsoft.com%3E"
+       TITLE="[antlr-interest] emitting multiple tokens (INDENT/DEDENT)">v-scobis at microsoft.com
+       </A><BR>
+    <I>Fri Jun 15 22:02:23 PDT 2012</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="044740.html">[antlr-interest] Forcing the lexer to never error
+</A></li>
+        <LI>Next message: <A HREF="044738.html">[antlr-interest] emitting multiple tokens (INDENT/DEDENT)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#44736">[ date ]</a>
+              <a href="thread.html#44736">[ thread ]</a>
+              <a href="subject.html#44736">[ subject ]</a>
+              <a href="author.html#44736">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I know this has come up before. It is discussed in TDAR p. 109ff (which BTW is incorrect), and there is a FAQ page about (also faulty). But I have yet to see a serious working answer for how to get this to work in the real world, in particular with the C# port of ANTLR 3. So far I have gone pretty far beyond all those examples and have gone into the source code to see if I can figure out what I am missing. Maybe someone here can advise. Here is my problem.
+
+I am trying to parse input that is similar to Python, where statement blocks are defined by indentation. Statement lines have \n (EOL) as termination. The top-level statements comprise just a list, but blocks of substatements are statement &quot;blocks&quot;. A block is just more indented statements--not preceded by COLON + NEWLINE, as is found in Python and followed in all the ANTLR Python examples. I will go back to those examples again next, since those evidently really work and seem not quite to follow TDAR and the FAQ.
+
+Note: I'm not sure I can expect anyone to spend his time poring over this. But maybe someone out there who has gotten this to work cleanly has some tip or other. Thanks in advance for anything. I've just wasted days. This grammar represents the most recent iteration, which actually is probably worse that my previous attempts....
+
+
+grammar MyFile;
+
+options {
+    language=CSharp3;
+    TokenLabelType=CommonToken;
+    output=AST;
+    ASTLabelType=CommonTree;
+}
+
+tokens {
+       ROOT;
+       STATEMENT_NODE;
+       DEDENT;
+       BLOCK;
+}
+
+@lexer::namespace{ MyFile }
+@parser::namespace{ MyFile }
+
+@lexer::header {
+using System;
+}
+
+@lexer::members {
+/// &lt;summary&gt;
+/// Gets or sets the length of the current level of indentation.
+/// &lt;/summary&gt;
+int CurrentIndent = 0;
+}
+
+@lexer::init {
+CurrentIndent = 0;
+}
+
+@parser::header {
+using System;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Parser Rules
+///////////////////////////////////////////////////////////////////////////////
+public
+myfile: statement+ EOF -&gt; ^(CONFIG_ROOT statement+) ;
+
+statement: // Two cases: no block (just a list of terms), or list of terms followed by a block.
+       term_list EOL* (EOL | EOF) -&gt; ^(STATEMENT_NODE term_list)
+       | term_list EOL+ statement_block EOL* (EOL | EOF) -&gt; ^(STATEMENT_NODE term_list statement_block)
+       ;
+
+statement_block: INDENT statement+ DEDENT -&gt; ^(BLOCK statement+)
+       // Note: A block might be followed by a zero-indent statement, which closes the block.
+       // But INDENT will not detect this or emit a DEDENT, because emitting there is triggered by ' '+ (can't do ' '*).
+       // So, we need to detect the start of a top-level statement and test the CurrentIndent level, emitting DETENTs as needed.
+// For now, I am not testing that case.
+       ;
+
+term_list: term+ ;
+
+term: Token ;
+
+///////////////////////////////////////////////////////////////////////////////
+// Lexer Rules
+///////////////////////////////////////////////////////////////////////////////
+
+// See TDAR p. 109ff.
+// Check the amount of indentation (initial spaces on line).
+// Translate indentation into INDENT/DEDENT tokens, to mimic bracketing.
+// Put this rule first before whitespace, etc., so whitespace indents are caught.
+INDENT:
+{ CharPositionInLine == 0 }?=&gt; ( ' ' )+
+{
+       // Emit INDENT and DEDENT tokens in place of the initial indentation spaces.
+       // Note: TDAR p. 110: If you do not emit a token manually (using Emit()),
+       // then base.NextToken() will emit one for you.
+       // But for safety and clarify, I am here making sure to Emit (or Skip) manually for all cases.
+       int indent = Text.Length;
+       if (indent &gt; CurrentIndent)
+       {
+              Emit(new CommonToken(INDENT, &quot;INDENT&quot;));
+       }
+       else if (indent &lt; CurrentIndent)
+       {
+              // Insert DEDENT tokens now, to back out of the nested blocks.
+              int backout = CurrentIndent - indent;
+              for (int i=0; i &lt; backout; i++)
+              {
+                     Emit(new CommonToken(DEDENT, &quot;DEDENT&quot;));
+              }
+       }
+       else // Same indent, so just ignore this indentation--since we are also skipping all whitespace.
+       {
+              Skip();
+       }
+       CurrentIndent = indent;
+}
+;
+
+WS: ' ' { Skip(); } ;
+EOL: '\n' ;
+
+Token: Char+ ;
+fragment Char: ~(' '|'\t'|'\r'|EOL) ;
+
+
+Ok, that's the combined grammar. I also overrode the Emit() and NextToken() methods, so as to maintain a queue for the DEDENTs. This is in the lexer partial class:
+        private Queue&lt;IToken&gt; tokenQueue = new Queue&lt;IToken&gt;();
+
+        public override void Emit(IToken token)
+        {
+            base.Emit(token); // Or: this.state.token = token;
+            tokenQueue.Enqueue(token);
+        }
+
+        public override IToken NextToken()
+        {
+            IToken tok = base.NextToken();
+            // If the queue is empty, there are no more input tokens: we are at the end of file.
+            // But at this point we might be in an indented block and need to return dedent tokens.
+            // Therefore, emit as many dedents as necessary and then emit the EOF.
+            // Note: The emits must be in order and before the return, to put them on the queue, from which they are returned.
+            if (tokenQueue.Count == 0)
+            {
+                // Check the current indentation, in order to emit leftover DEDENT tokens.
+                // This occurs (only) when the last statement in the input is indented, so that we end
+                // with non-zero indentation. (If the last statement was top-level/indent 0, then there
+                // should be a DEDENT before that, not here at the end of file.)
+                if (this.CurrentIndent &gt; 0)
+                {
+                    while (this.CurrentIndent &gt; 0)
+                    {
+                        Emit(new CommonToken(DEDENT, &quot;DEDENT&quot;));
+                        this.CurrentIndent--;
+                    }
+                }
+                else
+                {
+                    IToken eof = new CommonToken((ICharStream)input, CharStreamConstants.EndOfFile, TokenChannels.Default, input.Index, input.Index);
+                    eof.Line = Line;
+                    eof.CharPositionInLine = CharPositionInLine;
+
+                    Emit(tok);
+                }
+            }
+            return tokenQueue.Dequeue();
+        }
+
+And my C# test string is just this, which fails on unexpected 'b2', even though the DEDENT was there before it:
+           string s =
+@&quot;a1 line
+b1 alpha
+  c1 beta
+b2 gamma
+&quot;;
+
+Or even this, which fails on unexpected DEDENT immediately after &quot;c1 beta&quot; (the first of two DEDENTS):
+            string s =
+@&quot;a1 line
+b1 alpha
+  c1 beta
+&quot;;
+
+I am getting the notion that the parser checks for what tokens are there BEFORE the inserted DEDENTs are seen. But I have yet to delve into the parser enough to find that.
+
+I have to say that it be help if either this feature were not advertised for ANTLR, or a lot more documentation were available to do it right. TDAR on this just lures you in. If I had known how much of a hack would this would be, I would have started out four days ago doing it with two passes.
+
+S. Smith
+
+
+
+
+</PRE>
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="044740.html">[antlr-interest] Forcing the lexer to never error
+</A></li>
+	<LI>Next message: <A HREF="044738.html">[antlr-interest] emitting multiple tokens (INDENT/DEDENT)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#44736">[ date ]</a>
+              <a href="thread.html#44736">[ thread ]</a>
+              <a href="subject.html#44736">[ subject ]</a>
+              <a href="author.html#44736">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

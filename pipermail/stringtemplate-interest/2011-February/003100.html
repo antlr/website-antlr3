@@ -1,0 +1,215 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [stringtemplate-interest] Using the &quot;format&quot; option with a	template calls
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20Using%20the%20%22format%22%20option%20with%20a%0A%09template%20calls&In-Reply-To=%3C5778376D-A224-4DD3-A06D-D9999CFC47B6%40cs.usfca.edu%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003099.html">
+   <LINK REL="Next"  HREF="003103.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[stringtemplate-interest] Using the &quot;format&quot; option with a	template calls</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20Using%20the%20%22format%22%20option%20with%20a%0A%09template%20calls&In-Reply-To=%3C5778376D-A224-4DD3-A06D-D9999CFC47B6%40cs.usfca.edu%3E"
+       TITLE="[stringtemplate-interest] Using the &quot;format&quot; option with a	template calls">parrt at cs.usfca.edu
+       </A><BR>
+    <I>Sat Feb  5 11:10:53 PST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003099.html">[stringtemplate-interest] [ST4 Beta-3] Endless loop when	referencing argument in default value
+</A></li>
+        <LI>Next message: <A HREF="003103.html">[stringtemplate-interest] [ST4] How to notice errors when a	file was not imported?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3100">[ date ]</a>
+              <a href="thread.html#3100">[ thread ]</a>
+              <a href="subject.html#3100">[ subject ]</a>
+              <a href="author.html#3100">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Oh, i'm an idiot. it should obviously just create same kind of writer as outer templ is using.
+
+			StringWriter sw = new StringWriter();
+			STWriter stw = null;
+			try {
+				Class writerClass = out.getClass();
+				Constructor ctor =
+					writerClass.getConstructor(new Class[] {Writer.class});
+				stw = (STWriter)ctor.newInstance(sw);
+			}
+			catch (Exception e) {
+				stw = new AutoIndentWriter(sw);
+				errMgr.runTimeError(self, current_ip, ErrorType.WRITER_CTOR_ISSUE, out.getClass().getSimpleName());
+			}
+			writeObjectNoOptions(stw, self, value);
+
+Unit tests:
+
+	/** (...) forces early eval to string. early eval &lt;(x)&gt; using new
+	 *  STWriter derived from type of current STWriter. e.g., AutoIndentWriter.
+	 */
+	@Test public void testEarlyEvalIndent() throws Exception {
+		String templates =
+			&quot;t() ::= &lt;&lt;  abc&gt;&gt;\n&quot; +
+			&quot;main() ::= &lt;&lt;\n&quot; +
+			&quot;&lt;t()&gt;\n&quot; +
+			&quot;&lt;(t())&gt;\n&quot; + // early eval ignores indents; mostly for simply strings
+			&quot;  &lt;t()&gt;\n&quot; +
+			&quot;  &lt;(t())&gt;\n&quot; +
+			&quot;&gt;&gt;\n&quot;;
+
+		writeFile(tmpdir, &quot;t.stg&quot;, templates);
+		STGroup group = new STGroupFile(tmpdir+&quot;/&quot;+&quot;t.stg&quot;);
+		ST st = group.getInstanceOf(&quot;main&quot;);
+		String result = st.render();
+		String expected =
+			&quot;  abc\n&quot; +
+			&quot;  abc\n&quot; +
+			&quot;    abc\n&quot; +
+			&quot;    abc&quot;;
+		assertEquals(expected, result);
+	}
+
+	@Test public void testEarlyEvalNoIndent() throws Exception {
+		String templates =
+			&quot;t() ::= &lt;&lt;  abc&gt;&gt;\n&quot; +
+			&quot;main() ::= &lt;&lt;\n&quot; +
+			&quot;&lt;t()&gt;\n&quot; +
+			&quot;&lt;(t())&gt;\n&quot; + // early eval ignores indents; mostly for simply strings
+			&quot;  &lt;t()&gt;\n&quot; +
+			&quot;  &lt;(t())&gt;\n&quot; +
+			&quot;&gt;&gt;\n&quot;;
+
+		writeFile(tmpdir, &quot;t.stg&quot;, templates);
+		STGroup group = new STGroupFile(tmpdir+&quot;/&quot;+&quot;t.stg&quot;);
+		ST st = group.getInstanceOf(&quot;main&quot;);
+		StringWriter sw = new StringWriter();
+		NoIndentWriter w = new NoIndentWriter(sw);
+		st.write(w);
+		String result = sw.toString();
+		String expected =
+			&quot;abc\n&quot; +
+			&quot;abc\n&quot; +
+			&quot;abc\n&quot; +
+			&quot;abc&quot;;
+		assertEquals(expected, result);
+	}
+
+On Jan 31, 2011, at 2:11 PM, Udo Borkowski wrote:
+
+&gt;<i> Hi Ter,
+</I>&gt;<i> 
+</I>&gt;&gt;<i> The early eval is really meant for small chunks.
+</I>&gt;<i> For the property name case and possibly the option value case this assumption is fine. However for the default value this seems to be quite restrictive. Why should default values always be small chunks?
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> Anyhow, I guess we could go on with this discussion for quite a while. What about shortcutting this?
+</I>&gt;<i> 
+</I>&gt;<i> As you may tell from my postings I would like to use an AutoIndentWriter instead of the NoIndentWriter for the &quot;toString&quot;/&quot;early eval&quot; case. What about making this configurable? I.e. by default the NoIndentWriter is used but one may use a different one, if desired.
+</I>&gt;<i> 
+</I>&gt;<i> One way to achieve this: instead of calling &quot;new NoIndentWriter(sw)&quot; directly in Interpreter#toString(&#8230;) ask a factory object to return the &quot;early eval&quot; writer. By default this is a NoIndentWriter.
+</I>&gt;<i> 
+</I>&gt;<i> E.g.:
+</I>&gt;<i> 
+</I>&gt;<i> Add new interface:
+</I>&gt;<i> 
+</I>&gt;<i> public interface EarlyEvalWriterFactory {
+</I>&gt;<i> 
+</I>&gt;<i> 	/**
+</I>&gt;<i> 	 * Returns a newly created STWriter used to write the given value as a
+</I>&gt;<i> 	 * String with the StringWriter out.
+</I>&gt;<i> 	 * 
+</I>&gt;<i> 	 * @param out
+</I>&gt;<i> 	 * @param template
+</I>&gt;<i> 	 * @param value
+</I>&gt;<i> 	 * @return
+</I>&gt;<i> 	 */
+</I>&gt;<i> 	STWriter createEarlyEvalWriter(StringWriter out, ST template, Object value);
+</I>&gt;<i> }
+</I>&gt;<i> 
+</I>&gt;<i> In Interpreter add:
+</I>&gt;<i> 
+</I>&gt;<i> 	public static EarlyEvalWriterFactory earlyEvalWriterFactory = new EarlyEvalWriterFactory() {
+</I>&gt;<i> 		@Override
+</I>&gt;<i> 		public STWriter createEarlyEvalWriter(StringWriter sw, ST template,
+</I>&gt;<i> 				Object value) {
+</I>&gt;<i> 			return new NoIndentWriter(sw);
+</I>&gt;<i> 		}
+</I>&gt;<i> 	};
+</I>&gt;<i> 	
+</I>&gt;<i> In Interpreter#toString(ST self, Object value) use
+</I>&gt;<i> 
+</I>&gt;<i> 			STWriter out = earlyEvalWriterFactory.createEarlyEvalWriter(sw,
+</I>&gt;<i> 					self, value);
+</I>&gt;<i> 			writeObjectNoOptions(out, self, value);
+</I>&gt;<i> 
+</I>&gt;<i> 			return sw.toString();
+</I>&gt;<i> 
+</I>&gt;<i> This way one could replace the earlyEvalWriterFactory if a different STWriter than the NoIndentWriter should be used for early string evaluation.
+</I>&gt;<i> 
+</I>&gt;<i> I would really appreciate this extension.
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> Udo
+</I>&gt;<i> 
+</I>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/stringtemplate-interest/attachments/20110205/a7cfeebe/attachment-0001.html">http://www.antlr.org/pipermail/stringtemplate-interest/attachments/20110205/a7cfeebe/attachment-0001.html</A> 
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003099.html">[stringtemplate-interest] [ST4 Beta-3] Endless loop when	referencing argument in default value
+</A></li>
+	<LI>Next message: <A HREF="003103.html">[stringtemplate-interest] [ST4] How to notice errors when a	file was not imported?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3100">[ date ]</a>
+              <a href="thread.html#3100">[ thread ]</a>
+              <a href="subject.html#3100">[ subject ]</a>
+              <a href="author.html#3100">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">More information about the stringtemplate-interest
+mailing list</a><br>
+</body></html>

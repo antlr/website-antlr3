@@ -1,0 +1,151 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [stringtemplate-interest] wrapping long lines in ST expressions
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:stringtemplate-interest%40antlr.org?Subject=%5Bstringtemplate-interest%5D%20wrapping%20long%20lines%20in%20ST%20expressions&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="000430.html">
+   <LINK REL="Next"  HREF="000432.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[stringtemplate-interest] wrapping long lines in ST expressions</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:stringtemplate-interest%40antlr.org?Subject=%5Bstringtemplate-interest%5D%20wrapping%20long%20lines%20in%20ST%20expressions&In-Reply-To="
+       TITLE="[stringtemplate-interest] wrapping long lines in ST expressions">parrt at cs.usfca.edu
+       </A><BR>
+    <I>Sun May 28 11:45:24 PDT 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="000430.html">[stringtemplate-interest]ST#-questionregardingspecialcasingofIList
+</A></li>
+        <LI>Next message: <A HREF="000432.html">[stringtemplate-interest] unit tests for line wrapping
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#431">[ date ]</a>
+              <a href="thread.html#431">[ thread ]</a>
+              <a href="subject.html#431">[ subject ]</a>
+              <a href="author.html#431">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+I'm in need of proper line wrapping as I'm generating some big static  
+arrays of ints.  We need to come up with a nice mechanism that is  
+easy and general.  The easiest thing would probably be a lineLength  
+parameter to either toString() or as a property of STs or STGs.  ST  
+would need to insert a \n before spitting out an expression if the  
+prior output on that line is over the threshold.  You want the output  
+to break in between expressions so that you avoid splitting output  
+constructs unnecessarily, but the common case is probably a single  
+attribute expression that has multiple things spit out like an array  
+of ints.
+
+Can people think of common uses for wrapping other than lists and such?
+
+Do we need an indentation parameter also?
+
+int[] a = { a, b,
+             c, d };
+
+Those spaces before the &quot;c&quot; (sizeof(&quot;int[] a = { &quot;)) are what I'm  
+talking about.  Here is the generating template:
+
+int[] a = { &lt;elements; indent=&quot;            &quot;, separator=&quot;, &quot;&gt; };
+
+Those option values can actually template expressions and here is a  
+case where we need length() operator.  If the &quot;int&quot; is a variable
+
+&lt;type&gt;[] a = { &lt;elements; indent={&lt;length(type+&quot;            &quot;)&gt;},  
+separator=&quot;, &quot;&gt; };
+
+which would mean I would need to interpret numeric strings as how  
+many spaces?  Hmm...not good.  Also length should be how many  
+elements not length in char probably.  How do we deal with variable  
+length indentation?  Perhaps we have indent and relativeIndent.   
+relativeIndent indents from position of expression start on first line.
+
+There is another issue:  Where do I store the current char count for  
+current line?  Can't store in the ST objects as they can be contained  
+in multiple other templates and may get examined multiple times to  
+display different things.  Seems like the actual invocation of the  
+toString() method needs to track the line count for that particular  
+execution.  I'll have to create a mutable Integer I guess and pass  
+that printing context around to the write() routines.  Perhaps that  
+will be a useful thing in general.  I have trouble removing blank  
+lines sometimes as I don't know the overall count of char for the  
+current line.  Oh, doh!  I have AutoIndentWriter already that knows  
+about newlines for indentation...I wonder if we can simply handle  
+this with a parameter to the constructor.  Currently, toString() calls:
+
+		StringTemplateWriter wr = group.getStringTemplateWriter(out);
+
+which can be set with:
+
+	/** Specify a StringTemplateWriter implementing class to use for
+	 *  filtering output
+	 */
+	public void setStringTemplateWriter(Class c) {
+		userSpecifiedWriter = c;
+	}
+
+Revisiting multiple expressions per line:
+
+public void foo(&lt;args; separator=&quot;, &quot;&gt;) throws &lt;excepts; separator=&quot;, &quot;&gt;
+{
+	&lt;body&gt;
+}
+
+where should it break?  Presumably in between the expressions rather  
+than in the middle of one of the expr.  That might be too hard.  The  
+output writer sees &quot;public void foo(&quot; then each arg intermixed with  
+write(&quot;, &quot;) then &quot;) throws &quot; then the excepts elements intermixed  
+with &quot;, &quot;.  The write doesn't know anything about literals, intra  
+expression and inter expression locations.  Hmm...can't predict the  
+future anyway...we don't know that the excepts are coming.
+
+Ok, I think i've convinced myself that a simple char count and  
+threshold will do the trick.  Hooray!
+
+Wait, what if you want lines to wrap more tightly for some  
+expressions?  Do we need an arg on expressions like
+
+int[] a = { &lt;elements; width=40, separator=&quot;, &quot;&gt; };
+
+Hmm...I could store the option in the ASTExpr object like I do for  
+indentation and separator.  Well, I don't need it now; agile mindset  
+says leave til later ;)
+
+Wow...did I *finally* find a need for more options thus validating my  
+complicated &lt;expr; option=value&gt; notation? ;)
+
+Ter
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20060528/2e699181/attachment.html">http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20060528/2e699181/attachment.html</A>
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="000430.html">[stringtemplate-interest]ST#-questionregardingspecialcasingofIList
+</A></li>
+	<LI>Next message: <A HREF="000432.html">[stringtemplate-interest] unit tests for line wrapping
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#431">[ date ]</a>
+              <a href="thread.html#431">[ thread ]</a>
+              <a href="subject.html#431">[ subject ]</a>
+              <a href="author.html#431">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest">More information about the stringtemplate-interest
+mailing list</a><br>
+</body></html>

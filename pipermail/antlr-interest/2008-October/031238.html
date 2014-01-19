@@ -1,0 +1,220 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Newbie: some advice on setup
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Newbie%3A%20some%20advice%20on%20setup&In-Reply-To=%3Cge4llu%243h6%241%40ger.gmane.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="031235.html">
+   <LINK REL="Next"  HREF="031239.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Newbie: some advice on setup</H1>
+    <B>Hendrik Maryns</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Newbie%3A%20some%20advice%20on%20setup&In-Reply-To=%3Cge4llu%243h6%241%40ger.gmane.org%3E"
+       TITLE="[antlr-interest] Newbie: some advice on setup">qwizv9b02 at sneakemail.com
+       </A><BR>
+    <I>Mon Oct 27 08:10:53 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="031235.html">[antlr-interest] C++ tree parser
+</A></li>
+        <LI>Next message: <A HREF="031239.html">[antlr-interest] Only one import level with ANTLR-3.1.1?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#31238">[ date ]</a>
+              <a href="thread.html#31238">[ thread ]</a>
+              <a href="subject.html#31238">[ subject ]</a>
+              <a href="author.html#31238">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+I want to parse some lisp-like formulas given by the user into my own
+Java Formulas.  I already wrote a grammer in antlr which is so easy that
+is should be correct, but now I do not know how to continue.  How would
+you go from this?  Create an AST and write a TreeParser or introduce
+formula constructors in the parser grammar directly?
+
+Let me give some examples.
+
+(in x X) should result in new Inclusion(x, X), where x and X are
+variables, which are either newly created or retrieved from a map if
+they have occurred elsewhere in the formula.
+
+(word x Einf&#252;hrung) should result in new Inclusion(x, new
+Predicate(&quot;Einf&#252;hrung&quot;)), with the same rule for x as above.  Maybe I
+should define a separate WordFormula instead of reusing Inclusion, but
+that is another matter.
+
+(=&gt; formula1 formula2) should result in new Implication(formula1,
+formula2), where of course f1 and f2 are to be parsed recursively.
+
+And so on.  Some rules for atomic formulas, and the usual stuff for the
+logical connectors.
+
+My grammar I have now looks as follows:
+
+grammar fsq;
+
+options {
+	language = Java;
+}
+
+tokens {
+// LISP
+  OPEN = '(';
+  CLOSE = ')';
+// labels
+  FUNCTION = 'fct';
+  CATEGORY = 'cat';
+  WORD = 'word';
+  LEMMA = 'lemma';
+  MORPHOLOGY = 'morph';
+
+  SENTENCE = 'sent';
+// atomic
+  CONTAINMENT = 'in';
+  EQUALITY = '=';
+  PROPER_DOMINANCE = '&gt;+';
+  IMMEDIATE_DOMINANCE = '&gt;';
+  DOMINANCE = '&gt;&gt;';
+  IMMEDIATE_PRECEDENCE = '.';
+  PRECEDENCE = '..';
+// unary
+  NEGATION = '!';
+// binary
+  IMPLICATION = '-&gt;';
+  EQUIVALENCE = '&lt;-&gt;';
+// n-ary
+  DISJUNCTION = '|';
+  CONJUNCTION = '&amp;';
+// quantification
+  SECOND_ORDER_UNIVERSAL = 'A2';
+  SECOND_ORDER_EXISTENTIAL = 'E2';
+  FIRST_ORDER_UNIVERSAL = 'A1';
+  FIRST_ORDER_EXISTENTIAL = 'E1';
+}
+
+@header { package de.uni_tuebingen.sfb.lichtenstein.formulas.parsing; }
+
+@lexer::header { package
+de.uni_tuebingen.sfb.lichtenstein.formulas.parsing; }
+
+@members {
+}
+
+/*------------------------------------------------------------------
+ * PARSER RULES
+ *------------------------------------------------------------------*/
+
+/**
+ * One formula on each line.
+ */
+formulaList : ( formula NEWLINE? )* EOF ;
+
+/**
+ * A formula is enclosed by braces.
+ */
+formula : OPEN body CLOSE ;
+
+body : label | atomic | unary | binary | n_ary | quantor ;
+
+// label formulas
+label : labelHead WHITESPACE VARIABLE WHITESPACE LABEL ;
+
+labelHead : FUNCTION | CATEGORY | WORD | LEMMA | MORPHOLOGY ;
+
+// atomic relations
+atomic : atomicHead WHITESPACE VARIABLE WHITESPACE VARIABLE ;
+
+atomicHead : CONTAINMENT | EQUALITY | PROPER_DOMINANCE |
+IMMEDIATE_DOMINANCE | DOMINANCE | IMMEDIATE_PRECEDENCE | PRECEDENCE ;
+
+// unary junctors
+unary : unaryHead formula ;
+
+unaryHead : NEGATION ;
+
+// binary junctors
+binary : binaryHead formula formula ;
+
+binaryHead : IMPLICATION | EQUIVALENCE ;
+
+// n-ary junctors
+n_ary : n_aryHead formula+ ;
+
+n_aryHead : CONJUNCTION | DISJUNCTION ;
+
+// quantors
+quantor : quantorHead VARIABLE formula ;
+
+quantorHead : FIRST_ORDER_EXISTENTIAL | FIRST_ORDER_UNIVERSAL |
+SECOND_ORDER_EXISTENTIAL | SECOND_ORDER_UNIVERSAL ;
+
+/*------------------------------------------------------------------
+ * LEXER RULES
+ *------------------------------------------------------------------*/
+
+WHITESPACE : ( '\t' | ' ' )+ ;
+
+NEWLINE: ('\r'? '\n')+;
+
+VARIABLE : ( DIGIT | LETTER )+ ;
+
+fragment DIGIT  : '0'..'9' ;
+fragment LETTER : LOWERCASE | UPPERCASE ;
+fragment LOWERCASE : 'a'..'z' ;
+fragment UPPERCASE : 'A'..'Z' ;
+
+LABEL : ~(')')+ ;
+
+
+Other remarks most welcome also, of course!
+
+Cheers, H.
+-- 
+Hendrik Maryns
+<A HREF="http://tcl.sfs.uni-tuebingen.de/~hendrik/">http://tcl.sfs.uni-tuebingen.de/~hendrik/</A>
+==================
+Ask smart questions, get good answers:
+<A HREF="http://www.catb.org/~esr/faqs/smart-questions.html">http://www.catb.org/~esr/faqs/smart-questions.html</A>
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 257 bytes
+Desc: OpenPGP digital signature
+Url : <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20081027/f9d00d20/attachment.bin">http://www.antlr.org/pipermail/antlr-interest/attachments/20081027/f9d00d20/attachment.bin</A> 
+</PRE>
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="031235.html">[antlr-interest] C++ tree parser
+</A></li>
+	<LI>Next message: <A HREF="031239.html">[antlr-interest] Only one import level with ANTLR-3.1.1?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#31238">[ date ]</a>
+              <a href="thread.html#31238">[ thread ]</a>
+              <a href="subject.html#31238">[ subject ]</a>
+              <a href="author.html#31238">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

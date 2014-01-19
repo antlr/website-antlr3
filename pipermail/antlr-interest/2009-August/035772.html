@@ -1,0 +1,151 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Tokens that span across char streams
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Tokens%20that%20span%20across%20char%20streams&In-Reply-To=%3Cf6be20450908261505w87e8edbjc9ef78c3d5486f39%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="035771.html">
+   <LINK REL="Next"  HREF="035779.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Tokens that span across char streams</H1>
+    <B>Stanislav Sokorac</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Tokens%20that%20span%20across%20char%20streams&In-Reply-To=%3Cf6be20450908261505w87e8edbjc9ef78c3d5486f39%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Tokens that span across char streams">sokorac at gmail.com
+       </A><BR>
+    <I>Wed Aug 26 15:05:20 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="035771.html">[antlr-interest] Tokens that span across char streams
+</A></li>
+        <LI>Next message: <A HREF="035779.html">[antlr-interest] Tokens that span across char streams
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#35772">[ date ]</a>
+              <a href="thread.html#35772">[ thread ]</a>
+              <a href="subject.html#35772">[ subject ]</a>
+              <a href="author.html#35772">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I failed to mention that the language requires a special character to be
+used before a macro *use*, which makes it easy to detect macros being used
+(and allows the flexibility of having it used just about anywhere)... the
+line below should read
+
+String a = #FOO end of a string&quot;;
+
+Unfortunately, it's not my language, so I'm stuck with the way it is.
+
+With above in mind, it's easy for the lexer to detect both macro definitions
+and macro uses. So, what I'm doing is having lexer record macro definitions,
+and then have it perform stream switches when a macro use is detected. But,
+since lexer can't look past the EOF of one stream into the next one, that
+doesn't really help my case below. On the other hand, having the char stream
+itself handle the insertion of the macro value will mess up the
+line/character numbering, like you said.
+
+Who keeps track of line numbers and character positions? The char stream, or
+the lexer? If it's the stream, then I could &quot;fool&quot; the lexer into recording
+the original numbers into tokens... If it's the lexer, then I'd have to do
+post-processing on tokens to fix them, I guess.
+
+Stan
+
+On Wed, Aug 26, 2009 at 5:34 PM, Gavin Lambert &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr at mirality.co.nz</A>&gt; wrote:
+
+&gt;<i> At 07:57 27/08/2009, Stanislav Sokorac wrote:
+</I>&gt;<i>
+</I>&gt;&gt;<i> I have a language that allows macros to be used just about anywhere, which
+</I>&gt;&gt;<i> makes things a bit difficult. For example, a macro could define half a
+</I>&gt;&gt;<i> string, and something like this is legal:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> #define FOO &quot;start of a string
+</I>&gt;&gt;<i> String a = FOO end of a string&quot;;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> If I do on-the-fly substitution of macros by switching char streams (using
+</I>&gt;&gt;<i> the include file technique from the FAQ), lexer cannot recognize the string
+</I>&gt;&gt;<i> in the second line: it parses the macro text, encounters EOF of that stream,
+</I>&gt;&gt;<i> throws an exception (&quot;couldn't match anything&quot;), and then start over at the
+</I>&gt;&gt;<i> second half of the string, again not matching anything.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> What's a good way to &quot;smooth over&quot; the EOF bump, and merge the streams
+</I>&gt;&gt;<i> into one from lexer's point of view? Do I need to implement a custom
+</I>&gt;&gt;<i> CharStream to do something like this?
+</I>&gt;&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> That wouldn't really help.  Consider the case where there is another
+</I>&gt;<i> unrelated line (perhaps another #define) between those two above.  Unless
+</I>&gt;<i> you were switching streams when you encounter *use* of the #defined tokens
+</I>&gt;<i> (and not just on include) you still wouldn't be able to parse a complete
+</I>&gt;<i> string token.
+</I>&gt;<i>
+</I>&gt;<i> You *could* define a preprocessing CharStream, that recognises the use of
+</I>&gt;<i> #define and simply files the characters until EOL away without actually
+</I>&gt;<i> passing them on, then later recognises the name of the defined symbol and
+</I>&gt;<i> passes on the value rather than the name.  That's probably about the best
+</I>&gt;<i> you can do, if you don't want to do a full preprocessing pass.  I think
+</I>&gt;<i> it'll still have the same line numbering issues though.
+</I>&gt;<i>
+</I>&gt;<i>  Of course, I could have a pre-process run that replaces all the macros,
+</I>&gt;&gt;<i> and then run through the resulting code, but I'd like to avoid that because
+</I>&gt;&gt;<i> (1) it's slow to go through the file twice, and (2) the character/line
+</I>&gt;&gt;<i> numbers in tokens will be messed up in the second run and it'll take a bit
+</I>&gt;&gt;<i> of work to bring them back to the original locations.
+</I>&gt;&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> I really think that the preprocess run is the simplest option for that sort
+</I>&gt;<i> of thing.  Either that or using only single characters as tokens; given your
+</I>&gt;<i> example you definitely can't match an entire quoted string as a single token
+</I>&gt;<i> without grief.
+</I>&gt;<i>
+</I>&gt;<i> Is this your own language?  If it is, you should consider changing that
+</I>&gt;<i> rule and adopt something like C's string constant folding instead; for
+</I>&gt;<i> example the C equivalent to your above example (and which uses complete,
+</I>&gt;<i> lexable tokens) is this:
+</I>&gt;<i>
+</I>&gt;<i> #define FOO &quot;start of a string&quot;
+</I>&gt;<i> String a = FOO &quot; end of a string&quot;;
+</I>&gt;<i>
+</I>&gt;<i> (In C, two sequential string constants are treated as if they were a single
+</I>&gt;<i> constant with the text appended together.)
+</I>&gt;<i>
+</I>-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20090826/e3acd8e9/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20090826/e3acd8e9/attachment.html</A> 
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="035771.html">[antlr-interest] Tokens that span across char streams
+</A></li>
+	<LI>Next message: <A HREF="035779.html">[antlr-interest] Tokens that span across char streams
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#35772">[ date ]</a>
+              <a href="thread.html#35772">[ thread ]</a>
+              <a href="subject.html#35772">[ subject ]</a>
+              <a href="author.html#35772">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

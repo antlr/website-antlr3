@@ -1,0 +1,781 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Performance tweak for .NET antlr library
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Performance%20tweak%20for%20.NET%20antlr%20library&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="015771.html">
+   <LINK REL="Next"  HREF="015778.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Performance tweak for .NET antlr library</H1>
+    <B>Matthew Mastracci</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Performance%20tweak%20for%20.NET%20antlr%20library&In-Reply-To="
+       TITLE="[antlr-interest] Performance tweak for .NET antlr library">matt at aclaro.com
+       </A><BR>
+    <I>Wed Mar 22 09:36:21 PST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="015771.html">[antlr-interest] ASTRefCount and Dynamic Libraries (c++).
+</A></li>
+        <LI>Next message: <A HREF="015778.html">[antlr-interest] Performance tweak for .NET antlr library
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#15773">[ date ]</a>
+              <a href="thread.html#15773">[ thread ]</a>
+              <a href="subject.html#15773">[ subject ]</a>
+              <a href="author.html#15773">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I've been profiling our application and it looks like there's a small 
+tweak to the .NET runtime library's ASTFactory that cuts a small amount 
+of time out when parsing large amounts of data.
+
+The ASTFactor constructor takes the name of a type, but needs to scan 
+all assemblies for an instance of the type.  I added a new constructor 
+that takes System.Type and modified the default constructor to pass in 
+typeof(CommonAST) instead of &quot;antlr.CommonAST&quot;.
+
+I've attached the patched file, but I can generate a proper patch if 
+required.
+-------------- next part --------------
+using System;
+using System.Collections;
+using Assembly			= System.Reflection.Assembly;
+using ArrayList			= System.Collections.ArrayList;
+using Debug				= System.Diagnostics.Debug;
+using AST				= antlr.collections.AST;
+using ASTArray			= antlr.collections.impl.ASTArray;
+using ANTLRException	= antlr.ANTLRException;
+
+namespace antlr
+{
+	/*ANTLR Translator Generator
+	* Project led by Terence Parr at <A HREF="http://www.jGuru.com">http://www.jGuru.com</A>
+	* Software rights: <A HREF="http://www.antlr.org/license.html">http://www.antlr.org/license.html</A>
+	*
+	* $Id:$
+	*/
+	
+	//
+	// ANTLR C# Code Generator by Micheal Jordan
+	//                            Kunle Odutola       : kunle UNDERSCORE odutola AT hotmail DOT com
+	//                            Anthony Oguntimehin
+	//
+	// With many thanks to Eric V. Smith from the ANTLR list.
+	//
+
+
+	// HISTORY:
+	//
+	// 19-Aug-2002 kunle    Augmented the basic flexibility of the default ASTFactory with a map
+	//                      of TokenID-to-NodeTypeName. It's now a proper GoF-style Factory ;-)
+	//
+
+	/// &lt;summary&gt;
+	/// AST Support code shared by TreeParser and Parser.
+	/// &lt;/summary&gt;
+	/// &lt;remarks&gt;
+	/// &lt;para&gt;
+	/// We use delegation to share code (and have only one 
+	/// bit of code to maintain) rather than subclassing
+	/// or superclassing (forces AST support code to be
+	/// loaded even when you don't want to do AST stuff).
+	/// &lt;/para&gt;
+	/// &lt;para&gt;
+	/// Typically, &lt;see cref=&quot;setASTNodeType&quot;/&gt;  is used to specify the
+	/// homogeneous type of node to create, but you can override
+	/// &lt;see cref=&quot;create&quot;/&gt;  to make heterogeneous nodes etc...
+	/// &lt;/para&gt;
+	/// &lt;/remarks&gt;
+	public class ASTFactory
+	{
+		//---------------------------------------------------------------------
+		// CONSTRUCTORS
+		//---------------------------------------------------------------------
+
+		/// &lt;summary&gt;
+		/// Constructs an &lt;c&gt;ASTFactory&lt;/c&gt; with the default AST node type of
+		/// &lt;see cref=&quot;antlr.CommonAST&quot;/&gt;.
+		/// &lt;/summary&gt;
+		public ASTFactory() : this(typeof(antlr.CommonAST))
+		{
+		}
+
+		/// &lt;summary&gt;
+		/// Constructs an &lt;c&gt;ASTFactory&lt;/c&gt; and use the specified AST node type
+		/// as the default.
+		/// &lt;/summary&gt;
+		/// &lt;param name=&quot;nodeTypeName&quot;&gt;
+		///		Name of default AST node type for this factory.
+		/// &lt;/param&gt;
+		public ASTFactory(string nodeTypeName) : this(loadNodeTypeObject(nodeTypeName))
+		{
+		}
+		
+		/// &lt;summary&gt;
+		/// Constructs an &lt;c&gt;ASTFactory&lt;/c&gt; and use the specified AST node type
+		/// as the default.
+		/// &lt;/summary&gt;
+		/// &lt;param name=&quot;nodeType&quot;&gt;
+		///		Name of default AST node type for this factory.
+		/// &lt;/param&gt;
+		public ASTFactory(Type nodeType)
+		{
+			heteroList_					= new FactoryEntry[Token.MIN_USER_TYPE+1];
+			defaultASTNodeTypeObject_	= nodeType;
+			defaultCreator_				= null;
+			typename2creator_			= new Hashtable(32, (float) 0.3);
+			typename2creator_[&quot;antlr.CommonAST&quot;]					= CommonAST.Creator;
+			typename2creator_[&quot;antlr.CommonASTWithHiddenTokens&quot;]	= CommonASTWithHiddenTokens.Creator;
+
+		}
+		
+		//---------------------------------------------------------------------
+		// DATA MEMBERS
+		//---------------------------------------------------------------------
+
+		/// &lt;summary&gt;
+		/// Stores the Type of the default AST node class to be used during tree construction.
+		/// &lt;/summary&gt;
+		protected Type				defaultASTNodeTypeObject_;
+		protected ASTNodeCreator	defaultCreator_;
+
+		/// &lt;summary&gt;
+		/// Stores the mapping between custom AST NodeTypes and their NodeTypeName/NodeTypeClass
+		/// and ASTNodeCreator.
+		/// &lt;/summary&gt;
+		protected FactoryEntry[]	heteroList_;
+
+		/// &lt;summary&gt;
+		/// Stores the mapping between AST node typenames and their token ID.
+		/// &lt;/summary&gt;
+		protected Hashtable			typename2creator_;
+
+		//---------------------------------------------------------------------
+		// FUNCTION MEMBERS
+		//---------------------------------------------------------------------
+
+		/// &lt;summary&gt;
+		/// Specify an &quot;override&quot; for the &lt;see cref=&quot;AST&quot;/&gt; type created for
+		/// the specified Token type.
+		/// &lt;/summary&gt;
+		/// &lt;remarks&gt;
+		/// This method is useful for situations that ANTLR cannot oridinarily deal 
+		/// with (i.e., when you  create a token based upon a nonliteral token symbol 
+		/// like #[LT(1)].  This is a runtime value and ANTLR cannot determine the token 
+		/// type (and hence the AST) statically.
+		/// &lt;/remarks&gt;
+		/// &lt;param name=&quot;tokenType&quot;&gt;Token type to override.&lt;/param&gt;
+		/// &lt;param name=&quot;NodeTypeName&quot;&gt;
+		///		Fully qualified AST typename (or null to specify 
+		///		the factory's default AST type).
+		/// &lt;/param&gt;
+		public void setTokenTypeASTNodeType(int tokenType, string NodeTypeName)
+		{
+			// check validity of arguments...
+			if( tokenType &lt; Token.MIN_USER_TYPE )
+				throw new ANTLRException(&quot;Internal parser error: Cannot change AST Node Type for Token ID '&quot; + tokenType + &quot;'&quot;);
+
+			// resize up to and including 'type' and initialize any gaps to default
+			// factory.
+			if (tokenType &gt; (heteroList_.Length+1))
+				setMaxNodeType(tokenType);
+			// And add new thing..
+			if (heteroList_[tokenType] == null)
+                heteroList_[tokenType] = new FactoryEntry(loadNodeTypeObject(NodeTypeName));
+			else
+				heteroList_[tokenType].NodeTypeObject = loadNodeTypeObject(NodeTypeName);
+		}
+
+		/// &lt;summary&gt;
+		/// Register an AST Node Type for a given Token type ID.
+		/// &lt;/summary&gt;
+		/// &lt;param name=&quot;NodeType&quot;&gt;The Token type ID.&lt;/param&gt;
+		/// &lt;param name=&quot;NodeTypeName&quot;&gt;The AST Node Type to register.&lt;/param&gt;
+		[Obsolete(&quot;Replaced by setTokenTypeASTNodeType(int, string) since version 2.7.2.6&quot;, true)]
+		public void registerFactory(int NodeType, string NodeTypeName)
+		{
+			setTokenTypeASTNodeType(NodeType, NodeTypeName);
+		}
+
+		/// &lt;summary&gt;
+		/// Register an ASTNodeCreator for a given Token type ID.
+		/// &lt;/summary&gt;
+		/// &lt;param name=&quot;NodeType&quot;&gt;The Token type ID.&lt;/param&gt;
+		/// &lt;param name=&quot;creator&quot;&gt;The creater to register.&lt;/param&gt;
+		public void setTokenTypeASTNodeCreator(int NodeType, ASTNodeCreator creator)
+		{
+			// check validity of arguments...
+			if( NodeType &lt; Token.MIN_USER_TYPE )
+				throw new ANTLRException(&quot;Internal parser error: Cannot change AST Node Type for Token ID '&quot; + NodeType + &quot;'&quot;);
+
+			// resize up to and including 'type' and initialize any gaps to default
+			// factory.
+			if (NodeType &gt; (heteroList_.Length+1))
+				setMaxNodeType(NodeType);
+			// And add new thing..
+			if (heteroList_[NodeType] == null)
+				heteroList_[NodeType] = new FactoryEntry(creator);
+			else
+				heteroList_[NodeType].Creator = creator;
+
+			//typename2creator_[NodeType.ToString()]		= creator;
+			typename2creator_[creator.ASTNodeTypeName]	= creator;
+		}
+
+		/// &lt;summary&gt;
+		/// Register an ASTNodeCreator to be used for creating node by default.
+		/// &lt;/summary&gt;
+		/// &lt;param name=&quot;creator&quot;&gt;The ASTNodeCreator.&lt;/param&gt;
+		public void setASTNodeCreator(ASTNodeCreator creator)
+		{
+			defaultCreator_ = creator;
+		}
+
+		/// &lt;summary&gt;
+		/// Pre-expands the internal list of TokenTypeID-to-ASTNodeType mappings
+		/// to the specified size.
+		/// This is primarily a convenience method that can be used to prevent 
+		/// unnecessary and costly re-org of the mappings list.
+		/// &lt;/summary&gt;
+		/// &lt;param name=&quot;NodeType&quot;&gt;Maximum Token Type ID.&lt;/param&gt;
+		public void setMaxNodeType( int NodeType )
+		{
+			//Debug.WriteLine(this, &quot;NodeType = &quot; + NodeType + &quot; and NodeList.Length = &quot; + nodeTypeList_.Length);
+			if (heteroList_ == null)
+			{
+				heteroList_ = new FactoryEntry[NodeType+1];
+			}
+			else
+			{
+				int length = heteroList_.Length;
+
+				if ( NodeType &gt;= length )
+				{
+					FactoryEntry[] newList = new FactoryEntry[NodeType+1];
+					Array.Copy(heteroList_, 0, newList, 0, length);
+					heteroList_ = newList;
+				}
+				else if ( NodeType &lt; length )
+				{
+					FactoryEntry[] newList = new FactoryEntry[NodeType+1];
+					Array.Copy(heteroList_, 0, newList, 0, (NodeType+1));
+					heteroList_ = newList;
+				}
+			}
+			//Debug.WriteLine(this, &quot;NodeType = &quot; + NodeType + &quot; and NodeList.Length = &quot; + nodeTypeList_.Length);
+		}
+
+		/// &lt;summary&gt;
+		/// Add a child to the current AST
+		/// &lt;/summary&gt;
+		/// &lt;param name=&quot;currentAST&quot;&gt;The AST to add a child to&lt;/param&gt;
+		/// &lt;param name=&quot;child&quot;&gt;The child AST to be added&lt;/param&gt;
+		public virtual void  addASTChild(ref ASTPair currentAST, AST child)
+		{
+			if (child != null)
+			{
+				if (currentAST.root == null)
+				{
+					// Make new child the current root
+					currentAST.root = child;
+				}
+				else
+				{
+					if (currentAST.child == null)
+					{
+						// Add new child to current root
+						currentAST.root.setFirstChild(child);
+					}
+					else
+					{
+						currentAST.child.setNextSibling(child);
+					}
+				}
+				// Make new child the current child
+				currentAST.child = child;
+				currentAST.advanceChildToEnd();
+			}
+		}
+		
+		/// &lt;summary&gt;
+		/// Creates a new uninitialized AST node. Since a specific AST Node Type
+		/// wasn't indicated, the new AST node is created using the current default
+		/// AST Node type - &lt;see cref=&quot;defaultASTNodeTypeObject_&quot;/&gt;
+		/// &lt;/summary&gt;
+		/// &lt;returns&gt;An uninitialized AST node object.&lt;/returns&gt;
+		public virtual AST create()
+		{
+			AST newNode;
+			
+			if (defaultCreator_ == null)
+				newNode = createFromNodeTypeObject(defaultASTNodeTypeObject_);
+			else
+				newNode = defaultCreator_.Create();
+
+			return newNode;
+		}
+		
+		/// &lt;summary&gt;
+		/// Creates and initializes a new AST node using the specified Token Type ID.
+		/// The &lt;see cref=&quot;System.Type&quot;/&gt; used for creating this new AST node is 
+		/// determined by the following:
+		/// &lt;list type=&quot;bullet&quot;&gt;
+		///		&lt;item&gt;the current TokenTypeID-to-ASTNodeType mapping (if any) or,&lt;/item&gt;
+		///		&lt;item&gt;the &lt;see cref=&quot;defaultASTNodeTypeObject_&quot;/&gt; otherwise&lt;/item&gt;
+		/// &lt;/list&gt;
+		/// &lt;/summary&gt;
+		/// &lt;param name=&quot;type&quot;&gt;Token type ID to be used to create new AST Node.&lt;/param&gt;
+		/// &lt;returns&gt;An initialized AST node object.&lt;/returns&gt;
+		public virtual AST create(int type)
+		{
+			AST newNode = createFromNodeType(type);
+			newNode.initialize(type, &quot;&quot;);
+			return newNode;
+		}
+		
+		/// &lt;summary&gt;
+		/// Creates and initializes a new AST node using the specified Token Type ID.
+		/// The &lt;see cref=&quot;System.Type&quot;/&gt; used for creating this new AST node is 
+		/// determined by the following:
+		/// &lt;list type=&quot;bullet&quot;&gt;
+		///		&lt;item&gt;the current TokenTypeID-to-ASTNodeType mapping (if any) or,&lt;/item&gt;
+		///		&lt;item&gt;the &lt;see cref=&quot;defaultASTNodeTypeObject_&quot;/&gt; otherwise&lt;/item&gt;
+		/// &lt;/list&gt;
+		/// &lt;/summary&gt;
+		/// &lt;param name=&quot;type&quot;&gt;Token type ID to be used to create new AST Node.&lt;/param&gt;
+		/// &lt;param name=&quot;txt&quot;&gt;Text for initializing the new AST Node.&lt;/param&gt;
+		/// &lt;returns&gt;An initialized AST node object.&lt;/returns&gt;
+		public virtual AST create(int type, string txt)
+		{
+			AST newNode = createFromNodeType(type);
+			newNode.initialize(type, txt);
+			return newNode;
+		}
+		
+		/// &lt;summary&gt;
+		/// Creates a new AST node using the specified AST Node Type name. Once created,
+		/// the new AST node is initialized with the specified Token type ID and string.
+		/// The &lt;see cref=&quot;System.Type&quot;/&gt; used for creating this new AST node is 
+		/// determined solely by &lt;c&gt;ASTNodeTypeName&lt;/c&gt;.
+		/// The AST Node type must have a default/parameterless constructor.
+		/// &lt;/summary&gt;
+		/// &lt;param name=&quot;type&quot;&gt;Token type ID to be used to create new AST Node.&lt;/param&gt;
+		/// &lt;param name=&quot;txt&quot;&gt;Text for initializing the new AST Node.&lt;/param&gt;
+		/// &lt;param name=&quot;ASTNodeTypeName&quot;&gt;Fully qualified name of the Type to be used for creating the new AST Node.&lt;/param&gt;
+		/// &lt;returns&gt;An initialized AST node object.&lt;/returns&gt;
+		public virtual AST create(int type, string txt, string ASTNodeTypeName)
+		{
+			AST newNode = createFromNodeName(ASTNodeTypeName);
+			newNode.initialize(type, txt);
+			return newNode;
+		}
+		
+		/// &lt;summary&gt;
+		/// Creates a new AST node using the specified AST Node Type name.
+		/// &lt;/summary&gt;
+		/// &lt;param name=&quot;tok&quot;&gt;Token instance to be used to initialize the new AST Node.&lt;/param&gt;
+		/// &lt;param name=&quot;ASTNodeTypeName&quot;&gt;
+		///		Fully qualified name of the Type to be used for creating the new AST Node.
+		///	&lt;/param&gt;
+		/// &lt;returns&gt;A newly created and initialized AST node object.&lt;/returns&gt;
+		/// &lt;remarks&gt;
+		/// Once created, the new AST node is initialized with the specified Token 
+		/// instance. The &lt;see cref=&quot;System.Type&quot;/&gt; used for creating this new AST 
+		/// node is  determined solely by &lt;c&gt;ASTNodeTypeName&lt;/c&gt;.
+		/// &lt;para&gt;The AST Node type must have a default/parameterless constructor.&lt;/para&gt;
+		/// &lt;/remarks&gt;
+		public virtual AST create(IToken tok, string ASTNodeTypeName)
+		{
+			AST newNode = createFromNodeName(ASTNodeTypeName);
+			newNode.initialize(tok);
+			return newNode;
+		}
+		
+		/// &lt;summary&gt;
+		/// Creates and initializes a new AST node using the specified AST Node instance.
+		/// the new AST node is initialized with the specified Token type ID and string.
+		/// The &lt;see cref=&quot;System.Type&quot;/&gt; used for creating this new AST node is 
+		/// determined solely by &lt;c&gt;aNode&lt;/c&gt;.
+		/// The AST Node type must have a default/parameterless constructor.
+		/// &lt;/summary&gt;
+		/// &lt;param name=&quot;aNode&quot;&gt;AST Node instance to be used for creating the new AST Node.&lt;/param&gt;
+		/// &lt;returns&gt;An initialized AST node object.&lt;/returns&gt;
+		public virtual AST create(AST aNode)
+		{
+			AST	newNode;
+
+			if (aNode == null)
+				newNode = null;
+			else
+			{			
+				newNode = createFromAST(aNode);
+				newNode.initialize(aNode);
+			}
+			return newNode;
+		}
+		
+		/// &lt;summary&gt;
+		/// Creates and initializes a new AST node using the specified Token instance.
+		/// The &lt;see cref=&quot;System.Type&quot;/&gt; used for creating this new AST node is 
+		/// determined by the following:
+		/// &lt;list type=&quot;bullet&quot;&gt;
+		///		&lt;item&gt;the current TokenTypeID-to-ASTNodeType mapping (if any) or,&lt;/item&gt;
+		///		&lt;item&gt;the &lt;see cref=&quot;defaultASTNodeTypeObject_&quot;/&gt; otherwise&lt;/item&gt;
+		/// &lt;/list&gt;
+		/// &lt;/summary&gt;
+		/// &lt;param name=&quot;tok&quot;&gt;Token instance to be used to create new AST Node.&lt;/param&gt;
+		/// &lt;returns&gt;An initialized AST node object.&lt;/returns&gt;
+		public virtual AST create(IToken tok)
+		{
+			AST newNode;
+
+			if (tok == null)
+				newNode = null;
+			else
+			{
+				newNode = createFromNodeType(tok.Type);
+				newNode.initialize(tok);
+			}
+			return newNode;
+		}
+		
+		/// &lt;summary&gt;
+		/// Returns a copy of the specified AST Node instance. The copy is obtained by
+		/// using the &lt;see cref=&quot;ICloneable&quot;/&gt; method Clone().
+		/// &lt;/summary&gt;
+		/// &lt;param name=&quot;t&quot;&gt;AST Node to copy.&lt;/param&gt;
+		/// &lt;returns&gt;An AST Node (or null if &lt;c&gt;t&lt;/c&gt; is null).&lt;/returns&gt;
+		public virtual AST dup(AST t)
+		{
+			// The Java version is implemented using code like this:
+			if (t == null)
+				return null;
+
+			AST dup_edNode = createFromAST(t);
+			dup_edNode.initialize(t);
+			return dup_edNode;
+		}
+		
+		/// &lt;summary&gt;
+		/// Duplicate AST Node tree rooted at specified AST node and all of it's siblings.
+		/// &lt;/summary&gt;
+		/// &lt;param name=&quot;t&quot;&gt;Root of AST Node tree.&lt;/param&gt;
+		/// &lt;returns&gt;Root node of new AST Node tree (or null if &lt;c&gt;t&lt;/c&gt; is null).&lt;/returns&gt;
+		public virtual AST dupList(AST t)
+		{
+			AST result = dupTree(t); // if t == null, then result==null
+			AST nt = result;
+			while (t != null)
+			{
+				// for each sibling of the root
+				t = t.getNextSibling();
+				nt.setNextSibling(dupTree(t)); // dup each subtree, building new tree
+				nt = nt.getNextSibling();
+			}
+			return result;
+		}
+		
+		/// &lt;summary&gt;
+		/// Duplicate AST Node tree rooted at specified AST node. Ignore it's siblings.
+		/// &lt;/summary&gt;
+		/// &lt;param name=&quot;t&quot;&gt;Root of AST Node tree.&lt;/param&gt;
+		/// &lt;returns&gt;Root node of new AST Node tree (or null if &lt;c&gt;t&lt;/c&gt; is null).&lt;/returns&gt;
+		public virtual AST dupTree(AST t)
+		{
+			AST result = dup(t); // make copy of root
+			// copy all children of root.
+			if (t != null)
+			{
+				result.setFirstChild(dupList(t.getFirstChild()));
+			}
+			return result;
+		}
+		
+		/// &lt;summary&gt;
+		/// Make a tree from a list of nodes.  The first element in the
+		/// array is the root.  If the root is null, then the tree is
+		/// a simple list not a tree.  Handles null children nodes correctly.
+		/// For example, build(a, b, null, c) yields tree (a b c).  build(null,a,b)
+		/// yields tree (nil a b).
+		/// &lt;/summary&gt;
+		/// &lt;param name=&quot;nodes&quot;&gt;List of Nodes.&lt;/param&gt;
+		/// &lt;returns&gt;AST Node tree.&lt;/returns&gt;
+		public virtual AST make(params AST[] nodes)
+		{
+			if (nodes == null || nodes.Length == 0)
+				return null;
+			AST root = nodes[0];
+			AST tail = null;
+			if (root != null)
+			{
+				root.setFirstChild(null); // don't leave any old pointers set
+			}
+			// link in children;
+			for (int i = 1; i &lt; nodes.Length; i++)
+			{
+				if (nodes[i] == null)
+					continue;
+				// ignore null nodes
+				if (root == null)
+				{
+					// Set the root and set it up for a flat list
+					root = (tail = nodes[i]);
+				}
+				else if (tail == null)
+				{
+					root.setFirstChild(nodes[i]);
+					tail = root.getFirstChild();
+				}
+				else
+				{
+					tail.setNextSibling(nodes[i]);
+					tail = tail.getNextSibling();
+				}
+				// Chase tail to last sibling
+				while (tail.getNextSibling() != null)
+				{
+					tail = tail.getNextSibling();
+				}
+			}
+			return root;
+		}
+		
+		/// &lt;summary&gt;
+		/// Make a tree from a list of nodes, where the nodes are contained
+		/// in an ASTArray object.
+		/// &lt;/summary&gt;
+		/// &lt;param name=&quot;nodes&quot;&gt;List of Nodes.&lt;/param&gt;
+		/// &lt;returns&gt;AST Node tree.&lt;/returns&gt;
+		public virtual AST make(ASTArray nodes)
+		{
+			return make(nodes.array);
+		}
+		
+		/// &lt;summary&gt;
+		/// Make an AST the root of current AST.
+		/// &lt;/summary&gt;
+		/// &lt;param name=&quot;currentAST&quot;&gt;&lt;/param&gt;
+		/// &lt;param name=&quot;root&quot;&gt;&lt;/param&gt;
+		public virtual void  makeASTRoot(ref ASTPair currentAST, AST root)
+		{
+			if (root != null)
+			{
+				// Add the current root as a child of new root
+				root.addChild(currentAST.root);
+				// The new current child is the last sibling of the old root
+				currentAST.child = currentAST.root;
+				currentAST.advanceChildToEnd();
+				// Set the new root
+				currentAST.root = root;
+			}
+		}
+
+		/// &lt;summary&gt;
+		/// Sets the global default AST Node Type for this ASTFactory instance.
+		/// This method also attempts to load the &lt;see cref=&quot;System.Type&quot;/&gt; instance
+		/// for the specified typename.
+		/// &lt;/summary&gt;
+		/// &lt;param name=&quot;t&quot;&gt;Fully qualified AST Node Type name.&lt;/param&gt;
+		public virtual void  setASTNodeType(string t)
+		{
+			if (defaultCreator_ != null)
+			{
+				if (t != defaultCreator_.ASTNodeTypeName)
+				{
+					defaultCreator_ = null;
+				}
+			}
+			defaultASTNodeTypeObject_ = loadNodeTypeObject(t);
+		}
+		
+		/// &lt;summary&gt;
+		/// To change where error messages go, can subclass/override this method
+		/// and then setASTFactory in Parser and TreeParser.  This method removes
+		/// a prior dependency on class antlr.Tool.
+		/// &lt;/summary&gt;
+		/// &lt;param name=&quot;e&quot;&gt;&lt;/param&gt;
+		public virtual void  error(string e)
+		{
+			Console.Error.WriteLine(e);
+		}
+
+		//---------------------------------------------------------------------
+		// PRIVATE FUNCTION MEMBERS
+		//---------------------------------------------------------------------
+
+		private static Type loadNodeTypeObject(string nodeTypeName)
+		{
+			Type	nodeTypeObject	= null;
+			bool	typeCreated		= false;
+
+			if (nodeTypeName != null)
+			{
+				foreach (Assembly assem in AppDomain.CurrentDomain.GetAssemblies())
+				{
+					try
+					{
+						nodeTypeObject = assem.GetType(nodeTypeName);
+						if (nodeTypeObject != null)
+						{
+							typeCreated = true;
+							break;
+						}
+					}
+					catch
+					{
+						typeCreated = false;
+					}
+				}
+			}
+			if (!typeCreated)
+			{
+				throw new TypeLoadException(&quot;Unable to load AST Node Type: '&quot; + nodeTypeName + &quot;'&quot;);
+			}
+			return nodeTypeObject;
+		}
+
+		private AST createFromAST(AST node)
+		{
+			AST		newNode			= null;
+			Type	nodeAsTypeObj	= node.GetType();
+
+			ASTNodeCreator creator = (ASTNodeCreator) typename2creator_[nodeAsTypeObj.FullName];
+			if (creator != null)
+			{
+				newNode = creator.Create();
+				if (newNode == null)
+				{
+					throw new ArgumentException(&quot;Unable to create AST Node Type: '&quot; + nodeAsTypeObj.FullName + &quot;'&quot;);
+				}
+			}
+			else
+			{
+				newNode = createFromNodeTypeObject(nodeAsTypeObj);
+			}
+			return newNode;
+		}
+
+		private AST createFromNodeName(string nodeTypeName)
+		{
+			AST		newNode			= null;
+
+			ASTNodeCreator creator = (ASTNodeCreator) typename2creator_[nodeTypeName];
+			if (creator != null)
+			{
+				newNode = creator.Create();
+				if (newNode == null)
+				{
+					throw new ArgumentException(&quot;Unable to create AST Node Type: '&quot; + nodeTypeName + &quot;'&quot;);
+				}
+			}
+			else
+			{
+				newNode = createFromNodeTypeObject( loadNodeTypeObject(nodeTypeName) );
+			}
+			return newNode;
+		}
+
+		private AST createFromNodeType(int nodeTypeIndex)
+		{
+			Debug.Assert((nodeTypeIndex &gt;= 0) &amp;&amp; (nodeTypeIndex &lt;= heteroList_.Length), &quot;Invalid AST node type!&quot;);
+			AST newNode = null;
+
+			FactoryEntry	entry = heteroList_[nodeTypeIndex];
+			if ((entry != null) &amp;&amp; (entry.Creator != null))
+			{
+				newNode = entry.Creator.Create();
+			}
+			else
+			{
+				if ((entry == null) || (entry.NodeTypeObject == null))
+				{
+					if (defaultCreator_ == null)
+					{
+						newNode = createFromNodeTypeObject(defaultASTNodeTypeObject_);
+					}
+					else
+						newNode = defaultCreator_.Create();
+				}
+				else
+                    newNode = createFromNodeTypeObject( entry.NodeTypeObject );
+			}
+			return newNode;
+		}
+
+		private AST createFromNodeTypeObject(Type nodeTypeObject)
+		{
+			AST		newNode			= null;
+
+			try
+			{
+				newNode = (AST) Activator.CreateInstance(nodeTypeObject);
+				if (newNode == null)
+				{
+					throw new ArgumentException(&quot;Unable to create AST Node Type: '&quot; + nodeTypeObject.FullName + &quot;'&quot;);
+				}
+			}
+			catch(Exception ex)
+			{
+				throw new ArgumentException(&quot;Unable to create AST Node Type: '&quot; + nodeTypeObject.FullName + &quot;'&quot;, ex);
+			}
+			return newNode;
+		}
+
+		protected class FactoryEntry
+		{
+			public FactoryEntry(Type typeObj, ASTNodeCreator creator)
+			{
+				NodeTypeObject	= typeObj;
+				Creator			= creator;
+			}
+
+			public FactoryEntry(Type typeObj)
+			{
+				NodeTypeObject	= typeObj;
+			}
+
+			public FactoryEntry(ASTNodeCreator creator)
+			{
+				Creator			= creator;
+			}
+
+			public Type				NodeTypeObject;
+			public ASTNodeCreator	Creator;
+		}
+	}
+}
+</PRE>
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="015771.html">[antlr-interest] ASTRefCount and Dynamic Libraries (c++).
+</A></li>
+	<LI>Next message: <A HREF="015778.html">[antlr-interest] Performance tweak for .NET antlr library
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#15773">[ date ]</a>
+              <a href="thread.html#15773">[ thread ]</a>
+              <a href="subject.html#15773">[ subject ]</a>
+              <a href="author.html#15773">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

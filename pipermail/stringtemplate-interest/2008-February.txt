@@ -1,0 +1,1256 @@
+From mark at ociweb.com  Sat Feb  2 14:52:14 2008
+From: mark at ociweb.com (Mark Volkmann)
+Date: Sat, 2 Feb 2008 16:52:14 -0600
+Subject: [stringtemplate-interest] group name purpose
+Message-ID: <9A121F5C-B2C2-4B7B-A9E0-6C12882807FA@ociweb.com>
+
+What's the purpose of the first line in a .stg file that specifies the  
+name of the group? It seems that I could put any value there and it  
+works without making another other changes.
+
+---
+Mark Volkmann
+
+
+
+
+
+From ccbean at gmail.com  Sat Feb  2 15:03:27 2008
+From: ccbean at gmail.com (Colin Bean)
+Date: Sat, 2 Feb 2008 15:03:27 -0800
+Subject: [stringtemplate-interest] group name purpose
+In-Reply-To: <9A121F5C-B2C2-4B7B-A9E0-6C12882807FA@ociweb.com>
+References: <9A121F5C-B2C2-4B7B-A9E0-6C12882807FA@ociweb.com>
+Message-ID: <29a6ca010802021503s79471f25qe6c1659514c96681@mail.gmail.com>
+
+Group inheritance and interfaces come to mind:
+http://www.antlr.org/wiki/display/ST/Group+Files
+
+Don't know off the top of my head what importance it has to a simple
+group file, though.
+
+-Colin
+
+On Feb 2, 2008 2:52 PM, Mark Volkmann <mark at ociweb.com> wrote:
+> What's the purpose of the first line in a .stg file that specifies the
+> name of the group? It seems that I could put any value there and it
+> works without making another other changes.
+>
+> ---
+> Mark Volkmann
+>
+>
+>
+>
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>
+
+From dave.rafkind at gmail.com  Sun Feb  3 18:51:03 2008
+From: dave.rafkind at gmail.com (Dave Rafkind)
+Date: Sun, 03 Feb 2008 21:51:03 -0500
+Subject: [stringtemplate-interest] proper stringtemplate loading from a
+ webapp
+In-Reply-To: <74182CC5-DDF2-45DD-A040-9ECD6405FFB5@cs.usfca.edu>
+References: <47A1E7DC.3030701@gmail.com>
+	<74182CC5-DDF2-45DD-A040-9ECD6405FFB5@cs.usfca.edu>
+Message-ID: <47A67D97.6070209@gmail.com>
+
+Well, I was hoping to load resources that aren't in the WEB-INF/classes
+directory, sort of replacing .JSP pages with .st pages, so I'm trying to
+avoid class-path based loading.
+
+Could I subclass StringTemplateGroup and just override the
+loadTemplateFromBeneathRootDirOrCLASSPATH() function (which looks like
+it does the actual work)? Or would that make things too complicated?
+
+Terence Parr wrote:
+> Hi. I think you can just use null as root dir.  A comment i see in code
+> says: "If there is no root directory, try to load the template from the
+> classpath."
+> 
+> Try that...
+> 
+> Ter
+> On Jan 31, 2008, at 7:23 AM, Dave Rafkind wrote:
+> 
+>> Hi list, I apologize if this question has been answered before, I'm
+>> having trouble getting good list search results out of google. But
+>> anyways:
+>>
+>> The normal StringTemplateGroup constructor looks like:
+>>
+>> StringTemplateGroup stg = new StringTemplateGroup(name,hard_coded_path);
+>>
+>> I'd like to avoid hardcoding that path in my web application, and
+>> instead create a custom template loader to get at the files the "right"
+>> way which would be something like (from in a servlet):
+>>
+>>  context = getServletContext();
+>>  URL templateRoot = context.getResource("/templates");
+>>  StringTemplateGroup stg =
+>>    new StringTemplateGroup(name, templateRoot);
+>>
+>> which would use templateRoot.getUrlConnection() to get the
+>> stringtemplate files instead of a File() object.
+>>
+>> How would I go about doing such a thing?
+>>
+>>
+>> Thanks,
+>> Dave
+>> _______________________________________________
+>> stringtemplate-interest mailing list
+>> stringtemplate-interest at antlr.org
+>> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+> 
+
+
+From dave.rafkind at gmail.com  Mon Feb  4 08:48:59 2008
+From: dave.rafkind at gmail.com (Dave Rafkind)
+Date: Mon, 04 Feb 2008 11:48:59 -0500
+Subject: [stringtemplate-interest] proper stringtemplate loading from a
+ webapp
+In-Reply-To: <47A67D97.6070209@gmail.com>
+References: <47A1E7DC.3030701@gmail.com>
+	<74182CC5-DDF2-45DD-A040-9ECD6405FFB5@cs.usfca.edu>
+	<47A67D97.6070209@gmail.com>
+Message-ID: <47A741FB.6010706@gmail.com>
+
+Just for the record, here is my solution, it wasn't that hard.
+
+
+
+  public static class CustomStringTemplateGroup extends
+StringTemplateGroup {
+
+    private ServletContext context;
+    private String templateBase;
+
+    public CustomStringTemplateGroup(ServletContext ctx, String base) {
+      super("templates", null, DefaultTemplateLexer.class);
+      context = ctx;
+      templateBase = base;
+    }
+
+    @Override
+    protected StringTemplate
+loadTemplateFromBeneathRootDirOrCLASSPATH(String arg0) {
+      URL target = null;
+      StringTemplate template = null;
+      BufferedReader br = null;
+      try {
+        /////
+	// this is the important line
+        /////
+        target = context.getResource(templateBase + "/" + arg0);
+
+        InputStream in = target.openStream();
+        InputStreamReader isr = getInputStreamReader(in);
+        br = new BufferedReader(isr);
+        template = loadTemplate(name, br);
+        br.close();
+        br = null;
+      } catch (MalformedURLException ex) {
+        error("Bad URL for " + target, ex);
+      } catch (IOException ioex) {
+        error("Trouble loading " + target, ioex);
+        if (br != null) {
+          try {
+            br.close();
+          } catch (IOException ioe2) {
+            error("Cannot close template connection: " + target);
+          }
+        }
+      }
+
+      return template;
+    }
+  }
+
+Dave Rafkind wrote:
+> Well, I was hoping to load resources that aren't in the WEB-INF/classes
+> directory, sort of replacing .JSP pages with .st pages, so I'm trying to
+> avoid class-path based loading.
+> 
+> Could I subclass StringTemplateGroup and just override the
+> loadTemplateFromBeneathRootDirOrCLASSPATH() function (which looks like
+> it does the actual work)? Or would that make things too complicated?
+> 
+> Terence Parr wrote:
+>> Hi. I think you can just use null as root dir.  A comment i see in code
+>> says: "If there is no root directory, try to load the template from the
+>> classpath."
+>>
+>> Try that...
+>>
+>> Ter
+>> On Jan 31, 2008, at 7:23 AM, Dave Rafkind wrote:
+>>
+>>> Hi list, I apologize if this question has been answered before, I'm
+>>> having trouble getting good list search results out of google. But
+>>> anyways:
+>>>
+>>> The normal StringTemplateGroup constructor looks like:
+>>>
+>>> StringTemplateGroup stg = new StringTemplateGroup(name,hard_coded_path);
+>>>
+>>> I'd like to avoid hardcoding that path in my web application, and
+>>> instead create a custom template loader to get at the files the "right"
+>>> way which would be something like (from in a servlet):
+>>>
+>>>  context = getServletContext();
+>>>  URL templateRoot = context.getResource("/templates");
+>>>  StringTemplateGroup stg =
+>>>    new StringTemplateGroup(name, templateRoot);
+>>>
+>>> which would use templateRoot.getUrlConnection() to get the
+>>> stringtemplate files instead of a File() object.
+>>>
+>>> How would I go about doing such a thing?
+>>>
+>>>
+>>> Thanks,
+>>> Dave
+>>> _______________________________________________
+>>> stringtemplate-interest mailing list
+>>> stringtemplate-interest at antlr.org
+>>> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+> 
+
+
+From parrt at cs.usfca.edu  Mon Feb  4 10:27:01 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Mon, 4 Feb 2008 10:27:01 -0800
+Subject: [stringtemplate-interest] proper stringtemplate loading from a
+	webapp
+In-Reply-To: <47A67D97.6070209@gmail.com>
+References: <47A1E7DC.3030701@gmail.com>
+	<74182CC5-DDF2-45DD-A040-9ECD6405FFB5@cs.usfca.edu>
+	<47A67D97.6070209@gmail.com>
+Message-ID: <8536D62B-1F4A-4408-A5B2-7E3D048C6738@cs.usfca.edu>
+
+Hi. I would suggest using a StringTemplateGroupLoader. These were  
+designed so that you could load templates from wherever you want.
+Ter
+On Feb 3, 2008, at 6:51 PM, Dave Rafkind wrote:
+
+> Well, I was hoping to load resources that aren't in the WEB-INF/ 
+> classes
+> directory, sort of replacing .JSP pages with .st pages, so I'm  
+> trying to
+> avoid class-path based loading.
+>
+> Could I subclass StringTemplateGroup and just override the
+> loadTemplateFromBeneathRootDirOrCLASSPATH() function (which looks like
+> it does the actual work)? Or would that make things too complicated?
+>
+> Terence Parr wrote:
+>> Hi. I think you can just use null as root dir.  A comment i see in  
+>> code
+>> says: "If there is no root directory, try to load the template from  
+>> the
+>> classpath."
+>>
+>> Try that...
+>>
+>> Ter
+>> On Jan 31, 2008, at 7:23 AM, Dave Rafkind wrote:
+>>
+>>> Hi list, I apologize if this question has been answered before, I'm
+>>> having trouble getting good list search results out of google. But
+>>> anyways:
+>>>
+>>> The normal StringTemplateGroup constructor looks like:
+>>>
+>>> StringTemplateGroup stg = new  
+>>> StringTemplateGroup(name,hard_coded_path);
+>>>
+>>> I'd like to avoid hardcoding that path in my web application, and
+>>> instead create a custom template loader to get at the files the  
+>>> "right"
+>>> way which would be something like (from in a servlet):
+>>>
+>>> context = getServletContext();
+>>> URL templateRoot = context.getResource("/templates");
+>>> StringTemplateGroup stg =
+>>>   new StringTemplateGroup(name, templateRoot);
+>>>
+>>> which would use templateRoot.getUrlConnection() to get the
+>>> stringtemplate files instead of a File() object.
+>>>
+>>> How would I go about doing such a thing?
+>>>
+>>>
+>>> Thanks,
+>>> Dave
+>>> _______________________________________________
+>>> stringtemplate-interest mailing list
+>>> stringtemplate-interest at antlr.org
+>>> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>>
+>
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+
+From jjsnyders at rcn.com  Fri Feb  8 23:06:19 2008
+From: jjsnyders at rcn.com (John Snyders)
+Date: Sat, 09 Feb 2008 02:06:19 -0500
+Subject: [stringtemplate-interest] [antlr-interest]
+ StringTemplate	functions like capitalize()?
+In-Reply-To: <4601916E.1030903@n4te.com>
+References: <d2d18a10703180416v7d08ff14tf6946476b4c4cbfe@mail.gmail.com>	<EFDD3522-AC13-46F8-9D65-0E8DCE89FB10@cs.usfca.edu>
+	<4601916E.1030903@n4te.com>
+Message-ID: <47AD50EB.1010601@rcn.com>
+
+Not sure what version of StringTemplate you have but the newer versions 
+have the format option that will allow you to do something like 
+"capitalizeFirst"
+-John
+
+Nate wrote:
+> Calling an arbitrary method from ST is against the rules, but the action 
+> the OP is trying to perform is for display only. The only real solution 
+> is to get the ST source and add a capitalizeFirst function. Other 
+> solutions are clunky at the very least.
+>
+> On a similar note, I have found the lack of ST expressiveness a problem. 
+> I have lists of objects that contain the data I want to display. In many 
+> cases the objects contain lists of other objects. When the data in my 
+> objects are not in such a format that ST can display them like I want, I 
+> find I have to modify my objects to expose the data in the way ST needs. 
+> What this means is that the UI layer is affecting my API. For simple 
+> templates, values can be retreived from an object and put in various 
+> template attributes. But more complex object graphs make this very messy 
+> and difficult, if not impossible.
+>
+> I am all for separating model and view, but I don't think view-only 
+> logic expressiveness should be lost. As it is now with ST being 
+> relatively strict with enforcing the "rules", there are still various 
+> ways I can break the separation. 100% fool proof would make ST too 
+> restrictive and difficult to use. You have made certain sacrifices and 
+> this makes sense. I think ST should follow all the rules out of the box 
+> and enforce them to the best of its ability, but make it easier to 
+> implement view-only logic. It should be easy to add a view method like 
+> capitalizeFirst.
+>
+> -Nate
+>
+>
+> Terence Parr wrote:
+>   
+>> Hi, That is against the "rules".  Can't call generate code from a view.
+>>
+>> You need a renderer or the like.
+>>
+>> ter
+>> On Mar 18, 2007, at 4:16 AM, Joan Pujol wrote:
+>>
+>>   
+>>     
+>>> Hello,
+>>>
+>>> It's possible to call a external function with stringtemplate?
+>>> I've the problem that I'm generating Java code and for Beans  
+>>> convention I need to capitalize.
+>>>
+>>> Something like:
+>>>
+>>> basictype(name,type)::= <<
+>>>     private final <typeMap.(type)> name= new <typeMap.(type)>();
+>>>
+>>>     public <typeMap.(type)> get<name>()   {  capitalization wanted  
+>>> in get<name>()
+>>>         return <name>;
+>>>     }
+>>>
+>>>     
+>>> -- 
+>>> Joan Jes?s Pujol Espinar
+>>> http://www.joanpujol.cat
+>>> http://lujop.deviantart.com
+>>>     
+>>>       
+>
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>
+>   
+
+From FranklinChen at cmu.edu  Tue Feb 12 13:32:54 2008
+From: FranklinChen at cmu.edu (FranklinChen at cmu.edu)
+Date: Tue, 12 Feb 2008 16:32:54 -0500
+Subject: [stringtemplate-interest] Different formats for data
+Message-ID: <18354.4230.961587.998155@SWAN.TALKBANK.ORG>
+
+I have an application using ANTLR3 and StringTemplate that basically
+parses data and then outputs it in two very different formats.  For
+example, dates need to be output as both 12-FEB-2008 and 2008-02-12.
+I would like advice on how to do this, using a single tree grammar and
+two ST group files.  E.g., if the tree grammar has
+
+birthdate
+    :
+        DATE
+        ->
+        birthdate(date={$DATE.text})
+    ;
+
+then there is a problem, because of the strict separation that
+apparently prevents me from having birthdate() in A.stg and B.stg do
+"computations" to reformat the date.  E.g., suppose DATE came from the
+lexer as 12-FEB-2008.  Then A.stg's birthdate() is trivial, but
+B.stg's birthdate() can't be done.  What is the solution?
+
+-- 
+Franklin
+
+From markwright at internode.on.net  Tue Feb 12 17:00:21 2008
+From: markwright at internode.on.net (Mark Wright)
+Date: Wed, 13 Feb 2008 12:00:21 +1100
+Subject: [stringtemplate-interest] Different formats for data
+In-Reply-To: <18354.4230.961587.998155@SWAN.TALKBANK.ORG>
+References: <18354.4230.961587.998155@SWAN.TALKBANK.ORG>
+Message-ID: <20080213120021.00005651@goanna>
+
+Some ideas:
+
+(1)
+http://www.antlr.org/wiki/display/ST/Object+rendering
+
+(2)
+You can create a variable in the tree grammar action code that
+has 2 attributes, one for each way the date is formatted:
+
+public class NameSTV {
+  protected String name;
+  protected String typeVariableName;
+
+  public NameSTV(String theName, String theTypeVariableName) {
+    name = theName;
+    typeVariableName = theTypeVariableName;
+  }
+
+  public final String getName() {
+    return name;
+  }
+
+  public final String getTypeVariableName() {
+    return typeVariableName;
+  }
+}
+
+Which can be set in the tree grammar something like:
+
+base_specifier
+ :   ^(BASE IDENTIFIER FULLY_QUALIFIED_NAMESPACE TYPE_VARIABLE_NAME)
+     {
+      NameNamespaceSTV b = new NameNamespaceSTV($IDENTIFIER.text, $FULLY_QUALIFIED_NAMESPACE.text, $TYPE_VARIABLE_NAME.text);
+      $st = %baseSpecifier();
+      %{$st}.variable=b;
+     }
+ ;
+
+Although I wrote this, I am still trying to figure it out myself.
+I do not currently understand what the baseSpecifier string template
+does.
+
+Anyway, in the string template if you do:
+
+<variable.name>
+
+it calls the getName() property.
+
+Regards, Mark
+
+On Tue, 12 Feb 2008 16:32:54 -0500
+FranklinChen at cmu.edu wrote:
+
+> I have an application using ANTLR3 and StringTemplate that basically
+> parses data and then outputs it in two very different formats.  For
+> example, dates need to be output as both 12-FEB-2008 and 2008-02-12.
+> I would like advice on how to do this, using a single tree grammar and
+> two ST group files.  E.g., if the tree grammar has
+> 
+> birthdate
+>     :
+>         DATE
+>         ->
+>         birthdate(date={$DATE.text})
+>     ;
+> 
+> then there is a problem, because of the strict separation that
+> apparently prevents me from having birthdate() in A.stg and B.stg do
+> "computations" to reformat the date.  E.g., suppose DATE came from the
+> lexer as 12-FEB-2008.  Then A.stg's birthdate() is trivial, but
+> B.stg's birthdate() can't be done.  What is the solution?
+> 
+
+
+-- 
+
+From parrt at cs.usfca.edu  Tue Feb 12 18:14:33 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Tue, 12 Feb 2008 18:14:33 -0800
+Subject: [stringtemplate-interest] Different formats for data
+In-Reply-To: <18354.4230.961587.998155@SWAN.TALKBANK.ORG>
+References: <18354.4230.961587.998155@SWAN.TALKBANK.ORG>
+Message-ID: <EC94A5E7-35FF-40E7-B66C-55518DD38A68@cs.usfca.edu>
+
+
+On Feb 12, 2008, at 1:32 PM, FranklinChen at cmu.edu wrote:
+
+> I have an application using ANTLR3 and StringTemplate that basically
+> parses data and then outputs it in two very different formats.  For
+> example, dates need to be output as both 12-FEB-2008 and 2008-02-12.
+> I would like advice on how to do this, using a single tree grammar and
+> two ST group files.  E.g., if the tree grammar has
+>
+> birthdate
+>    :
+>        DATE
+>        ->
+>        birthdate(date={$DATE.text})
+>    ;
+>
+> then there is a problem, because of the strict separation that
+> apparently prevents me from having birthdate() in A.stg and B.stg do
+> "computations" to reformat the date.  E.g., suppose DATE came from the
+> lexer as 12-FEB-2008.  Then A.stg's birthdate() is trivial, but
+> B.stg's birthdate() can't be done.  What is the solution
+
+hi!  Use format option and set a renderer for Date object :)
+
+Ter
+
+From msg.sriram at gmail.com  Wed Feb 13 11:40:39 2008
+From: msg.sriram at gmail.com (Sriram)
+Date: Wed, 13 Feb 2008 14:40:39 -0500
+Subject: [stringtemplate-interest] Accessing outer iterator in nested
+	templates
+Message-ID: <d41d15b20802131140v5849f754vb039fbc76b788dcc@mail.gmail.com>
+
+I am trying to use the iterator attribute <i> in the following example:
+
+templateMain(semanticIndices) ::=<<
+<semanticIndices:templateM1(); separator="\n">
+>>
+
+templateM1(semanticIndices) ::= <<
+<semanticIndices:templateM2(); separator="\n">
+>>
+
+templateM2(semanticIndices) ::= <<
+newArgs[<semanticIndices>] = args<###>[<i0>];
+>>
+
+templateMain is invoked with an (ArrayList of Int Arrays) as its parameter.
+
+Main{
+  ...
+  M1{
+     ...
+     M2{
+         ...
+     }
+  }
+}
+
+It tries to perform the function of a nested loop. At the placeholder
+<###>, I need to access the iterator of templateM1. Please let me know
+if someone has come across such a problem.
+
+- Sriram
+
+From parrt at cs.usfca.edu  Wed Feb 13 15:53:56 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Wed, 13 Feb 2008 15:53:56 -0800
+Subject: [stringtemplate-interest] Accessing outer iterator in nested
+	templates
+In-Reply-To: <d41d15b20802131140v5849f754vb039fbc76b788dcc@mail.gmail.com>
+References: <d41d15b20802131140v5849f754vb039fbc76b788dcc@mail.gmail.com>
+Message-ID: <352DB8CD-1117-4C88-8756-5BC65930043A@cs.usfca.edu>
+
+Hi.I think that the most recent i0 will hide the version above... try  
+using a parameter set to i.
+
+templateMain(semanticIndices) ::= <<
+<semanticIndices:templateM1(outer=i); separator="\n">
+ >>
+then ref <outer> below.
+Ter
+
+
+On Feb 13, 2008, at 11:40 AM, Sriram wrote:
+
+> I am trying to use the iterator attribute <i> in the following  
+> example:
+>
+> templateMain(semanticIndices) ::=<<
+> <semanticIndices:templateM1(); separator="\n">
+>>>
+>
+> templateM1(semanticIndices) ::= <<
+> <semanticIndices:templateM2(); separator="\n">
+>>>
+>
+> templateM2(semanticIndices) ::= <<
+> newArgs[<semanticIndices>] = args<###>[<i0>];
+>>>
+>
+> templateMain is invoked with an (ArrayList of Int Arrays) as its  
+> parameter.
+>
+> Main{
+>  ...
+>  M1{
+>     ...
+>     M2{
+>         ...
+>     }
+>  }
+> }
+>
+> It tries to perform the function of a nested loop. At the placeholder
+> <###>, I need to access the iterator of templateM1. Please let me know
+> if someone has come across such a problem.
+>
+> - Sriram
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+
+From msg.sriram at gmail.com  Wed Feb 13 16:38:23 2008
+From: msg.sriram at gmail.com (Sriram)
+Date: Wed, 13 Feb 2008 19:38:23 -0500
+Subject: [stringtemplate-interest] Accessing outer iterator in nested
+	templates
+In-Reply-To: <352DB8CD-1117-4C88-8756-5BC65930043A@cs.usfca.edu>
+References: <d41d15b20802131140v5849f754vb039fbc76b788dcc@mail.gmail.com>
+	<352DB8CD-1117-4C88-8756-5BC65930043A@cs.usfca.edu>
+Message-ID: <d41d15b20802131638h37b4719cy19291564ec61ef97@mail.gmail.com>
+
+OK. This is what I tried to do. Please let me know what I am doing wrong.
+
+templateMain(semanticIndices) ::= <<
+<semanticIndices:templateM1(outer=i); separator="\n">
+>>
+
+templateM1(semanticIndices, outer) ::= <<
+<outer><semanticIndices>
+>>
+
+Attribute <outer> holds the correct iteration value. However, the
+attribute <semanticIndices> is not set.
+
+-Sriram
+
+On Feb 13, 2008 6:53 PM, Terence Parr <parrt at cs.usfca.edu> wrote:
+> Hi.I think that the most recent i0 will hide the version above... try
+> using a parameter set to i.
+>
+> templateMain(semanticIndices) ::= <<
+> <semanticIndices:templateM1(outer=i); separator="\n">
+>  >>
+> then ref <outer> below.
+> Ter
+>
+>
+>
+> On Feb 13, 2008, at 11:40 AM, Sriram wrote:
+>
+> > I am trying to use the iterator attribute <i> in the following
+> > example:
+> >
+> > templateMain(semanticIndices) ::=<<
+> > <semanticIndices:templateM1(); separator="\n">
+> >>>
+> >
+> > templateM1(semanticIndices) ::= <<
+> > <semanticIndices:templateM2(); separator="\n">
+> >>>
+> >
+> > templateM2(semanticIndices) ::= <<
+> > newArgs[<semanticIndices>] = args<###>[<i0>];
+> >>>
+> >
+> > templateMain is invoked with an (ArrayList of Int Arrays) as its
+> > parameter.
+> >
+> > Main{
+> >  ...
+> >  M1{
+> >     ...
+> >     M2{
+> >         ...
+> >     }
+> >  }
+> > }
+> >
+> > It tries to perform the function of a nested loop. At the placeholder
+> > <###>, I need to access the iterator of templateM1. Please let me know
+> > if someone has come across such a problem.
+> >
+> > - Sriram
+> > _______________________________________________
+> > stringtemplate-interest mailing list
+> > stringtemplate-interest at antlr.org
+> > http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>
+>
+
+From parrt at cs.usfca.edu  Wed Feb 13 17:21:04 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Wed, 13 Feb 2008 17:21:04 -0800
+Subject: [stringtemplate-interest] Accessing outer iterator in nested
+	templates
+In-Reply-To: <d41d15b20802131638h37b4719cy19291564ec61ef97@mail.gmail.com>
+References: <d41d15b20802131140v5849f754vb039fbc76b788dcc@mail.gmail.com>
+	<352DB8CD-1117-4C88-8756-5BC65930043A@cs.usfca.edu>
+	<d41d15b20802131638h37b4719cy19291564ec61ef97@mail.gmail.com>
+Message-ID: <2C46205E-0957-43A2-8AB3-67FB2C4663F0@cs.usfca.edu>
+
+oh! sorry.  try templateM1(outer=i, semanticIndices=it)
+On Feb 13, 2008, at 4:38 PM, Sriram wrote:
+
+> OK. This is what I tried to do. Please let me know what I am doing  
+> wrong.
+>
+> templateMain(semanticIndices) ::= <<
+> <semanticIndices:templateM1(outer=i); separator="\n">
+>>>
+>
+> templateM1(semanticIndices, outer) ::= <<
+> <outer><semanticIndices>
+>>>
+>
+> Attribute <outer> holds the correct iteration value. However, the
+> attribute <semanticIndices> is not set.
+>
+> -Sriram
+>
+> On Feb 13, 2008 6:53 PM, Terence Parr <parrt at cs.usfca.edu> wrote:
+>> Hi.I think that the most recent i0 will hide the version above... try
+>> using a parameter set to i.
+>>
+>> templateMain(semanticIndices) ::= <<
+>> <semanticIndices:templateM1(outer=i); separator="\n">
+>>>>
+>> then ref <outer> below.
+>> Ter
+>>
+>>
+>>
+>> On Feb 13, 2008, at 11:40 AM, Sriram wrote:
+>>
+>>> I am trying to use the iterator attribute <i> in the following
+>>> example:
+>>>
+>>> templateMain(semanticIndices) ::=<<
+>>> <semanticIndices:templateM1(); separator="\n">
+>>>>>
+>>>
+>>> templateM1(semanticIndices) ::= <<
+>>> <semanticIndices:templateM2(); separator="\n">
+>>>>>
+>>>
+>>> templateM2(semanticIndices) ::= <<
+>>> newArgs[<semanticIndices>] = args<###>[<i0>];
+>>>>>
+>>>
+>>> templateMain is invoked with an (ArrayList of Int Arrays) as its
+>>> parameter.
+>>>
+>>> Main{
+>>> ...
+>>> M1{
+>>>    ...
+>>>    M2{
+>>>        ...
+>>>    }
+>>> }
+>>> }
+>>>
+>>> It tries to perform the function of a nested loop. At the  
+>>> placeholder
+>>> <###>, I need to access the iterator of templateM1. Please let me  
+>>> know
+>>> if someone has come across such a problem.
+>>>
+>>> - Sriram
+>>> _______________________________________________
+>>> stringtemplate-interest mailing list
+>>> stringtemplate-interest at antlr.org
+>>> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>>
+>>
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+
+From parrt at cs.usfca.edu  Mon Feb 18 12:17:41 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Mon, 18 Feb 2008 12:17:41 -0800
+Subject: [stringtemplate-interest] PyStringTemplate-3.1 released
+Message-ID: <5FC44A59-6527-417B-94B1-BDE44B8A2D75@cs.usfca.edu>
+
+http://www.stringtemplate.org/download/PyStringTemplate-3.1.tar.gz
+
+Benjamin Niemann (pink at odahoda dot de) updated Python  
+implementation from v2.2 to v3.1. Original implementation up to 2.2 by  
+Marq Kole (marq.kole at xs4all dot nl).  The package is also available  
+on PyPI and can be installed by a simple
+
+easy_install stringtemplate3
+
+enjoy :)
+Terence
+
+From fw at deneb.enyo.de  Thu Feb 21 02:35:50 2008
+From: fw at deneb.enyo.de (Florian Weimer)
+Date: Thu, 21 Feb 2008 11:35:50 +0100
+Subject: [stringtemplate-interest] Cross-site scripting countermeasures
+Message-ID: <87fxvm7g1l.fsf@mid.deneb.enyo.de>
+
+I've been trying to figure out, based on the documentation, how you
+ensure proper output encoding (in particular HTML encoding, to prevent
+Javascript injection attacks).
+
+Has this been a consideration in StringTemplate's design (and the
+existing StringTemplate deployments just happen to be broken in similar
+ways), or is this out of the scope of StringTemplate?
+
+From dobesv at gmail.com  Fri Feb 22 00:24:14 2008
+From: dobesv at gmail.com (Dobes Vandermeer)
+Date: Fri, 22 Feb 2008 00:24:14 -0800
+Subject: [stringtemplate-interest] Group file refreshing ?
+Message-ID: <7324d9a20802220024if45ca3ei6a17d2b5cbfb1749@mail.gmail.com>
+
+It seems like group files are cached forever and never refreshed, even
+with a refresh interval set.
+
+This has two implications - first, if I had "dynamic" groups of some
+kind (e.g. for user-defined templates), they'd create a memory leak.
+Second, during development I have to redeploy my war in order to
+reload any group files.
+
+The part of this that's bugging me now is the lack of reloads - during
+development I set refreshInterval to zero, but that doesn't help with
+the group files.
+
+Is there something I'm missing ?
+
+From dobesv at gmail.com  Fri Feb 22 00:25:59 2008
+From: dobesv at gmail.com (Dobes Vandermeer)
+Date: Fri, 22 Feb 2008 00:25:59 -0800
+Subject: [stringtemplate-interest] ":" seperator in windows with group loader
+Message-ID: <7324d9a20802220025i1427aab1uce79d976a8846e03@mail.gmail.com>
+
+In windows, a path might contain a ":" if it's an absolute path, but
+this is also used as the path seperator in the constructor to the
+group loaders.  Perhaps a constructor could be added which takes an
+array of paths ?
+
+From dobesv at gmail.com  Fri Feb 22 00:31:39 2008
+From: dobesv at gmail.com (Dobes Vandermeer)
+Date: Fri, 22 Feb 2008 00:31:39 -0800
+Subject: [stringtemplate-interest] Suggestion for
+	loadTemplateFromBeneathRootDirOrCLASSPATH
+Message-ID: <7324d9a20802220031m34bc524apac70082a5d215f49@mail.gmail.com>
+
+I've made a subclass of StringTemplateGroup so that I can make it
+behave in a way more consistent with the documentation.  The docs say
+that if you give an absolute path to the constructor, it'll only look
+in that path, otherwise it looks on the classpath.  In reality, if you
+pass ANY non-null path and uses that as a filesystem path and ignores
+the classpath.
+
+What I really wanted was to path a relative path that was searched on
+the classpath, so I subclassed it and made this version of
+loadTemplateFromBeneathRootDirOrCLASSPATH.
+
+The main difference is that it only treats a path as a filesystem path
+if it's an absolute path, otherwise it searches the classpath.  Giving
+a path allows you to specify the root package in your classpath where
+the files reside.  This creates a bit of consistency with
+CommonGroupLoader, which also searches paths in the classpath with a
+path prefix.
+
+protected StringTemplate
+loadTemplateFromBeneathRootDirOrCLASSPATH(String fileName) {
+	StringTemplate template = null;
+	String name = getTemplateNameFromFileName(fileName);
+	// if no rootDir, try to load as a resource in CLASSPATH
+	if(rootDir != null) fileName = rootDir + "/" + fileName;
+	if ( rootDir==null || !(new File(rootDir).isAbsolute())) {
+		ClassLoader cl = Thread.currentThread().getContextClassLoader();
+		InputStream is = cl.getResourceAsStream(fileName);
+		if ( is==null ) {
+			cl = this.getClass().getClassLoader();
+			is = cl.getResourceAsStream(fileName);
+		}
+		if ( is==null ) {
+			return null;
+		}
+		BufferedReader br = null;
+		try {
+			br = new BufferedReader(getInputStreamReader(is));
+			template = loadTemplate(name, br);
+		}
+		catch (IOException ioe) {
+			error("Problem reading template file: "+fileName,ioe);
+		}
+		finally {
+			if ( br!=null ) {
+				try {
+					br.close();
+				}
+				catch (IOException ioe2) {
+					error("Cannot close template file: "+fileName, ioe2);
+				}
+			}
+		}
+		return template;
+	}
+	// load via rootDir
+	template = loadTemplate(name, fileName);
+	return template;
+}
+
+From dobesv at gmail.com  Fri Feb 22 00:33:19 2008
+From: dobesv at gmail.com (Dobes Vandermeer)
+Date: Fri, 22 Feb 2008 00:33:19 -0800
+Subject: [stringtemplate-interest] Libraries?
+Message-ID: <7324d9a20802220033y64b11b40sca79279cae420ca8@mail.gmail.com>
+
+In other systems I've seen the concept of "libraries", which means you
+can throw in a few different function libraries to the scope for
+re-use.  In ST it seems like I just get to include one library per
+file, since there's just a single superGroup  - if I want multiple
+libraries I'd have to chain them all as superGroups.
+
+Is that right ?  Is there something I missed?
+
+Thanks!
+
+From zen at freedbms.net  Fri Feb 22 03:21:12 2008
+From: zen at freedbms.net (Zenaan Harkness)
+Date: Fri, 22 Feb 2008 22:21:12 +1100
+Subject: [stringtemplate-interest] Libraries?
+In-Reply-To: <7324d9a20802220033y64b11b40sca79279cae420ca8@mail.gmail.com>
+References: <7324d9a20802220033y64b11b40sca79279cae420ca8@mail.gmail.com>
+Message-ID: <20080222112111.GG13616@freedbms.net>
+
+On Fri, Feb 22, 2008 at 12:33:19AM -0800, Dobes Vandermeer wrote:
+> In other systems I've seen the concept of "libraries", which means you
+> can throw in a few different function libraries to the scope for
+> re-use.  In ST it seems like I just get to include one library per
+> file, since there's just a single superGroup  - if I want multiple
+> libraries I'd have to chain them all as superGroups.
+> 
+> Is that right ?  Is there something I missed?
+
+That's the current state AIUI.
+
+-- 
+Homepage: www.SoulSound.net -- Free Australia: www.UPMART.org
+Please respect the confidentiality of this email as sensibly warranted.
+
+From ccbean at gmail.com  Fri Feb 22 10:21:19 2008
+From: ccbean at gmail.com (Colin Bean)
+Date: Fri, 22 Feb 2008 10:21:19 -0800
+Subject: [stringtemplate-interest] Group file refreshing ?
+In-Reply-To: <7324d9a20802220024if45ca3ei6a17d2b5cbfb1749@mail.gmail.com>
+References: <7324d9a20802220024if45ca3ei6a17d2b5cbfb1749@mail.gmail.com>
+Message-ID: <29a6ca010802221021j40587a7ax5a8f6903db14c7f0@mail.gmail.com>
+
+According to the documentation, this is actually expected behavior
+http://www.stringtemplate.org/doc/doc.tml
+(under Template and Attribute Lookup Rules): "The refresh interval is
+not used for group files because the group file is considered complete
+and enduring."
+
+Don't know what I solutions I can recommend for what you're trying to
+do, other than changing the behavior of StringTemplateGroupLoader...
+
+Colin
+
+
+On Fri, Feb 22, 2008 at 12:24 AM, Dobes Vandermeer <dobesv at gmail.com> wrote:
+> It seems like group files are cached forever and never refreshed, even
+>  with a refresh interval set.
+>
+>  This has two implications - first, if I had "dynamic" groups of some
+>  kind (e.g. for user-defined templates), they'd create a memory leak.
+>  Second, during development I have to redeploy my war in order to
+>  reload any group files.
+>
+>  The part of this that's bugging me now is the lack of reloads - during
+>  development I set refreshInterval to zero, but that doesn't help with
+>  the group files.
+>
+>  Is there something I'm missing ?
+>  _______________________________________________
+>  stringtemplate-interest mailing list
+>  stringtemplate-interest at antlr.org
+>  http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>
+
+From parrt at cs.usfca.edu  Fri Feb 22 10:45:57 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Fri, 22 Feb 2008 10:45:57 -0800
+Subject: [stringtemplate-interest] Cross-site scripting countermeasures
+In-Reply-To: <87fxvm7g1l.fsf@mid.deneb.enyo.de>
+References: <87fxvm7g1l.fsf@mid.deneb.enyo.de>
+Message-ID: <E28BD3A2-06EC-4A5F-A00F-C6A554CF38D8@cs.usfca.edu>
+
+
+On Feb 21, 2008, at 2:35 AM, Florian Weimer wrote:
+
+> I've been trying to figure out, based on the documentation, how you
+> ensure proper output encoding (in particular HTML encoding, to prevent
+> Javascript injection attacks).
+
+Hi Florian, I do not do any sort of verification of the output.  You  
+are free to create a StringTemplateWriter object that does the  
+filtering :)
+
+> Has this been a consideration in StringTemplate's design (and the
+> existing StringTemplate deployments just happen to be broken in  
+> similar
+> ways), or is this out of the scope of StringTemplate?
+
+  It is beyond the scope, but ST is flexible enough to do what you want.
+Ter
+
+From parrt at cs.usfca.edu  Fri Feb 22 10:47:15 2008
+From: parrt at cs.usfca.edu (Terence Parr)
+Date: Fri, 22 Feb 2008 10:47:15 -0800
+Subject: [stringtemplate-interest] ":" seperator in windows with group
+	loader
+In-Reply-To: <7324d9a20802220025i1427aab1uce79d976a8846e03@mail.gmail.com>
+References: <7324d9a20802220025i1427aab1uce79d976a8846e03@mail.gmail.com>
+Message-ID: <B3274BDC-0034-4040-83C1-6C9D43DA0E56@cs.usfca.edu>
+
+Hi. you can subclass the loader and tell ST to use that one.
+Ter
+On Feb 22, 2008, at 12:25 AM, Dobes Vandermeer wrote:
+
+> In windows, a path might contain a ":" if it's an absolute path, but
+> this is also used as the path seperator in the constructor to the
+> group loaders.  Perhaps a constructor could be added which takes an
+> array of paths ?
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+
+
+From dobesv at gmail.com  Fri Feb 22 11:21:44 2008
+From: dobesv at gmail.com (Dobes Vandermeer)
+Date: Fri, 22 Feb 2008 11:21:44 -0800
+Subject: [stringtemplate-interest] ":" seperator in windows with group
+	loader
+In-Reply-To: <B3274BDC-0034-4040-83C1-6C9D43DA0E56@cs.usfca.edu>
+References: <7324d9a20802220025i1427aab1uce79d976a8846e03@mail.gmail.com>
+	<B3274BDC-0034-4040-83C1-6C9D43DA0E56@cs.usfca.edu>
+Message-ID: <7324d9a20802221121w5cb281d2t7244bc922a97fe92@mail.gmail.com>
+
+That's what I did - still, it's probably worth adding to the core
+library at some point.
+
+On 2/22/08, Terence Parr <parrt at cs.usfca.edu> wrote:
+> Hi. you can subclass the loader and tell ST to use that one.
+>  Ter
+>
+> On Feb 22, 2008, at 12:25 AM, Dobes Vandermeer wrote:
+>
+>  > In windows, a path might contain a ":" if it's an absolute path, but
+>  > this is also used as the path seperator in the constructor to the
+>  > group loaders.  Perhaps a constructor could be added which takes an
+>  > array of paths ?
+>
+> > _______________________________________________
+>  > stringtemplate-interest mailing list
+>  > stringtemplate-interest at antlr.org
+>  > http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>
+>
+
+
+-- 
+
+Dobes Vandermeer
+Director, Habitsoft Inc.
+dobesv at habitsoft.com
+778-891-2922
+
+From rgransberger at gmx.de  Sat Feb 23 04:29:54 2008
+From: rgransberger at gmx.de (Rabea Gransberger)
+Date: Sat, 23 Feb 2008 13:29:54 +0100
+Subject: [stringtemplate-interest] Order of Attributes
+Message-ID: <47C011C2.6040703@gmx.de>
+
+Hello,
+
+is there any way to question the Order of attributes in a StringTemplate?
+
+I'd like to have some internationalization and have some properties 
+files with entries like:
+plus=$right$ + $left?
+
+I take the String for plus and make a StringTemplate out of it, and then 
+I'd like to know if $right? occurs first in the template or $left$.
+
+Right now I determine if by myself by using indexOf on the String, but 
+that's not the best solution because I may get the index of an similar 
+String which is not an attribute of the template.
+
+Greetings,
+Rabea
+
+From jjsnyders at rcn.com  Sat Feb 23 20:14:10 2008
+From: jjsnyders at rcn.com (John Snyders)
+Date: Sat, 23 Feb 2008 23:14:10 -0500
+Subject: [stringtemplate-interest] Cross-site scripting countermeasures
+In-Reply-To: <87fxvm7g1l.fsf@mid.deneb.enyo.de>
+References: <87fxvm7g1l.fsf@mid.deneb.enyo.de>
+Message-ID: <47C0EF12.2010100@rcn.com>
+
+I wrote about this recently on my blog.
+http://hardlikesoftware.com/weblog/2008/02/15/script-injection-and-stringtemplate/
+Just some thoughts really may not be what you are looking for.
+
+What I have done in practice is create a format renderer that does the 
+proper escaping.
+The template author needs to know the context (element content, 
+attribute value etc) and use the
+appropriate format option.
+
+-John
+
+Florian Weimer wrote:
+> I've been trying to figure out, based on the documentation, how you
+> ensure proper output encoding (in particular HTML encoding, to prevent
+> Javascript injection attacks).
+>
+> Has this been a consideration in StringTemplate's design (and the
+> existing StringTemplate deployments just happen to be broken in similar
+> ways), or is this out of the scope of StringTemplate?
+> _______________________________________________
+> stringtemplate-interest mailing list
+> stringtemplate-interest at antlr.org
+> http://www.antlr.org:8080/mailman/listinfo/stringtemplate-interest
+>
+>   
+
+From phreed at gmail.com  Mon Feb 25 10:48:00 2008
+From: phreed at gmail.com (Fred)
+Date: Mon, 25 Feb 2008 12:48:00 -0600
+Subject: [stringtemplate-interest] Functional List Formatting
+Message-ID: <cb0c557b0802251048mf8a49d6ra55fc646fb2ba060@mail.gmail.com>
+
+I have doing some things related to lists in string templates that tax
+the current set of functions.
+Specifically, 'first', 'last', 'rest', 'tail' aren't quite do it for me.
+ In particular, I need to do things like...
+  'front'  : kind of like 'rest' but basically everything but 'last'
+  'reverse' : reverse the order of the list (useful for things like
+  building java package names)
+  'sublist(list,0,-2)+sublist(list,-1)' : all but the second to the last item.
+
+ok, that last one is garbage but you get the idea.
+I know this is verging on something not unlike a functional language
+and you may have good reasons for not going there.
+
+From darach at gmail.com  Mon Feb 25 16:19:15 2008
+From: darach at gmail.com (Darach Ennis)
+Date: Tue, 26 Feb 2008 00:19:15 +0000
+Subject: [stringtemplate-interest] Programatically escape arbitrary text as
+	a stringtemplate template?
+Message-ID: <4d596d820802251619k4bb4e871v93adecf17f0ae07a@mail.gmail.com>
+
+Hi guys,
+
+I would like to escape some arbitrary text as a string template template.
+Specifically
+the template text is macro text from an ANTLR grammar but this question is
+purely
+a StringTemplate question/request. Given input of the form:
+
+$A $B $C c:\foo\bar\baz <> <> <>
+
+It is not obvious how to escape arbitrary text such that when output from a
+StringTemplate
+template it will match the input source. I am generating the string
+programatically so I 'know'
+when $ is literal and when $...$ represents an intentional attribute
+reference when I generate
+the input string. Here is what I came up with viza vis a testcase:
+
+        final String TEST_INPUT = "$A $B $C c:\\foo\\bar\\baz <> <>"; //
+double slash in a literal string represents a literal slash
+        System.out.println("raw: " + TEST_INPUT);
+        StringTemplate st = new StringTemplate(TEST_INPUT);
+        System.out.println("rst: " + st.toString());
+        final String escaped =
+TEST_INPUT.replace("\\","\\\\").replace("$","\\$");
+        System.out.println("esc: " + escaped);
+        StringTemplate st2 = new StringTemplate(escaped);
+        System.out.println("???: " + st2.toString());
+
+White outputs the following
+
+raw: $A $B $C c:\foo\bar\baz <> <>
+problem parsing template 'anonymous'
+line 1:30: expecting '$', found '<EOF>'
+    at org.antlr.stringtemplate.language.DefaultTemplateLexer.nextToken(
+DefaultTemplateLexer.java:149)
+    at antlr.TokenBuffer.fill(TokenBuffer.java:69)
+    at antlr.TokenBuffer.LA(TokenBuffer.java:80)
+    at antlr.LLkParser.LA(LLkParser.java:52)
+    at org.antlr.stringtemplate.language.TemplateParser.template(
+TemplateParser.java:103)
+    at org.antlr.stringtemplate.StringTemplate.breakTemplateIntoChunks(
+StringTemplate.java:853)
+    at org.antlr.stringtemplate.StringTemplate.setTemplate(
+StringTemplate.java:455)
+    at org.antlr.stringtemplate.StringTemplate.<init>(StringTemplate.java
+:311)
+    at org.antlr.stringtemplate.StringTemplate.<init>(StringTemplate.java
+:296)
+    at spike.Test.main(Test.java:9)
+rst: B
+esc: \$A \$B \$C c:\\foo\\bar\\baz <> <>
+???: $A $B $C c:\foo\bar\baz <> <>
+
+Are there any other possible gotchas, such as 'unfortunate' attribute names?
+Is there a recommended
+strategy for escaping attribute names?
+
+It would be worthwhile adding an encode utility method to the StringTemplate
+API as the inadvertent
+use of java's String.replaceAll now changes the meaning of 'slash' and '$'
+as the first argument is a
+regular expression. So string now means 'end of line' as well under certain
+conditions... At the least
+this should be documented in the wiki somewhere.
+
+Regards,
+
+Darach.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: http://www.antlr.org:8080/pipermail/stringtemplate-interest/attachments/20080226/8a9d677b/attachment.html 
+

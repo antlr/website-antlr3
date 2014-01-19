@@ -1,0 +1,333 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Island grammar implementation
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Island%20grammar%20implementation&In-Reply-To=%3CAANLkTin-YNPp33qYGYscvjVw4r8WvtVViJHsytX5hJ5G%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="040507.html">
+   <LINK REL="Next"  HREF="040510.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Island grammar implementation</H1>
+    <B>Bart Kiers</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Island%20grammar%20implementation&In-Reply-To=%3CAANLkTin-YNPp33qYGYscvjVw4r8WvtVViJHsytX5hJ5G%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Island grammar implementation">bkiers at gmail.com
+       </A><BR>
+    <I>Wed Jan 12 02:33:47 PST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="040507.html">[antlr-interest] Island grammar implementation
+</A></li>
+        <LI>Next message: <A HREF="040510.html">[antlr-interest] Protocol message recognition - an amateur grammar	question
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40509">[ date ]</a>
+              <a href="thread.html#40509">[ thread ]</a>
+              <a href="subject.html#40509">[ subject ]</a>
+              <a href="author.html#40509">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Wed, Jan 12, 2011 at 10:18 AM, Hiran Chaudhuri &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">Hiran.Chaudhuri at web.de</A>&gt;wrote:
+
+&gt;<i> Hello, everybody.
+</I>&gt;<i> I've used ANTLR now for some simple cases, and it worked out quite well.
+</I>&gt;<i> But now I am facing files that can - between other items - contain regular
+</I>&gt;<i> expressions. These regular expressions are driving my lexer nuts as I cannot
+</I>&gt;<i> explain that the same characters mean different things within a regex as
+</I>&gt;<i> opposed to somewhere else in the file. As far as I understood such patterns
+</I>&gt;<i> can be addressed with (parser driven) Island Grammars, where the parser
+</I>&gt;<i> detects when a regex is expected and switches the lexer/parser combination
+</I>&gt;<i> until satisfied.
+</I>&gt;<i> However I am lacking a sample how to accomplish this. I looked at
+</I>&gt;<i> <A HREF="http://www.antlr.org/wiki/display/ANTLR3/Island+Grammars+Under+Parser+Control,">http://www.antlr.org/wiki/display/ANTLR3/Island+Grammars+Under+Parser+Control,</A>
+</I>&gt;<i> but it seems like this code does not compile directly (I'm working on ANTLR
+</I>&gt;<i> 3.2), and if I make the necessary amendments, it seems to always run out of
+</I>&gt;<i> heap space.
+</I>&gt;<i> Is there another example for Island Grammars controlled through the parser
+</I>&gt;<i> that I could use?
+</I>&gt;<i> Best regards Hiran
+</I>&gt;<i>
+</I>
+Here's a small demo that compiles using ANTLR v3.2.
+
+Let's say your language consists of one ore more assignment statements. An
+assignment is an identifiers followed by a number, another identifier or a
+regex literal and ending with a semi-colon:
+
+*grammar Language;*
+*
+*
+*parse*
+*  :  assignment+ EOF *
+*  ;*
+*
+*
+*assignment*
+*  :  Identifier '=' atom ';' *
+*  ;*
+*
+*
+*atom*
+*  :  Identifier*
+*  |  Number*
+*  |  Regex*
+*  ;*
+*
+*
+*Regex*
+*  :  '/' ('\\' . | ~('/' | '\\'))* '/'*
+*  ;*
+*    *
+*Identifier*
+*  :  'a'..'z'*
+*  |  'A'..'Z'*
+*  ;*
+*
+*
+*Number*
+*  :  '0'..'9'+*
+*  ;*
+*
+*
+*Space*
+*  :  (' ' | '\t' | '\r' | '\n') {skip();}*
+*  ;*
+
+
+and your (simplified) regex grammar looks like:
+
+*grammar Regex;*
+*
+*
+*parse*
+*  :  Delim atom* Delim EOF*
+*  ;*
+*
+*
+*atom*
+*  :  EscapeSequence *
+*  |  CharClass  *
+*  |  Other*
+*  ;*
+*  *
+*Delim*
+*  :  '/'*
+*  ;*
+*
+*
+*EscapeSequence*
+*  :  '\\' ('\\' | '/')*
+*  ;*
+*  *
+*CharClass*
+*  :  '\\' ('d' | 'w' | 's')*
+*  ;*
+*
+*
+*Other*
+*  :  ~Delim*
+*  ;*
+
+
+Now, to separately parse the regex literal inside your Language-grammar and
+create an AST from it all, do something like this:
+
+*grammar Language;*
+*
+*
+*options {*
+*  output=AST;*
+*}*
+*
+*
+*tokens {*
+*  ROOT;*
+*  REGEX;*
+*  ASSIGNMENT;  *
+*}*
+*
+*
+*@parser::members {*
+*  private CommonTree regexAST(String source) {*
+*    try {*
+*      ANTLRStringStream in = new ANTLRStringStream(source);*
+*      RegexLexer lexer = new RegexLexer(in);*
+*      CommonTokenStream tokens = new CommonTokenStream(lexer);*
+*      RegexParser parser = new RegexParser(tokens);*
+*      return (CommonTree)parser.parse().getTree();*
+*    } catch(Exception e) {*
+*      e.printStackTrace();*
+*    }*
+*    return null;*
+*  }*
+*}*
+*
+*
+*parse*
+*  :  assignment+ EOF -&gt; ^(ROOT assignment+)*
+*  ;*
+*
+*
+*assignment*
+*  :  Identifier '=' atom ';' -&gt; ^(ASSIGNMENT Identifier atom)*
+*  ;*
+*
+*
+*atom*
+*  :  Identifier*
+*  |  Number*
+*  |  r=Regex {CommonTree ast = regexAST($r.text);} -&gt; ^( {ast} )*
+*  ;*
+*
+*
+*Regex*
+*  :  '/' ('\\' . | ~('/' | '\\'))* '/'*
+*  ;*
+*    *
+*Identifier*
+*  :  'a'..'z'*
+*  |  'A'..'Z'*
+*  ;*
+*
+*
+*Number*
+*  :  '0'..'9'+*
+*  ;*
+*
+*
+*Space*
+*  :  (' ' | '\t' | '\r' | '\n') {skip();}*
+*  ;*
+*
+*
+*grammar Regex;*
+*
+*
+*options {*
+*  output=AST;*
+*}*
+*
+*
+*tokens {*
+*  REGEX;*
+*  ESC_SEQ;*
+*  CHAR_CLASS;*
+*  OTHER;*
+*}*
+*
+*
+*parse*
+*  :  Delim atom* Delim EOF -&gt; ^(REGEX atom*)*
+*  ;*
+*
+*
+*atom*
+*  :  EscapeSequence -&gt; ^(ESC_SEQ EscapeSequence)*
+*  |  CharClass      -&gt; ^(CHAR_CLASS CharClass)*
+*  |  Other          -&gt; ^(OTHER Other)*
+*  ;*
+*  *
+*Delim*
+*  :  '/'*
+*  ;*
+*
+*
+*EscapeSequence*
+*  :  '\\' ('\\' | '/')*
+*  ;*
+*  *
+*CharClass*
+*  :  '\\' ('d' | 'w' | 's')*
+*  ;*
+*
+*
+*Other*
+*  :  ~Delim*
+*  ;*
+
+
+Now when parsing the source:
+
+*a = 1;*
+*b = a;*
+*c = /\\\/\wab/;*
+
+
+with your LanguageParser, you'll get the AST attached to this e-mail
+message.
+
+Below is the test class I used:
+
+*import org.antlr.runtime.*;*
+*import org.antlr.runtime.tree.*;*
+*import org.antlr.stringtemplate.*;*
+*
+*
+*public class Main {*
+*    public static void main(String[] args) throws Exception {*
+*        ANTLRStringStream in = new ANTLRStringStream(*
+*                &quot;a = 1;             \n&quot; +*
+*                &quot;b = a;             \n&quot; +*
+*                &quot;c = /\\\\\\/\\wab/;  &quot;*
+*        );*
+*        LanguageLexer lexer = new LanguageLexer(in);*
+*        CommonTokenStream tokens = new CommonTokenStream(lexer);*
+*        LanguageParser parser = new LanguageParser(tokens);*
+*        CommonTree tree = (CommonTree)parser.parse().getTree();*
+*        DOTTreeGenerator gen = new DOTTreeGenerator();*
+*        StringTemplate st = gen.toDOT(tree);*
+*        System.out.println(st);*
+*    }*
+*}*
+
+
+Regards,
+
+Bart.
+
+PS. in case any text gets mangled in my message, I attached a zip file
+containing the grammar- and text class source files.
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: ast.gif
+Type: image/gif
+Size: 11908 bytes
+Desc: not available
+Url : <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20110112/184d06dd/attachment.gif">http://www.antlr.org/pipermail/antlr-interest/attachments/20110112/184d06dd/attachment.gif</A> 
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: source.zip
+Type: application/zip
+Size: 1321 bytes
+Desc: not available
+Url : <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20110112/184d06dd/attachment.zip">http://www.antlr.org/pipermail/antlr-interest/attachments/20110112/184d06dd/attachment.zip</A> 
+</PRE>
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="040507.html">[antlr-interest] Island grammar implementation
+</A></li>
+	<LI>Next message: <A HREF="040510.html">[antlr-interest] Protocol message recognition - an amateur grammar	question
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40509">[ date ]</a>
+              <a href="thread.html#40509">[ thread ]</a>
+              <a href="subject.html#40509">[ subject ]</a>
+              <a href="author.html#40509">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

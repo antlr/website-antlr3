@@ -1,0 +1,360 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Resolving special key words during processing of	AST
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Resolving%20special%20key%20words%20during%20processing%20of%0A%09AST&In-Reply-To=%3C7480DB7A264F334691336D364EB3131E43D7FB%40hq-ex-1.corp.cellfire.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="020435.html">
+   <LINK REL="Next"  HREF="020441.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Resolving special key words during processing of	AST</H1>
+    <B>Jack Luh</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Resolving%20special%20key%20words%20during%20processing%20of%0A%09AST&In-Reply-To=%3C7480DB7A264F334691336D364EB3131E43D7FB%40hq-ex-1.corp.cellfire.com%3E"
+       TITLE="[antlr-interest] Resolving special key words during processing of	AST">jluh at cellfire.com
+       </A><BR>
+    <I>Sun Apr 29 11:51:52 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="020435.html">[antlr-interest] Specifying limit on number of digits in the	Grammar in ANTLR
+</A></li>
+        <LI>Next message: <A HREF="020441.html">[antlr-interest] Some Problem with tree parser
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#20436">[ date ]</a>
+              <a href="thread.html#20436">[ thread ]</a>
+              <a href="subject.html#20436">[ subject ]</a>
+              <a href="author.html#20436">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello,
+
+ 
+
+I've recently started using ANTLR and have run across a problem that I
+can't seem to solve.
+
+ 
+
+I've create a simple logical expression grammar, lex, AST.
+
+ 
+
+I would like to evaluate the following language:
+
+ 
+
+&lt;key_word&gt; OPERATOR &lt;value&gt;
+
+ 
+
+e.g.
+
+ 
+
+today &gt; 20070101 &amp; today &lt; 20071231
+
+ 
+
+I'm currently able to parse and evaluate the Boolean results.  The issue
+is that I now need to tie this into my business logic where I would
+resolve my &lt;key_word&gt; into something meaningful.  In the example above,
+&quot;today&quot; would resolve to today date.  Another keyword could resolve into
+the user's date of birth.  I currently have a static method
+(Variable.resolve()) which I put into the current grammer file.  It
+takes a single parameter which is the name of the current keyword.  For
+something non-related to the system, business logic or any user, I can
+simple just return the value.  However, in the case where I need to look
+up a user and return user data how do I pass the user object to the AST
+parser so that I can get this information back when I need to resolve
+the keyword?  I would like to do something like the following:
+
+ 
+
+        FilterTreeParser treeParser = new FilterTreeParser();
+
+        result = treeParser.expr(t, user);  // Is there a way I can pass
+user parameter here?
+
+ 
+
+If I'm going about this all wrong is there a better approach?
+
+ 
+
+Thanks,
+Jack
+
+ 
+
+ 
+
+
+==========================[Start Grammer file]==========================
+
+// defines the language
+
+class FilterParser extends Parser;
+
+ 
+
+options {
+
+        buildAST=true;
+
+}
+
+ 
+
+expr: mexpr ((AND^|OR^) mexpr)*
+
+    ;
+
+ 
+
+mexpr:      atom (EQ^|NEQ^|GT^|GTE^|LT^|LTE^) atom
+
+      |     LPAREN! expr RPAREN!
+
+    ;
+
+ 
+
+atom: VAR
+
+      |     INT
+
+      ;
+
+ 
+
+ // defines the tokens (i.e. words)
+
+class FilterLexer extends Lexer;
+
+ 
+
+options {
+
+    k=2; // needed for newline junk
+
+    charVocabulary='\u0000'..'\u007F'; // allow ascii
+
+}
+
+ 
+
+LPAREN      : '(' ;
+
+RPAREN      : ')' ;
+
+AND         : '&amp;';
+
+OR          : '|';
+
+EQ          : '=';
+
+NEQ         : &quot;!=&quot;;
+
+GT          : '&gt;';
+
+GTE         : &quot;&gt;=&quot;;
+
+LT          : '&lt;';
+
+LTE         : &quot;&lt;=&quot;;
+
+INT         : ('0'..'9')+ ;
+
+VAR         : ('a'..'z')+('_'(('a'..'z')|('0'..'9'))+)*;
+
+WS          : ( ' ' | '\r' '\n' | '\n' | '\t' )
+
+        {$setType(Token.SKIP);}
+
+            ;    
+
+ 
+
+// used to evaluate the expressions
+
+class FilterTreeParser extends TreeParser;
+
+ 
+
+options {
+
+    importVocab=FilterParser;
+
+}
+
+ 
+
+@header {
+
+import com.cellfire.jack;
+
+}
+
+ 
+
+// handles the logical operators
+
+expr returns [boolean r=false]
+
+{ boolean a,b; }
+
+    :   #(AND  a=expr b=expr)  {r = a&amp;&amp;b;}
+
+    |   #(OR a=expr b=expr)  {r = a||b;}   
+
+    | (a=mexpr) {r=a;} 
+
+    ;
+
+ 
+
+// handles the comparison operators
+
+mexpr returns [boolean r=false]
+
+{ String a,b; }
+
+    : #(EQ  a=atom b=atom)  {r = a.equalsIgnoreCase(b);}
+
+    |   #(NEQ  a=atom b=atom)  {r = !a.equalsIgnoreCase(b);}
+
+    |   #(LT  a=atom b=atom)  {r = (a.compareToIgnoreCase(b)&lt;0);}
+
+    |   #(LTE  a=atom b=atom)  {r = (a.compareToIgnoreCase(b)&lt;=0);}
+
+    |   #(GT  a=atom b=atom)  {r = (a.compareToIgnoreCase(b)&gt;0);}
+
+    |   #(GTE  a=atom b=atom)  {r = (a.compareToIgnoreCase(b)&gt;=0);}
+
+      ;
+
+ 
+
+// handles the variables and values
+
+atom returns [String r=null]
+
+    :   i:INT     {r = i.getText();}
+
+      |     j:VAR {r = Variable.resolve(j.getText());} //
+Variable.Resolve() is the tie to business logic
+
+      ;
+
+==========================[End Grammer file]==========================
+
+ 
+
+ 
+
+==========================[Start Main Method]==========================
+
+    private boolean executeFilter(String expr) {
+
+        boolean result = false;
+
+        StringReader rdr = new StringReader(expr);
+
+        FilterLexer lexer = new FilterLexer(rdr);
+
+        FilterParser parser = new FilterParser(lexer);
+
+        try {
+
+            parser.expr();
+
+        }
+
+        catch (Exception ex) {
+
+            assertTrue(ex.getMessage(), true);
+
+        }
+
+        
+
+        AST t = parser.getAST();
+
+                
+
+        FilterTreeParser treeParser = new FilterTreeParser();
+
+        try {
+
+            result = treeParser.expr(t);  // can I pass other parameters
+here?
+
+        }
+
+        catch (Exception ex) {
+
+            assertTrue(ex.getMessage(), true);
+
+        }
+
+        
+
+        System.out.println(&quot;Expr: &quot; + expr);
+
+        System.out.println(&quot;Tree: &quot; + t.toStringTree());
+
+        System.out.println(&quot;Result: &quot; + result);
+
+        return result;
+
+    }
+
+==========================[End Main Method]==========================
+
+ 
+
+:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::<i>
+</I>
+ 
+
+Teach your phone new tricks
+
+Go to cellfire.com &lt;<A HREF="http://www.cellfire.com/">http://www.cellfire.com/</A>&gt;  or text '110' to 22888
+
+ 
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20070429/4baaf01a/attachment-0001.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20070429/4baaf01a/attachment-0001.html</A> 
+</PRE>
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="020435.html">[antlr-interest] Specifying limit on number of digits in the	Grammar in ANTLR
+</A></li>
+	<LI>Next message: <A HREF="020441.html">[antlr-interest] Some Problem with tree parser
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#20436">[ date ]</a>
+              <a href="thread.html#20436">[ thread ]</a>
+              <a href="subject.html#20436">[ subject ]</a>
+              <a href="author.html#20436">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

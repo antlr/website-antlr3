@@ -1,0 +1,407 @@
+<html>
+
+<head>
+<title>Symbolic Differentiation Part I</title>
+</head>
+
+<body bgcolor="#FFFFFF">
+
+<table border="0" width="650" cellspacing="0" cellpadding="0" height="397">
+  <tr>
+    <td width="150" valign="top" height="235"><p align="center"><img
+    src="http://www.antlr.org/logo.gif" alt="logo.gif (4249 bytes)" width="111" height="144"></p>
+    <p align="center">&nbsp;</p>
+    <p align="center">&nbsp;
+    </td>
+    <td width="20" valign="top"></td>
+    <td valign="top">
+<font face="ARIAL" size="-1">
+<p>
+<font size="+2">
+Symbolic Differentiation Part I
+</font>
+
+<p>
+<i>Terry Brugger</i>
+
+<p>
+
+<p>
+[email: <a href="mailto:zow@acm.org">zow@acm.org</a>]
+
+<P>This entry in the field guide presents the Tutorial from Terence's Book ported into ANTLR 2. It is written from my experience as a developer who was already familiar with Java and parsing. It assumes that you have a copy of Terence's Book, as I will refer directly to the pages therein.</P>
+<P>You will note as you go through the tutorial, that ANTLR just seems to glob the parser and the lexer together. This has changed in ANTLR 2. The two are much better defined and separated now. While the approach used in ANTLR 1 had merit for its simplicity, the separation in ANTLR 2 allows for the use of a lexer which acts on LL(k) grammars, which means it's much more powerful than the DLG lexer from ANTLR 1.</P>
+<P>We start, after the introduction, with the rules. The <CODE>interp</CODE> rule remains unchanged. The <CODE>poly</CODE> rule has only a minor modification:</P>
+<PRE>poly
+	: term ( "+" term )*
+	;</PRE>
+<P>notice that the + is no longer escaped, as it is no longer a control character inside a string. The other rules remain unchanged as well. (This is easy so far, isn't it?) On page 44, we begin to get into the bigger changes:</P>
+<PRE>term
+	: coefficient ( reg ( "^" exp )? )?	// merged alts 1 and 4
+	| reg ( "^" exp )?			// merged alts 2 and 3
+	;</PRE>
+<P>as <CODE>(..)?</CODE> has replaced <CODE>{..}</CODE> for defining optional subrules. We now have seven tokens:</P>
+<TABLE BORDER CELLSPACING=2 CELLPADDING=5>
+	<TR>
+		<TD><P ALIGN="Center"><B>Regular Expression</B></P></TD>
+		<TD><P ALIGN="Center"><B>Description</B></P></TD>
+	</TR>
+	<TR>
+		<TD><PRE>"="</PRE></TD>
+		<TD><P>The equals sign</P></TD>
+	</TR>
+	<TR>
+		<TD><PRE>";"</PRE></TD>
+		<TD><P>Semicolon</P></TD>
+	</TR>
+	<TR>
+		<TD><PRE>"+"</PRE></TD>
+		<TD><P>Plus sign</P></TD>
+	</TR>
+	<TR>
+		<TD><PRE>"^"</PRE></TD>
+		<TD><P>Exponentiation operator</P></TD>
+	</TR>
+	<TR>
+		<TD><PRE>( '0'..'9' )+ ( '.' ( '0'..'9' )* )?</PRE></TD>
+		<TD><P>FLOAT - Note that I took the liberty to allow numbers to
+			be specified as "123." with a trailing decimal point and
+			no numbers behind it.</P></TD>
+	</TR>
+	<TR>
+		<TD><PRE>'a'..'z'</PRE></TD>
+		<TD><P>ID</P></TD>
+	</TR>
+	<TR>
+		<TD><PRE>' ' | '\t' | '\r' '\n' | '\n'</PRE></TD>
+		<TD><P>white space</P></TD>
+	</TR>
+</TABLE>
+
+<P>It should be noted that the first four are treated just as strings. The parser detects that they are strings and passes them into the lexer's literal table. When the lexer encounters one of these, it does a lookup on said table, just as it would for a keyword like "if" or "for". While this is not the most efficient way to do it, Terence is working on allowing single characters in the parser, which will translate into individual tokens in the lexer. In the meantime, you can emulate this behaviour by writing rules like:</P>
+<PRE>Poly
+	: term ( PLUS term )*
+	;</PRE>
+<P>and then defining PLUS in the lexer:</P>
+<PRE>PLUS : '+';</PRE>
+<P>For simplicity, I have opted not to write the rules in this manner. Instead, I have included a rule encapsulating all the operators in the lexer. This will allow the lexer to recognize the operators; once it does, the lookup and match will be performed. The rules is:</P>
+<PRE>OPERATORS
+	: '='
+	| ';'
+	| '+'
+	| ';'
+	;</PRE>
+<P>Our final grammar looks like:</P>
+<PRE>// Poly.g
+// Defines a grammar for a Polynomial Parser
+class PolyParser extends Parser;
+
+// The entry point for an interpreter
+interp
+	: ( ID "=" poly ";" )+
+	;
+
+// A polynomial
+poly
+	: term ( "+" term )*
+	;
+
+// A term in the polynomial
+term
+	: coefficient ( reg ( "^" exp )? )?
+	| reg ( "^" exp )?
+	;
+
+// The coefficient of the term
+coefficient
+	: FLOAT
+	;
+
+// A register or variable
+reg
+	: ID
+	;
+
+// An exponent in a term
+exp
+	: reg
+	| FLOAT
+	;
+
+class PolyLex extends Lexer;
+
+// An ID for a register
+ID
+	: 'a'..'z'
+	;
+
+// A floating point number
+FLOAT
+	: ( '0'..'9' )+ ( '.' ( '0'..'9' )* )?
+	;
+
+// The operators so that they are recognized
+OPERATORS
+	: '='
+	| '^'
+	| '+'
+	| ';'
+	;
+
+// Eat the white space
+WS
+	: ( ' '
+	  | '\t'
+	  | '\r' '\n'	{ newline(); }
+	  | '\n'	{ newline(); }
+	  )
+		/* All the characters are in a subrule so that this
+		   action will apply to them: */
+		{ $setType(Token.SKIP); } // ignore this token
+	;</PRE>
+<P>And in another file:</P>
+<PRE>// PolyMain.java
+// constructs and executes our Polynomial Parser
+import java.awt.*;
+import java.io.*;
+
+class PolyMain
+{
+	public static void main(String[] args)
+	{
+		try {
+			PolyLex lexer = new PolyLex(new DataInputStream(System.in));
+			PolyParser parser = new PolyParser(lexer);
+			parser.interp();
+		} catch(Exception exception) {
+			System.err.println("exception: "+exception);
+		} // end try
+	} // end main()
+} // end PolyMain
+
+Then from the command line, create the Parser and Lexer classes:
+&gt; java antlr.Tool Poly.g</PRE>
+<P>Compile everything:</P>
+<PRE>&gt; javac *.java</PRE>
+<P>And you can run it:</P>
+<PRE>&gt; java PolyMain</PRE>
+<P>Enter any input and press &lt;Ctrl&gt;-Z when you're done. Note that all processing occurs after you press &lt;Ctrl&gt;-Z, so you won't see each line parsed after you hit &lt;Enter&gt;.</P>
+<P>&nbsp;</P>
+<H4>Semantic Actions</H4>
+<P>This is where more changes start to pop up. Starting with the new <CODE>poly</CODE> rule on p. 47:</P>
+<PRE>poly returns [double ret]
+	{ double dbl=0.0; ret = -2.0; }
+	: ret=term ( "+" dbl=term { ret += dbl; } )*
+	;</PRE>
+<P>Instead of using '&gt;' to denote a return variable, ANTLR 2 uses the keyword "returns". The float has changed to a double because Java is nicer to doubles than floats. This will become particularly important when we call the exponentiation function because it is defined in <CODE>java.lang.Math</CODE> as <CODE>double pow(double, double)</CODE> ; and of course, when dealing with exponentiation, numbers can get very big very quickly. Both doubles are initialized to suppress Java's warnings about using uninitialized variables (apparently because they are initialized by ANTLR inside of an exception handler. I initialized ret to -2 to aid in debugging because it should always be set to a positive number first thing in the rule. If I see a -2 pop up somewhere, I know I have a problem and where to start looking for it. Instead of using <CODE>f</CODE> or <CODE>d</CODE> as the variable name, I have chosen <CODE>ret</CODE> and <CODE>dbl</CODE>, simply due to an aversion of one character variable names. The next point to note is that the initialization statements are now enclosed in curly braces instead of double angle brackets; furthermore, this init-action is located before the first ":" rather than after it. Inside the rule itself, the syntax has been vastly improved. Instead of redirection arrows, square brackets and "$"s (reminds me of perl) for return values, we have simple "=" operators and use the variable names directly. The caveat of this is that the variable being assigned to is now on the left hand side (consistent with Java syntax). Again, actions are in curly braces and not angled brackets. We continue now with the rule for interp:</P>
+<PRE>interp
+	{ double ret=-1.0; }
+	: ( lhs:ID "=" ret=poly ";"
+		{ regs.store(lhs.getText(), ret); }
+	  )+
+	;</PRE>
+<P>Rather than noting a change here, it should be pointed out that the ":" token assignment syntax has not changed. Keep in mind that now <B>both</B> the "=" and ":" assignments use lhs is assigned to and rhs is assigned from. The only notable change here that has not already been discussed is that the store method is in an object named "regs" this will be discussed momentarily. The rule for a coefficient is:</P>
+<PRE>coefficient returns [double ret]
+	{ ret = -4.0; }
+	: flt:FLOAT
+		{ ret = (new Double(flt.getText())).doubleValue(); }
+	;</PRE>
+<P>The main change here is in the way that the token value is converted into a double. We construct a new Double using the text of the FLOAT the lexer read in. We then store this Double in the ret, which is just a double, using the doubleValue() method. This demonstrates one of my few frustrations with Java and something that newer Java programmers should watch out for: an over dependence on case sensitivity. The next two rules are simple:</P>
+<PRE>reg returns [double ret]
+	{ ret = -5.0; }
+	: id:ID
+		{ ret = regs.value(id.getText()); }
+	;
+
+exp returns [double ret]
+	{ ret = -6.0; }
+	: ret=reg
+	| flt:FLOAT
+		{ ret = (new Double(flt.getText())).doubleValue(); }
+	;</PRE>
+<P>Any complexity in <CODE>term</CODE> is covered on page 48. The conversion from ANTLR 1 to 2 introduces no complexities which we have not already discussed:</P>
+<PRE>term returns [double ret]
+	{ double dbl=0.0, pow=0.0, coeff=0.0, var=0.0; ret = -3.0; }
+	: coeff=coefficient
+	  ( var=reg
+	    ( "^" pow=exp	{ ret = coeff * java.lang.Math.pow(var, pow); }
+	    |			{ ret = coeff * var; }
+	    )
+	  |			{ ret = coeff; }
+	  )
+	| dbl=reg
+	  ( "^" pow=exp		{ ret = java.lang.Math.pow(dbl, pow); }
+	  |			{ ret = dbl; }
+	  )
+	;</PRE>
+<P>We can, however, vastly simplify this rule through the use of default values for the variables (that is our local variables in java, not the variables in our grammar):</P>
+<PRE>term returns [double ret]
+	{ double pow=1.0, coeff=0.0, var=1.0; ret = -3.0; }
+	: coeff=coefficient ( var=reg ( "^" pow=exp )? )?
+		{ ret = coeff * java.lang.Math.pow(var, pow); }
+	| var=reg ( "^" pow=exp )?
+		{ ret = java.lang.Math.pow(var, pow); }
+	;</PRE>
+<P>Here is where our <CODE>regs</CODE> object comes in useful. Instead of implementing the <CODE>store</CODE> and <CODE>value</CODE> functions inside our parser, we implement them inside an object which implements the <CODE>DblStorage</CODE> interface:</P>
+<PRE>// DblStorage.java
+// Defines an interface for objects which allow the user to store doubles by a one
+// character name
+interface DblStorage
+{
+	void store(String reg, double val);
+	double value(String reg);
+}</PRE>
+<P>And here is that object:</P>
+<PRE>// Registers.java
+// implements the store and value behaviour functions using an array
+
+import java.io.*;
+
+class Registers implements DblStorage
+{
+	private double array[];
+
+	public Registers()
+	{
+		int size='z'-'a'+1;
+		array = new double[size];
+		for(int lcv=0; lcv&lt;size; lcv++) array[lcv] = 0.0;
+	} // end default constructor
+
+	public void store(String reg, double val)
+	{
+		array[reg.charAt(0)-'a'] = val;
+		System.out.println("Storing " + val + " in " + reg);
+	} // end store()
+
+	public double value(String reg)
+	{
+		return array[reg.charAt(0)-'a'];
+	} // end value()
+} // end class Registers</PRE>
+<P>We now add a constructor to <CODE>PolyParser</CODE> which initializes the <CODE>regs</CODE> member variable to an object of the <CODE>DblStorage</CODE> interface:</P>
+<PRE>class PolyParser extends Parser;
+{
+	private DblStorage regs;
+	PolyParser(TokenBuffer tokenBuf, DblStorage regs)
+	{
+		this(tokenBuf);
+		this.regs = regs;
+	} // end specialized constructor
+}</PRE>
+<P>We must now modify the main program to use this new object:</P>
+<PRE>// PolyMain.java
+// constructs and executes our Polynomial Parser
+import java.awt.*;
+import java.io.*;
+
+class PolyMain
+{
+	public static void main(String[] args)
+	{
+		try {
+			Registers regs = new Registers();
+			PolyLex lexer = new PolyLex(new DataInputStream(System.in));
+			PolyParser parser = new PolyParser(lexer, regs);
+			parser.interp();
+		} catch(Exception exception) {
+			System.err.println("exception: "+exception);
+		} // end try
+	} // end main()
+} // end PolyMain</PRE>
+<P>Here is the complete grammar:</P>
+<PRE>// Poly.g
+// Defines a grammar for a Polynomial Parser
+class PolyParser extends Parser;
+{
+	private DblStorage regs;
+	PolyParser(Tokenizer tokenBuf, DblStorage regs)
+	{
+		this(tokenBuf);
+		this.regs = regs;
+	} // end specialized constructor
+}
+
+// The entry point for an interpreter
+interp
+	{ double ret=-1.0; }
+	: ( lhs:ID "=" ret=poly ";"
+		{ regs.store(lhs.getText(), ret); }
+	  )+
+	;
+
+// A polynomial
+poly returns [double ret]
+	{ double dbl=0.0; ret = -2.0; }
+	: ret=term ( "+" dbl=term { ret += dbl; } )*
+	;
+
+// A term in the polynomial
+term returns [double ret]
+	{ double pow=1.0, coeff=0.0, var=1.0; ret = -3.0; }
+	: coeff=coefficient ( var=reg ( "^" pow=exp )? )?
+		{ ret = coeff * java.lang.Math.pow(var, pow); }
+	| var=reg ( "^" pow=exp )?
+		{ ret = java.lang.Math.pow(var, pow); }
+	;
+
+// The coefficient of the term
+coefficient returns [double ret]
+	{ ret = -4.0; }
+	: flt:FLOAT
+		{ ret = (new Double(flt.getText())).doubleValue(); }
+	;
+
+// A register or variable
+reg returns [double ret]
+	{ ret = -5.0; }
+	: id:ID
+		{ ret = regs.value(id.getText()); }
+	;
+
+// An exponent in a term
+exp returns [double ret]
+	{ ret = -6.0; }
+	: ret=reg
+	| flt:FLOAT
+		{ ret = (new Double(flt.getText())).doubleValue(); }
+	;
+
+class PolyLex extends Lexer;
+
+// An ID for a register
+ID
+	: 'a'..'z'
+	;
+
+// A floating point number
+FLOAT
+	: ( '0'..'9' )+ ( '.' ( '0'..'9' )* )?
+	;
+
+// The operators so that they are recognized
+OPERATORS
+	: '='
+	| '^'
+	| '+'
+	| ';'
+	;
+
+// Eat the white space
+WS
+	: ( ' '
+	  | '\t'
+	  | '\r' '\n'	{ newline(); }
+	  | '\n'	{ newline(); }
+	  )
+		/* All the characters are in a subrule so that this
+		   action will apply to them: */
+		{ $setType(Token.SKIP); } // ignore this token
+	;
+</PRE>
+</font>
+</td>
+  </tr>
+</table>
+</body>
+</html>

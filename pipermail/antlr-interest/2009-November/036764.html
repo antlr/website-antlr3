@@ -1,0 +1,161 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] [C Target] How to skip a whole sub-tree (not	just a token)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5BC%20Target%5D%20How%20to%20skip%20a%20whole%20sub-tree%20%28not%0A%09just%20a%20token%29&In-Reply-To=%3C66858a308a155f478581324098533b3c%40temporal-wave.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="036763.html">
+   <LINK REL="Next"  HREF="036758.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] [C Target] How to skip a whole sub-tree (not	just a token)</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5BC%20Target%5D%20How%20to%20skip%20a%20whole%20sub-tree%20%28not%0A%09just%20a%20token%29&In-Reply-To=%3C66858a308a155f478581324098533b3c%40temporal-wave.com%3E"
+       TITLE="[antlr-interest] [C Target] How to skip a whole sub-tree (not	just a token)">jimi at temporal-wave.com
+       </A><BR>
+    <I>Sat Nov 14 10:03:39 PST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="036763.html">[antlr-interest] [C Target] How to skip a whole sub-tree (not	just a token)
+</A></li>
+        <LI>Next message: <A HREF="036758.html">[antlr-interest] Problem with lexer rule for an optional suffix
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36764">[ date ]</a>
+              <a href="thread.html#36764">[ thread ]</a>
+              <a href="subject.html#36764">[ subject ]</a>
+              <a href="author.html#36764">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Firstly, try to use the macros like LT() rather than following the pointers directly.
+
+Secondly, have you tried the MARK, SEEK and REWIND macros - this kind of thing is what they are designed for.
+
+If your imaginary tokens do not have the start and stop token indexes set, then you are probably rewriting them like this:
+
+ 
+
+&#232; ^(GOOONEWITHINDICES X Y ^(THISWONTGETINDICES A B))
+
+ 
+
+Move the inner rewrite into a sub rule and it will get indices.
+
+ 
+
+Jim
+
+ 
+
+ 
+
+From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Mohamed Yousef
+Sent: Saturday, November 14, 2009 9:36 AM
+To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: Re: [antlr-interest] [C Target] How to skip a whole sub-tree (not just a token)
+
+ 
+
+i found a solution - more of a hack - to enable/make it easier to do control flow avoiding obscure act about token positions
+before the real walk we make a small walk (not very expensive) to store those data
+
+nodes    = antlr3CommonTreeNodeStreamNewTree(yatgAST.tree, ANTLR3_SIZE_HINT); 
+pANTLR3_BASE_TREE p;
+while(true)
+{
+            // this should/can be further optimized by adding data to certain nodes only
+            p=nodes-&gt;tnstream-&gt;_LT(nodes-&gt;tnstream,1);
+            p-&gt;savedIndex=nodes-&gt;tnstream-&gt;istream-&gt;index(nodes-&gt;tnstream-&gt;istream);
+            if(p-&gt;getType(p)==nodes-&gt;EOF_NODE.token-&gt;getType(nodes-&gt;EOF_NODE.token))break;
+            nodes-&gt;tnstream-&gt;istream-&gt;consume(nodes-&gt;tnstream-&gt;istream);
+}
+
+it enabled me to implement my IF statement in way i wanted
+
+this is sure not the best way to do it , any ideas ?
+
+Regards,
+Mohammed Yousef
+
+2009/11/13 Mohamed Yousef &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">harrrrpo at gmail.com</A>&gt;
+
+Sorry , it seems i jumped to a wrong result
+indices are calculated correctly and UP&amp;Down are taken into consideration
+the real problem that i discovered now 
+is that during tree parsing nodes have no info about the real start and end positions till respective childs are parsed , so here :
+
+
+
+if_expr
+    :
+      ^(EIF ^(EIF_COND c =expr_g)  { // examine c and selectively jump to e }  )
+
+EIF would think and respond as c is the end of the world , it has no knowledge of EIF_THEN
+
+so we have either two solutions :
+1) go parse it by hand : tedious , inefficient , probably won't be generic
+2) another idea i have now is to store node indices (e.g. for COND , THEN, ELSE in EIF ) either during parsing or in a separate walk to &quot;flow control&quot; nodes
+
+i will try both and see
+any better ideas ?
+
+2009/11/13 Mohamed Yousef &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">harrrrpo at gmail.com</A>&gt;
+
+ 
+
+Hello all,
+i sent before regarding a bug in Control flow  in which a e=. won't define e , i was suggested by jim to walk tree my self using LT
+
+now i have a problem , consider following 
+
+if_expr
+    :
+      ^(EIF ^(EIF_COND c =expr_g) ^(EIF_THEN e=expr_g)  ) { // examine c and selectively jump to e }
+
+must be changed to something like
+
+if_expr
+    :
+      ^(EIF ^(EIF_COND c =expr_g)  { // examine c and selectively jump to e }  )
+
+and we have a problem
+how can we skip the whole EIF_THEN tree (when c is false ) ? , if we try to use the stopIndex of EIF to jump to it's end
+we have the problem that all returned indices ,by all means , don't take UP &amp; DOWN nodes into accout , where the SEEK macro
+takes them into accout
+any ideas ?
+
+ 
+
+ 
+
+
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20091114/935389ad/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20091114/935389ad/attachment.html</A> 
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="036763.html">[antlr-interest] [C Target] How to skip a whole sub-tree (not	just a token)
+</A></li>
+	<LI>Next message: <A HREF="036758.html">[antlr-interest] Problem with lexer rule for an optional suffix
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36764">[ date ]</a>
+              <a href="thread.html#36764">[ thread ]</a>
+              <a href="subject.html#36764">[ subject ]</a>
+              <a href="author.html#36764">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

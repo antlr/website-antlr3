@@ -1,0 +1,690 @@
+Translators Should Use Tree Grammars
+
+_Terence Parr_ \
+University of San Francisco  \
+{parrt@cs.usfca.edu}
+
+November 15, 2004
+
+#### Introduction
+
+One of the most common questions programmers have when building a
+translator is, "_what do I do with my AST now that I've built it?_"
+Their first reaction is to use a _visitor_ pattern that essentially
+does a depth-first-walk of the tree, executing an "action" method at
+each node.  While easy to understand, this approach is not useful
+except for the simplest of translators.  It does not validate tree
+structure and actions are isolated "event triggers" that do not have
+any context information.  The next step up is to write a tree walker
+that manually checks the structure and is aware of context either
+implicitly or by passing information down the tree during the walk or
+by setting globally visible variables such as instance variables.
+Rather than build a tree walker by hand, use a tree grammar just like
+you do when building a text parser.  This small article illustrates
+the limitations of visitors and hints at the power of tree grammars.
+On the antlr-interest list, Alexey Demakov posed some excellent
+questions so I thought I'd repeat a cleaned up version of our
+discussion.  You might also find
+@(http://www.jguru.com/faq/view.jsp?EID=818959, What is a tree parser
+and why would I want to use one) useful (it gives a good example of
+why you need trees in the first place).
+
+#### Executing Actions On Trees
+
+After constructing a tree, you must execute actions related to the
+nodes in order to perform a translation.  Fitting this task into an
+existing metaphor is a good idea.  This section lays out the most
+commonly-used methods.
+
+### Visitors
+
+A programmer's first thought will probably be to use the _visitor
+pattern_ that uses a generic depth-first-tree walker able to execute
+different actions depending on the node.  There are a number of
+problems with visitors:
+
+1 tree structure is not validated
+1 actions execute without convenient context information
+1 inconvenient data passing between actions
+
+A generic visitor walks a tree totally ignoring structural
+constraints.  Unless you can guarantee that the parser constructs
+well-structured trees, your actions may execute in the wrong context
+or simply generate exceptions.  This situation is worse when your tree
+walk constructs the tree for a future phase--that future phase would
+also not check the structure.
+
+Imagine that you want to execute action {foo} when you see an
+expression subtree in a {while} statement and {bar} when you see an
+expression subtree in an assignment statement.  How does the single
+action associated with the root of an expression subtree know in which
+context it appears?  It must walk upwards in the tree to figure out
+under which kind of statement the subtree lives.  Aside from making
+your actions dependent on the physical structure of the tree, manually
+looking upwards is extremely inconvenient and very inefficient.
+Another approach is to have the statement actions record the context
+and then reference it within the expression action.  See the section
+below on context information.  Visitor actions are just not
+syntactically aware.
+
+Node actions may compute data needed by future actions.  Because each
+action is isolated (usually as a overridden method in another class),
+you cannot use the usual programming constructs like local variables,
+parameters, and return values to pass information.  You must use
+instance variables which are clumsy and violate data hiding
+principles.
+
+By the way, some tools take the approach, such as Alexey Demakov's
+@(http://treedl.sourceforge.net, TreeDL) and Etienne Gagnon's
+@(http://www.sablecc.org, SableCC), of using visitors for actions but
+letting you specify tree structure with a grammar-like specification.
+These tools generate a class for each node in the tree in order to
+ensure valid tree construction and so generate code similar to what
+you will see in the next section.  Just be aware that I am opposed
+primarily to the visitor model for tree walker action execution;
+whether custom classes or a generic depth-first-walk method are used
+is not my concern here.
+
+I should note that I use visitors when it's appropriate.  Just the
+other day, I used visitors to build a simple parse tree during grammar
+interpretation for ANTLR 3.0 prototype.  ANTLR 3.0 will be able to
+test grammars without code generation nor compilation. :)  The visitor
+was an object I passed to my parse engine:
+
+<<
+class BuildParseTree implements InterpreterActions {
+    Grammar g;
+    Stack callStack = new Stack();
+    public BuildParseTree(Grammar g) {
+      this.g = g;
+      ParseTree root = new ParseTree("<grammar "+g.getName()+">");
+      callStack.push(root);
+    }
+    public ParseTree getTree() {
+      return (ParseTree)callStack.elementAt(0);
+    }
+    public void enterRule(String ruleName) {
+      ParseTree parentRuleNode = (ParseTree)callStack.peek();
+      ParseTree ruleNode = new ParseTree(ruleName);
+      parentRuleNode.addChild(ruleNode);
+      callStack.push(ruleNode);
+    }
+    public void exitRule(String ruleName) {
+      callStack.pop();
+    }
+    public void matchElement(int type) {
+      ParseTree ruleNode = (ParseTree)callStack.peek();
+      ParseTree elementNode = new ParseTree(g.getTokenName(type));
+      ruleNode.addChild(elementNode);
+    }
+    public void mismatchedElement(String msg) {}
+    public void noViableAlt(String msg) {}
+}
+>>
+
+The parse engine lets you pass in some behavior you would like to
+execute:
+
+<<
+class Interpreter {
+public Interpreter(Grammar g, IntStream input) {...}
+public void parse(String startRule, InterpreterActions actions)
+    throws RecognitionException
+{
+...
+}
+>>
+
+This is also a form of the "behavior" object discussed in a section
+below.
+
+### Manual Tree Walkers
+
+In order to overcome the weaknesses of the visitor pattern, a
+programmer's next approach is usually to manually build a tree walker.
+A manual tree walker is a great step forward because it can verify
+tree structure during the walk.  Actions have context information and
+can easily pass data around with the usual programming constructs like
+parameters and return values.  What then could be wrong with a
+manually-built tree walker if it overcomes all the weaknesses of the
+visitor pattern approach?
+
+1 action and tree structure walking code is entangled; you risk
+breaking action code when altering the walking code
+
+1 manually built tree walkers have no guarantee that their
+parsing logic is complete and consistent
+
+1 manually building tree walkers is much more laborious than the
+visitor pattern
+
+Manually built tree walkers are almost always built using multiple
+heterogeneous node classes, such as {PlusNode} and {IntNode}:
+
+<<
+abstract class ExprNode extends Node {
+  ...
+}
+
+class PlusNode extends ExprNode {
+  ExprNode left;
+  ExprNode right;
+  public PlusNode(ExprNode left, ExprNode right) {...}
+  public void walk() {
+    left.walk();
+    right.walk();
+    ... plus node action ...
+  }
+}
+
+class IntNode extends AST {
+  int value;
+  public void walk() {
+    ... int node action ...
+  }
+}
+>>
+
+This code looks correct and, in fact, it will walk any valid
+plus-expression tree.  The problem is that field definitions have
+limited ability to express tree structure.  For example, how do you
+express that a child can be optional?  Imagine that the right operand
+is optional to indicate the unary plus operation.  You must add code
+to the {walk()} method to allow for this:
+
+<<
+if ( right!=null ) {
+  right.walk();
+}
+>>
+
+You could also build a different kind of node, but this will further
+explode the number of classes you need to write.
+
+What about lists of children such as argument lists?  Without typed
+lists such as C++ templates or Java generics, you would not be able to
+build a type-strict tree.  The point is that invalid structures might
+not be trapped at all if you are not careful with types.  If you get
+tired of type casting, of which there is a lot in Java, you can get
+into trouble.
+
+It seems to me that the type system is a fairly blunt instrument for
+specifying tree structure.  Just as a manually-built text parser has
+no guarantee of correctness, a manually built tree parser may have
+subtle parsing logic mistakes that can only be found by exhaustive
+unit testing.  The type-system-as-tree-structure-validator strategy
+discussed here is a thinly-disguised top-down recursive-descent
+parser.
+
+One more problem related to using types to represent tree structures.
+According to Alexey, there are 561 classes in {node} package generated
+by SableCC for Java 1.1 (jjtree for javacc would be similar I believe
+as it also generates a class per node type); he says that his manually
+developed Java tree has about 150 nodes.  Regardless, you are still
+looking at lots of files.  The tree walker is fractured into a vast
+number of pieces.  Multiply the number of classes by n for n passes
+over the tree (though each pass will not usually need to override
+every action).  My fortran-77 to Thinking Machines Fortran was about
+15 passes.  I can just imagine how Java's slow I/O libraries deal with
+loading this many classes on-the-fly.  The overhead must become
+atrocious after a while.
+
+Don't forget that one of the most common and insidious type of
+programming errors lies in the interface between objects (and between
+programmers); mismatches are easy to introduce since the code lives in
+different files and you are not looking at both actions at once.
+These objects may encapsulate what a single node and its children look
+like very well but they very specifically break encapsulation of the
+overall tree structure and even some substructures.  Tree structure
+encapsulation is much more important than enapsulating a single node.
+For example, why look in n files for n different statement node types?
+All {StatementList} can show is, at most, a typed list:
+{List<StatementNode>}.  It says absolutely nothing about what the
+statements are--the subclasses of {StatementNode} seem a rather weak
+and indirect method for specifying such a close relationship.
+
+### Tree Grammars
+
+After building several manual tree walkers, you'll get really tired of
+all the typing (both kinds <snicker>).  Before we had a decent C++
+compiler back in '93, I used to build translators in C.  After using
+ANTLR to construct ASTs, I'd manually walk them with a set of mutually
+recursive functions like this:
+
+<<
+/* walk a decl that looks like (DECL type ID) */
+void decl(AST *t)
+{
+  if ( t->type!=DECL ) {
+    fprintf(stderr, "bad decl tree");
+    return;
+  }
+  match(t, DECL);
+  type(t->down);
+  match(t->down->right, ID);
+}
+void type(AST *t)
+{...}
+>>
+
+Because I like building tools much more than I like doing my actual
+job, I decided that I could simply build a tool that let me execute
+the comment {(DECL type ID)}.  I realized that tree parsing is
+identical to text parsing, albeit in two dimensions instead of one.
+SORCERER had ANTLR-like syntax (and the functionality is now contained
+within ANTLR itself) and let me literally write:
+
+<<
+decl : #(DECL type ID) ;
+type : ... ;
+>>
+
+where {DECL} and {ID} are token types provided by the original text
+parser.
+
+Tree grammars give you these advantages:
+
+1 terse, type-system independent, formal specification of the tree
+structure
+
+1 actions have implicit context by virtue of their location in the
+grammar
+
+1 unlike visitors, data can be passed around easily between actions
+using parameters, return values, and local variables
+
+## Grammars as formal structure specifications
+
+Most programmers will agree that building a text parser should be done
+with a parser generator in most circumstances.  It is a mystery to me
+why many programmers do not see the analogy to tree parsing.  Perhaps
+we have all become so used to objects and classes that it's hard to
+think of solving a problem any other way.  Certainly compiler writers
+are used to tree grammars since they use so-called _tree walking
+instruction generators_ all the time to do the final code gen
+phase. (See
+@(http://www.cs.usfca.edu/~parrt/course/652/labs/jburg.html, Code
+Generation Using a Bottom Up Rewrite System Lab) for a taste using
+{JBurg}).
+
+What about languages like C without classes and polymorphism?  The C
+type system is totally incapable of validating structure--you must
+have a parser to validate tree structure, which means making a set of
+mutually-recursive functions.  In other words, in C you must build a
+recursive-descent parser.  Hopefully for C, at least, programmers
+could agree that a parser generator should create the tree parser.
+For consistency then, it seems reasonable to use methods not classes
+for generating parsers; though there is no reason a tool such as ANTLR
+could not generate a bunch of separate node types instead.  I only
+argue here that a grammar should be used--I don't care about the
+implementation so much as I will rarely look at the generated code.
+
+Let's compare tree grammars to the type system based approach
+available in object-oriented languages.  The following is a typical
+expression root node specification:
+
+<<
+abstract class ExprNode {
+}
+>>
+
+Yes, it's empty.  You cannot list the child fields because there may
+be one, two, three or none (e.g., for Java).  You cannot list the
+expression tree types; one must find all subclasses of {ExprNode}.
+Contrast that with a grammar rule that exactly specifies the possible
+expressions:
+
+<<
+expr : plus | minus | ... ;
+>>
+
+or even:
+
+<<
+expr : #(PLUS expr expr)
+     | #(MINUS expr expr)
+     ...
+     ;
+>>
+
+Not only is the tree grammar more explicit (i.e., you are saying
+exactly what you mean rather than co-opting a type system), it is
+smaller, it is completely self-contained, and formally guarantees tree
+structure (as opposed to hand-written {walk()} methods that might
+forget to walk down one of the children).  I should also point out
+that Loring Craymer has a means of automatically generating tree
+grammars from the text parser grammar that builds trees (to be
+released in the 2.8 experimental release).
+
+Finally, let me point out that you have to walk your trees anyway
+even if you build type-safe trees so you might as well check the
+structure as you go; the additional cost is very small.
+
+## Actions in context
+
+Actions in a tree grammar execute during the walk right after the
+preceding element and right before the following element.  For
+example, action {foo} executes right before the second operand of the
+{PLUS} tree structure is walked:
+
+<<
+expr : #(PLUS expr {foo} expr)
+>>
+
+Action sequence information is very important, particularly when
+generating output.  Visitors must have uniform action trigger
+locations within the "visit" of each node; either before or after
+visiting the children usually.  Hand-built classes like {PlusNode},
+however, have complete freedom like tree grammars though the actions
+are mingled with tree navigation code and harder to see.  Actions may
+occur at different points in the node visit for each node.
+
+Classes like {PlusNode} work specifically on a single node and the
+general types of the children rather whereas a tree grammar can
+specify lots of context.  For example, if you would like to "fold
+constants" like "{3+4}", you would have to add a special case in the
+{PlusNode.walk()} method whereas a tree grammar can simply refer to
+the following pattern:
+
+<<
+#(PLUS INT INT)
+>>
+
+## Passing data around
+
+As far as passing data around, hand-built tree walkers use the usual
+programming constructs.  Here is the {PlusNode} augmented to evalute
+the expression it represents:
+
+<<
+class PlusNode extends ExprNode {
+  ExprNode left;
+  ExprNode right;
+  public PlusNode(ExprNode left, ExprNode right) {...}
+  public int walk() {
+    int a = left.walk();
+    int b = right.walk();
+    return a+b;
+  }
+}
+>>
+
+but the tree grammar version is often more readable and more
+importantly has the complete spec for an expression as opposed to
+three different class files:
+
+<<
+expr returns [int r=0]
+{
+  int a,b;
+}
+  : #(PLUS a=expr b=expr) {r = a+b;}
+  | #(STAR a=expr b=expr) {r = a*b;}
+  | i:INT {r = Integer.parseInt(i.getText());}
+  ;
+>>
+
+#### Context Information
+
+Actions executed during tree walking often execute easily in isolation
+just on the elements at or just below a particular node such as when
+you are printing a tree back to text.  Visitors are fine for this.
+But when an action needs the results of another action, the visitor
+pattern starts to break down.  The {expr} example from the previous
+section uses the rule (method) return value in the computation for the
+{PLUS} node.  A visitor would have to set instance variables
+somewhere, an unsatisfying solution.
+
+What about when you are deeply nested in a tree and an action needs to
+read values from nodes way above.  For example, you might want to know
+the name of the surrounding procedure when translating python
+declarations to C; new variable names might be prefixed with the
+procedure name to resolve weaker C scoping issues.  Passing values
+downwards as parameters is cumbersome (classical attribute grammars
+have to do this).  Rather than add parameter {methodName} to each
+rule (or {walk()} method), you can set an instance variable though,
+again, this is not particulary satisfying.  You could walk upwards in
+the tree, but this is extremely inefficient and inelegant.
+
+Sometimes an action even needs to set values used by actions
+associated with nodes way above.  Imagine looking for
+implicitly-defined variables in assignments such as {a=3;}.  The
+action should add a declaration to the innermost variable declaration
+list.  For this too, an instance variable is required, but worse, a
+stack of declaration lists is needed because statement blocks may be
+nested and each block may have a declaration list.
+
+The following example combines both types of forward/backward and
+nonnested/nested context-dependent data.
+
+<<
+// ANTLR 2.0 notation
+class PythonTreeWalker extends TreeParser;
+{
+String methodName;
+Stack declStack = new Stack();
+}
+
+method
+    : #( METHOD name:ID block ) {methodName=name.getText();}
+    ;
+
+...
+
+block
+    : {declStack.push(new ArrayList());} // enter block => new decl list
+      #(BLOCK ( stat )+) 
+      {declStack.pop();}                 // exit block => revert to previous
+    ;
+
+stat: assignment
+    | block // nested block
+    | ...
+    ;
+
+assignment
+    : #(ASSIGN id:ID expr)
+      {
+      String var = id.getText();
+      if (!defined(var)) {
+        List decls = declStack.peek();    // most recent decls list
+        decls.add(methodName+"_"+var); // prefix var decls with method name
+      }
+      }
+    ;
+>>
+
+Rule {method} defines value {methodName} for later use in rule
+{assignment}.  Rule {block} makes sure that ever block of statements
+has its own list of declarations so that rule {assignment} can add
+declarations.  Rule {assignment} looks at the top of the stack to find
+the most recently created list of declarations corresponding to the
+innermost enclosing block.
+
+The first thing to quibble with is that instance variables are visible
+to all rules and, hence, are like global variables.  Next, the manual
+push/pop in rule {block} is a hassle and is exactly the behavior of
+local variables if {block} had any (that is, locals pop up on the
+stack in a method and then go away at the end of the method).
+
+There is a nice solution to this problem called _remote attribution_,
+originally invented by Kastens (Uwe Kastens. GAG: A Practical Compiler
+Generator. Springer Verlag, 1983).  Kastens has an {INCLUDING}
+construct that lets a grammar rule reference attributes defined in a
+(possibly distant and indirectly) invoking rule.  Attributes
+associated with rules automatically nest so Kasten's method doesn't
+require explicit stack manipulation.
+
+Pure attribute grammars do not allow arbitrary actions and perform lazy
+attribute evaluation so the equivalent of the following out-of-order
+evaluation is possible:
+
+<<
+int x = y;
+int y = 3;
+>>
+
+I don't find that particularly palatable and so I don't like
+attribute grammars.  I like the grammar + actions strategy of ANTLR.
+
+Anyway, my original tree parser generator, SORCERER, had a mechanism
+that behaved exactly as the example above for "attributes"
+{methodName} and {declStack}.  Let's rewrite the example using one
+possible syntax (that I'm going to change to fit in an enhancement
+discussed at the ANTLR2004 workshop) for ANTLR 3.0:
+
+<<
+// mythical ANTLR 3.0 notation
+grammar PythonTreeWalker;
+
+method
+static attribute String methodName; // don't need to allow nesting
+    : #( METHOD name:ID block ) {@methodName=name.getText();}
+    ;
+
+...
+
+block
+attribute List decls; // new list needed for each block
+    : #(BLOCK ( stat )+) 
+    ;
+
+stat: assignment
+    | block // nested block
+    | ...
+    ;
+
+assignment
+    : #(ASSIGN id:ID expr)
+      {
+      String var = id.getText();
+      if (!defined(var)) {
+        @decls.add(@methodName+"_"+var); // prefix var decls with method name
+      }
+      }
+    ;
+>>
+
+Much cleaner in that there are no instance variables and the stack is
+managed automatically by ANTLR.  Just reference {@decls} and it uses the
+most recent value. :)  No fuss, no muss.
+
+_Reminder to self_: It is possible to statically determine when there
+is no chance an inherited and remotely accessed attribute will be
+available at run time--check all possible rule invocation chains.
+
+Michael Jor, one of the C# code generator guys, asked a good question:
+
+  "Remote attribution is cool but, does it remain useful if one
+already has a symbol table?"
+
+I feel that you do still need it.  There are many contextual things
+you need to track that are not properly stored in the symbol table.
+Further, the symbol table cannot give you a stack of values for a
+single attribute--you have to stack the symbol tables.
+
+#### Multiple Tree Grammars
+
+When using tree grammars for multiple phases, you cut/paste (and
+possibly tweak) the grammar for each phase.  Changes to the tree
+structure must be made across all phase grammars.  It would be nice if
+a single grammar could be used, but with different actions for
+different phases.  Visitors do not have this problem by their very
+nature--just create a different visitor, but as I hope I've convinced
+you above, visitors are not a good solution.
+
+### Combined Passes
+
+I've seen many attempts to resolve this grammar reuse issue.  For
+example, I've seen actions that encode all passes like this:
+
+<<
+switch ( pass ) {
+  case 1 : ...
+  case 2 : ...
+  ...
+}
+>>
+
+That is pretty tough to read, kind of like merging the paragraphs from
+all chapters of a book.  Mentally, you have to unweave or "filter" for
+the current chapter to read the book.
+
+### Method Overriding
+
+A semi-succesful approach is to have a grammar invoke methods that
+programmers can override in subclasses:
+
+<<
+class TP extends TreeParser;
+{
+abstract void foo();
+}
+decl : #(DECL type ID {foo();}) ;
+...
+>>
+
+Subclasses of {TP} can override action {foo} to implement behavior for
+a particular pass.  This requires a new parser type for each pass.
+
+It is difficult to anticipate all locations in the grammar where a
+phase will need an action.  Further, you cannot define variables local
+to rules and set their values for use by future actions.  You have to
+set instance variables to share data between action methods.
+
+### Behavior Objects
+
+A more flexible variant of the subclassing idea using a single parser
+type, but multiple _behavior_ types.  In concept it is like passing in
+a visitor--the difference is that the grammar dictates when the
+actions fire whereas visitors have a uniform "event" location during
+the walk of every node.
+
+<<
+interface TPBehavior {
+  public void foo();
+}
+...
+class TP extends TreeParser;
+{
+TPBehavior behavior;
+public void setBehavior(TPBehavior behavior) { this.behavior=behavior; }
+}
+decl : #(DECL type ID {behavior.foo();}) ;
+...
+>>
+
+The programmer creates a new class that {implements} interface
+{TPBehavior} and gives that to the tree parser.  The same instance of
+the parser can even be reused.
+
+This strategy has the same disadvantage as the subclassing method in
+that you cannot use local variables, parameters, and return values
+effectively.
+
+### Aspects
+
+Another approach might be to use aspect-oriented specifications as
+long as we are thinking about putting actions outside of the grammar.
+Action execution is just an aspect and each phase would be an aspect.
+I admit that I do not know AOP well enough to decide if it is flexible
+enough to place actions where you'd want in a grammar.
+
+### Revision Control Approach
+
+And finally something on the lunatic fringe.  I often like to
+formalize what programmers do naturally rather than trying to impose a
+new, unfamiliar strategy.  What do programmers do naturally?  Whether
+they are deriving a new text grammar from an off-the-shelf text
+grammar or making multiple passes over a tree using a tree grammar,
+you will see them copy the grammar and start modifying or adding
+actions.  This is totally fine until you need to change the grammar;
+you have multiple versions.  Single-point-of-change is an important
+programming principle.
+
+How can we achieve single-point-of-change in the case of multiple
+grammars?  Changes must be broadcast via the original grammar.  An
+intelligent {diff3} program that worked off of the grammar structure
+rather than text lines should be able to handle this.  A GUI using a
+visual diff for the programmer would make this totally reasonable I
+suspect.

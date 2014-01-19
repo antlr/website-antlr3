@@ -1,0 +1,276 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Implementing &quot;break&quot; statement in antlr-based	interpreter
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Implementing%20%22break%22%20statement%20in%20antlr-based%0A%09interpreter&In-Reply-To=%3CCAN_KjYnB1YcByxXmxfr8_4uO5Qs8UsGnh%2BKFHuS%2B6e7%3DXVvLxQ%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="045545.html">
+   <LINK REL="Next"  HREF="045550.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Implementing &quot;break&quot; statement in antlr-based	interpreter</H1>
+    <B>Scott Stanchfield</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Implementing%20%22break%22%20statement%20in%20antlr-based%0A%09interpreter&In-Reply-To=%3CCAN_KjYnB1YcByxXmxfr8_4uO5Qs8UsGnh%2BKFHuS%2B6e7%3DXVvLxQ%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Implementing &quot;break&quot; statement in antlr-based	interpreter">scott at javadude.com
+       </A><BR>
+    <I>Tue Oct 23 13:43:47 PDT 2012</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="045545.html">[antlr-interest] Implementing &quot;break&quot; statement in antlr-based	interpreter
+</A></li>
+        <LI>Next message: <A HREF="045550.html">[antlr-interest] custom error reporting
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#45546">[ date ]</a>
+              <a href="thread.html#45546">[ thread ]</a>
+              <a href="subject.html#45546">[ subject ]</a>
+              <a href="author.html#45546">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>A much better/simpler approach when writing any interpreter with control
+flow is to do it in two phases:
+
+1. parse the file and construct an interpreter
+2. run the interpreter
+
+It looks like you're intermingling these; I think you're building a
+statement list and passing it to the loop -- what if one of the statements
+in that list is a nested loop?
+
+You can implement the control-flow very easily using something like the GoF
+Interpreter pattern. A break or continue can easily be handled by throwing
+an exception that is caught by containing loops, or by having your
+evaluate() methods return an object that has a flag marking break/continue.
+
+Think about something like the following (not tested, but should
+demonstrate the concept)
+
+  // Context is some object that tracks current state, possibly scoped
+variables,
+  //   runtime stack, etc
+  public interface Evaluator {
+    Status evaluate(Context context);
+  }
+  public class Status {
+    private Object value;
+    private boolean isBreak;
+    public Object getValue() {
+      return value;
+    }
+    public boolean isBreak() {
+      return isBreak;
+    }
+    public Status(Object value, boolean isBreak) {
+      this.value = value;
+      this.isBreak = isBreak;
+    }
+  }
+  public class PrintStatement implements Evaluator {
+    private Evaluator value;
+    public PrintStatement(Evaluator value) {
+      this.value = value;
+    }
+    @Override public Status evaluate(Context context) {
+      Object v = value.evaluate(context).getValue();
+      System.out.println(v);
+      return new Status(v, false);
+    }
+  }
+  public class BreakStatement implements Evaluator {
+    @Override public Status evaluate(Context context) {
+      return new Status(null, true);
+    }
+  }
+  public class StatementList implements Evaluator {
+    private List&lt;Evaluator&gt; evaluators = new ArrayList&lt;Evaluator&gt;();
+    public void add(Evaluator statement) {
+      evaluators.add(statement);
+    }
+    @Override public Status evaluate(Context context) {
+      Status status = null;
+      for (Evaluator evaluator : evaluators) {
+        status = evaluator.evaluate(context);
+        if (status.isBreak())
+          return status;
+      }
+      if (status == null)
+        status = new Status(null, false);
+      else
+        status = new Status(status.getValue(), false);
+      return status;
+    }
+  }
+  public class WhileStatement implements Evaluator {
+    private Evaluator condition;
+    private Evaluator body;
+    public WhileStatement(Evaluator condition, Evaluator body) {
+      this.condition = condition;
+      this.body = body;
+    }
+    @Override public Status evaluate(Context context) {
+      Status result = null;
+      while(Boolean.TRUE.equals(condition.evaluate(context).getValue())) {
+        result = body.evaluate(context);
+        if (result.isBreak())
+          break;
+      }
+      if (result == null)
+        result = new Status(null, false);
+      else
+        result = new Status(result.getValue(), false);
+      return result;
+    }
+  }
+
+Using similar objects, all you need to do is have your parser create
+instances of these evaluators, then call evaluate(context) on the top level.
+
+This also makes it *very* easy to debug, as you can separate the &quot;did I
+parse it and create the structure correctly&quot; and separately the &quot;am I
+running it correctly&quot;. It also lends itself much more cleanly to setting up
+a debugger for your target language.
+
+Hope this helps,
+-- Scott
+
+----------------------------------------
+Scott Stanchfield
+<A HREF="http://javadude.com">http://javadude.com</A>
+
+
+On Tue, Oct 23, 2012 at 3:51 PM, Juancarlo A&#241;ez &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">apalala at gmail.com</A>&gt; wrote:
+
+&gt;<i> Michael,
+</I>&gt;<i>
+</I>&gt;<i> Simplest, is best.
+</I>&gt;<i>
+</I>&gt;<i> One option is to split the rules for statement sequences into two: those
+</I>&gt;<i> allowed within loops, and everything else.
+</I>&gt;<i>
+</I>&gt;<i> The other is to allow a &quot;break&quot; in any statement sequence, and deal with
+</I>&gt;<i> it's validity later.
+</I>&gt;<i>
+</I>&gt;<i> There's a lot of semantic nuances to a programming language that are very
+</I>&gt;<i> difficult to solve at the syntactic level.
+</I>&gt;<i>
+</I>&gt;<i> -- Juanca
+</I>&gt;<i>
+</I>&gt;<i> On Tue, Oct 23, 2012 at 3:16 PM, Michael Cooper &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">tillerman35 at yahoo.com</A>
+</I>&gt;<i> &gt;wrote:
+</I>&gt;<i>
+</I>&gt;<i> &gt; Say you have your basic &quot;for&quot; or &quot;while&quot; loop, e.g.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; for(i=0; i&lt;10; i++) {
+</I>&gt;<i> &gt;   print i
+</I>&gt;<i> &gt; }
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; In the &quot;pie&quot; example, the author has a while loop that uses a &quot;defer&quot;
+</I>&gt;<i> &gt; parameter to indicate that the interpreter will do the job of evaluating
+</I>&gt;<i> &gt; the expr that determines if the loop proceeds.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;    |   'while' expr[true] slist[true]
+</I>&gt;<i> &gt;         {if (!defer) interp.whileloop($expr.start, $slist.start);}
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; I would like to be able to break out of a &quot;for&quot; or &quot;while&quot; loop, as is
+</I>&gt;<i> &gt; done in many programming languages, e.g.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; //Read rows from a cursor and print out the contents of field 1 until it
+</I>&gt;<i> &gt; says &quot;break&quot;
+</I>&gt;<i> &gt; while cursor.hasrows() {
+</I>&gt;<i> &gt;   cursor.getrow()
+</I>&gt;<i> &gt;   if cursor.getfield[1] = &quot;stop&quot; then break  //&lt;-- When field one says
+</I>&gt;<i> &gt; &quot;break&quot; we should exit the &quot;while&quot; loop.
+</I>&gt;<i> &gt;   print cursor.getfield[1]
+</I>&gt;<i> &gt; }
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; What I think I need to do is add a boolean to my interpreter that
+</I>&gt;<i> &gt; indicates that a break statement has been encountered, and then test for
+</I>&gt;<i> &gt; that condition = true in each rule action.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; so in my &quot;statement&quot; rule, I would add an alternative:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; | 'break' { if(!defer &amp;&amp; !interp.breakfound) interp.break = true; }
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; and then add the &quot;&amp;&amp; !interp.breakfound)&quot; into every rule.  That way, the
+</I>&gt;<i> &gt; parser would not execute any interpreter functions until the breakfound
+</I>&gt;<i> &gt; condition was re-set.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; I would also need to save the break condition prior to entering
+</I>&gt;<i> break-able
+</I>&gt;<i> &gt; constructs (loops and functions are the only ones I can think of) so
+</I>&gt;<i> that I
+</I>&gt;<i> &gt; could restore it after the end of the construct.  That way the break
+</I>&gt;<i> &gt; statement only exits the loop it executes in.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; e.g. in class Interpreter:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; public whileloop(Token expr_start, Token slist_start) {
+</I>&gt;<i> &gt;   boolean saved_breakfound = this.breakfound;
+</I>&gt;<i> &gt;     ...Handle the loop stuff here...
+</I>&gt;<i> &gt;   this.breakfound = saved_breakfound;
+</I>&gt;<i> &gt; }
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Does this make sense?  Is there a better way that I'm missing?  I imagine
+</I>&gt;<i> &gt; the same idea could be used to implement a &quot;return(value)&quot; statement in a
+</I>&gt;<i> &gt; function as well.  The only difference would be that a return statement
+</I>&gt;<i> &gt; would exit the function no matter how deep it was into loops.  For that,
+</I>&gt;<i> &gt; I'd need some kind of tri-state indicator, with values like 0 =&gt;
+</I>&gt;<i> continue,
+</I>&gt;<i> &gt; 1=&gt; break out of loop, 2 =&gt; return from function.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Any thoughts?
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Thanks!
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> &gt; Unsubscribe:
+</I>&gt;<i> &gt; <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i> &gt;
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> --
+</I>&gt;<i> Juancarlo *A&#241;ez*
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe:
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i>
+</I></PRE>
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="045545.html">[antlr-interest] Implementing &quot;break&quot; statement in antlr-based	interpreter
+</A></li>
+	<LI>Next message: <A HREF="045550.html">[antlr-interest] custom error reporting
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#45546">[ date ]</a>
+              <a href="thread.html#45546">[ thread ]</a>
+              <a href="subject.html#45546">[ subject ]</a>
+              <a href="author.html#45546">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

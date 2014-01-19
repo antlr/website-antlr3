@@ -1,0 +1,238 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Confused about backtracking in lexer rules
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Confused%20about%20backtracking%20in%20lexer%20rules&In-Reply-To=%3C4920149F.40201%40zip-it.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="031584.html">
+   <LINK REL="Next"  HREF="031587.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Confused about backtracking in lexer rules</H1>
+    <B>William Rose</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Confused%20about%20backtracking%20in%20lexer%20rules&In-Reply-To=%3C4920149F.40201%40zip-it.org%3E"
+       TITLE="[antlr-interest] Confused about backtracking in lexer rules">wrose at zip-it.org
+       </A><BR>
+    <I>Sun Nov 16 04:39:59 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="031584.html">[antlr-interest] Number tokenizer vs. number grammar
+</A></li>
+        <LI>Next message: <A HREF="031587.html">[antlr-interest] Confused about backtracking in lexer rules
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#31585">[ date ]</a>
+              <a href="thread.html#31585">[ thread ]</a>
+              <a href="subject.html#31585">[ subject ]</a>
+              <a href="author.html#31585">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+I'm trying to write a simple wiki markup parser.  One basic task that's 
+going strangely for me is trying to pull out URLs in the lexer so I can 
+send them as a single token to the parser.  I originally thought I would 
+be able to write a lexer rule that would start trying to match a URL, 
+fail, then retry the sub tokens it has been working towards matching a 
+URL from and trying to match them someplace else.  I'm guessing this is 
+backtracking, and all I've read around the place says that ANTLR 3 is 
+pretty cluey at working it out (I'm using 3.1.1, via ANTLRWorks 1.2.1, 
+with Java code generation).
+
+What I'm finding is that the lexer starts matching the URL, gets to a 
+point where it can't match the character, then drops everything it has 
+read so far and starts lexing from the next character, losing the 
+initially matched tokens.
+
+I've tried to find out how to stop this, but the best I've come up with 
+is options { backtrack = true; }, which didn't work.  Syntactic or 
+semantic predicates are often mentioned as helpful, but I don't see how 
+I can write a predicate to help with this decision.
+
+Here's my trimmed-down grammar, with the final two lexer rules being of 
+most interest (I expect failed matches of URL to backtrack and retry TEXT):
+
+--- LexLose.g ---
+grammar LexLose;
+
+start    :   
+        element* EOF
+    ;
+
+element    :    word
+    |    punctuation
+    |    whitespace
+    ;
+
+whitespace
+    :    SPACES
+    ;
+
+word    :    URL
+    |    TEXT
+    ;
+   
+punctuation
+    :    COLON
+    |    SLASH
+    |    HYPHEN
+    |    ASTERISK
+    ;
+
+// Lexer
+fragment CR
+    :    '\r';
+fragment LF
+    :    '\n';
+fragment SPACE
+    :    ' ';
+fragment TAB
+    :    '\t';
+
+fragment LETTER
+    :    'a' .. 'z'
+    |    'A' .. 'Z'
+    ;
+fragment DIGIT
+    :    '0' .. '9'
+    ;
+
+SPACES    :    (SPACE | TAB | CR | LF)+
+    ;
+
+COLON    :    ':';
+SLASH    :    '/';
+HYPHEN    :    '-';
+ASTERISK:    '*';
+
+URL    :    LETTER (LETTER | DIGIT | HYPHEN)* COLON ~(SPACE | TAB | CR | 
+LF)+
+    ;
+   
+TEXT    :    ~(COLON | SLASH | HYPHEN | ASTERISK | SPACE | TAB | CR | LF)*
+    ;
+--- end LexLose.g ---
+
+A sample input file that shows some strangeness is:
+
+Most would agree: ANTLR makes life easier.
+And those that would't probably came from 
+<A HREF="http://antlr.org/mailing-list.">http://antlr.org/mailing-list.</A>  Although...
+
+Running the lexer leads to an error lexing &quot;agree:&quot; -- it looked like a 
+URL all the way up until there was a space after the colon.  But instead 
+of retrying and matching TEXT COLON, it loses the incoming data.  Is 
+there a way to make the lexer return TEXT COLON as the tokens?
+
+One alternative I've tried is to make URL into a parser rule, but I 
+found that ANTLR would warn about the non-determinism of trailing tokens 
+that matched either url or punctuation:
+
+--- alternative LexLose.g ---
+grammar LexLose;
+
+start    :   
+        element* EOF
+    ;
+
+element    :    word
+    |    punctuation
+    |    whitespace
+    ;
+
+whitespace
+    :    SPACES
+    ;
+
+word    :    url
+    |    TEXT
+    ;
+   
+punctuation
+    :    COLON
+    |    SLASH
+    |    HYPHEN
+    |    ASTERISK
+    ;
+
+url    :    scheme COLON locator
+    ;
+
+scheme    :    TEXT (HYPHEN TEXT)*
+    ;
+
+locator    :    (TEXT | COLON | SLASH | HYPHEN | ASTERISK)+
+    ;
+   
+// Lexer
+fragment CR
+    :    '\r';
+fragment LF
+    :    '\n';
+fragment SPACE
+    :    ' ';
+fragment TAB
+    :    '\t';
+
+fragment LETTER
+    :    'a' .. 'z'
+    |    'A' .. 'Z'
+    ;
+fragment DIGIT
+    :    '0' .. '9'
+    ;
+
+SPACES    :    (SPACE | TAB | CR | LF)+
+    ;
+
+COLON    :    ':';
+SLASH    :    '/';
+HYPHEN    :    '-';
+ASTERISK:    '*';
+
+TEXT    :    ~(COLON | SLASH | HYPHEN | ASTERISK | SPACE | TAB | CR | LF)*
+    ;
+--- end alternative LexLose.g ---
+
+Is this the better way forward?  And if so, is there a way to make this 
+grammar warning-free?
+
+cheers,
+
+Will
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="031584.html">[antlr-interest] Number tokenizer vs. number grammar
+</A></li>
+	<LI>Next message: <A HREF="031587.html">[antlr-interest] Confused about backtracking in lexer rules
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#31585">[ date ]</a>
+              <a href="thread.html#31585">[ thread ]</a>
+              <a href="subject.html#31585">[ subject ]</a>
+              <a href="author.html#31585">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,165 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] &quot;RE:  ANTLR performance
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%22RE%3A%20%20ANTLR%20performance&In-Reply-To=%3C86403CA0939415448BCCB83855EFE09AA676CD%40Bloodymary.ironwillgames.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="032334.html">
+   <LINK REL="Next"  HREF="032343.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] &quot;RE:  ANTLR performance</H1>
+    <B>Sam Harwell</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%22RE%3A%20%20ANTLR%20performance&In-Reply-To=%3C86403CA0939415448BCCB83855EFE09AA676CD%40Bloodymary.ironwillgames.com%3E"
+       TITLE="[antlr-interest] &quot;RE:  ANTLR performance">sharwell at pixelminegames.com
+       </A><BR>
+    <I>Thu Jan 15 08:46:52 PST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="032334.html">[antlr-interest] ANTLR performance
+</A></li>
+        <LI>Next message: <A HREF="032343.html">[antlr-interest] ANTLR performance
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#32339">[ date ]</a>
+              <a href="thread.html#32339">[ thread ]</a>
+              <a href="subject.html#32339">[ subject ]</a>
+              <a href="author.html#32339">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Jan,
+
+Thanks for taking the time to write up this information. I've actually been curious about these results for a while. :)
+
+One thing to bear in mind: the design of the ANTLR grammar you used makes all the difference in the world. ANTLR doesn't do things like cross-rule left factoring during code generation, so if you don't take the time to carefully do this yourself, you'll see a moderate to enormous impact on the parse speed.
+
+Sempreds often have a large performance hit relative to code written to avoid them; synpreds often have a similar impact compared to code carefully written to not need them, especially if they look far ahead.
+
+Did you use my method for the expression evaluator?
+
+Sometimes people use sempreds to make sure that syntactically unambiguous semantic rules of the language are enforced by the parser. These are much faster if they are placed in a tree parser that operates on an already built AST.
+
+C/C++ are very difficult to parse, with that conclusion based on the difficulty of creating an LL parser from the language specification's use of both EBNF and the paragraphs around it. Unfortunately the grammar in the spec alone is ambiguous, and in the case of C++, the grammar is ambiguous all the way until type resolution is performed. A parser with a feature I'm calling &quot;multi-branch AST&quot; support with short-circuit evaluation during the type resolution process would offer *tremendous* time performance improvements for this kind of language. I this case, a parser could keep both AST branches in at a syntactically ambiguous point in a special node, and branches could be eliminated during type resolution. Once an AST has 0 nodes with multiple branches, you know you have the correct representation under the semantic rules of the language. Currently, ANTLR has produced grammars that are slower than GCC's. I predict that with new features added to ANTLR (cross-rule generated code optimization, multi-branch support, and some others), ANTLR could produce a significantly faster parser than the ones currently available while continuing to offer its primary advantage of working with verifiable code.
+
+Sam
+
+-----Original Message-----
+From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Jan Obdr&#382;&#225;lek
+Sent: Thursday, January 15, 2009 9:20 AM
+To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: [antlr-interest] ANTLR performance
+
+Hello,
+
+for our student research project we implemented a C grammar in ANTLR 3.1. (The grammar fully implements ANSI C99, and mostly implements the GNU C extensions - the notable exception being the attributes, which are a real pain.) However we found the performance of the parser to be a bit lacking. We therefore ran some tests. In addition to the default Java target, we modified the grammar for the C target. The results were then compared to the results obtained by using the GNU C compiler. This is a fair comparison, since gcc also uses a  top-down recursive parser (although hand-coded). Actually the test is tougher on gcc, since gcc does full compilation, compared to just building the AST in the case of ANTLR.
+
+The results can be summarized as follows (more details about the test at the end of this post):
+
+ - ANTLR/Java is obviously the slowest one [and there is a serious start-up/close-down overhead]
+ - ANTLR/C is faster, but still miles behind the gcc
+ - ANTLR/C uses the most system time (analysis using strace points to many more memory-related calls to kernel)
+ - ANTLR/C allocates the most memory. Several times the memory used by gcc
+
+The comparison isn't very rigorous/scientific (by any means), but the times are represenative, being rougly the average time for many different runs. I was quite surprised by how much slower ANTLR is comparing to the GCC. I also tried to profile the C target, the results from gprof are attached.
+
+Any comments?
+
+Best regards,
+	Jan Obdr&#382;&#225;lek
+
+--
+Dr. Jan Obdr&#382;&#225;lek &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">obdrzalek at fi.muni.cz</A>&gt; Faculty of Informatics, Masaryk University, Brno, Czech Republic
+
+
+---------------
+
+The grammar:
+- backtracking is disabled
+- only a few semantic/syntactic predicates
+- the most obvious bottlenecks were fixed by left factorization
+
+The input:
+- preprocessed file from the Linux kernel, attributes removed
+- ~20Kloc, ~700kB:
+~/tmp/test$ wc a.c
+ 20604  80707 697787 a.c
+
+The results
+===========
+
+GCC
+---
+~/tmp/test$ gcc --version
+gcc (Ubuntu 4.3.2-1ubuntu11) 4.3.2
+
+~/tmp/test$ time gcc -S a.c
+a.c:1026: warning: conflicting types for built-in function 'vsprintf'
+a.c:1030: warning: conflicting types for built-in function 'vsnprintf'
+a.c:1041: warning: conflicting types for built-in function 'vsscanf'
+
+real	0m0.425s
+user	0m0.384s
+sys	0m0.036s
+
+ANTLR/C
+-------
+~/tmp/test$ make
+java -cp lib/antlr-3.1.1.jar org.antlr.Tool  GNUCa.g ANTLR Parser Generator  Version 3.1.1
+
+~/tmp/test$ time ./parser
+Reading a.c
+
+real	0m1.958s
+user	0m1.284s
+sys	0m0.656s
+
+ANTLR/Java
+----------
+~/xxx/tests$ java -version
+java version &quot;1.6.0_10&quot;
+Java(TM) SE Runtime Environment (build 1.6.0_10-b33) Java HotSpot(TM) 64-Bit Server VM (build 11.0-b15, mixed mode)
+
+~/xxx/tests$ time java Test
+
+real	0m3.507s
+user	0m5.504s
+sys	0m0.332s
+
+NOTE: Java VM uses 2 CPU cores, therefore the difference between real and user/sys time
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="032334.html">[antlr-interest] ANTLR performance
+</A></li>
+	<LI>Next message: <A HREF="032343.html">[antlr-interest] ANTLR performance
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#32339">[ date ]</a>
+              <a href="thread.html#32339">[ thread ]</a>
+              <a href="subject.html#32339">[ subject ]</a>
+              <a href="author.html#32339">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

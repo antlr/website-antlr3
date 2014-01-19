@@ -1,0 +1,235 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] JavaScript grammar
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20JavaScript%20grammar&In-Reply-To=%3CC3525AF49F7D374D8E4D3C46ED4BC6211685DD%40srvxdcex.xebic.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="027476.html">
+   <LINK REL="Next"  HREF="027501.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] JavaScript grammar</H1>
+    <B>Patrick Hulsmeijer</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20JavaScript%20grammar&In-Reply-To=%3CC3525AF49F7D374D8E4D3C46ED4BC6211685DD%40srvxdcex.xebic.com%3E"
+       TITLE="[antlr-interest] JavaScript grammar">phulsmeijer at xebic.com
+       </A><BR>
+    <I>Mon Mar 31 00:18:35 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="027476.html">[antlr-interest] JavaScript grammar
+</A></li>
+        <LI>Next message: <A HREF="027501.html">[antlr-interest] JavaScript grammar
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#27496">[ date ]</a>
+              <a href="thread.html#27496">[ thread ]</a>
+              <a href="subject.html#27496">[ subject ]</a>
+              <a href="author.html#27496">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Chris,
+
+ 
+
+I've written an complete ECMAScript compiant grammar recently.
+
+I've struggled with the following issues:
+
+-          Unicode identifiers
+
+-          Regular expression literals
+
+-          Semicolon insertion
+
+ 
+
+For the semicolon insertion issue I've taken the following approach.
+The line terminators are left on the hidden channel. In the parser the
+semicolon (e.g. in statements) is defined as a rule. In this rule I scan
+the token stream for line terminators and promote the first encountered
+to the default channel. Line terminator are also an alternative in this
+rule. Something like this:
+
+ 
+
+semic:
+
+@init
+
+{
+
+                int marker = input.mark();
+
+                promoteEOL();
+
+}
+
+                : SEMIC
+
+                | EOL
+
+                | RBRACE { input.rewind(marker); }
+
+                | EOF
+
+                ;
+
+ 
+
+The grammar also scans for line terminators in places where the
+specification states there are none allowed (e.g. between &quot;return&quot; and
+the following optional expression in the return statement).
+
+ 
+
+Hope this helps.
+
+ 
+
+Regards,
+
+patrick.
+
+ 
+
+From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>
+[mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Chris Lambrou
+Sent: zondag 30 maart 2008 7:43
+To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: Re: [antlr-interest] JavaScript grammar
+
+ 
+
+
+The approach I took was to keep LT tokens on the default channel, for
+the benefit of the few rules where line terminators are important. For
+example, the ECMAScript spec defines a return statement as follows:
+
+'return' [no LineTerminator here] Expression[optional] ';'
+
+In the ANTLR grammar, this becomes:
+
+returnStatement : 'return' expression (LT | ';')! ;
+
+You can see that the statement may end either with a semicolon or with a
+line terminator, which the ECMAScript spec permits. This appears to work
+just fine. The only part I find annoying is that because the LT tokens
+are not on the hidden channel, all of the other rules need to deal with
+them too. For example, the ifStatement rule looks like this:
+
+ifStatement : 'if' LT!* '(' LT!* expression LT!* ')' LT!* statement
+(LT!* 'else' LT!* statement)? ;
+
+when it would be much clearer if it looked like this:
+
+ifStatement : 'if' '(' expression ')' statement ('else' statement)? ;
+
+This affects all of the parser rules, which makes the grammar less
+readable. I did think about performing some filtering of the token
+stream between the lexing and parsing phases, but the rules for
+automatic semicolon insertion defined by the ECMAScript are a bit nasty.
+It's just too difficult to actually determine where the virtual
+semicolons should be, without the grammatical context that only the
+parsing stage can provide. In any case, I think the grammar would be
+less useful if it required any special runtime tweaks to make it work.
+
+I think what would really solve the problem would be to have the LT
+tokens on the hidden channel by default, and then dynamically switch
+them to the default channel only for those rules that require it. I'm
+afraid I'm not yet familiar enough with channels and token streams to
+know if this is even possible. My guess is that it probably isn't, but
+it can't hurt to ask.
+
+Chris
+
+P.S. I've just remembered that although the grammar compiles just fine,
+I couldn't get it to work with the ANTLRWorks debugger. It seems like
+it's the huge Identifier lexer rule that causes the problem - I had to
+temporarily replace it with something simpler in order to persuade the
+debugger to work. I presume this is a bug in ANTLRWorks - if anyone is
+interested in this, I can provide more information, perhaps off-line.
+
+
+
+On 30/03/2008, Benjamin Shropshire &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">shro8822 at vandals.uidaho.edu</A>&gt; wrote:
+
+Chris Lambrou wrote:
+
+
+[snip] 
+
+	 
+
+	&gt;    1. Unlike other whitespace characters, line separators
+(represented
+	
+	&gt;       by my LT token type) are important in JavaScript, as
+you're
+	&gt;       allowed to use them to terminate statements instead of
+the usual
+	&gt;       terminating semicolon character. As a result, I cannot
+'hide'
+	&gt;       line separators like other whitespace characters, and my
+grammar
+	&gt;       is peppered with LT!* sequences. Is there a way to place
+the LT
+	&gt;       tokens on the hidden channel, and then optionally reveal
+them
+	&gt;       only in the few rules that require it?
+
+
+[snip] 
+
+	 
+
+	It is most likely not kosher, but if you can look at an LT in a
+sequence
+	of tokens test if it is a virtual semicolon (without knowing
+anything
+	but the adjoining tokens) then some sort of preprocessor (I'm
+thinking:
+	lex, filter tokens into new lex stream, parse) might be able to
+convert
+	what is needed. You might call the filter a TokenSedStream or
+something
+	like that. I did something like that (but with the text) to deal
+with
+	indentation sensitivity in my only attempt with ANTLR. As I
+said, not
+	kosher, but if all else fails &quot;You gotta go with what works.&quot;
+(Law #37)
+
+ 
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20080331/3247acef/attachment-0001.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20080331/3247acef/attachment-0001.html</A> 
+</PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="027476.html">[antlr-interest] JavaScript grammar
+</A></li>
+	<LI>Next message: <A HREF="027501.html">[antlr-interest] JavaScript grammar
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#27496">[ date ]</a>
+              <a href="thread.html#27496">[ thread ]</a>
+              <a href="subject.html#27496">[ subject ]</a>
+              <a href="author.html#27496">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

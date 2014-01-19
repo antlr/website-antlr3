@@ -1,0 +1,202 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] passing stuff from lexer to parser
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20passing%20stuff%20from%20lexer%20to%20parser&In-Reply-To=%3C2C7FFDD4-38BD-493C-8AB5-B794E339B1E1%40ucar.edu%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="025475.html">
+   <LINK REL="Next"  HREF="025499.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] passing stuff from lexer to parser</H1>
+    <B>siemsen at ucar.edu</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20passing%20stuff%20from%20lexer%20to%20parser&In-Reply-To=%3C2C7FFDD4-38BD-493C-8AB5-B794E339B1E1%40ucar.edu%3E"
+       TITLE="[antlr-interest] passing stuff from lexer to parser">siemsen at ucar.edu
+       </A><BR>
+    <I>Wed Jan  2 13:54:47 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="025475.html">[antlr-interest] passing stuff from lexer to parser
+</A></li>
+        <LI>Next message: <A HREF="025499.html">[antlr-interest] passing stuff from lexer to parser
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25495">[ date ]</a>
+              <a href="thread.html#25495">[ thread ]</a>
+              <a href="subject.html#25495">[ subject ]</a>
+              <a href="author.html#25495">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Tom, Gavin,
+
+As you suggest, my design is a bit strange, but it's driven by the  
+the arrangement of the source files.  I don't control the source  
+files.  They are class definitions of the Common Information Model  
+(see <A HREF="http://www.dmtf.org/standards/cim/cim_schema_v217/">http://www.dmtf.org/standards/cim/cim_schema_v217/</A>).  Each class  
+definition is in a single file, in a language called Managed Object  
+Format, or MOF.  I'm translating them into Java files.  The source  
+files are arranged on per class, as several hundred separate files in  
+about 13 subdirectories.  A single top-level file contains include  
+statements that include all the other files, preceded by 2 files that  
+define language elements used in every other file.  The include file  
+starts like this:
+
+#pragma include (&quot;qualifiers.mof&quot;)
+#pragma include (&quot;qualifiers_optional.mof&quot;)
+#pragma include (&quot;Core/CIM_ManagedElement.mof&quot;)
+#pragma include (&quot;Core/CIM_ManagedSystemElement.mof&quot;)
+#pragma include (&quot;Core/CIM_SystemStatisticalInformation.mof&quot;)
+#pragma include (&quot;Database/CIM_CommonDatabaseSettingData.mof&quot;)
+#pragma include (&quot;Database/CIM_CommonDatabaseStatistics.mof&quot;)
+#pragma include (&quot;Database/CIM_DatabaseResourceStatistics.mof&quot;)
+
+etc.
+
+The top-level file contains nothing but include statements, and none  
+of the other files contain include statements, but the first 2  
+included files contain code that is needed by each of the other  
+files.  The files are included in order such that superclasses are  
+defined before subclasses, but that isn't really important for  
+translation.
+
+When I wrote the translator, I just implemented the &quot;how to handle  
+include files&quot; scheme, before I learned that there were no other  
+include statements to be found in any of the other files.  I found  
+out that ANTLR has no trouble lexing the entire set of files into a  
+single stream of tokens.  It seemed &quot;big&quot;, but it works, and I'm not  
+sure it's a good idea to change to an approach that would parse the  
+files one-at-a-time.  Such an approach would assume that the layout  
+of the source files is static.  New versions of the Common  
+Information Model appear fairly regularly, and there's no guarantee  
+that the layout of the source files won't change.
+
+Would it be possible to inject a token into the token stream just  
+before I switch to the include file and call reset?  In the  
+PragmaInclude lexer rule, can I call &quot;emit&quot; to do it, and make the  
+token contain the include file name?  I haven't done anything like  
+this before, I just wonder if it's reasonable.
+
+-- Pete
+
+
+On Jan 1, 2008, at 10:34 PM, Thomas Brandon wrote:
+
+&gt;<i> On Jan 2, 2008 3:48 PM,  &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">siemsen at ucar.edu</A>&gt; wrote:
+</I>&gt;&gt;<i> Gavin,
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Thanks, that makes perfect sense.  It's certainly better than what I
+</I>&gt;&gt;<i> was trying to do with a HashMap.  I think I'm thinking about this
+</I>&gt;&gt;<i> more clearly now.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I understand the idea, but I can't seem to implement it.  I have a
+</I>&gt;&gt;<i> &quot;PragmaInclude&quot; lexer rule that reads each include statement and
+</I>&gt;&gt;<i> switches the input stream to the new file.  It works.  I'd like to do
+</I>&gt;&gt;<i> what you suggest, and access the PragmaInclude token in the parser,
+</I>&gt;&gt;<i> so the parser can see the file name.  The odd thing is that the lexer
+</I>&gt;&gt;<i> doesn't seem to generate a PragmaInclude token.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Attached is the grammar.  In it, the &quot;compilerDirective&quot; parser rule
+</I>&gt;&gt;<i> uses the PragmaInclude token.  I couldn't get compilerDirective to
+</I>&gt;&gt;<i> &quot;fire&quot; while parsing.  I discovered that I could comment the
+</I>&gt;&gt;<i> compilerDirective rule completely and the translator would still
+</I>&gt;&gt;<i> behave the same.  It seems to me that the lexer never creates a
+</I>&gt;&gt;<i> PragmaInclude token, even though the PragmaInclude definitely  
+</I>&gt;&gt;<i> executes.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> What am I missing?
+</I>&gt;<i> The call to Lexer.reset() clears the information token information
+</I>&gt;<i> from the PragmaInclude rule. In fact the call to setCharStream calls
+</I>&gt;<i> reset() also so this seems redundant and removing it won't solve the
+</I>&gt;<i> issue (the extra call will additionally seek the new token stream to 0
+</I>&gt;<i> but this shouldn't be needed). Rather than calling setCharStream you
+</I>&gt;<i> could update input directly and not call reset though this is not
+</I>&gt;<i> really advisable as future versions of ANTLR could easily break this
+</I>&gt;<i> (I think 3.1 will).
+</I>&gt;<i> Your design seems somewhat strange. Can the top level file also
+</I>&gt;<i> include normal statements or only includes? Where does the output for
+</I>&gt;<i> normal statements go? Can the included files contain includes and if
+</I>&gt;<i> so what happens with the output for them?
+</I>&gt;<i> It looks like you're processing a list of different input files to be
+</I>&gt;<i> separately processed, not a file with includes. In that case I think
+</I>&gt;<i> Gavin's suggestion of separately processing each file is better. Then
+</I>&gt;<i> you top level grammar would just handle the include syntax and end up
+</I>&gt;<i> with a list linking include file names to ASTs or templates or
+</I>&gt;<i> whatever the result of processing each include is.
+</I>&gt;<i>
+</I>&gt;<i> Tom.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> -- Pete
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> On Jan 1, 2008, at 3:13 PM, Gavin Lambert wrote:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> At 10:02 2/01/2008, <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">siemsen at ucar.edu</A> wrote:
+</I>&gt;&gt;&gt;&gt;<i> To handle the include statements, I use the mechanism described in
+</I>&gt;&gt;&gt;&gt;<i> the ANTLR Wiki page titled &quot;How do I implement include files?&quot;.
+</I>&gt;&gt;&gt;&gt;<i> It works great.  It does its magic during the lexer phase.  So all
+</I>&gt;&gt;&gt;&gt;<i> the source files are lexed first into one big token stream, then
+</I>&gt;&gt;&gt;&gt;<i> the parser starts.
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> Currently, my translator just emits output to standard out, as one
+</I>&gt;&gt;&gt;&gt;<i> text stream.  Now I'm ready to make it put the output into
+</I>&gt;&gt;&gt;&gt;<i> directories and files.  The source text is a set of things with
+</I>&gt;&gt;&gt;&gt;<i> names like CIM_DatabaseResourceStatistics, so I know what to name
+</I>&gt;&gt;&gt;&gt;<i> each output file.  I just need to know what directory to put each
+</I>&gt;&gt;&gt;&gt;<i> output file in.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> During the lexer phase, I store the name-to-directory information
+</I>&gt;&gt;&gt;&gt;<i> in a HashMap.  So for example, the HashMap tells me that the
+</I>&gt;&gt;&gt;&gt;<i> output file named CIM_DatabaseResourceStatistics.java belongs in
+</I>&gt;&gt;&gt;&gt;<i> the output subdirectory named &quot;Database&quot;.
+</I>&gt;&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;&gt;<i> I need to pass the HashMap from the lexer to the parser.  Is there
+</I>&gt;&gt;&gt;&gt;<i> a good way to do it?  Am I thinking about the problem correctly?
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;&gt;<i> Probably the easiest way to do this is to pass an INCLUDE token up
+</I>&gt;&gt;&gt;<i> to the parser that contains the full filename, and let the parser
+</I>&gt;&gt;&gt;<i> reconstruct the HashMap itself.  Or you could use it in a scope
+</I>&gt;&gt;&gt;<i> instead, since presumably everything else is logically contained
+</I>&gt;&gt;&gt;<i> within one or more INCLUDEs.
+</I>&gt;&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20080102/5d1d68ed/attachment-0001.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20080102/5d1d68ed/attachment-0001.html</A> 
+</PRE>
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="025475.html">[antlr-interest] passing stuff from lexer to parser
+</A></li>
+	<LI>Next message: <A HREF="025499.html">[antlr-interest] passing stuff from lexer to parser
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25495">[ date ]</a>
+              <a href="thread.html#25495">[ thread ]</a>
+              <a href="subject.html#25495">[ subject ]</a>
+              <a href="author.html#25495">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

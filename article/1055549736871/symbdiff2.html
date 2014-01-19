@@ -1,0 +1,375 @@
+<html>
+
+<head>
+<title>Symbolic Differentiation Part II</title>
+</head>
+
+<body bgcolor="#FFFFFF">
+
+<table border="0" width="650" cellspacing="0" cellpadding="0" height="397">
+  <tr>
+    <td width="150" valign="top" height="235"><p align="center"><img
+    src="http://www.antlr.org/logo.gif" alt="logo.gif (4249 bytes)" width="111" height="144"></p>
+    <p align="center">&nbsp;</p>
+    <p align="center">&nbsp;
+    </td>
+    <td width="20" valign="top"></td>
+    <td valign="top">
+<font face="ARIAL" size="-1">
+<p>
+<font size="+2">
+Symbolic Differentiation Part II
+</font>
+
+<p>
+<i>Terry Brugger</i>
+
+<p>
+
+<p>
+[email: <a href="mailto:zow@acm.org">zow@acm.org</a>]
+
+<P>A previous entry in the Field Guide explained how the Polynomial Parser from Language Translation Using PCCTS &amp; C++ could be constructed in ANTLR 2. This Field Guide entry expands upon that to construct the AST for the Poly Parser.</P>
+<P>The first advantage to ANTLR 2 that appears in this section is that a <CODE>CommonAST</CODE> class has already been constructed. This class performs all of the functions described by <CODE>AST</CODE> on page 54. <CODE>CommonAST</CODE> is a concrete subclass of abstract class <CODE>BaseAST</CODE>, which defines most of the behaviour for ASTs. In fact, very few changes need to be made. Most all of the changes stem from differences between Java and C++. Our <CODE>PolyMain.java</CODE> may remain unchanged. The interp described in the text is the same. The assign rule looks like:</P>
+<PRE>assign
+	: ID "="^ poly ";"!
+		{ System.out.println( #assign.toStringList() ); }
+	;</PRE>
+<P>The only change here is in the action. Rules can be referred to using the syntax #name. The <CODE>poly</CODE> rule is unchanged. <CODE>term</CODE> is changed primarily due to writer's prerogative (described <A HREF="ANTLR 2 Book Tutorial.html">previously</A>):</P>
+<PRE>term
+	:! coeff:coefficient
+	   ( var:reg
+	     ( "^" pow:exp
+		{ #term = #(#[MULT, "MULT"], #coeff,
+			  #(#[EXP, "EXP"], #var, #pow)); }
+	     |  { #term = #(#[MULT, "MULT"], #coeff, #var); }
+	     )
+	   |    { #term = #coeff; }
+	   )
+	|! var2:reg ( "^" pow2:exp
+			{ #term = #(#[EXP, "EXP"], #var2, #pow2); }
+		    |	{ #term = #var2; }
+		    )
+		
+	;</PRE>
+<P>The two main changes that aren't related to variable name changes stem from the combination of <CODE>bigterm</CODE> and <CODE>term</CODE> (which was done for simplicity) and the breaking of the second option into two possible actions. Separate actions were created so that we could model the option both with and without an <CODE>EXP</CODE> node. We need to manually create the <CODE>EXP</CODE> node because our <CODE>"^"</CODE> is just interpreted as a string and only a literal string node is created for it by default. We changed the labels in the second option to <CODE>var2</CODE> and <CODE>pow2</CODE> to differentiate them from the labels in the first option. If we don't do this, ANTLR complains about them.</P>
+<P>We add <CODE>MULT</CODE> and <CODE>EXP</CODE> as dummy tokens:</P>
+<PRE>DummyTokens
+	: MULT
+	| EXP
+	;</PRE>
+<P>We add the <CODE>buildAST</CODE> option to our grammar and it becomes:</P>
+<PRE>// Poly.g
+// Defines a grammar for a Polynomial Parser
+class PolyParser extends Parser;
+options
+{
+	buildAST = true;
+}
+
+// The entry point for an interpreter
+interp!
+	: (assign )+
+	;
+
+// An assignment expression
+assign
+	: ID "="^ poly ";"!
+		{ System.out.println(#assign.toStringList()); }
+	;
+
+// A polynomial
+poly
+	: term ( "+"^ term )*
+	;
+
+// A term in the polynomial
+term
+	:! coeff:coefficient
+	   ( var:reg
+	     ( "^" pow:exp
+		{ #term = #(#[MULT, "MULT"], #coeff,
+			  #(#[EXP, "EXP"], #var, #pow)); }
+	     |  { #term = #(#[MULT, "MULT"], #coeff, #var); }
+	     )
+	   |    { #term = #coeff; }
+	   )
+	|! var2:reg ( "^" pow2:exp
+			{ #term = #(#[EXP, "EXP"], #var2, #pow2); }
+		    |	{ #term = #var2; }
+		    )
+		
+	; 
+
+// The coefficient of the term
+coefficient
+	: FLOAT
+	;
+
+// A register or variable
+reg
+	: ID
+	;
+
+// An exponent in a term
+exp
+	: reg
+	| FLOAT
+	;
+
+dummyTokens
+	: MULT
+	| EXP
+	;
+
+class PolyLex extends Lexer;
+
+// An ID for a register
+ID
+	: 'a'..'z'
+	;
+
+// A floating point number
+FLOAT
+	: ( '0'..'9' )+ ( '.' ( '0'..'9' )* )?
+	;
+
+// Operators
+OPERATORS
+	: '='
+	| '+'
+	| '^'
+	| ';'
+	;
+
+// Eat the white space
+WS
+	: ( ' '
+	 | '\t'
+	 | '\r' '\n'	{ newline(); }
+	 | '\n'	{ newline(); }
+	 )
+		/* All the characters are in a subrule so that this
+		 action will apply to them: */
+		{ $setType(Token.SKIP); } // ignore this token
+	;</PRE>
+<H4>Walking the AST</H4>
+<P>Walking the AST that we just built is very easy in ANTLR 2. We'll start with defining a TreeParser in Poly.g:</P>
+<PRE>class PolyWalker extends TreeParser;</PRE>
+<P>Our assign and poly rules from page 60 have only a slight modification:</P>
+<PRE>assign
+	: #( "=" ID poly)
+	;
+
+poly
+	: #( MULT poly poly )
+	| #( "+" poly poly )
+	| #( EXP poly poly )
+	| ID
+	| FLOAT
+	;</PRE>
+<P>that is, the ASSIGN and ADD tokens have been changed to their string forms. Using real tokens would require going back and changing the entire Poly grammar. The conversion to using Java syntax for the actions is equally straightforward:</P>
+<PRE>assign
+	{ double dbl=0.0; }
+	: #( "=" id:ID dbl=poly )
+		{ regs.store(id.getText(), dbl); }
+	;
+
+poly returns [double ret]
+	{ double lhs = 0.0, rhs = 0.0; ret = -1.0; }
+	: #( MULT lhs=poly rhs=poly )
+		{ ret = lhs * rhs; }
+	| #( "+" lhs=poly rhs=poly )
+		{ ret = lhs + rhs; }
+	| #( EXP lhs=poly rhs=poly )
+		{ ret = java.lang.Math.pow(lhs, rhs); }
+	| id:ID
+		{ ret = regs.value(id.getText()); }
+	| flt:FLOAT
+		{ ret = (new Double(flt.getText())).doubleValue(); }
+	;</PRE>
+<P>We add in our registers and a specialized constructor for the register behaviour, just like we did for PolyParser when we had it perform semantic actions:</P>
+<PRE>{
+	private DblStorage regs;
+	public PolyWalker (DblStorage regs)
+	{
+		this();
+		this.regs = regs;
+	} // end specialized constructor
+}</PRE>
+<P>And tell PolyParser to use the PolyWalker:</P>
+<PRE>{
+	protected PolyWalker walker;
+	public PolyParser(Tokenizer tokenBuf, PolyWalker walker)
+	{
+		this(tokenBuf);
+		this.walker = walker;
+	} // end specialized constructor
+}
+assign
+	: ID "="^ poly ";"!
+		{ walker.assign(#assign); }
+	;</PRE>
+<P>Our resulting grammar is:</P>
+<PRE>// Poly.g
+// Defines a grammar for a Polynomial Parser
+class PolyParser extends Parser;
+options
+{
+	buildAST = true;
+}
+{
+	protected PolyWalker walker;
+	public PolyParser(Tokenizer tokenBuf, PolyWalker walker)
+	{
+		this(tokenBuf);
+		this.walker = walker;
+	} // end specialized constructor
+}
+
+// The entry point for an interpreter
+interp!
+	: (assign )+
+	;
+
+// An assignment expression
+assign
+	: ID "="^ poly ";"!
+		{ walker.assign(#assign); }
+	;
+
+// A polynomial
+poly
+	: term ( "+"^ term )*
+	;
+
+// A term in the polynomial
+term
+	:! coeff:coefficient
+	   ( var:reg
+	     ( "^" pow:exp
+		{ #term = #(#[MULT, "MULT"], #coeff,
+			  #(#[EXP, "EXP"], #var, #pow)); }
+	     |  { #term = #(#[MULT, "MULT"], #coeff, #var); }
+	     )
+	   |    { #term = #coeff; }
+	   )
+	|! var2:reg ( "^" pow2:exp
+			{ #term = #(#[EXP, "EXP"], #var2, #pow2); }
+		    |	{ #term = #var2; }
+		    )
+		
+	;
+
+// The coefficient of the term
+coefficient
+	: FLOAT
+	;
+
+// A register or variable
+reg
+	: ID
+	;
+
+// An exponent in a term
+exp
+	: reg
+	| FLOAT
+	;
+
+dummyTokens
+	: MULT
+	| EXP
+	;
+
+class PolyWalker extends TreeParser;
+{
+	private DblStorage regs;
+	public PolyWalker (DblStorage regs)
+	{
+		this();
+		this.regs = regs;
+	} // end specialized constructor
+}
+
+// Assignment of the result of a polynomial to a register
+assign
+	{ double dbl=0.0; }
+	: #( "=" id:ID dbl=poly )
+		{ regs.store(id.getText(), dbl); }
+	;
+
+// computation of polynomials
+poly returns [double ret]
+	{ double lhs = 0.0, rhs = 0.0; ret = -1.0; }
+	: #( MULT lhs=poly rhs=poly )
+		{ ret = lhs * rhs; }
+	| #( "+" lhs=poly rhs=poly )
+		{ ret = lhs + rhs; }
+	| #( EXP lhs=poly rhs=poly )
+		{ ret = java.lang.Math.pow(lhs, rhs); }
+	| id:ID
+		{ ret = regs.value(id.getText()); }
+	| flt:FLOAT
+		{ ret = (new Double(flt.getText())).doubleValue(); }
+	;
+
+class PolyLex extends Lexer;
+
+// An ID for a register
+ID
+	: 'a'..'z'
+	;
+
+// A floating point number
+FLOAT
+	: ( '0'..'9' )+ ( '.' ( '0'..'9' )* )?
+	;
+
+// Operators
+OPERATORS
+	: '='
+	| '+'
+	| '^'
+	| ';'
+	;
+
+// Eat the white space
+WS
+	: ( ' '
+	  | '\t'
+	  | '\r' '\n'	{ newline(); }
+	  | '\n'	{ newline(); }
+	  )
+		/* All the characters are in a subrule so that this
+		   action will apply to them: */
+		{ $setType(Token.SKIP); } // ignore this token
+	;</PRE>
+<P>We also need a new main in order to construct everything with the proper behaviour:</P>
+<PRE>import java.io.*;
+import antlr.CommonAST;
+import antlr.collections.AST;
+
+class PolyMain
+{
+	public static void main(String[] args)
+	{
+		try {
+			DblStorage regs = new Registers();
+			PolyWalker walker = new PolyWalker(regs);
+			PolyLex lexer = new PolyLex(new DataInputStream(System.in)); 
+			PolyParser parser = new PolyParser(lexer, walker); 
+			parser.interp();
+		} catch(Exception exception) {
+			System.err.println("exception: "+exception);
+		} // end try
+	} // end main()
+} // end Main
+</PRE>
+
+</font>
+</td>
+  </tr>
+</table>
+</body>
+</html>

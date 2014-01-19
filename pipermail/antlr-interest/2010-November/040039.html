@@ -1,0 +1,677 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Unable To compile Grammars
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Unable%20To%20compile%20Grammars&In-Reply-To=%3CBLU0-SMTP57B0D4CEA715B5E671088AB0360%40phx.gbl%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="040036.html">
+   <LINK REL="Next"  HREF="040040.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Unable To compile Grammars</H1>
+    <B>Massimiliano Donini</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Unable%20To%20compile%20Grammars&In-Reply-To=%3CBLU0-SMTP57B0D4CEA715B5E671088AB0360%40phx.gbl%3E"
+       TITLE="[antlr-interest] Unable To compile Grammars">maxgbr at hotmail.it
+       </A><BR>
+    <I>Mon Nov 15 10:30:02 PST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="040036.html">[antlr-interest] antlr c++ grammer
+</A></li>
+        <LI>Next message: <A HREF="040040.html">[antlr-interest] AST &amp; Symbol table
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40039">[ date ]</a>
+              <a href="thread.html#40039">[ thread ]</a>
+              <a href="subject.html#40039">[ subject ]</a>
+              <a href="author.html#40039">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>  Hi, i'm quite a newbie of ANTLR and I have some problems when i try to 
+compile my grammars.
+I list the grammars rules (taken from Ivan Brezina's **OracleSQL* 
+&lt;<A HREF="http://www.ibrezina.net/OracleSQL.tgz">http://www.ibrezina.net/OracleSQL.tgz</A>&gt; *Grammar) that generate me some 
+troubles
+
+sql_expression
+     :    expr_add
+     ;
+expr_add
+     :    expr_mul ( ( PLUS | MINUS | DOUBLEVERTBAR ) expr_mul )*
+     ;
+expr_mul
+     :    expr_sign ( ( STAR | DIVIDE ) expr_sign )*
+     ;
+expr_sign // in fact this is not &quot;sign&quot; but unary operator
+     :    ( PLUS | MINUS | 'PRIOR' | 'CONNECT_BY_ROOT' )? expr_pow
+     ;
+expr_pow
+     :    expr_expr ( EXPONENT expr_expr )*
+     ;
+expr_expr
+     :    datetime_expression
+     |    interval_expression
+     |    ( expr_paren ) =&gt; expr_paren
+     |    ( cast_expression) =&gt; cast_expression
+     |    ( special_expression ) =&gt; special_expression
+     |    ( analytic_function ) =&gt; analytic_function
+     |    ( function_expression ) =&gt; function_expression
+//    |    ( compound_expression ) =&gt; compound_expression
+     |    ( case_expression ) =&gt; case_expression
+//    |    ( cursor_expression ) =&gt; cursor_expression
+     |    ( simple_expression ) =&gt; simple_expression
+//    |    ( select_expression ) =&gt; select_expression replaced with subquery
+//    |    object_access_expression
+//    |    scalar_subquery_expression
+//    |    model_expression
+//    |    type_constructor_expression
+//    |    variable_expression
+//    :    'NULL' | NUMBER | QUOTED_STRING | IDENTIFIER
+     |    ( subquery ) =&gt; subquery
+     ;
+expr_paren
+     :    LPAREN nested_expression RPAREN
+     ;
+nested_expression
+     :    sql_expression
+     ;
+function_expression
+      :    (function_name|analytic_function_name) LPAREN call_parameters 
+RPAREN
+     ;
+
+call_parameters
+     : STAR
+     | call_parameter ( COMMA call_parameter )*
+     ;
+call_parameter
+     :     ( parameter_name ARROW )? nested_expression
+     ;
+parameter_name
+     :    identifier
+     ;
+case_expression
+     :    'CASE' ( simple_case_expression | searched_case_expression ) ( 
+else_case_expression )? 'END'
+     ;
+simple_case_expression
+     :    nested_expression ( 'WHEN' nested_expression 'THEN' 
+nested_expression )+
+     ;
+searched_case_expression
+     :    ( 'WHEN' sql_condition 'THEN' nested_expression )+
+     ;
+else_case_expression
+     :    'ELSE' nested_expression
+     ;
+
+simple_expression
+     :    boolean_literal
+     |    'SQL' ( FOUND_ATTR | NOTFOUND_ATTR | ISOPEN_ATTR | 
+ROWCOUNT_ATTR | BULK_ROWCOUNT_ATTR )
+     |    ( cell_assignment ) =&gt; cell_assignment // this is used only in 
+model_clause s[PROD= 'A' ] = S[ 'a' ] + 1
+     |    ( column_spec ) =&gt; column_spec
+     |    quoted_string
+     |    NUMBER
+     ;
+
+subquery
+     :    LPAREN select_statement RPAREN
+     |    LPAREN subquery RPAREN
+     ;
+
+datetime_expression
+     :
+         (     function_expression
+         |     cast_expression
+         |     simple_expression
+         )
+         'AT' ('LOCAL' | 'TIME' 'ZONE' ( quoted_string | 'DBTIMEZONE' | 
+'SESSIONTIMEZONE' | sql_expression ));
+
+interval_expression
+     :
+         LPAREN ( function_expression | cast_expression | 
+simple_expression ) MINUS ( function_expression | cast_expression | 
+simple_expression ) RPAREN
+         (    'DAY' (LPAREN NUMBER RPAREN)? 'TO' 'SECOND' (LPAREN NUMBER 
+RPAREN)?
+         |    'YEAR' (LPAREN NUMBER RPAREN)? 'TO' 'MONTH' (LPAREN NUMBER 
+RPAREN)?
+         )
+     ;
+
+/* 
+================================================================================
+    Analytic query part
+    
+================================================================================ 
+*/
+analytic_function_name
+     :
+     |     'AVG'        | 'CORR'        | 'COVAR_POP'        | 
+'COVAR_SAMP'        | 'COUNT'    | 'CUME_DIST'    | 'DENSE_RANK'
+     |     'FIRST'        | 'FIRST_VALUE'        | 'LAG'            | 
+'LAST'        | 'LAST_VALUE'    | 'LEAD'    | 'MAX'    | 'MIN'
+     |     'NTILE'        | 'PERCENT_RANK'    | 'PERCENTILE_CONT'    | 
+'PERCENTILE_DISC'    | 'RANK'    | 'RATIO_TO_REPORT'
+     |     'REGR_SLOPE'    | 'REGR_INTERCEPT'    | 'REGR_COUNT'        | 
+'REGR_R2'        | 'REGR_AVGX'    | 'REGR_AVGY'
+     |     'REGR_SXX'    | 'REGR_SYY'        | 'REGR_SXY'        | 
+'ROW_NUMBER'        | 'STDDEV'    | 'STDDEV_POP'
+     |     'STDDEV_SAMP'    | 'SUM'            | 'VAR_POP'        | 
+'VAR_SAMP'        | 'VARIANCE'     ;
+
+analytic_function_call
+     :     analytic_function_name
+         LPAREN ( 'DISTINCT' | 'ALL')? sql_expression? (COMMA 
+sql_expression)* ( ( 'RESPECT' | 'IGNORE') 'NULLS' )? RPAREN
+     ;
+
+analytic_function
+     :     analytic_function_call ( ( 'RESPECT' | 'IGNORE') 'NULLS' )?  
+'OVER'
+         LPAREN .+//analytic_clause
+         RPAREN
+     ;
+/*
+analytic_clause
+     : query_partition_clause? (order_by_clause windowing_clause?)?
+     ;
+*/
+windowing_clause_part
+     :     ( 'UNBOUNDED' ( 'PRECEDING' | 'FOLLOWING' ))
+         |     ( 'CURRENT' 'ROW' )
+         |     ( sql_expression ( 'PRECEDING' | 'FOLLOWING' ) )
+     ;
+
+windowing_clause
+     : ('ROWS' | 'RANGE' )
+       ( windowing_clause_part | ( 'BETWEEN' windowing_clause_part 'AND' 
+windowing_clause_part) )
+     ;
+
+/* 
+================================================================================
+    Cell Assignment
+    
+================================================================================*/
+cell_assignment
+     :    measure_column LBRACK ( multi_column_for_loop | 
+cell_assignment_exprs ) RBRACK
+     ;
+
+cell_assignment_exprs
+     :    cell_assignment_expr ( COMMA cell_assignment_expr )*
+     ;
+
+cell_assignment_expr
+     :    sql_condition | sql_expression | single_column_for_loop
+     ;
+
+measure_column
+     :    column_name
+     ;
+
+single_column_for_loop
+     :    'FOR' column_name
+         (    'IN' LPAREN ( literals | subquery ) RPAREN
+         |    ( 'LIKE' pattern )? 'FROM' literal 'TO' literal ( 
+'INCREMENT' | 'DECREMENT' ) literal
+         )
+     ;
+pattern
+     :    quoted_string
+     ;
+
+literal
+     :    ( PLUS | MINUS )? NUMBER
+     |    quoted_string
+     ;
+
+literals
+     :    literal ( COMMA literal )*
+     ;
+
+multi_column_for_loop
+     :    'FOR' LPAREN column_specs RPAREN 'IN' LPAREN ( 
+bracket_literals_list | subquery ) RPAREN
+     ;
+
+bracket_literals
+     :    LPAREN literals RPAREN
+     ;
+
+bracket_literals_list
+     :    bracket_literals ( COMMA bracket_literals )*
+     ;
+
+/* 
+================================================================================
+    Columns spec
+    
+================================================================================ 
+*/
+column_spec
+     :     sql_identifier DOT sql_identifier DOT sql_identifier
+     |     sql_identifier DOT sql_identifier
+     |     sql_identifier
+     |     pseudo_column
+     ;
+//TODO more pseudocolumns here - especially those who are reserved words
+pseudo_column
+     :     'NULL'
+         |     'SYSDATE'
+     |     'ROWID'
+     |     'ROWNUM'
+     |     'LEVEL'                // hierarchical query
+     |     'CONNECT_BY_ISLEAF'
+     |     'CONNECT_BY_ISCYCLE'
+     |     'VERSIONS_STARTTIME'    // flashback query
+     |     'VERSIONS_STARSCN'
+     |     'VERSIONS_ENDTIME'
+     |     'VERSIONS_ENDSCN'
+     |     'VERSIONS_XID'
+     |     'VERSIONS_OPERATION'
+     |     'COLUMN_VALUE'    // XMLTABLE query
+     |     'OBJECT_ID'        //
+     |     'OBJECT_VALUE'    //
+     |     'ORA_ROWSCN'        //
+     |     'XMLDATA'
+     ;
+
+column_specs
+     :    column_spec ( COMMA column_spec )*
+     ;
+
+/* 
+================================================================================
+    Special expressions
+    
+================================================================================ 
+*/
+special_expression
+     :    cluster_set_clause
+     ;
+cluster_set_clause
+     :     'CLUSTER_SET' LPAREN column_spec (COMMA column_spec)? (COMMA 
+NUMBER)? 'USING' (column_specs | STAR) RPAREN
+     ;
+
+cast_expression
+     :    'CAST' LPAREN (sql_expression | 'MULTISET' subquery) 'AS' 
+(datatype|sql_identifier) RPAREN
+     ;
+/*datatype
+     :    'BINARY_INTEGER'
+     |    'BINARY_FLOAT'
+     |    'BINARY_DOUBLE'
+     |    'NATURAL'
+     |    'POSITIVE'
+     |    ( 'NUMBER' | 'NUMERIC' | 'DECIMAL' | 'DEC' ) ( LPAREN NUMBER ( 
+COMMA NUMBER )? RPAREN )?
+     |    'LONG' ( 'RAW')? ( LPAREN NUMBER RPAREN )?
+     |    'RAW' ( LPAREN NUMBER RPAREN )?
+     |    'BOOLEAN'
+     |    'DATE'
+     |    'INTERVAL' 'DAY' ( LPAREN NUMBER RPAREN )? 'TO' 'SECOND' ( 
+LPAREN NUMBER RPAREN )?
+     |    'INTERVAL' 'YEAR' ( LPAREN NUMBER RPAREN )? 'TO' 'MONTH'
+     |    ( 'TIME' | 'TIMESTAMP' ) ( LPAREN NUMBER RPAREN )? ( 'WITH' ( 
+'LOCAL' )? 'TIME' 'ZONE' )?
+     |    'INTEGER'
+     |    'INT'
+     |    'SMALLINT'
+     |    'FLOAT' ( LPAREN NUMBER RPAREN )?
+     |    'REAL'
+     |    'DOUBLE' 'PRECISION'
+     |    'CHAR'      ( 'VARYING' )? ( LPAREN NUMBER ( 'BYTE' | 'CHAR' 
+)? RPAREN )? ( 'CHARACTER' 'SET' ( identifier | column_spec CHARSET_ATTR 
+) )?
+     |    'VARCHAR'                  ( LPAREN NUMBER ( 'BYTE' | 'CHAR' 
+)? RPAREN )? ( 'CHARACTER' 'SET' ( identifier | column_spec CHARSET_ATTR 
+) )?
+     |    'VARCHAR2'                 ( LPAREN NUMBER ( 'BYTE' | 'CHAR' 
+)? RPAREN )? ( 'CHARACTER' 'SET' ( identifier | column_spec CHARSET_ATTR 
+) )?
+     |    'CHARACTER' ( 'VARYING' )? ( LPAREN NUMBER RPAREN )?
+     |    'NCHAR'     ( 'VARYING' )? ( LPAREN NUMBER RPAREN )?
+     |    'NVARCHAR'  ( LPAREN NUMBER RPAREN )?
+     |    'NVARCHAR2' ( LPAREN NUMBER RPAREN )?
+     |    'NATIONAL'  ( 'CHARACTER' | 'CHAR' ) ( 'VARYING' )? ( LPAREN 
+NUMBER RPAREN )?
+     |    'MLSLABEL'
+     |    'PLS_INTEGER'
+     |    'BLOB'
+     |    'CLOB' ( 'CHARACTER' 'SET' ( identifier | column_spec 
+CHARSET_ATTR ) )?
+     |    'NCLOB'
+     |    'BFILE'
+     |    'ROWID'
+     |    'UROWID' ( LPAREN NUMBER RPAREN )?
+     ;*/
+
+boolean_literal
+     :    'TRUE' | 'FALSE'
+     ;
+
+t_alias
+     : alias_name=sql_identifier //{ $alias_name.setType($alias_name, 
+T_ALIAS); }
+//        { $type = T_ALIAS; }
+     ;
+
+c_alias
+     : ('AS'? sql_identifier) //{ $alias_name.setType($alias_name, 
+T_ALIAS); }
+     | 'AS'
+     ;
+
+alias
+     :    'AS' sql_identifier?
+     ;
+
+function_name
+     :    sql_identifier DOT sql_identifier DOT sql_identifier
+     |     sql_identifier DOT sql_identifier
+     |    sql_identifier
+     ;
+
+identifier
+     :    IDENTIFIER
+     |    DOUBLEQUOTED_STRING
+        ;
+
+sql_identifier
+     :    IDENTIFIER
+         |    keyword
+     |    'ROWID'
+     |    'ROWNUM'
+     ;
+/*
+sql_condition
+     :    condition_or
+     ;
+condition_or
+//    :    condition_and ( 'OR' condition_and )*
+     :    condition_or_part_first condition_or_part_next+ //-&gt; 
+^(T_COND_OR ^(T_COND_OR condition_or_part_first) condition_or_part_next*))
+     |    condition_or_part_first
+     ;
+
+condition_or_part_first
+     :    condition_and
+         ;
+
+condition_or_part_next
+     :    'OR' condition_and //-&gt; ^(T_COND_OR 'OR' condition_and)
+         ;
+
+condition_and
+//    :    condition_not ( 'AND' condition_not )*
+         :    condition_and_part_first condition_and_part_next+ //-&gt; 
+^(T_COND_AND ^(T_COND_AND condition_and_part_first) 
+condition_and_part_next*))
+     |    condition_and_part_first
+     ;
+
+condition_and_part_first
+     :    condition_not
+        ;
+
+condition_and_part_next
+     :    'AND' condition_not //-&gt; ^(T_COND_AND 'AND' condition_not)
+         ;
+
+condition_not
+     :    'NOT' condition_expr //-&gt; ^(T_COND_NOT 'NOT' condition_expr))
+     |    condition_expr
+     ;
+condition_expr
+     :    condition_exists
+     |    condition_is
+     |    condition_comparison
+     |    condition_group_comparison
+     |    condition_in
+     |    condition_is_a_set
+     |    condition_is_any
+     |    condition_is_empty
+     |    condition_is_of_type
+     |    condition_is_present
+     |    condition_like
+     |    condition_memeber
+     |    condition_between
+     |    condition_regexp_like
+     |    condition_submultiset
+     |    condition_equals_path
+     |    condition_under_path
+     |    condition_paren
+     ;
+
+condition_exists
+     :    'EXISTS' subquery
+     ;
+condition_is
+     :    sql_expression 'IS' ( 'NOT' )? ( 'NAN' | 'INFINITE' | 'NULL' )
+     ;
+condition_comparison
+     :    LPAREN sql_expressions RPAREN ( outer_join_sign )? ( EQ | NEQ 
+) subquery ( outer_join_sign )?
+     |    ( 'PRIOR' )? sql_expression ( outer_join_sign )? ( EQ | NEQ | 
+GTH | GEQ | LTH | LEQ ) ( 'PRIOR' )? ( sql_expression | LPAREN 
+select_statement RPAREN ) ( outer_join_sign )?
+     ;
+condition_group_comparison
+     :    LPAREN sql_expressions RPAREN ( EQ | NEQ ) ( 'ANY' | 'SOME' | 
+'ALL' ) LPAREN ( grouping_expression_list | select_statement ) RPAREN
+     |    sql_expression ( EQ | NEQ | GTH | GEQ | LTH | LEQ ) ( 'ANY' | 
+'SOME' | 'ALL' ) LPAREN ( sql_expressions | select_statement ) RPAREN
+     ;
+condition_in
+     :    LPAREN sql_expressions RPAREN ( 'NOT' )? 'IN' LPAREN ( 
+grouping_expression_list | select_statement ) RPAREN
+     |    sql_expression ( 'NOT' )? 'IN' LPAREN ( expression_list | 
+select_statement ) RPAREN
+     ;
+condition_is_a_set
+     :    nested_table_column_name 'IS' ( 'NOT' )? 'A' 'SET'
+     ;
+condition_is_any
+     :    ( column_name 'IS' )? 'ANY'
+     ;
+condition_is_empty
+     :    nested_table_column_name 'IS' ( 'NOT' )? 'EMPTY'
+     ;
+condition_is_of_type
+     :    sql_expression 'IS' ('NOT')? 'OF' ( 'TYPE' )? LPAREN type_name 
+RPAREN
+     ;
+condition_is_of_type_names
+     :    condition_is_of_type_name ( COMMA condition_is_of_type_name )*
+     ;
+condition_is_of_type_name
+     :    ( 'ONLY' )? type_name
+     ;
+condition_is_present
+     :    cell_reference 'IS' 'PRESENT'
+     ;
+condition_like
+     :    sql_expression ( 'NOT' )? ( 'LIKE' | 'LIKEC' | 'LIKE2' | 
+'LIKE4' ) sql_expression ( 'ESCAPE' sql_expression )?
+     ;
+condition_memeber
+     :    sql_expression ( 'NOT' )? 'MEMBER' ( 'OF' )? 
+nested_table_column_name
+     ;
+condition_between
+     :    sql_expression ( 'NOT' )? 'BETWEEN' sql_expression 'AND' 
+sql_expression
+     ;
+condition_regexp_like
+     :    'REGEXP_LIKE' LPAREN call_parameters RPAREN
+     ;
+condition_submultiset
+     :    nested_table_column_name ( 'NOT' )? 'SUBMULTISET' ( 'OF' )? 
+nested_table_column_name
+     ;
+condition_equals_path
+     :    'EQUALS_PATH' LPAREN column_name COMMA path_string ( COMMA 
+correlation_integer )? RPAREN
+     ;
+condition_under_path
+     :    'UNDER_PATH' LPAREN column_name ( COMMA levels )? COMMA 
+path_string ( COMMA correlation_integer )? RPAREN
+     ;*/
+levels
+     :    integer
+     ;
+correlation_integer
+     :    integer
+     ;
+path_string
+     :    quoted_string
+     ;
+type_name
+     :    identifier ( DOT identifier )*
+     ;
+integer
+     :    NUMBER
+     ;
+column_name
+     :    sql_identifier
+     ;
+nested_table
+     :    sql_identifier
+     ;
+nested_table_column_name
+     :    ( schema_name DOT )? (table_name DOT)? (nested_table DOT)? 
+column_name
+     ;
+sql_expressions
+     :    sql_expression ( COMMA sql_expression )*
+     ;
+grouping_expression_list
+     :    expression_list ( COMMA expression_list )*
+     ;
+expression_list
+     :    LPAREN sql_expressions RPAREN
+     |    sql_expressions
+     ;
+cell_reference
+     :    sql_identifier
+     ;
+
+condition_paren
+     :    LPAREN sql_condition RPAREN
+     ;
+
+sql_condition
+     :    'CONDITION' //To Implement
+     ;
+
+
+schema_name
+     :    sql_identifier
+     ;
+
+outer_join_sign
+     :    LPAREN PLUS RPAREN
+     ;
+
+
+When i add those rules in my Grammars i'm not able to compile anymore, 
+but i can compile Ivan Brezina's Grammar.
+How can i rewrite those rules in order to compile my grammar??
+
+This is the Error when i try to compile:
+
+Exception in thread &quot;main&quot; java.lang.OutOfMemoryError: GC overhead limit 
+exceede
+d
+         at java.util.Arrays.copyOf(Unknown Source)
+         at java.util.ArrayList.ensureCapacity(Unknown Source)
+         at java.util.ArrayList.add(Unknown Source)
+         at org.antlr.misc.OrderedHashSet.add(OrderedHashSet.java:65)
+         at 
+org.antlr.analysis.DFAState.addNFAConfiguration(DFAState.java:226)
+         at 
+org.antlr.analysis.NFAToDFAConverter.closure(NFAToDFAConverter.java:6
+33)
+         at 
+org.antlr.analysis.NFAToDFAConverter.closure(NFAToDFAConverter.java:7
+65)
+         at 
+org.antlr.analysis.NFAToDFAConverter.closure(NFAToDFAConverter.java:7
+65)
+         at 
+org.antlr.analysis.NFAToDFAConverter.closure(NFAToDFAConverter.java:7
+65)
+         at 
+org.antlr.analysis.NFAToDFAConverter.closure(NFAToDFAConverter.java:7
+65)
+         at 
+org.antlr.analysis.NFAToDFAConverter.closure(NFAToDFAConverter.java:7
+09)
+         at 
+org.antlr.analysis.NFAToDFAConverter.closure(NFAToDFAConverter.java:7
+09)
+         at 
+org.antlr.analysis.NFAToDFAConverter.closure(NFAToDFAConverter.java:6
+83)
+         at 
+org.antlr.analysis.NFAToDFAConverter.closure(NFAToDFAConverter.java:4
+78)
+         at 
+org.antlr.analysis.NFAToDFAConverter.findNewDFAStatesAndAddDFATransit
+ions(NFAToDFAConverter.java:297)
+         at 
+org.antlr.analysis.NFAToDFAConverter.convert(NFAToDFAConverter.java:1
+11)
+         at org.antlr.analysis.DFA.&lt;init&gt;(DFA.java:233)
+         at org.antlr.tool.Grammar.createLookaheadDFA(Grammar.java:1257)
+         at org.antlr.tool.Grammar.createLookaheadDFAs(Grammar.java:1021)
+         at org.antlr.tool.Grammar.createLookaheadDFAs(Grammar.java:971)
+         at org.antlr.codegen.Target.performGrammarAnalysis(Target.java:114)
+         at 
+org.antlr.codegen.CodeGenerator.genRecognizer(CodeGenerator.java:304)
+
+         at org.antlr.Tool.generateRecognizer(Tool.java:641)
+         at org.antlr.Tool.process(Tool.java:454)
+         at org.antlr.Tool.main(Tool.java:91)
+
+and this is my compile script:
+
+java -jar C:\Antlr\Antlr-3.2.jar OracleSemplifiedParser.g -debug 
+-Xmx2600m -Xconversiontimeout 120000 -o &quot;C:\Users\admin\Documents\Visual 
+Studio 2008\Projects\Antlr\RemoteDebugger&quot;
+
+I Know that is a very generic help request, but i hope to get an answer...
+Thanks in advice and sorry for my bad english
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="040036.html">[antlr-interest] antlr c++ grammer
+</A></li>
+	<LI>Next message: <A HREF="040040.html">[antlr-interest] AST &amp; Symbol table
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40039">[ date ]</a>
+              <a href="thread.html#40039">[ thread ]</a>
+              <a href="subject.html#40039">[ subject ]</a>
+              <a href="author.html#40039">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

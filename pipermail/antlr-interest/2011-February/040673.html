@@ -1,0 +1,275 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Catching errors
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Catching%20errors&In-Reply-To=%3C4D4A1160.80102%40yahoo.com.ar%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="040670.html">
+   <LINK REL="Next"  HREF="040674.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Catching errors</H1>
+    <B>Victor Giordano</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Catching%20errors&In-Reply-To=%3C4D4A1160.80102%40yahoo.com.ar%3E"
+       TITLE="[antlr-interest] Catching errors">power_giordo at yahoo.com.ar
+       </A><BR>
+    <I>Wed Feb  2 18:22:24 PST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="040670.html">[antlr-interest] Question of Repetead tokens and early	termination
+</A></li>
+        <LI>Next message: <A HREF="040674.html">[antlr-interest] Catching errors
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40673">[ date ]</a>
+              <a href="thread.html#40673">[ thread ]</a>
+              <a href="subject.html#40673">[ subject ]</a>
+              <a href="author.html#40673">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Okey. So adding and EOF forces the parser to go to the end of the input 
+in search of others tokens in correct order.
+
+1)But a still have a problem, consider the following grammar:
+
+grammar LinearMath;
+
+tokens
+{
+     PLUS     = '+';
+     MINUS     = '-';
+     MUL        = '*';
+     DIV        = '/';
+}
+
+inecuation:	linexpr ((RELATIONSHIP) linexpr)+ EOF!;
+catch [UnwantedTokenException ute]
+{
+	System.out.println (&quot;inecuation UnwantedTokenException  &quot; + 
+ute.toString());
+	throw ute;
+}
+
+linexpr : (MINUS|PLUS)? linterm ((PLUS|MINUS) linterm)* EOF;
+
+linterm : factor? ID;
+
+expr returns [double value]
+     : e=term {$value = $e.value;}
+     (    PLUS e=term {$value += $e.value;}
+     |    MINUS e=term {$value -= $e.value;}
+     )*;
+
+term returns [double value]
+     : f=factor {$value = $f.value;}
+     (    MUL f=factor {$value *= $f.value;}
+     |    DIV f=factor {$value /= $f.value;}
+     )*;
+
+factor returns [double value]
+     : DOUBLE {$value = Double.parseDouble($DOUBLE.text);}
+     | '(' e=expr ')'{$value = $e.value;};
+
+ID  :    ('a'..'z'|'A'..'Z'|'_') ('a'..'z'|'A'..'Z'|'0'..'9'|'_')*;
+
+DOUBLE
+     :   ('0'..'9')+
+     |    ('0'..'9')+ '.' ('0'..'9')* EXPONENT?
+       |   '.' ('0'..'9')+ EXPONENT?
+       |   ('0'..'9')+ EXPONENT
+       ;
+
+fragment EXPONENT : ('e'|'E') ('+'|'-')? ('0'..'9')+ ;
+
+NEWLINE:'\r'? '\n' { $channel = HIDDEN; };
+
+WS  :   (' '|'\t'|'\n'|'\r')+ { $channel = HIDDEN; };
+
+
+RELATIONSHIP :	'&lt;'|'&lt;='|'='|'&gt;'|'&gt;=';
+
+and with the following input: &quot;x &lt; y x&quot;
+that isn't a valid inecuation beacause the y x must have a binary 
+aritmetic operator (PLUS OR MINUS). The parser do his job very well, he 
+consume the &quot;x&quot; then &quot;&lt;&quot; later &quot;y&quot; and when it reachs the seconds &quot;x&quot; it 
+emits an &quot;UnwantedTokenException&quot;. The think is, that i am not being 
+able to catch it, and display an error to the final user. Look that i am 
+using to parse that input the inecuation &quot;rule&quot;.
+
+Hope anyone can help me with this again.
+
+2) Other thing is about invalid tokens, i manage to treat then 
+overriding a member function of the lexer called nextToken(), like this:
+
+@lexer::members
+{
+	@Override
+	public Token nextToken()
+	{
+		while (true) {
+			state.token = null;
+			state.channel = Token.DEFAULT_CHANNEL;
+			state.tokenStartCharIndex = input.index();
+			state.tokenStartCharPositionInLine = input.getCharPositionInLine();
+			state.tokenStartLine = input.getLine();
+			state.text = null;
+			if ( input.LA(1)==CharStream.EOF ) {
+				return Token.EOF_TOKEN;
+			}
+			try {
+				mTokens();
+				if ( state.token==null ) {
+					emit();
+				}
+				else if ( state.token==Token.SKIP_TOKEN ) {
+					continue;
+				}
+				return state.token;
+			}
+			catch (RecognitionException re) {
+				reportError(re);
+				throw new RuntimeException(&quot;Invalid Character  : &quot; + (char) (re.c)); 
+// or throw Error
+			}
+		}
+	}
+}
+
+&#191;It's that the correct way?
+
+Well that is all!!!
+Thanks for advance!.
+Victor!!
+
+El 02/02/2011 05:32 p.m., John B. Brodie escribi&#243;:
+&gt;<i> Your grammar does not mention the EOF token. (more below...)
+</I>&gt;<i> On Wed, 2011-02-02 at 16:18 -0300, Victor Giordano wrote:
+</I>&gt;&gt;<i> Hi there. I am having trouble with the error handling.
+</I>&gt;&gt;<i> I have a grammar for recoignize linear expression. And it works great!.
+</I>&gt;&gt;<i> The grammar for a linear expresion is the following:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> tokens
+</I>&gt;&gt;<i> {
+</I>&gt;&gt;<i> 	PLUS 	= '+';
+</I>&gt;&gt;<i> 	MINUS 	= '-';
+</I>&gt;&gt;<i> 	MUL		= '*';
+</I>&gt;&gt;<i> 	DIV		= '/';
+</I>&gt;&gt;<i> }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> linexpr : (MINUS|PLUS)? linterm ((PLUS|MINUS) linterm)*;
+</I>&gt;&gt;<i> linterm : factor? ID;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> expr returns [double value]
+</I>&gt;&gt;<i> 	: e=term {$value = $e.value;}
+</I>&gt;&gt;<i> 	(	PLUS e=term {$value += $e.value;}
+</I>&gt;&gt;<i> 	|	MINUS e=term {$value -= $e.value;}
+</I>&gt;&gt;<i> 	)*;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> term returns [double value]
+</I>&gt;&gt;<i> 	: f=factor {$value = $f.value;}
+</I>&gt;&gt;<i> 	(	MUL f=factor {$value *= $f.value;}
+</I>&gt;&gt;<i> 	|	DIV f=factor {$value /= $f.value;}
+</I>&gt;&gt;<i> 	)*;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> factor returns [double value]
+</I>&gt;&gt;<i> 	: DOUBLE {$value = Double.parseDouble($DOUBLE.text);}
+</I>&gt;&gt;<i> 	| '(' e=expr ')'{$value = $e.value;};
+</I>&gt;&gt;<i> 	
+</I>&gt;&gt;<i> ID  :	('a'..'z'|'A'..'Z'|'_') ('a'..'z'|'A'..'Z'|'0'..'9'|'_')*;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> DOUBLE
+</I>&gt;&gt;<i> 	:   ('0'..'9')+
+</I>&gt;&gt;<i> 	|	('0'..'9')+ '.' ('0'..'9')* EXPONENT?
+</I>&gt;&gt;<i>       |   '.' ('0'..'9')+ EXPONENT?
+</I>&gt;&gt;<i>       |   ('0'..'9')+ EXPONENT
+</I>&gt;&gt;<i>       ;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> fragment EXPONENT : ('e'|'E') ('+'|'-')? ('0'..'9')+ ;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> NEWLINE:'\r'? '\n' { $channel = HIDDEN; };
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> WS  :   (' '|'\t'|'\n'|'\r')+ { $channel = HIDDEN; };
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> But the problem ocurrs when, for example, i have:
+</I>&gt;&gt;<i> &quot;x x x&quot;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Then the parsers stop after processing the first &quot;x&quot;.
+</I>&gt;&gt;<i> &#191;How do i correctly emit an invalid syntax error?.
+</I>&gt;&gt;<i> I Try with the catch EarlyExitException, but it doesn't works.
+</I>&gt;&gt;<i> I Want, inside my java aplicacition to catch this, and show to the final
+</I>&gt;&gt;<i> user.
+</I>&gt;&gt;<i> Something like this...
+</I>&gt;&gt;<i> //line is equals to the user input...
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>               CharStream cs = new ANTLRStringStream(line);
+</I>&gt;&gt;<i>               LinearExpressionLexer lexer = new LinearExpressionLexer(cs);
+</I>&gt;&gt;<i>               CommonTokenStream tokens = new CommonTokenStream(lexer);
+</I>&gt;&gt;<i>               LinearExpressionParser parser = new
+</I>&gt;&gt;<i> LinearExpressionParser(tokens);
+</I>&gt;&gt;<i>               res = parser.linexpr (); // and here, it's suppose to fail,
+</I>&gt;&gt;<i> but it isn't.
+</I>&gt;&gt;<i> Actually, the linexpr does returns some kind of data whose type is a
+</I>&gt;&gt;<i> custom class called LinearExpresion. I omit to put the return in the
+</I>&gt;&gt;<i> linearexpr parser rule to simplify things.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Hope anyone can help me.
+</I>&gt;&gt;<i> Greettings and thanks for advance.
+</I>&gt;<i>
+</I>&gt;<i> Greetings!
+</I>&gt;<i>
+</I>&gt;<i> By design ANTLR parsers stop after consuming the longest possible VALID
+</I>&gt;<i> input sequence. I believe the rational for this is that any remaining
+</I>&gt;<i> input will be available for some other tool to process.
+</I>&gt;<i>
+</I>&gt;<i> If you want ANTLR to try to process the entire input, reporting and
+</I>&gt;<i> recovering from syntax errors in the input; you must tell it to do that.
+</I>&gt;<i>
+</I>&gt;<i> By referring to the EOF token (a special built-in token) in your
+</I>&gt;<i> top-most rule will cause ANTLR to consume the entire input string. E.g.
+</I>&gt;<i> the parse will not have a valid input until the EOF is seen and so will
+</I>&gt;<i> consume all of the input sentence.
+</I>&gt;<i>
+</I>&gt;<i> I suggest adding a top-level rule similar to:
+</I>&gt;<i>
+</I>&gt;<i> start : linexpr EOF! ;
+</I>&gt;<i>
+</I>&gt;<i> and then call parser.start() instead of parser.linexpr() in your driver.
+</I>&gt;<i>
+</I>&gt;<i> (note the ! meta-character after the EOF token above will keep the EOF
+</I>&gt;<i> out of any AST produced, but you do not seem to be building an AST so it
+</I>&gt;<i> won't make any difference...)
+</I>&gt;<i>
+</I>&gt;<i> Hope this helps...
+</I>&gt;<i>     -jbb
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I></PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="040670.html">[antlr-interest] Question of Repetead tokens and early	termination
+</A></li>
+	<LI>Next message: <A HREF="040674.html">[antlr-interest] Catching errors
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40673">[ date ]</a>
+              <a href="thread.html#40673">[ thread ]</a>
+              <a href="subject.html#40673">[ subject ]</a>
+              <a href="author.html#40673">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

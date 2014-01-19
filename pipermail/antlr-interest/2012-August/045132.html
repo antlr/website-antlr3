@@ -1,0 +1,330 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] An ambiguous lexing problem
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20An%20ambiguous%20lexing%20problem&In-Reply-To=%3CECA9DFBB-9672-4C01-893D-FB0BB002EE3D%40grimoire.ca%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="045131.html">
+   <LINK REL="Next"  HREF="045133.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] An ambiguous lexing problem</H1>
+    <B>Owen Jacobson</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20An%20ambiguous%20lexing%20problem&In-Reply-To=%3CECA9DFBB-9672-4C01-893D-FB0BB002EE3D%40grimoire.ca%3E"
+       TITLE="[antlr-interest] An ambiguous lexing problem">owen.jacobson at grimoire.ca
+       </A><BR>
+    <I>Tue Aug 28 15:35:07 PDT 2012</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="045131.html">[antlr-interest] praising setUnknownTokenBoundaries()
+</A></li>
+        <LI>Next message: <A HREF="045133.html">[antlr-interest] An ambiguous lexing problem
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#45132">[ date ]</a>
+              <a href="thread.html#45132">[ thread ]</a>
+              <a href="subject.html#45132">[ subject ]</a>
+              <a href="author.html#45132">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi folks,
+
+I'm tinkering with an Antlr grammar for the LambdaMOO programming language, largely documented at <A HREF="http://www.hayseed.net/MOO/manuals/ProgrammersManual_toc.html.">http://www.hayseed.net/MOO/manuals/ProgrammersManual_toc.html.</A> The existing implementation is in very hoary C, originally built in the early 90s using yacc and a hand-rolled lexer (you can see both on Github: <A HREF="https://github.com/wrog/lambdamoo/blob/master/parser.y">https://github.com/wrog/lambdamoo/blob/master/parser.y</A> contains the yacc grammar and the yylex function required to feed it).
+
+The language permits floating-point literals of the forms &quot;1.&quot; (evaluating to 1.0) and &quot;.3&quot; (evaluating to 0.3), along with the usual suite of scientific notation options. It also permits &quot;range&quot; expressions for &quot;for&quot; loops and for indexing into lists, which have the form '[' expression '..' expression ']'. The C implementation parses
+
+	for x in [1..3]
+		&quot;&#8230; Loop body &#8230;&quot;;
+	endfor
+
+as a loop over 1, 2, and 3. Given the lexer rules I've worked out so far, my parser turns the &quot;[1..3]&quot; part into a few syntax errors and then applies error recovery to the range, producing a loop from 1. to .3. Obviously, this is not what I want.
+
+Experimenting with LambdaMOO's evaluator demonstrates that ranges like &quot;[1..3]&quot; compile successfuly but fail at runtime (one or the other value is interpreted as a float; I don't care which one, as the error is the same either way) and that ranges like &quot;[1....4]&quot; are syntax errors, so it's a pretty constrained special case in the existing lexer.
+
+My existing grammar is at the end of this mail. As I'm generating Python from Antlr, I'm running Antlr 3.1.3. I've also included a sample input that demonstrates the problem, which you can feed to the generated parser using
+
+	python langParser.py --rule program for-range.moo
+
+I spent some time staring at Antlr's generated code and experimenting with syntactic and semantic predicates on the INT and FLOAT lexer rules, to no avail. I'd love a pointer in the right direction; I understand why Antlr is picking the token sequence it's picking, since the production for FLOAT really does permit the sequence the parser's receiving and it's the longest match at each stage of lexical analysis, but I don't know how to (or if it's even possible to) special case sequences like this to produce the tokens I really want.
+
+It occurred to me to lift numeric literals out of the lexer and into the parser, but the existing implementation doesn't permit whitespace within numeric literals and I don't want to litter the grammar with &quot;and whitespace is allowed here, and here, and here&quot; dummy rules if I take the { $channel = HIDDEN; } off of WHITESPACE. If this is the only way to get what I want, obviously I'll do it, but it feels like there should be something more localized for solving this. (I could also reproduce the hand-rolled lexer, but&#8230; yuck.)
+
+I also thought about negative lookahead, but Antlr's lexer doesn't support lookahead or lookbehind assertions, so that's out.
+
+Help!
+
+-o
+
+---- lang.g ----
+grammar lang;
+
+options {
+    language=Python;
+    output=AST;
+    ASTLabelType=CommonTree;
+}
+
+tokens {
+    BLOCK;
+    PROGRAM;
+    STATEMENT;
+    LOOP_TAG;
+}
+
+program
+    : statement* EOF
+        -&gt; ^(PROGRAM statement*)
+    ;
+
+statement
+    :   simple_statement ';'
+        -&gt; simple_statement
+    |   if_statement
+    |   while_statement
+    |   for_statement
+    |   ';'
+        -&gt;
+    ;
+
+simple_statement
+    :   expression
+        -&gt; ^(STATEMENT expression)
+    |   RETURN expression?
+        -&gt; ^(RETURN expression?)
+    ;
+
+// This writes out the branches if the IF statement *BACKWARDS*. Be careful!
+// Doing it the &quot;wrong&quot; way around makes generating jump targets in compile.g
+// way easier.
+if_statement
+    :   if_part elseif_parts? else_part? ENDIF
+        -&gt; ^(ENDIF else_part? elseif_parts? if_part)
+    ;
+
+if_part
+    :   IF condition statement*
+        -&gt; ^(IF condition statement*)
+    ;
+
+elseif_parts
+    :   ELSEIF condition statement* elseif_parts?
+        -&gt; elseif_parts? ^(ELSEIF condition statement*)
+    ;
+
+else_part
+    :   ELSE statement*
+        -&gt; ^(ELSE statement*)
+    ;
+
+while_statement
+    :   WHILE condition statement* ENDWHILE
+        -&gt; ^(ENDWHILE condition statement*)
+    |   WHILE IDENTIFIER condition statement* ENDWHILE
+        -&gt; ^(ENDWHILE ^(LOOP_TAG IDENTIFIER) condition statement*)
+    ;
+
+for_statement
+    :   for_list_statement
+    |   for_range_statement
+    ;
+
+for_list_statement
+    :   FOR IDENTIFIER IN '(' expression ')' statement* ENDFOR
+        -&gt; ^(ENDFOR ^(LOOP_TAG IDENTIFIER) expression statement*)
+    ;
+
+for_range_statement
+    :   FOR IDENTIFIER IN range statement* ENDFOR
+        -&gt; ^(ENDFOR ^(LOOP_TAG IDENTIFIER) range statement*)
+    ;
+
+range
+    :   RANGE_START start=expression TO end=expression RANGE_END
+        -&gt; ^(RANGE_START $start $end)
+    ;
+
+condition
+    :   '(' expression ')'
+        -&gt; expression
+    ;
+
+expression
+    :   root_expression
+    ;
+
+root_expression
+    :   literal
+    |   IDENTIFIER
+    ;
+
+literal
+    :   INT
+    |   FLOAT
+    |   STRING
+    |   OBJECT_NUM
+    |   ERROR
+    |   list_literal
+    ;
+
+list_literal
+    :   LIST_START list_body? LIST_END
+        -&gt; ^(LIST_START list_body?)
+    ;
+
+list_body
+    :   list_element (',' list_element)*
+        -&gt; list_element*
+    ;
+
+list_element
+    :   expression
+    |   list_splice
+    ;
+
+list_splice
+    :   '@' expression
+        -&gt; ^('@' expression)
+    ;
+
+// --------------------
+// Fixed-content tokens
+// --------------------
+
+ERROR
+    :   'e_range'
+    |   'e_recmove'
+    |   'e_none'
+    |   'e_propnf'
+    |   'e_quota'
+    |   'e_div'
+    |   'e_args'
+    |   'e_varnf'
+    |   'e_verbnf'
+    |   'e_perm'
+    |   'e_invind'
+    |   'e_nacc'
+    |   'e_type'
+    |   'e_float'
+    |   'e_invarg'
+    |   'e_maxrec'
+    ;
+
+ANY: 'any';
+IF: 'if';
+ELSEIF: 'elseif';
+ELSE: 'else';
+ENDIF: 'endif';
+WHILE: 'while';
+ENDWHILE: 'endwhile';
+FOR: 'for';
+IN: 'in';
+ENDFOR: 'endfor';
+RETURN: 'return';
+
+LIST_START: '{';
+LIST_END: '}';
+RANGE_START: '[';
+RANGE_END: ']';
+
+DOT: '.';
+TO: '..';
+
+// -----------------------
+// Variable-content tokens
+// -----------------------
+
+// printable ASCII, minus double quote and backslash.
+fragment STRING_CHAR
+    :   '\u0020'..'\u0021'
+    |   '\u0023'..'\u005B'
+    |   '\u005D'..'\u007E'
+    ;
+
+fragment STRING_ESCAPE
+    :   '\\' ('&quot;' | '\\')
+    ;
+
+STRING: '&quot;' (STRING_CHAR | STRING_ESCAPE) * '&quot;';
+
+fragment DIGIT: '0'..'9';
+fragment SIGN: '-'?;
+
+INT: SIGN DIGIT+;
+
+fragment FLOAT_EXPONENT
+    :   'e' ('+'|'-')? DIGIT+
+    ;
+
+FLOAT
+    :   SIGN DIGIT+ FLOAT_EXPONENT
+    |   SIGN DIGIT+ DOT DIGIT* FLOAT_EXPONENT?
+    |   SIGN DOT DIGIT+ FLOAT_EXPONENT?
+    ;
+
+OBJECT_NUM
+    :   '#' '-'? DIGIT+
+    ;
+
+fragment IDENT_FIRST_CHAR
+    :   'a'..'z' | '_'
+    ;
+
+fragment IDENT_CHAR
+    :   IDENT_FIRST_CHAR | DIGIT
+    ;
+
+IDENTIFIER
+    :   IDENT_FIRST_CHAR IDENT_CHAR*
+    ;
+
+// Newlines aren't technically legal in MOO strings, where most code comes
+// from. However, permitting them in the language means source from files can
+// be compiled without stripping newlines in advance.
+WHITESPACE
+    :   (' ' | '\t' | '\r' | '\n') { $channel = HIDDEN; }
+    ;
+
+COMMENT
+    :   '/*' .* '*/' { $channel = HIDDEN; }
+    ;
+
+/* eof */
+---- for-range.moo ----
+for x in [1..5]
+endfor
+
+/* This should parse identically to the above. */
+for x in [1 .. 5]
+endfor
+
+for y in [6..10]
+    &quot;Non-empty.&quot;;
+endfor
+/* eof */
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="045131.html">[antlr-interest] praising setUnknownTokenBoundaries()
+</A></li>
+	<LI>Next message: <A HREF="045133.html">[antlr-interest] An ambiguous lexing problem
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#45132">[ date ]</a>
+              <a href="thread.html#45132">[ thread ]</a>
+              <a href="subject.html#45132">[ subject ]</a>
+              <a href="author.html#45132">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

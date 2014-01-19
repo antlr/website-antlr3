@@ -1,0 +1,159 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Faster expression parsing
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Faster%20expression%20parsing&In-Reply-To=%3C86403CA0939415448BCCB83855EFE09A64E24C%40Bloodymary.ironwillgames.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="030406.html">
+   <LINK REL="Next"  HREF="030410.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Faster expression parsing</H1>
+    <B>Sam Harwell</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Faster%20expression%20parsing&In-Reply-To=%3C86403CA0939415448BCCB83855EFE09A64E24C%40Bloodymary.ironwillgames.com%3E"
+       TITLE="[antlr-interest] Faster expression parsing">sharwell at pixelminegames.com
+       </A><BR>
+    <I>Thu Aug 28 13:18:07 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="030406.html">[antlr-interest] Faster expression parsing
+</A></li>
+        <LI>Next message: <A HREF="030410.html">[antlr-interest] Faster expression parsing
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30408">[ date ]</a>
+              <a href="thread.html#30408">[ thread ]</a>
+              <a href="subject.html#30408">[ subject ]</a>
+              <a href="author.html#30408">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>The *giant* advantage in the code example I showed lies in something
+behind the scenes: no extra syntactic or semantic predicates were added,
+so the prediction runs as fast as it did per-level before. On a grammar
+that doesn't require any predicates at the binary expression level, this
+means a 5:1 performance difference for the function. I just checked, and
+26.96% of the parse time is in 'binary_expression', which is
+'prefix_expression' separated by 'binary_operator'. 25.41% of the parse
+time is in 'prefix_expression', so the overhead of parsing all 25
+non-assignment binary operations in 12 precedence groups in my program
+is now 1.5% of the parse time.
+
+Also, the functions build the tree properly accounting for both operator
+associativity and precedence groups. The profiler showed the tree
+construction overhead (the call to createPrecedenceTree) given a flat
+input was 0.27% of the parse time. Keep in mind that my grammar doesn't
+use backtracking or semantic predicates, and is &lt;=LL(2) for most
+predictions. On a grammar that spends more time in those sections, the
+overhead would show as near 0.
+
+In the grammar I'm performance testing, I don't have any lines that look
+quite like the one you mentioned. The language I'm parsing allows some
+reserved words to be used as variable names, so I had this:
+
+a	: 	literal
+		-&gt; ^(literal)
+	|	varName
+		-&gt; ^(varName)
+	|
+	...
+	;
+
+varName	:	IDENTIFIER
+	|	VAR
+	|	FUNCTION
+	...
+	;
+
+So I changed rule a to be:
+
+a	: 	literal
+		-&gt; literal
+	|	varName
+		-&gt; varName
+	|	...
+	;
+
+'primary_expression' dropped from 7.02% to 6.40%.
+
+It really shows the power of ANTLR3 to sandwich a operator precedence
+parser in it that still allows a grammar-defined primary non-terminal,
+without any changes to the generator or runtime.
+
+My parser targets the C# runtime and currently parses 1.33MB of source
+code / second, so with &quot;only&quot; 2500 source files (8MB) in the project,
+it's getting difficult to profile with absolute consistency.
+
+Sam
+
+-----Original Message-----
+From: Terence Parr [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">parrt at cs.usfca.edu</A>] 
+Sent: Thursday, August 28, 2008 1:08 PM
+To: Sam Harwell
+Cc: antlr-interest
+Subject: Re: [antlr-interest] Faster expression parsing
+
+Heh, really cool!  This is a similar approach to:
+
+<A HREF="http://www.antlr.org/wiki/display/~admin/2008/03/23/Faster+expression">http://www.antlr.org/wiki/display/~admin/2008/03/23/Faster+expression</A> 
++parsing+for+ANTLR
+
+except that you do the appropriate tree construction and after parsing  
+without consideration of operator precedence. Interesting. I wonder  
+which is faster.
+
+Note that you can improve the speed slightly when you are grammar by  
+removing unnecessary tree stuff.
+
+&gt;<i> primary_expression
+</I>&gt;<i>         :       INTEGER
+</I>&gt;<i>                 -&gt; ^(INTEGER)
+</I>&gt;<i>         |       '(' expression ')'
+</I>&gt;<i>                 -&gt; expression
+</I>&gt;<i>         ;
+</I>
+primary_expression
+         :       INTEGER
+         |       '(' expression ')' -&gt; expression
+         ;
+
+Let me know if that makes a difference.
+
+Ter
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="030406.html">[antlr-interest] Faster expression parsing
+</A></li>
+	<LI>Next message: <A HREF="030410.html">[antlr-interest] Faster expression parsing
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30408">[ date ]</a>
+              <a href="thread.html#30408">[ thread ]</a>
+              <a href="subject.html#30408">[ subject ]</a>
+              <a href="author.html#30408">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

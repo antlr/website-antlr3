@@ -1,0 +1,121 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] on &quot;crap&quot; grammars
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20on%20%22crap%22%20grammars&In-Reply-To=%3C6B458D23F5D4A24ABCDB3C78EA97393B02AFFD57%40EXCH-VIRTUAL.aerotechad.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="042195.html">
+   <LINK REL="Next"  HREF="042178.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] on &quot;crap&quot; grammars</H1>
+    <B>Justin Murray</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20on%20%22crap%22%20grammars&In-Reply-To=%3C6B458D23F5D4A24ABCDB3C78EA97393B02AFFD57%40EXCH-VIRTUAL.aerotechad.com%3E"
+       TITLE="[antlr-interest] on &quot;crap&quot; grammars">jmurray at aerotech.com
+       </A><BR>
+    <I>Thu Jul 21 09:42:20 PDT 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="042195.html">[antlr-interest] on &quot;crap&quot; grammars
+</A></li>
+        <LI>Next message: <A HREF="042178.html">[antlr-interest] C target: unhelpful error messages from the default error handler in trivial cases
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#42198">[ date ]</a>
+              <a href="thread.html#42198">[ thread ]</a>
+              <a href="subject.html#42198">[ subject ]</a>
+              <a href="author.html#42198">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>As Jim pointed out, your problem with tokens showing up in error 
+messages as &lt;invalid&gt; is because you just inlined lexer tokens (in your 
+&quot;type&quot; rule) without giving them a name. Try making two real lexer rules 
+with the names you would like to see:
+
+INT : 'int';
+FLOAT : 'float';
+type : INT | FLOAT;
+
+If you look at the generated C code, you will see how it determines the 
+string to use from this name. It is also fairly simple to override the 
+printed string on a case by case basis if that seems appropriate for 
+your errors. This may be necessary if you discover that the #defines 
+generated for INT and FLOAT conflict with other defines used in your 
+code and libraries. You can solve this generically by adding an 
+underscore to the end of the name (INT_ and FLOAT_), and then just strip 
+off the last character in your error handler.
+
+- Justin
+
+On 7/21/2011 11:42 AM, Vlad wrote:
+&gt;<i> This test grammar was called &quot;crap&quot; by Jim Idle. I am willing to eat the humble pie and admit where I am an ANTLR novice or don't know something about grammars, but I am just not seeing it in this simple case:
+</I>&gt;<i>
+</I>&gt;<i> grammar testerrors;
+</I>&gt;<i>
+</I>&gt;<i> options
+</I>&gt;<i> {
+</I>&gt;<i>      language='C';
+</I>&gt;<i> }
+</I>&gt;<i>
+</I>&gt;<i> NAME    :   ( 'a'..'z' | 'A'..'Z' | '0'..'9' )+ ;
+</I>&gt;<i> WS      :   ( ' ' | '\t' | '\r' | '\n' )+ { $channel = HIDDEN; } ;
+</I>&gt;<i>
+</I>&gt;<i> parse:
+</I>&gt;<i>      decl ( options { greedy = true; }: ',' decl )* ','? EOF
+</I>&gt;<i>      ;
+</I>&gt;<i>
+</I>&gt;<i> decl:
+</I>&gt;<i>      NAME ':' type
+</I>&gt;<i>      ;
+</I>&gt;<i>
+</I>&gt;<i> type:
+</I>&gt;<i>      'int' | 'float'
+</I>&gt;<i>      ;
+</I>&gt;<i>
+</I>&gt;<i> The start symbol is a comma-delimited list of simple '&lt;name&gt;  :&lt;type&gt;' declarations and allows the list to optionally end in a comma as is done in some languages (Python, etc). This is a pretty common way to structure it. In JavaCC, for example, you'd use a local LOOKAHEAD(2) inside the ()* to disambiguate the choice between matching one more decl or ending the list. Without it and with the default k=1, JavaCC emits an ambiguity warning at parser generation time. In ANTLR case, the ambiguity can be dealt with similarly, with a local k=2 option or the way done above (which I borrowed from <A HREF="http://www.antlr.org/grammar/1200715779785/Python.g">http://www.antlr.org/grammar/1200715779785/Python.g</A>). Without either, ANTLR also emits a warning at parser generation time. All of this seems to work as expected.
+</I>&gt;<i>
+</I>&gt;<i> So, what is so obviously wrong with the grammar snippet that deserves the &quot;crap&quot; moniker? I am learning ANTLR because I want to add a multi-target parser generator tool to my skill set. For Java work, JavaCC is still out there and generates fast parsers, has good error handling, and can build ASTs/visitors. In C++, I would normally do a simple case like this via boost.spirit but it's a bit of a template metaprogramming monster. With ANTLR I am successfully compiling my C parser within a larger C++ codebase and the only learning curve issues are odd error messages on relatively trivial input errors, where ANTLR can't seem to identify the token it is expecting. E.g., input &quot;name : bad&quot; results in
+</I>&gt;<i>
+</I>&gt;<i> -memory-(1)  : error 10 : Unexpected token, at offset 6
+</I>&gt;<i>      near [Index: 0 (Start: 0-Stop: 0) ='&lt;missing&lt;invalid&gt;&gt;', type&lt;0&gt;  Line: 1 LinePos:6]
+</I>&gt;<i>       : Missing&lt;invalid&gt;
+</I>&gt;<i>
+</I>&gt;<i> I would be happy to get specific pointers to docs and articles on how to improve error handling by ANTLR *C* parsers. At least being able to modify the stock error display function to tackle the common case of mis-spelling a token name would be great.
+</I>&gt;<i>
+</I>&gt;<i> Thank you,
+</I>&gt;<i> Vlad
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I></PRE>
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="042195.html">[antlr-interest] on &quot;crap&quot; grammars
+</A></li>
+	<LI>Next message: <A HREF="042178.html">[antlr-interest] C target: unhelpful error messages from the default error handler in trivial cases
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#42198">[ date ]</a>
+              <a href="thread.html#42198">[ thread ]</a>
+              <a href="subject.html#42198">[ subject ]</a>
+              <a href="author.html#42198">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

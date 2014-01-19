@@ -1,0 +1,211 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Literals not handled in grammars with import
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Literals%20not%20handled%20in%20grammars%20with%20import&In-Reply-To=%3Cebc876d70808250722m48296391v120f8361b10057a7%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="030327.html">
+   <LINK REL="Next"  HREF="030328.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Literals not handled in grammars with import</H1>
+    <B>Thomas Brandon</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Literals%20not%20handled%20in%20grammars%20with%20import&In-Reply-To=%3Cebc876d70808250722m48296391v120f8361b10057a7%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Literals not handled in grammars with import">tbrandonau at gmail.com
+       </A><BR>
+    <I>Mon Aug 25 07:22:18 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="030327.html">[antlr-interest] Literals not handled in grammars with import
+</A></li>
+        <LI>Next message: <A HREF="030328.html">[antlr-interest] Literals not handled in grammars with import
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30326">[ date ]</a>
+              <a href="thread.html#30326">[ thread ]</a>
+              <a href="subject.html#30326">[ subject ]</a>
+              <a href="author.html#30326">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Okay, further investigation shows that as tokenVocabs are ignored in
+slave grammars ANTLR processes the reference to the literal in the
+slave grammar, and adds it as an unassigned string. Then when
+processing the master grammar it imports the vocab and correctly
+defines the token. But then in
+AssignTokenTypesBehavior.assignStringTypes it defines the unassigned
+string reference from the slave grammar a new type, overwriting the
+correct definition from the vocab.
+I fixed this by adding a check for an existing type, giving:
+	protected void assignStringTypes(Grammar root) {
+		// walk string literals assigning types to unassigned ones
+		Set s = stringLiterals.keySet();
+		for (Iterator it = s.iterator(); it.hasNext();) {
+			String lit = (String) it.next();
+			// ADDED
+			// Check if literal was subsequently assigned a type
+			Integer curType;
+			if((curType = grammar.composite.stringLiteralToTypeMap.get(lit)) != null) {
+				stringLiterals.put(lit, curType);
+				continue;
+			}
+			// END ADDED
+			Integer oldTypeI = (Integer)stringLiterals.get(lit);
+			int oldType = oldTypeI.intValue();
+			if ( oldType&lt;Label.MIN_TOKEN_TYPE ) {
+				Integer typeI = Utils.integer(root.getNewTokenType());
+				stringLiterals.put(lit, typeI);
+				// if string referenced in combined grammar parser rule,
+				// automatically define in the generated lexer
+				root.defineLexerRuleForStringLiteral(lit, typeI.intValue());
+			}
+		}
+	}
+A test case for the problem is:
+	public void testDelegatesSeeSameTokenTypeForLiteral() throws Exception {
+		ErrorQueue equeue = new ErrorQueue();
+		ErrorManager.setErrorListener(equeue);
+		String parser =
+			&quot;grammar P;\n&quot; +
+			&quot;options { output=AST; }&quot; +
+			&quot;tokens { A;B;C; }&quot; +
+			&quot;x : 'x'  {System.out.println(\&quot;P.x\&quot;);};\n&quot;;
+		if(!antlr(&quot;P.g&quot;, &quot;P.g&quot;, parser, false))
+			throw new Exception(&quot;Error generating parser&quot;);
+		if(!compile(&quot;PLexer.java&quot;))
+			throw new Exception(&quot;Error compiling lexer&quot;);
+		if(!compile(&quot;PParser.java&quot;))
+			throw new Exception(&quot;Error compiling parser&quot;);
+		
+		String slaveTreeParser =
+			&quot;tree grammar S;\n&quot; +
+			&quot;tokens { A; }&quot; +
+			&quot;x : 'x' {System.out.println(\&quot;S.x\&quot;);};\n&quot;;
+		if(!antlr(&quot;S.g&quot;, &quot;S.g&quot;, slaveTreeParser, false))
+			throw new Exception(&quot;Error generating slave tree parser&quot;);
+		if(!compile(&quot;S.java&quot;))
+			throw new Exception(&quot;Error compiling slave tree parser&quot;);
+		
+		String masterTreeParser =
+			&quot;tree grammar M;\n&quot; +
+			&quot;options { tokenVocab=P; }\n&quot; +
+			&quot;import S;&quot; +
+			&quot;tokens { A;B; }&quot; +
+			&quot;x2 : 'x'  {System.out.println(\&quot;M.x2\&quot;);};\n&quot;;
+		if(!antlr(&quot;M.g&quot;, &quot;M.g&quot;, masterTreeParser, false))
+			throw new Exception(&quot;Error generating master tree parser&quot;);
+		if(!compile(&quot;M.java&quot;))
+			throw new Exception(&quot;Error compiling master tree parser&quot;);
+		
+		writeFile(tmpdir, &quot;input&quot;, &quot;x&quot;);
+		
+		String found = rawExecRecognizer(&quot;PParser&quot;, &quot;M&quot;, &quot;PLexer&quot;, &quot;x&quot;, &quot;x&quot;,
+true, false, false, false);
+		assertEquals(
+			&quot;P.x\n&quot; +
+			&quot;S.x\n&quot;, found);
+
+		found = rawExecRecognizer(&quot;PParser&quot;, &quot;M&quot;, &quot;PLexer&quot;, &quot;x&quot;, &quot;x2&quot;, true,
+false, false, false);
+		assertEquals(
+			&quot;P.x\n&quot; +
+			&quot;M.x2\n&quot;, found);
+	}
+I noticed also that before fixing as well as the assert failing the
+test case reported an exception at:
+Exception in thread &quot;main&quot; java.lang.ArrayIndexOutOfBoundsException: 9
+	at org.antlr.runtime.tree.TreeParser.getMissingSymbol(TreeParser.java:82)
+	at org.antlr.runtime.BaseRecognizer.recoverFromMismatchedToken(BaseRecognizer.java:624)
+	at org.antlr.runtime.BaseRecognizer.match(BaseRecognizer.java:117)
+	at M_S.x(M_S.java:45)
+	at M.x(M.java:62)
+	at Test.main(Test.java:19)
+But I think that may be because the error above introduced a
+discontinuity in token numbers. There was no token with ID 8 so ID 9
+was going off the end of the tokenNames array.
+
+Tom.
+On Mon, Aug 25, 2008 at 5:08 PM, Thomas Brandon &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">tbrandonau at gmail.com</A>&gt; wrote:
+&gt;<i> In 31, imported literals are not being handled correctly in tree
+</I>&gt;<i> grammars utilising import.
+</I>&gt;<i>
+</I>&gt;<i> Given the included grammars, while TestTree.g works properly, in
+</I>&gt;<i> TestTree2.g the literals are not correctly imported and new token
+</I>&gt;<i> types are assigned. This occurs in both rules from the imported
+</I>&gt;<i> grammar (tok1 in TestTree2_TestTree.java) and new rules in the
+</I>&gt;<i> importing grammar (tok1_2 in TestTree2.java).
+</I>&gt;<i>
+</I>&gt;<i> Tom.
+</I>&gt;<i>
+</I>&gt;<i> &lt;Test.g&gt;
+</I>&gt;<i> grammar Test;
+</I>&gt;<i>
+</I>&gt;<i> tok1: 'tok1';
+</I>&gt;<i> &lt;/Test.g&gt;
+</I>&gt;<i>
+</I>&gt;<i> &lt;TestTree.g&gt;
+</I>&gt;<i> tree grammar TestTree;
+</I>&gt;<i>
+</I>&gt;<i> options {
+</I>&gt;<i>        tokenVocab=Test;
+</I>&gt;<i>        ASTLabelType = CommonTree;
+</I>&gt;<i> }
+</I>&gt;<i>
+</I>&gt;<i> tok1:
+</I>&gt;<i>        'tok1'
+</I>&gt;<i>        ;
+</I>&gt;<i> &lt;/Test2.g&gt;
+</I>&gt;<i>
+</I>&gt;<i> &lt;TestTree2.g&gt;
+</I>&gt;<i> tree grammar TestTree2;
+</I>&gt;<i>
+</I>&gt;<i> options {
+</I>&gt;<i>        tokenVocab=Test;
+</I>&gt;<i>        ASTLabelType = CommonTree;
+</I>&gt;<i> }
+</I>&gt;<i>
+</I>&gt;<i> import TestTree;
+</I>&gt;<i>
+</I>&gt;<i> tok1_2:
+</I>&gt;<i>        'tok1'
+</I>&gt;<i>        ;
+</I>&gt;<i> &lt;/TestTree2.g&gt;
+</I>&gt;<i>
+</I></PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="030327.html">[antlr-interest] Literals not handled in grammars with import
+</A></li>
+	<LI>Next message: <A HREF="030328.html">[antlr-interest] Literals not handled in grammars with import
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30326">[ date ]</a>
+              <a href="thread.html#30326">[ thread ]</a>
+              <a href="subject.html#30326">[ subject ]</a>
+              <a href="author.html#30326">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

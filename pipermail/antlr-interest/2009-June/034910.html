@@ -1,0 +1,182 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Matching empty string
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Matching%20empty%20string&In-Reply-To=%3C1245077153.30561.14.camel%40gecko.home.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="034902.html">
+   <LINK REL="Next"  HREF="034903.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Matching empty string</H1>
+    <B>John B. Brodie</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Matching%20empty%20string&In-Reply-To=%3C1245077153.30561.14.camel%40gecko.home.org%3E"
+       TITLE="[antlr-interest] Matching empty string">jbb at acm.org
+       </A><BR>
+    <I>Mon Jun 15 07:45:53 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="034902.html">[antlr-interest] Matching empty string
+</A></li>
+        <LI>Next message: <A HREF="034903.html">[antlr-interest] Left recursion removal
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#34910">[ date ]</a>
+              <a href="thread.html#34910">[ thread ]</a>
+              <a href="subject.html#34910">[ subject ]</a>
+              <a href="author.html#34910">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Greetings!
+
+On Sun, 2009-06-14 at 23:09 -0400, Dukie Banderjee wrote:
+&gt;<i> Hi,
+</I>&gt;<i> My grammar needs to handle the following situation: A line can have
+</I>&gt;<i> multiple fields, separated by a delimiter. A field can have multiple
+</I>&gt;<i> components, separated by another delimiter.
+</I>&gt;<i> If a field or component is blank, it should be counted as a blank
+</I>&gt;<i> field or blank component. For example with field delimiter '+' and
+</I>&gt;<i> component delimiter ':' :
+</I>&gt;<i> UNB++::+123
+</I>&gt;<i> is a 'UNB' line with 3 fields. The first field is blank, the second
+</I>&gt;<i> field has 3 blank components, and the last field has a single
+</I>&gt;<i> component with the value '123'.
+</I>&gt;<i> 
+</I>&gt;<i> Here is my grammar so far:
+</I>&gt;<i> 
+</I>&gt;<i> line         : TEXT fields ;
+</I>&gt;<i> fields        : field* terminator! ;
+</I>&gt;<i> field        : SEP t=fieldText? -&gt; ^(FIELD $t?) ;
+</I>&gt;<i> fieldText    : comp (CSEP comp)* ;
+</I>&gt;<i> comp        : t=TEXT -&gt; ^(COMP $t) ;
+</I>&gt;<i> 
+</I>&gt;<i> When a field is blank, e.g. '++', this correctly generates a ^(FIELD)
+</I>&gt;<i> with no children. However, I don't know how to get similar behaviour
+</I>&gt;<i> for the components, because whereas a field starts with a SEP and
+</I>&gt;<i> optional TEXT, the component may or may not have a leading CSEP. 
+</I>&gt;<i> 
+</I>&gt;<i> When the input is '+::+', there are three components, but the first is
+</I>&gt;<i> entirely blank, an empty string. 
+</I>&gt;<i> 
+</I>&gt;<i> What I would like is that '+::+' creates ^(FIELD ^(COMP) ^(COMP)
+</I>&gt;<i> ^(COMP)). How can I accomplish this?
+</I>&gt;<i> 
+</I>
+Attached is a complete example accomplishing what you asked for.
+
+In summary, I think the key here is to realize that when there is 1 and
+only 1 component, then 1 and only 1 TEXT must be present, and obviously
+no CSEP. While when there are 2 or more components, it is the CSEP(s)
+that must be present and the TEXT is optional. So I think in light of
+this we need to separate the fieldText rule into 2 cases:
+
+fieldText : comp | ((comp? CSEP)+ comp?) ;
+
+The attached grammar is slightly more complicated because I made a new
+virtual token EMPTY in order to make empty fields and/or components more
+explicit in the resultant AST.
+
+Hope this helps....
+   -jbb
+
+-------------- next part --------------
+grammar Test;
+
+options {
+    output = AST;
+    ASTLabelType = CommonTree;
+}
+
+tokens { FIELD; COMP; EMPTY; }
+
+@members {
+    private static final String [] x = new String[]{
+       &quot;UNB++::+123\n&quot;,
+       &quot;UNB++::z+123\n&quot;,
+       &quot;UNB++x::z+123\n&quot;,
+       &quot;UNB++:y:+123\n&quot;,
+       &quot;UNB++x:y:z+123\n&quot;
+    };
+
+    public static void main(String [] args) {
+        for( int i = 0; i &lt; x.length; ++i ) {
+            try {
+                System.out.println(&quot;about to parse:`&quot;+x[i]+&quot;`&quot;);
+                TestLexer lexer = new TestLexer(new ANTLRStringStream(x[i]));
+                CommonTokenStream tokens = new CommonTokenStream(lexer);
+
+                TestParser parser = new TestParser(tokens);
+                TestParser.start_return p_result = parser.start();
+
+                CommonTree ast = p_result.tree;
+                if( ast == null ) {
+                   System.out.println(&quot;resultant tree: is NULL&quot;);
+                } else {
+                   System.out.println(&quot;resultant tree: &quot; + ast.toStringTree());
+                }
+                System.out.println();
+            } catch(Exception e) {
+                e.printStackTrace();
+            }
+        }
+    }
+}
+
+start : line EOF!;
+
+line          : TEXT fields ;
+
+fields        : field* terminator! ;
+
+// make the fact that a field is empty explicit.
+// replaced this rule--- field : SEP t=fieldText? -&gt; ^(FIELD $t?) ;
+// with---
+field         : SEP! opt_fieldText ;
+
+opt_fieldText : (t=fieldText -&gt; ^(FIELD $t))
+              | (/*empty*/ -&gt; ^(FIELD EMPTY)) ; 
+
+fieldText     : comp // single component, value MUST be present
+
+              | ((opt_comp CSEP!)+ opt_comp) ; // 2 or more components,
+                                               // each possibly empty
+
+opt_comp      : comp
+              | (/*empty*/ -&gt; ^(COMP EMPTY)) ;
+
+comp          : t=TEXT -&gt; ^(COMP $t) ;
+
+terminator : NL;
+SEP : '+' ;
+CSEP : ':' ;
+TEXT : ('a'..'z'|'A'..'Z'|'0'..'9')+ ;
+
+NL : ('\r'|'\n')+;
+
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="034902.html">[antlr-interest] Matching empty string
+</A></li>
+	<LI>Next message: <A HREF="034903.html">[antlr-interest] Left recursion removal
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#34910">[ date ]</a>
+              <a href="thread.html#34910">[ thread ]</a>
+              <a href="subject.html#34910">[ subject ]</a>
+              <a href="author.html#34910">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

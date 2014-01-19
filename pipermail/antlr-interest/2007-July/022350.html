@@ -1,0 +1,200 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] 'C' code generator and Unicode
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%27C%27%20code%20generator%20and%20Unicode&In-Reply-To=%3C3A76756EED583B43A4AD704E29CCD079741232%40mail.smartlogic.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="022357.html">
+   <LINK REL="Next"  HREF="022354.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] 'C' code generator and Unicode</H1>
+    <B>Bob Cowdery</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%27C%27%20code%20generator%20and%20Unicode&In-Reply-To=%3C3A76756EED583B43A4AD704E29CCD079741232%40mail.smartlogic.com%3E"
+       TITLE="[antlr-interest] 'C' code generator and Unicode">Bob.Cowdery at smartlogic.com
+       </A><BR>
+    <I>Thu Jul 12 09:21:39 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="022357.html">[antlr-interest] Understanding priorities in lexing (newbie)
+</A></li>
+        <LI>Next message: <A HREF="022354.html">[antlr-interest] 'C' code generator and Unicode
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#22350">[ date ]</a>
+              <a href="thread.html#22350">[ thread ]</a>
+              <a href="subject.html#22350">[ subject ]</a>
+              <a href="author.html#22350">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Jim,
+
+Thank you so much for the quick response. It's very nice to know when joining a new list that it's active.
+
+I haven't digested all you said yet but I tried reading the file binary wise and passing in the UCS2 string. It looks a lot better but I guess I'm still doing something a little wrong. The output is this,
+
+-memory-(1) : lexer error 3 :
+        1:1: Tokens : ( CAP | LWR | WHITESPACE | BOTH | FULL | ALLUPPER | ALLLOW
+ER | MIXED ); at offset 0, near char(0XFF) :
+        &#160;?T
+FULL
+ALLUPPER
+ALLLOWER
+MIXED
+
+but I also get an assertion failure which I have to ignore twice to get the output. The assertion says
+File: isctype.c Line: 56
+Expression: (unsigned)(C+1) &lt;= 256
+
+My guess at the parser failure is that it dosen't like the BOM marker. Do you haddle the BOM or expect the order to be LE or BE?
+
+Bob,
+
+UCS2 (which is UTF16 without surrogate support basically) works fine, but instead of using the default input stream you need to name the 16 bit UCS2 version:
+
+antlr3NewUCS2StringInPlaceStream() - In memory string
+
+I have just noticed that I have not provided the equivalent function for files, so for the moment you will need to read it yourself and pass in  the pointer to the data.
+
+I have not provided UTF32 input streams, but this is just a matter of copying the code for UCS2 and changing the casts from {p}ANTLR3_UINT16 to {p}ANTLR3_UINT32.
+
+Input streams for handling UTF-8 and UTF-16 with surrogates are a ways down the line from me typing fingers as there is a lot to do, but there is not a great deal of work here as the mark() an rewind() calls are set up to keep the absolute pointer rather than the character position for such streams.
+
+Finally, not that the input stream is the only difference in the function, so a lexer/parser will work the same with any input stream at all because internally it uses UTF32. So, change the stream you create and otherwise use it exactly the same as your ASCII stream. 
+
+Finally, finally, note that the ANTLR3_STRING 'classes' you get from the tokens and so on will retain the encoding of the input stream, but otherwise you again use exactly the same methods on them (subStr, append, etc). Tehre are methods for appending 8 bit character strings to any type of string, which a re mainly useful when you are programming and want to add a string like &quot;DEBUG: XXXXXX&quot; to a 16 bi output string.
+
+Jim
+
+&gt;<i> -----Original Message-----
+</I>&gt;<i> From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:antlr-interest-
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">bounces at antlr.org</A>] On Behalf Of Bob Cowdery
+</I>&gt;<i> Sent: Thursday, July 12, 2007 7:28 AM
+</I>&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> Subject: [antlr-interest] 'C' code generator and Unicode
+</I>&gt;<i> 
+</I>&gt;<i> Hi all,
+</I>&gt;<i> 
+</I>&gt;<i> This is a first post to the list. I am using Antlr 3.0 with the C
+</I>&gt;<i> runtime. I have managed to compile and run a simple grammar. My
+</I>&gt;<i> question however is around Unicode support. I have tried every lexer I
+</I>&gt;<i> can find but the only one that does what I expect so far is jFlex, but
+</I>&gt;<i> java is not an option. For the test I have a number of files saved in
+</I>&gt;<i> ASCII, UTF8, UTF16 and UTF32 which I am feeding through the lexer. The
+</I>&gt;<i> grammar is very simple.
+</I>&gt;<i> 
+</I>&gt;<i> grammar SimpleC;
+</I>&gt;<i> 
+</I>&gt;<i> options {	language = C;}
+</I>&gt;<i> 
+</I>&gt;<i> CAP		:	'\u0041'..'\u005a' ;
+</I>&gt;<i> LWR		:	'\u0061'..'\u007a' ;
+</I>&gt;<i> WHITESPACE : ( '\t' | ' ' | '\r' | '\n'| '\u000C' )+ { $channel =
+</I>&gt;<i> HIDDEN; };
+</I>&gt;<i> 
+</I>&gt;<i> BOTH		:	CAP | LWR ;
+</I>&gt;<i> FULL		:	(CAP)(LWR)+ ;
+</I>&gt;<i> ALLUPPER	:	CAP+ ;
+</I>&gt;<i> ALLLOWER	:	LWR+ ;
+</I>&gt;<i> MIXED		:	BOTH+ ;
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> atom	:	 FULL		{ printf( &quot;FULL\n&quot;); };
+</I>&gt;<i> atom1	:	 ALLUPPER	{ printf( &quot;ALLUPPER\n&quot;); };
+</I>&gt;<i> atom2	:	 ALLLOWER	{ printf( &quot;ALLLOWER\n&quot;); };
+</I>&gt;<i> atom3	:	 MIXED	{ printf( &quot;MIXED\n&quot;); };
+</I>&gt;<i> 
+</I>&gt;<i> If I feed the ASCII file (or UTF8 with single character codes) through
+</I>&gt;<i> I get as expected.
+</I>&gt;<i> 
+</I>&gt;<i> &gt;From input: This IS some TExt
+</I>&gt;<i> FULL
+</I>&gt;<i> ALLUPPER
+</I>&gt;<i> ALLLOWER
+</I>&gt;<i> MIXED
+</I>&gt;<i> 
+</I>&gt;<i> &gt;From the UTF16 file I get:
+</I>&gt;<i> (there are lots of these errors for every leading 00 in the UTF16 text.
+</I>&gt;<i> data-utf16-1.txt(1) : lexer error 3 :
+</I>&gt;<i>         1:1: Tokens : ( CAP | LWR | WHITESPACE | BOTH | FULL | ALLUPPER
+</I>&gt;<i> |
+</I>&gt;<i> ER | MIXED ); at offset 35, near char(00) :
+</I>&gt;<i> 
+</I>&gt;<i> FULL
+</I>&gt;<i> data-utf16-1.txt(1)  : error 2 : Unexpected token, at offset -1
+</I>&gt;<i>     near [Index: 0 (Start: 0-Stop: 2) ='&#160;?T', type&lt;4&gt; Line: 1 LinePos:-
+</I>&gt;<i> 1]
+</I>&gt;<i>      : expected FULL ...
+</I>&gt;<i> ALLUPPER
+</I>&gt;<i> ALLLOWER
+</I>&gt;<i> MIXED
+</I>&gt;<i> 
+</I>&gt;<i> Although strangely it still gives output mixed in with errors.
+</I>&gt;<i> 
+</I>&gt;<i> I won't clutter the post up with UTF32 as it gives the same but 3 times
+</I>&gt;<i> the number of errors on '00'.
+</I>&gt;<i> 
+</I>&gt;<i> It seems that the data is still being matched on bytes and not
+</I>&gt;<i> characters. I know I probably need to give the lexer a wide input
+</I>&gt;<i> stream but I can't figure how. The comments in the code suggest all
+</I>&gt;<i> input is treated as UTF32 and confusingly there is also a
+</I>&gt;<i> antlr3ucs2inputstream.c input stream file which suggests UCS2 support
+</I>&gt;<i> but I've no idea how to use it.
+</I>&gt;<i> 
+</I>&gt;<i> If anybody can provide some insight into how to make this work (UTF16
+</I>&gt;<i> is my preferred format) it would be much appreciated.
+</I>&gt;<i> 
+</I>&gt;<i> Regards
+</I>&gt;<i> Bob
+</I></PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="022357.html">[antlr-interest] Understanding priorities in lexing (newbie)
+</A></li>
+	<LI>Next message: <A HREF="022354.html">[antlr-interest] 'C' code generator and Unicode
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#22350">[ date ]</a>
+              <a href="thread.html#22350">[ thread ]</a>
+              <a href="subject.html#22350">[ subject ]</a>
+              <a href="author.html#22350">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

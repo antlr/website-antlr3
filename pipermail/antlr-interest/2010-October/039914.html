@@ -1,0 +1,139 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Semantic Predicates Depending On Rule Results
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Semantic%20Predicates%20Depending%20On%20Rule%20Results&In-Reply-To=%3C4CC39364.5070806%40bahj.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="039916.html">
+   <LINK REL="Next"  HREF="039925.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Semantic Predicates Depending On Rule Results</H1>
+    <B>Zachary Palmer</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Semantic%20Predicates%20Depending%20On%20Rule%20Results&In-Reply-To=%3C4CC39364.5070806%40bahj.com%3E"
+       TITLE="[antlr-interest] Semantic Predicates Depending On Rule Results">zep_antlr at bahj.com
+       </A><BR>
+    <I>Sat Oct 23 19:01:08 PDT 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="039916.html">[antlr-interest] inline template output
+</A></li>
+        <LI>Next message: <A HREF="039925.html">[antlr-interest] Semantic Predicates Depending On Rule Results
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#39914">[ date ]</a>
+              <a href="thread.html#39914">[ thread ]</a>
+              <a href="subject.html#39914">[ subject ]</a>
+              <a href="author.html#39914">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>All,
+
+I have a bit of a challenging problem at hand.  I've been using ANTLR 
+quite successfully for a language development project on which I have 
+been working for about a year now.  We are using an ANTLR grammar to 
+build the AST for the language from source.  Due to the requirement that 
+our AST nodes be heterogeneously typed and constructed via a particular 
+factory, we are not using output=AST; we are instead having each rule 
+return the type of AST node it generates a la the Java.g grammar found 
+on the ANTLRv3 site.
+
+We've recently introduced a new language construct with rather peculiar 
+needs.  When the parser is created, it is provided with a typechecker.  
+The new grammar rule for the language looks like the following (sans 
+actions and predicates):
+
+     '~:' expression ':~'
+
+Whenever this rule (termed &quot;splice&quot;) is invoked, it receives an expected 
+type for the expression.  The ANTLR grammar rule should only match this 
+production if it matches syntactically *and* the typechecker indicates 
+that the expression has the type provided as input to the splice rule.  
+The idea is that this rule can then be used as follows:
+
+     ident returns [IdentNode ret]:
+         splice[Type.IDENT] { $ret = factory.makeIdentNode($splice.ret); }
+         | IDENTIFIER { $ret = factory.makeIdentNode($IDENTIFIER.text); }
+         ;
+
+     name returns [NameNode ret]:
+         splice[Type.NAME] { $ret = factory.makeNameNode($splice.ret); }
+         | a=ident { $ret = factory.makeNameNode($a.ret); }
+         ('.' b=ident { $ret = factory.makeNameNode($b.ret, $ret); })*
+         ;
+
+This means that we can decide which AST to use based on the type of the 
+provided expression.  For the code
+
+     ~: stuff :~
+
+we produce a different tree based on whether &quot;stuff&quot; typechecks as a 
+NAME or an IDENT.
+
+The following definition of the splice rule comes very close to what I want:
+
+     splice[Type expectedType] returns [SpliceNode ret] :
+         '~:' { this.spliceTypechecker != null }?
+         expression
+         ':~' { 
+this.spliceTypechecker.typecheck($expression.ret).equals(expectedType) }
+         { $ret = factory.makeSpliceNode($expression.ret); }
+         ;
+
+Sadly, I have to turn off the &quot;memoize&quot; option or the first try to parse 
+splice will fail and the failure will be memoized.  I'd be okay with 
+that for the time being (as I have an approaching deadline) except that 
+it still doesn't work.  The problem appears to be that the backtracking 
+step that determines whether or not splicing is viable here does not 
+actually execute the actions I have attached to this grammar.  As a 
+result, the &quot;expression&quot; nonterminal parses an expression but does not 
+fill any values into $ret.  The typechecker is therefore asked to 
+typecheck null, which always results in the semantic predicate failing.
+
+The problem seems to lie with the fact that I have a semantic predicate 
+that relies on the return value of a rule to function correctly.  I 
+can't just hack this together by checking the predicate in an action of 
+my own (thereby deferring the predicate until after backtracking 
+analysis) because then backtracking will pick the wrong path.  I 
+absolutely must predicate based on the AST node which is produced from 
+the expression nonterminal.  Does anyone have any suggestions?
+
+I've been quite impressed with ANTLR thus far and we've invested a fair 
+amount of work in creating this grammar.  Between that and the 
+aforementioned deadline, I'd really like to convince ANTLR to do this 
+job for me.  And thanks for reading this far.  :)
+
+My appreciations,
+
+Zachary Palmer
+</PRE>
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="039916.html">[antlr-interest] inline template output
+</A></li>
+	<LI>Next message: <A HREF="039925.html">[antlr-interest] Semantic Predicates Depending On Rule Results
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#39914">[ date ]</a>
+              <a href="thread.html#39914">[ thread ]</a>
+              <a href="subject.html#39914">[ subject ]</a>
+              <a href="author.html#39914">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

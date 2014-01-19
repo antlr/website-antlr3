@@ -1,0 +1,287 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] lexer state and SMILES strings
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20lexer%20state%20and%20SMILES%20strings&In-Reply-To=%3C050606A6-0470-4AC2-AAD9-B1822DAC8E52%40dalkescientific.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="024571.html">
+   <LINK REL="Next"  HREF="024575.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] lexer state and SMILES strings</H1>
+    <B>Andrew Dalke</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20lexer%20state%20and%20SMILES%20strings&In-Reply-To=%3C050606A6-0470-4AC2-AAD9-B1822DAC8E52%40dalkescientific.com%3E"
+       TITLE="[antlr-interest] lexer state and SMILES strings">dalke at dalkescientific.com
+       </A><BR>
+    <I>Wed Nov  7 08:46:04 PST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="024571.html">[antlr-interest] Threading the TreeParser
+</A></li>
+        <LI>Next message: <A HREF="024575.html">[antlr-interest] lexer state and SMILES strings
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24572">[ date ]</a>
+              <a href="thread.html#24572">[ thread ]</a>
+              <a href="subject.html#24572">[ subject ]</a>
+              <a href="author.html#24572">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi all,
+
+   I'm parsing a format called SMILES.  It's a notation for
+writing molecules as a single line of ASCII.  Details at
+
+<A HREF="http://daylight.com/dayhtml/doc/theory/theory.smiles.html">http://daylight.com/dayhtml/doc/theory/theory.smiles.html</A>
+<A HREF="http://en.wikipedia.org/wiki/">http://en.wikipedia.org/wiki/</A> 
+Simplified_molecular_input_line_entry_specification
+
+I've written parsers for it using other parser generators
+but was hoping to use ANTLR for better cross-language output
+and simplifications I can do using tree grammars.
+
+My previous parsers were state dependent, and use only 1
+character lookahead.  This is easily handled by most of
+the parsers I know about for this format, which are
+hand-written using a bunch of switch statements.
+
+I've looked through the back archives and found several people
+asking about how to change the lexer state, but I didn't
+understand what to do from the responses I found.  I would
+appreciate some advice or pointers to existing code which
+does something like switching lexers, or adding lexer state, in ANTLR.
+
+=======
+
+That was the summary.  Here's the tedious details.
+
+The two main responses in the mailing list are of the form:
+
+   - create two lexers and have the parser switch between them
+
+   - the more provocative statement of Jim Idle:
+
+     Perhaps, someday, the world can require that any 'new' [insert
+     post-modernistic interpolation of 'reality' here ;-)] languages
+    have to have a sane ANTLR parser as proof of their ability not
+    to drive anyone with any sense mad  ... &lt;duck&gt;
+
+As he then dissed Python (&quot;shoot anyone deciding that
+indenting should be lexically/grammatically significant on
+the vague justification that it makes people format code -
+something that a good programmer should do naturally anyway.&quot;)
+I feel comfortable not seeing the crouching duck. :)
+
+
+I couldn't find information how to generate multiple lexers.
+There's some old documentation for that in ANTLR 2's
+doc/streams.html but I see nothing in the ANTLR book which
+talks about that possibility.  (In general the index is
+lacking.  Eg, there's no index entry for 'channels',
+which does exist in the book, so I don't know if the
+lack of information about 'streams' means it doesn't exist.)
+
+
+I would like some advice, suggestions, pointers to working
+code, etc.
+
+
+So that you can see my problem, here are a few examples
+of SMILES strings and why I use lexer states to handle it.
+I'm deliberately lying about the grammar because the full
+details depends on chemistry that isn't relevant.  (Ie,
+I'm not going to talk about &quot;aromaticity&quot;.)
+
+Here's a simple atom:
+    C     this is methane, a carbon with the default of 4 hydrogens
+   [CH4]  this is also methane, a carbon with 4 explicit hydrogens
+
+   [13C]  this is a carbon 13 atom with zero hydrogens.
+            (Carbon has many isotopes.  The most common is C-12.
+             The ratio between C-12 and radioactive C-14 is used
+             for radiocarbon dating.)
+
+   [C-]  this is a carbon atom with zero hydrogens and a charge of -1
+   [C--]  this is a carbon atom with zero hydrogens and a charge of -2
+   [C-2]  this is a carbon atom with zero hydrogens and a charge of -2
+
+
+   C-C    this is carbon bonded to another carbon through a single bond.
+           Each atom has 3 hydrogens (with the implicit rules,
+           the default valence of carbon is 4, the bond takes
+           1 electron from each, so there are 3 electrons remaining)
+
+   C=C   this is a carbon bonded to another carbon through a double bond
+           Each atom has 2 hydrogens.
+
+You can see at this point that there is ambiguity between &quot;-&quot;
+meaning &quot;single bond&quot; and &quot;-&quot; meaning &quot;charge of -1&quot;.  The
+bond notation only occurs outside of the '[]' notation, and
+the charge notation only occurs inside of '[]'.
+
+   CC     this is another way of writing &quot;C-C&quot;.  If two atoms are
+           side by side then the default rule is to assume it's
+           a single bond.
+
+   CCCCCC  This is hexane.  6 carbon atoms in a chain, with a single
+         bond between successive atoms
+
+   C1CCCCC1  This is a ring of carbons.  The '1' connects the first
+         carbon atom to the last, making a ring.  These are called
+         ring closures but they don't necessarily close rings.
+
+   C9CCCCC9  This is another way to describe the same ring.
+         I can use the digits '0'..'9'.
+
+   C%43CCCCC%43  The notation '%' DIGIT DIGIT is for ring closure
+         numbers from 10 to 99, inclusive.
+
+This last SMILES string should tokenize to
+   ATOM &quot;C&quot;
+   RING &quot;43&quot;
+   ATOM &quot;C&quot;
+   ATOM &quot;C&quot;
+   ATOM &quot;C&quot;
+   ATOM &quot;C&quot;
+   ATOM &quot;C&quot;
+   RING &quot;43&quot;
+
+
+   C.C    This is two methanes.  The &quot;.&quot; is a way to say that
+         successive atoms are not bonded together.
+
+   C1.C1  This is another way to write &quot;CC&quot;.  The ring closure in
+           this case connects the two carbons together, even
+           though there is no explicit connection via the '.'
+
+    C1.C12.C23.C34.C45.C5  This is the same as &quot;CCCCCC&quot;.  The
+       ring closures connect the atoms despite the &quot;.&quot;s that
+       are supposed to separate them.
+
+This last case should tokenize to:
+    ATOM &quot;C&quot;
+    RING &quot;1&quot;
+    DOT
+    ATOM &quot;C&quot;
+    RING &quot;1&quot;
+    RING &quot;2&quot;
+    DOT
+    ATOM &quot;C&quot;
+    RING &quot;2&quot;
+    RING &quot;3&quot;
+    DOT
+    ...
+
+
+Finally,
+
+    C-1.C-1  is the same as &quot;C-C&quot;, which is the same as &quot;CC&quot;.
+        This specifies the bond type (&quot;-&quot; or &quot;=&quot; for single
+        or double) for the bond created by the ring closure.
+        The default is single.
+
+    C=1.C=1  is the same as &quot;C=C&quot;.
+
+
+    C-67-8[C-].[14C-1]-6.[12C-2]7.[CH2-3]-8
+
+This is very hairy, and should okenize somewhat as:
+
+   ATOM &quot;C&quot; with default hydrogen rules
+     closure (&quot;-&quot;, &quot;6&quot;)
+     closure (&lt;default&gt;, &quot;7&quot;)
+     closure (&quot;-&quot;, &quot;8&quot;)
+   ATOM &quot;C&quot; with no hydrogens and a charge of -1
+   DOT
+   ATOM &quot;C&quot; with no hydrogens, isotope number 14 and charge of -1
+     closure (&quot;-&quot;, &quot;6&quot;)
+   DOT
+   ATOM &quot;C&quot; with no hydrogens, isotope number 12 and charge of -2
+     closure (&lt;default&gt;, &quot;7&quot;)
+   DOT
+   ATOM &quot;C&quot; with two hydrogens and a charge of -3)
+      closure (&quot;-&quot;, &quot;8&quot;)
+
+You can see my problem.  Depending on where I am,
+&quot;-2&quot; is parsed as &quot;charge of -2&quot; or &quot;single bond ring closure
+with identifer 2&quot;.
+
+If I use '0'...'9'+ to tokenize the isotope field, like in [12C],
+then it will also parse the 12 in
+
+   C12.C1.C2
+
+If I instead let the parser do everything, so the lexer
+items are '-', and '0'..'9', then it will be annoyingly
+tedious in the parser to have to reassemble the characters,
+because  '[238U]' will be parsed using
+
+atom_in_brackets: '[' isotope? SYMBOL hydrogen? charge? ']';
+isotope: DIGIT*; // will need to combine the tokens to get the value
+SYMBOL: 'A'..'Z' 'a'..'z'? ;
+hydrogen: 'H' DIGIT*;  // again, will combine the tokens
+charge: MINUS DIGIT*
+       | PLUS DIGIT* ;
+
+atom_list: (atom closure*)*;
+closure: DIGIT | '%' DIGIT DIGIT;
+
+
+I'm pretty sure this will work, but it ends up pushing all
+of the work into the parser.  That seems like a lot of
+waste because I'm basically using the parser as a lexer.
+While in a yacc-style parser it's very easy to define the
+two or three lexer states I need.  When I see '[' I switch
+to a &quot;parsing the inside of []s&quot; state, and when I see
+the closing ']' I switch back.
+
+What should I do?
+
+				Andrew
+				<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">dalke at dalkescientific.com</A>
+
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="024571.html">[antlr-interest] Threading the TreeParser
+</A></li>
+	<LI>Next message: <A HREF="024575.html">[antlr-interest] lexer state and SMILES strings
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24572">[ date ]</a>
+              <a href="thread.html#24572">[ thread ]</a>
+              <a href="subject.html#24572">[ subject ]</a>
+              <a href="author.html#24572">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

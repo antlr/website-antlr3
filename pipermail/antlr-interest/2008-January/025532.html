@@ -1,0 +1,177 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] first steps with a lexer/parser
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20first%20steps%20with%20a%20lexer/parser&In-Reply-To=%3C4496897d0801040703j4e1bbbepb07b9448c4f5cbb9%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="025529.html">
+   <LINK REL="Next"  HREF="025535.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] first steps with a lexer/parser</H1>
+    <B>body</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20first%20steps%20with%20a%20lexer/parser&In-Reply-To=%3C4496897d0801040703j4e1bbbepb07b9448c4f5cbb9%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] first steps with a lexer/parser">antlr-list at splitbody.com
+       </A><BR>
+    <I>Fri Jan  4 07:03:12 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="025529.html">[antlr-interest] first steps with a lexer/parser
+</A></li>
+        <LI>Next message: <A HREF="025535.html">[antlr-interest] first steps with a lexer/parser
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25532">[ date ]</a>
+              <a href="thread.html#25532">[ thread ]</a>
+              <a href="subject.html#25532">[ subject ]</a>
+              <a href="author.html#25532">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>thanks again for the quick response, it really, really helps.
+
+&gt;<i> a) WS and NL should get a marker
+</I>&gt;<i>    { $channel = HIDDEN; }
+</I>&gt;<i> so that the parser does not even see them - because I'm quite sure that also
+</I>&gt;<i>    {a=1}
+</I>&gt;<i> etc. (see first mail) should be allowed.
+</I>&gt;<i> And then you can remove all references to WS and NL from the parser! - the language should then look much more like your language definition ---skipped ---
+</I>
+all great points! but luckily it is an incoming data file; so i just
+replicated it. but you are right; so i used hidden channel and it made
+the grammar much simpler without losing my spaces inside the string.
+
+here's a question - what would i have to change if i had escaped
+quotes inside of the string (\&quot;)? then surely i would have to use .*
+to match the string, and then do something different inside of it.
+
+&gt;<i>
+</I>&gt;<i> b) In the rule
+</I>&gt;<i>     start  :    msg NL? EOF ;
+</I>&gt;<i> put an ! behind EOF: You dont want this in the AST (unfortunately, it becomes a null Token - see the end of your output, which creates troubles off and on; and you get an artificial null root also - both are ugly).
+</I>&gt;<i> (and remove the NL? - see a)).
+</I>
+ah! i was wondering about that null! and i forgot about hidden channel
+for NL - good point.
+
+&gt;<i>
+</I>&gt;<i> c) You do a &quot;double job&quot; in the STR rules:
+</I>&gt;<i>
+</I>&gt;<i> &gt; STR
+</I>&gt;<i> [...]
+</I>&gt;<i> &gt;        :    '&quot;' ANYCHAR* '&quot;'
+</I>&gt;<i> &gt;        ;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; fragment ANYCHAR
+</I>&gt;<i> &gt;        :    (~'&quot;')+
+</I>&gt;<i> &gt;        ;
+</I>&gt;<i>
+</I>&gt;<i> There is a + in ANYCHAR, and a * in STR. What you want is simply either
+</I>&gt;<i>
+</I>&gt;<i>  STR
+</I>&gt;<i> [...]
+</I>&gt;<i>         :    '&quot;' (~'&quot;')* '&quot;'
+</I>&gt;<i>         ;
+</I>&gt;<i>
+</I>&gt;<i> or, if you want to keep this ANYCHAR rule,
+</I>&gt;<i>
+</I>&gt;<i> STR
+</I>&gt;<i> [...]
+</I>&gt;<i>        :    '&quot;' ANYCHAR* '&quot;'
+</I>&gt;<i>        ;
+</I>&gt;<i>
+</I>&gt;<i> fragment ANYCHAR
+</I>&gt;<i>        :    ~'&quot;'         // without +
+</I>&gt;<i>        ;
+</I>
+yes, you are right, both former and latter seem to work.
+
+&gt;<i>
+</I>&gt;<i> d) You might also want to capture tabs ('\t') in your WS rule.
+</I>
+done, thank you.
+
+------------------------
+
+grammar MsgString;
+
+options { output = AST; }
+
+tokens {
+	PAIR;
+	MSG;
+}
+
+start  :    msg EOF! ;
+
+msg    :    '{' nameValuePairExpr* '}' -&gt; ^(MSG nameValuePairExpr*) ;
+
+nameValuePairExpr
+       :    NAME '=' valueExpr WS? -&gt; ^(PAIR NAME valueExpr) ;
+
+valueExpr
+       :    STR
+       |    INT
+       |    msg
+       ;
+
+STR
+       @after{
+            setText(getText().substring(1, getText().length()-1));
+       }
+       :    '&quot;' ~'&quot;'* '&quot;'
+       ;
+
+INT    :    '0'..'9'+ ;
+
+NAME   :    ('a'..'z'|'A'..'Z'|'0'..'9')+ ;
+
+WS     :    (' '|'\t')+ { $channel = HIDDEN; } ;
+
+NL     :    ('\n'|'\r')+ { $channel = HIDDEN; } ;
+
+------------------------
+
+and input/output:
+
+{ a=1 b=&quot;2&quot; c=&quot;t&quot; d=&quot;text&quot; e=&quot;one two&quot; f={ g=&quot;three four&quot; h={ i=5 j=&quot;a ha&quot; } } }
+
+(MSG (PAIR a 1) (PAIR b 2) (PAIR c t) (PAIR d text) (PAIR e one two)
+(PAIR f (MSG (PAIR g three four) (PAIR h (MSG (PAIR i 5) (PAIR j a
+ha))))))
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="025529.html">[antlr-interest] first steps with a lexer/parser
+</A></li>
+	<LI>Next message: <A HREF="025535.html">[antlr-interest] first steps with a lexer/parser
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25532">[ date ]</a>
+              <a href="thread.html#25532">[ thread ]</a>
+              <a href="subject.html#25532">[ subject ]</a>
+              <a href="author.html#25532">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

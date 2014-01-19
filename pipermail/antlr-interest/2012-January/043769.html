@@ -1,0 +1,154 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Appropriate use of honey badger listeners
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Appropriate%20use%20of%20honey%20badger%20listeners&In-Reply-To=%3CE67EB3F3-353C-4CAE-BF78-7BCF0D27BCDF%40cs.usfca.edu%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="043764.html">
+   <LINK REL="Next"  HREF="043778.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Appropriate use of honey badger listeners</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Appropriate%20use%20of%20honey%20badger%20listeners&In-Reply-To=%3CE67EB3F3-353C-4CAE-BF78-7BCF0D27BCDF%40cs.usfca.edu%3E"
+       TITLE="[antlr-interest] Appropriate use of honey badger listeners">parrt at cs.usfca.edu
+       </A><BR>
+    <I>Wed Jan 11 16:39:37 PST 2012</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="043764.html">[antlr-interest] Updated honey badger and examples
+</A></li>
+        <LI>Next message: <A HREF="043778.html">[antlr-interest] Appropriate use of honey badger listeners
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#43769">[ date ]</a>
+              <a href="thread.html#43769">[ thread ]</a>
+              <a href="subject.html#43769">[ subject ]</a>
+              <a href="author.html#43769">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>hi Kyle,
+
+I have 2 questions about the current listener mechanism:
+
+1. How do we return values from listener methods so that we can do computations?
+2. How do we alter a parse tree?
+
+For 2, I think we return a new tree as a return value and the parse tree walker will incorporate that into the tree if it sees a different tree come back. In other words, it will do something like this in the walker:
+
+newtree = listener.someEvent(oldtree);
+if ( newtree!=oldtree ) replace-oldtree-with-newtree;
+
+For 1, I don't have a great answer. To make this more concrete, imagine we have an expression rule and we want to use listener events to compute the value of an expression. So, instead of having actions in the grammar  like:
+
+e returns [int v]
+      : a=e '*' b=e {$v = $a.v * $b.v;}
+
+we would simply match it
+
+e : e '*' e -&gt; mult &#8230;
+
+and then have listener events compute values. but where does of the listener object store the intermediate results of a subtree computation? Certainly we don't want to have to add &quot;returns [int v]&quot; to the grammar for every different paths we make over the parse tree. Without a return value from a listener event (which I want to use for tree rewriting), how do we get a value up the tree in a computation?  We can't really use temporary fields of the listener object because it's hard to tell which value gets associated with which listener method. we would need a temporary fields to hold result values from each listener. actually, I'm not even sure that would work. We need to associate result values with sub tree roots (i.e. contexts). In other words, we need a way to dynamically add fields to contexts for the specific purpose of a particular parse tree walk. One can imagine that I have a pass for computing the type of expression and another pass for computing the value. In both cases, I need result values for each subtree (type and then value).
+
+Maybe that is just a hash table from ctx node to value; Map&lt;ParserRuleContext, Object&gt;. maybe. That presents a few issues for me because I use hashCode/equals in a weird way for use with grammar analysis, but that would be the idea.
+
+class MyGListener extends BlankGListener {
+	Map&lt;ParserRuleContext, Integer&gt; results = &#8230;;
+
+	public void exitRule(AParser.multContext ctx) { results.put(ctx, results.get(ctx.a) * results.get(ctx.b)); }
+	public void exitRule(AParser.addContext ctx) { results.put(ctx, results.get(ctx.a) + results.get(ctx.b)); }
+}
+
+not very pretty in Java. Python would look better:
+
+results[ctx] = results[ctx.a] * results[ctx.b];
+
+This way we can associate any values we need to for any node, in effect, decorating the parse tree as needed.
+
+What do people think about the solution? is there a way I can automate some of this? I think that Python and Ruby would make short work of that because they allow dynamically adding fields (normally a horrible thing to do) ;) Is there a better way to do decorations in Java?
+
+Ter
+
+On Jan 11, 2012, at 1:49 PM, Kyle Ferrio wrote:
+
+&gt;<i> Excellent, congratulations and thank you.
+</I>&gt;<i> 
+</I>&gt;<i> I just spent about half an hour playing with variations on A.g4 (since it
+</I>&gt;<i> worked right out of the box I had to keep going...)  and this is really
+</I>&gt;<i> nice.  This is the first time I've looked at the new-in-antlr listener
+</I>&gt;<i> paradigm.  I will need a while to fully appreciate the doors this opens.
+</I>&gt;<i> Honey Badger makes things easy, so I want to stay on his (?) good side.
+</I>&gt;<i> 
+</I>&gt;<i> Q: how do you tell a boy Honey Badger from a girl Honey Badger?
+</I>&gt;<i> 
+</I>&gt;<i> A: you don't.  they're both bad-ass.
+</I>
+nice!
+
+Ter
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="043764.html">[antlr-interest] Updated honey badger and examples
+</A></li>
+	<LI>Next message: <A HREF="043778.html">[antlr-interest] Appropriate use of honey badger listeners
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#43769">[ date ]</a>
+              <a href="thread.html#43769">[ thread ]</a>
+              <a href="subject.html#43769">[ subject ]</a>
+              <a href="author.html#43769">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

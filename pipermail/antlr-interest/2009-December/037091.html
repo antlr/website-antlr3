@@ -1,0 +1,169 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Tree construction
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Tree%20construction&In-Reply-To=%3C75f5fb14f51ab94e8e18d68b2f5d8037%40temporal-wave.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="037072.html">
+   <LINK REL="Next"  HREF="037107.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Tree construction</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Tree%20construction&In-Reply-To=%3C75f5fb14f51ab94e8e18d68b2f5d8037%40temporal-wave.com%3E"
+       TITLE="[antlr-interest] Tree construction">jimi at temporal-wave.com
+       </A><BR>
+    <I>Tue Dec 15 13:36:47 PST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="037072.html">[antlr-interest] Tree construction
+</A></li>
+        <LI>Next message: <A HREF="037107.html">[antlr-interest] Tree construction
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37091">[ date ]</a>
+              <a href="thread.html#37091">[ thread ]</a>
+              <a href="subject.html#37091">[ subject ]</a>
+              <a href="author.html#37091">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>You will need to bring the EQUALS up in to the rule and rewrite accordingly:
+
+expression
+   : 
+   ce=conditionalExpression  
+     ( 
+          EQUALS e1=expression  -&gt; ^(STORE $ce $e1)
+        | ao=assignmentOperator e2=expression  
+               -&gt;^(STORE $ce ^($ao $ce $e2))
+     )?
+   ;
+ 
+ assignmentOperator
+   : PLUS_EQUALS  -&gt;PLUS[$PLUS_EQUALS]
+   | MINUS_EQUALS -&gt;MINUS[$MINUS_EQUALS]
+   ;
+
+Though there isn&#8217;t really a need to change the token types, you can just behave accordingly with PLUS_EQUALS etc.
+
+Jim
+
+&gt;<i> -----Original Message-----
+</I>&gt;<i> From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:antlr-interest-
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">bounces at antlr.org</A>] On Behalf Of Marcin Rzeznicki
+</I>&gt;<i> Sent: Monday, December 14, 2009 7:17 PM
+</I>&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> Subject: [antlr-interest] Tree construction
+</I>&gt;<i> 
+</I>&gt;<i> Hi to you all dear antlr-interest members,
+</I>&gt;<i> I am wondering whether it is possible to specify somehow where AST
+</I>&gt;<i> nodes should be attached. Let me explain my problem on this short
+</I>&gt;<i> example.
+</I>&gt;<i> Let's consider expressions like i += 5. I want to build AST that
+</I>&gt;<i> breaks this up into simple operation, like STORE and MUL in this case.
+</I>&gt;<i> In other words, I want my final AST for this case to be like the one
+</I>&gt;<i> below:
+</I>&gt;<i> ^(STORE i ^(MUL i 5)).
+</I>&gt;<i> Grammar part which is responsible for parsing these expressions:
+</I>&gt;<i> expression
+</I>&gt;<i>   :
+</I>&gt;<i>   conditionalExpression  ( assignmentOperator expression  )?
+</I>&gt;<i>   ;
+</I>&gt;<i> 
+</I>&gt;<i> assignmentOperator
+</I>&gt;<i>   :
+</I>&gt;<i>   EQUALS
+</I>&gt;<i>   |  PLUS_EQUALS
+</I>&gt;<i>   | MINUS_EQUALS
+</I>&gt;<i>  ...
+</I>&gt;<i> ;
+</I>&gt;<i> 
+</I>&gt;<i> I could not find any clean way to achieve what I wanted. Finally, I
+</I>&gt;<i> came up with something that works but is utmost ugly:
+</I>&gt;<i> 
+</I>&gt;<i> expression
+</I>&gt;<i>   :
+</I>&gt;<i>   ( lhs = conditionalExpression
+</I>&gt;<i>       -&gt; $lhs )
+</I>&gt;<i>   (
+</I>&gt;<i>     op = assignmentOperator[$lhs.tree] rhs = expression
+</I>&gt;<i>       -&gt; {$op.start.getType() != EQUALS}?
+</I>&gt;<i>         ^(
+</I>&gt;<i>           STORE[$op.start] $lhs
+</I>&gt;<i>           ^( $op $rhs )
+</I>&gt;<i>          )
+</I>&gt;<i>       -&gt;
+</I>&gt;<i>         ^( STORE[$op.start] $lhs $rhs )
+</I>&gt;<i>   )?
+</I>&gt;<i>   ;
+</I>&gt;<i> 
+</I>&gt;<i> assignmentOperator[CommonTree leftHand]
+</I>&gt;<i>   :
+</I>&gt;<i>   EQUALS
+</I>&gt;<i>     -&gt;
+</I>&gt;<i>   | op = PLUS_EQUALS
+</I>&gt;<i>     -&gt;
+</I>&gt;<i>       ^( ADD[$op] {$leftHand} )
+</I>&gt;<i>   | op = MINUS_EQUALS
+</I>&gt;<i>     -&gt;
+</I>&gt;<i>       ^( SUB[$op] {$leftHand} )
+</I>&gt;<i>   ///
+</I>&gt;<i>   ;
+</I>&gt;<i> 
+</I>&gt;<i> I hope you share my pain :-) If I could move the actual tree
+</I>&gt;<i> generation to assignmentOperator, it would give me much cleaner result
+</I>&gt;<i> - but for now, due to facts that I am not knowing right hand side
+</I>&gt;<i> expression in advance and I am not able to append it to the correct
+</I>&gt;<i> place in the resulting tree, I think that this is impossible.
+</I>&gt;<i> So here comes the question. Can you see any better way to achieve the
+</I>&gt;<i> desired effect? I'll be happy to hear your opinions and share your
+</I>&gt;<i> experience. Thank you in advance.
+</I>&gt;<i> 
+</I>&gt;<i> --
+</I>&gt;<i> Greetings
+</I>&gt;<i> Marcin Rze&#378;nicki
+</I>&gt;<i> 
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-">http://www.antlr.org/mailman/options/antlr-interest/your-</A>
+</I>&gt;<i> email-address
+</I>
+
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="037072.html">[antlr-interest] Tree construction
+</A></li>
+	<LI>Next message: <A HREF="037107.html">[antlr-interest] Tree construction
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37091">[ date ]</a>
+              <a href="thread.html#37091">[ thread ]</a>
+              <a href="subject.html#37091">[ subject ]</a>
+              <a href="author.html#37091">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

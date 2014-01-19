@@ -1,0 +1,255 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Appropriate use of honey badger listeners
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Appropriate%20use%20of%20honey%20badger%20listeners&In-Reply-To=%3CCAAfeETpfEwrqMDMR9%2B8%3D8Cebx1sbVkDhdwGRH3gH25OjOB%3DVQw%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="043769.html">
+   <LINK REL="Next"  HREF="043779.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Appropriate use of honey badger listeners</H1>
+    <B>Kyle Ferrio</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Appropriate%20use%20of%20honey%20badger%20listeners&In-Reply-To=%3CCAAfeETpfEwrqMDMR9%2B8%3D8Cebx1sbVkDhdwGRH3gH25OjOB%3DVQw%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Appropriate use of honey badger listeners">kferrio at gmail.com
+       </A><BR>
+    <I>Wed Jan 11 20:39:05 PST 2012</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="043769.html">[antlr-interest] Appropriate use of honey badger listeners
+</A></li>
+        <LI>Next message: <A HREF="043779.html">[antlr-interest] Appropriate use of honey badger listeners
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#43778">[ date ]</a>
+              <a href="thread.html#43778">[ thread ]</a>
+              <a href="subject.html#43778">[ subject ]</a>
+              <a href="author.html#43778">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Ter,
+
+I don't have answers, but I have questions which might at least cut off
+some dead ends...
+
+I agree that point #2 seems pretty clear.  And I realize that this:
+
+    newtree = listener.someEvent(oldtree);
+    if ( newtree!=oldtree ) replace-oldtree-with-newtree;
+
+is pseudo-code.  You probably have this all worked out, but it occurs to me
+that comparing two trees may be more expensive than necessary.  Despite the
+fact that walking a tree of n nodes is O(n), and so comparing two trees
+(non-naively) is also O(n), there may be a lot of data in those nodes to
+compare.  If all we care about is detecting changes, a significant speedup
+is possible if the interface for a tree object (or for listeners acting on
+trees?) includes a flag that gets flipped by any operation which has the
+possibility of changing the tree.  (N.B. Possibility, not guarantee.  A
+guarantee would require the eval we're trying to avoid.)  This tiny bit of
+added API built into a Listener baseclass for processing tree changes
+(which are all covered by a small, finite set of generic operations) would
+turn the subsequent O(n) comparison into O(1).  I'm not sure how this fits
+with your design.  Of course, all bets are off if someone messes with the
+tree directly.  (N.B. Alternatively, a hash on trees would be almost as
+cheap and require no extra API, but that only works if we're willing to
+treat topologically equivalent trees with different memory layouts (e.g.
+flipping a tree left-to right) as different.)
+
+Ok, now point #1.  Not sure how to approach this, but...
+
+Thought: If the root of a rule r which returns a value does not declare the
+type of value expected, two questions arise. One, where/when does the antlr
+tool perform type-checking for the rules which consume rule r?  Two,
+where/when does the antlr tool perform type-checking of the retvals from
+listeners for different alts of r?  Perhaps an explicit
+decoration/declaration of a type T at the root of r is the easiest,
+clearest and safest way to communicate to all of the listeners of all of
+the alts of r that they must return type T.  My thinking here is probably
+clouded by my preternaturally strong preference for static typing.
+
+Thought: If we try to be clever about types, then there seems to be a
+trade-off between elegance in a grammar and elegance in the implementation
+of listeners.  I am not convinced that this is fundamental, but that's
+where my thinking is this minute.
+
+Thought: Java will almost always lose to Python in syntactic beauty
+contests.  So don't compare them to each other.  (Compare them to
+JavaScript, and they both look gorgeous!  Shucks, adding fields dynamically
+is one thing js does do nicely.)  For my part, I think that
+
+    public void exitRule(AParser.multContext ctx) { results.put(ctx,
+results.get(ctx.a) * results.get(ctx.b)); }
+
+does not look any worse than a lot of Java which I consider to be overly
+verbose anyway.  The question for me is, is it clear?  And my answer is
+yes.   But as I mentioned in another thread, I am just starting to absorb
+the listener model for v4,
+
+Well, I'm not sure if any of this helps.  But I'm reasonably confident that
+it does not hurt.
+
+Kyle
+
+
+
+
+
+On Wed, Jan 11, 2012 at 5:39 PM, Terence Parr &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">parrt at cs.usfca.edu</A>&gt; wrote:
+
+&gt;<i> hi Kyle,
+</I>&gt;<i>
+</I>&gt;<i> I have 2 questions about the current listener mechanism:
+</I>&gt;<i>
+</I>&gt;<i> 1. How do we return values from listener methods so that we can do
+</I>&gt;<i> computations?
+</I>&gt;<i> 2. How do we alter a parse tree?
+</I>&gt;<i>
+</I>&gt;<i> For 2, I think we return a new tree as a return value and the parse tree
+</I>&gt;<i> walker will incorporate that into the tree if it sees a different tree come
+</I>&gt;<i> back. In other words, it will do something like this in the walker:
+</I>&gt;<i>
+</I>&gt;<i> newtree = listener.someEvent(oldtree);
+</I>&gt;<i> if ( newtree!=oldtree ) replace-oldtree-with-newtree;
+</I>&gt;<i>
+</I>&gt;<i> For 1, I don't have a great answer. To make this more concrete, imagine we
+</I>&gt;<i> have an expression rule and we want to use listener events to compute the
+</I>&gt;<i> value of an expression. So, instead of having actions in the grammar  like:
+</I>&gt;<i>
+</I>&gt;<i> e returns [int v]
+</I>&gt;<i>      : a=e '*' b=e {$v = $a.v * $b.v;}
+</I>&gt;<i>
+</I>&gt;<i> we would simply match it
+</I>&gt;<i>
+</I>&gt;<i> e : e '*' e -&gt; mult &#8230;
+</I>&gt;<i>
+</I>&gt;<i> and then have listener events compute values. but where does of the
+</I>&gt;<i> listener object store the intermediate results of a subtree computation?
+</I>&gt;<i> Certainly we don't want to have to add &quot;returns [int v]&quot; to the grammar for
+</I>&gt;<i> every different paths we make over the parse tree. Without a return value
+</I>&gt;<i> from a listener event (which I want to use for tree rewriting), how do we
+</I>&gt;<i> get a value up the tree in a computation?  We can't really use temporary
+</I>&gt;<i> fields of the listener object because it's hard to tell which value gets
+</I>&gt;<i> associated with which listener method. we would need a temporary fields to
+</I>&gt;<i> hold result values from each listener. actually, I'm not even sure that
+</I>&gt;<i> would work. We need to associate result values with sub tree roots (i.e.
+</I>&gt;<i> contexts). In other words, we need a way to dynamically add fields to
+</I>&gt;<i> contexts for the specific purpose of a particular parse tree walk. One can
+</I>&gt;<i> imagine that I have a pass for computing the type of expression and another
+</I>&gt;<i> pass for computing the value. In both cases, I need result values for each
+</I>&gt;<i> subtree (type and then value).
+</I>&gt;<i>
+</I>&gt;<i> Maybe that is just a hash table from ctx node to value;
+</I>&gt;<i> Map&lt;ParserRuleContext, Object&gt;. maybe. That presents a few issues for me
+</I>&gt;<i> because I use hashCode/equals in a weird way for use with grammar analysis,
+</I>&gt;<i> but that would be the idea.
+</I>&gt;<i>
+</I>&gt;<i> class MyGListener extends BlankGListener {
+</I>&gt;<i>        Map&lt;ParserRuleContext, Integer&gt; results = &#8230;;
+</I>&gt;<i>
+</I>&gt;<i>        public void exitRule(AParser.multContext ctx) { results.put(ctx,
+</I>&gt;<i> results.get(ctx.a) * results.get(ctx.b)); }
+</I>&gt;<i>        public void exitRule(AParser.addContext ctx) { results.put(ctx,
+</I>&gt;<i> results.get(ctx.a) + results.get(ctx.b)); }
+</I>&gt;<i> }
+</I>&gt;<i>
+</I>&gt;<i> not very pretty in Java. Python would look better:
+</I>&gt;<i>
+</I>&gt;<i> results[ctx] = results[ctx.a] * results[ctx.b];
+</I>&gt;<i>
+</I>&gt;<i> This way we can associate any values we need to for any node, in effect,
+</I>&gt;<i> decorating the parse tree as needed.
+</I>&gt;<i>
+</I>&gt;<i> What do people think about the solution? is there a way I can automate
+</I>&gt;<i> some of this? I think that Python and Ruby would make short work of that
+</I>&gt;<i> because they allow dynamically adding fields (normally a horrible thing to
+</I>&gt;<i> do) ;) Is there a better way to do decorations in Java?
+</I>&gt;<i>
+</I>&gt;<i> Ter
+</I>&gt;<i>
+</I>&gt;<i> On Jan 11, 2012, at 1:49 PM, Kyle Ferrio wrote:
+</I>&gt;<i>
+</I>&gt;<i> &gt; Excellent, congratulations and thank you.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; I just spent about half an hour playing with variations on A.g4 (since it
+</I>&gt;<i> &gt; worked right out of the box I had to keep going...)  and this is really
+</I>&gt;<i> &gt; nice.  This is the first time I've looked at the new-in-antlr listener
+</I>&gt;<i> &gt; paradigm.  I will need a while to fully appreciate the doors this opens.
+</I>&gt;<i> &gt; Honey Badger makes things easy, so I want to stay on his (?) good side.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Q: how do you tell a boy Honey Badger from a girl Honey Badger?
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; A: you don't.  they're both bad-ass.
+</I>&gt;<i>
+</I>&gt;<i> nice!
+</I>&gt;<i>
+</I>&gt;<i> Ter
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe:
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i>
+</I></PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="043769.html">[antlr-interest] Appropriate use of honey badger listeners
+</A></li>
+	<LI>Next message: <A HREF="043779.html">[antlr-interest] Appropriate use of honey badger listeners
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#43778">[ date ]</a>
+              <a href="thread.html#43778">[ thread ]</a>
+              <a href="subject.html#43778">[ subject ]</a>
+              <a href="author.html#43778">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

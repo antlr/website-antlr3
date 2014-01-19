@@ -1,0 +1,204 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Parsing a Cucumber-like language in ANTLR
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Parsing%20a%20Cucumber-like%20language%20in%20ANTLR&In-Reply-To=%3CCAF9KzRNwAVMStboHZ3qu9nzpwgiAiO7D9tZ8TtPHt4wRRM%2B4dA%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="045761.html">
+   <LINK REL="Next"  HREF="045783.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Parsing a Cucumber-like language in ANTLR</H1>
+    <B>Bernard Kaiflin</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Parsing%20a%20Cucumber-like%20language%20in%20ANTLR&In-Reply-To=%3CCAF9KzRNwAVMStboHZ3qu9nzpwgiAiO7D9tZ8TtPHt4wRRM%2B4dA%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Parsing a Cucumber-like language in ANTLR">bkaiflin.ruby at gmail.com
+       </A><BR>
+    <I>Tue Nov 20 01:18:43 PST 2012</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="045761.html">[antlr-interest] Parsing a Cucumber-like language in ANTLR
+</A></li>
+        <LI>Next message: <A HREF="045783.html">[antlr-interest] Parsing a Cucumber-like language in ANTLR
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#45770">[ date ]</a>
+              <a href="thread.html#45770">[ thread ]</a>
+              <a href="subject.html#45770">[ subject ]</a>
+              <a href="author.html#45770">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello,
+
+It's not easy to ignore portions of input, or capture until we see
+something, or as long we don't see, especially as newbie. You can have a
+look at these threads :
+<A HREF="http://www.antlr.org/pipermail/antlr-interest/2012-November/045764.html">http://www.antlr.org/pipermail/antlr-interest/2012-November/045764.html</A>
+<A HREF="http://www.antlr.org/pipermail/antlr-interest/2012-November/045750.html">http://www.antlr.org/pipermail/antlr-interest/2012-November/045750.html</A>
+
+Having said that, it appears that the Gherkin language, and probably yours,
+is structured in such a way that any text can appear between two keywords.
+So a rule starts with a keyword and loops as long as the next possible
+keyword does not appear. I'm a four weeks old newbie and it took me about
+one hour to write this grammar. You'll have to add more tokens to recognize
+special characters that can appear in the free text, as told by messages
+like &quot;token recognition error at: '('&quot;.
+
+grammar Cucumber;
+
+/* Recognize Cucumber-like DSL. */
+
+file
+@init {System.out.println(&quot;Cucumber last update 0947&quot;);}
+    : keyword+ EOF ;
+
+keyword
+    :   description
+    |   scenario
+    |   given
+    |   when
+    |   then
+    |   and
+    ;
+
+description
+@after {System.out.println(&quot;===== found a description&quot;);}
+    :   'Description' ':' ~'Scenario'+
+    ;
+
+scenario
+@after {System.out.println(&quot;===== scenario : &quot; + $scenario.text);}
+    :   'Scenario' ':' ~'Given'*
+    ;
+
+given /* according to The Cucumber book, we can choose between &quot;Given ...
+Given ...&quot;
+         and &quot;Given ... And ...&quot;. */
+@after {System.out.println(&quot;===== given : &quot; + $given.text);}
+    :   'Given' ~( 'Given' | 'When' | 'And' )*
+    ;
+
+when
+@after {System.out.println(&quot;===== when : &quot; + $when.text);}
+    :   'When' ~( 'Then' | 'And' )*
+    ;
+
+then /* according to The Cucumber book, we can choose between &quot;Then ...
+Then ...&quot;
+         and &quot;Then ... And ...&quot;. */
+@after {System.out.println(&quot;===== then : &quot; + $then.text);}
+    :   'Then' ~( 'Then' | 'And' | 'Scenario' | 'Description' )*
+    ;
+
+and
+@after {System.out.println(&quot;===== and : &quot; + $and.text);}
+    :   'And' ~( 'And' | 'Given' | 'When' | 'Then' | 'Scenario' |
+'Description' )*
+    ;
+
+ID  : [a-zA-Z]+ ;
+INT : DIGIT+ ;
+SPECIAL : '_' | '-' | '.' | '+' | '/' | ':' | '%' | '$' ;
+WS  : [ \t\r\n] -&gt; channel(HIDDEN) ;
+
+fragment DIGIT : [0-9];
+
+========== input file t.cucumber
+
+Description:
+Multi line text goes here
+to specifiy the description
+
+Scenario: A
+Given size between 10 and 20
+   And location is spread out
+Then add 2 confidence
+
+Scenario: Attempt withdrawal using stolen card
+(from The Cucumber Book)
+Given I have $100 in my account
+Given my card is invalid
+When I request $50
+Then my card should not be returned
+Then I should be told to contact the bank
+
+========== Execution
+
+$ echo $CLASSPATH
+.:/usr/local/lib/antlr-4.0b3-complete.jar
+$ antlr4 Cucumber.g4
+$ javac Cucumber*.java
+$ grun Cucumber file -tokens -diagnostics -trace t.cucumber
+line 11:0 token recognition error at: '('
+line 11:23 token recognition error at: ')'
+[@0,0:10='Description',&lt;6&gt;,1:0]
+[@1,11:11=':',&lt;3&gt;,1:11]
+[@2,12:12='\n',&lt;11&gt;,channel=1,1:12]
+[@3,13:17='Multi',&lt;8&gt;,2:0]
+[@4,18:18=' ',&lt;11&gt;,channel=1,2:5]
+[@5,19:22='line',&lt;8&gt;,2:6]
+....
+enter   file, LT(1)=Description
+Cucumber last update 0947
+enter   keyword, LT(1)=Description
+enter   description, LT(1)=Description
+consume [@0,0:10='Description',&lt;6&gt;,1:0] rule description alt=1
+consume [@1,11:11=':',&lt;3&gt;,1:11] rule description alt=1
+consume [@3,13:17='Multi',&lt;8&gt;,2:0] rule description alt=1
+....
+
+$ grun Cucumber file -diagnostics t.cucumber
+line 11:0 token recognition error at: '('
+line 11:23 token recognition error at: ')'
+Cucumber last update 0947
+===== found a description
+===== scenario : Scenario: A
+===== given : Given size between 10 and 20
+===== and : And location is spread out
+===== then : Then add 2 confidence
+===== scenario : Scenario: Attempt withdrawal using stolen card
+from The Cucumber Book
+===== given : Given I have $100 in my account
+===== given : Given my card is invalid
+===== when : When I request $50
+===== then : Then my card should not be returned
+===== then : Then I should be told to contact the bank
+
+HTH
+Bernard
+
+2012/11/19 Wesley Ripley &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">wripley at wpi.edu</A>&gt;
+
+&gt;<i> The problem I am having is in capturing muli-line blocks of text. So here
+</I>&gt;<i> is a short example: ...
+</I>&gt;<i>
+</I>
+We want ANTLR to see the Description: keyword and know to capture
+&gt;<i> everything between that and the next keyword....
+</I></PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="045761.html">[antlr-interest] Parsing a Cucumber-like language in ANTLR
+</A></li>
+	<LI>Next message: <A HREF="045783.html">[antlr-interest] Parsing a Cucumber-like language in ANTLR
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#45770">[ date ]</a>
+              <a href="thread.html#45770">[ thread ]</a>
+              <a href="subject.html#45770">[ subject ]</a>
+              <a href="author.html#45770">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

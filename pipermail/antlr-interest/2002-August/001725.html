@@ -1,0 +1,172 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Advice on effective expr parsing
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Advice%20on%20effective%20expr%20parsing&In-Reply-To=20020828003832.55432.qmail%40web12405.mail.yahoo.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001722.html">
+   <LINK REL="Next"  HREF="001729.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Advice on effective expr parsing</H1>
+    <B>Ruslan Zasukhin</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Advice%20on%20effective%20expr%20parsing&In-Reply-To=20020828003832.55432.qmail%40web12405.mail.yahoo.com"
+       TITLE="[antlr-interest] Advice on effective expr parsing">sunshine at public.kherson.ua
+       </A><BR>
+    <I>Tue Aug 27 23:21:38 PDT 2002</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001722.html">[antlr-interest] Advice on effective expr parsing
+</A></li>
+        <LI>Next message: <A HREF="001729.html">[antlr-interest] Advice on effective expr parsing
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1725">[ date ]</a>
+              <a href="thread.html#1725">[ thread ]</a>
+              <a href="subject.html#1725">[ subject ]</a>
+              <a href="author.html#1725">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>on 8/28/02 3:38, Greg Lindholm at <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">glindholm at yahoo.com</A> wrote:
+
+Okay, Greg, I see your idea.
+
+But I'd like avoid merging of them. Why?
+Because other rules that call 'expr' and rules that call 'row_expr'.
+
+I did think that if parser can differ this 2 things, this is STRONGER
+parser, yes? Or I am wrong ?
+
+What about the next idea -- to use additional variable, and condition in
+action?
+
+row_expr
+{ bool list = false; }
+     :    LPAREN e:row_list_element
+            rest:( COMMA { list = true } row_list_element )* RPAREN
+          {
+               if( list == false ) // we have expr
+               {
+                    ## = #rest;
+               }
+               else // we have list
+               {
+                    ## = #e;
+               }   
+          }
+     ;
+
+&gt;<i> Ask yourself this; If the parser sees &quot;LPAREN expr RPAREN&quot; should
+</I>&gt;<i> it match a &quot;primary&quot; or a &quot;row_expr&quot; ? Since the COMMA separated
+</I>&gt;<i> list is optional and a row_list_element can be an expr, this is
+</I>&gt;<i> ambiguous.
+</I>&gt;<i> 
+</I>&gt;<i> The even more trivial example is that a row_expr can be an expr, so
+</I>&gt;<i> how would the parser know which to match.
+</I>&gt;<i> 
+</I>&gt;<i> My suggestion is to combine expr and row_expr together (eliminate
+</I>&gt;<i> row_exp) adding the COMMA separated list to expr.
+</I>&gt;<i> Then later during semantic analysis you could check for comma
+</I>&gt;<i> separated expr lists and report errors if invalid in the context.
+</I>&gt;<i> 
+</I>&gt;<i> Hope that helps.
+</I>&gt;<i> Greg
+</I>
+&gt;<i> --- Ruslan Zasukhin &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">sunshine at public.kherson.ua</A>&gt; wrote:
+</I>&gt;&gt;<i> Hi Guys,
+</I>&gt;&gt;<i> 
+</I>&gt;&gt;<i> Assume I have the following rules in grammar.
+</I>&gt;&gt;<i> It is easy to note that rule row_expr has ambiguity between 1 and 2
+</I>&gt;&gt;<i> branches
+</I>&gt;&gt;<i> on LPAREN expr RPAREN
+</I>&gt;&gt;<i> 
+</I>&gt;&gt;<i> -----------------------------------------------------------------
+</I>&gt;&gt;<i> expr
+</I>&gt;&gt;<i>     :    primary( (PLUS | MINUS) primary)*
+</I>&gt;&gt;<i>     ;
+</I>&gt;&gt;<i> 
+</I>&gt;&gt;<i> primary
+</I>&gt;&gt;<i>     :    LPAREN expr RPAREN
+</I>&gt;&gt;<i>     |    unsigned_value_specification
+</I>&gt;&gt;<i>     |    column_reference
+</I>&gt;&gt;<i>     |    set_function_specification
+</I>&gt;&gt;<i>     |    subquery
+</I>&gt;&gt;<i>     |    case_expression
+</I>&gt;&gt;<i>     |    cast_specification
+</I>&gt;&gt;<i>     ;
+</I>&gt;&gt;<i> 
+</I>&gt;&gt;<i> row_expr
+</I>&gt;&gt;<i>     :    LPAREN row_list_element ( COMMA row_list_element )* RPAREN
+</I>&gt;&gt;<i>     |    row_list_element
+</I>&gt;&gt;<i>     ;
+</I>&gt;&gt;<i> 
+</I>&gt;&gt;<i> row_list_element
+</I>&gt;&gt;<i>     :    expr
+</I>&gt;&gt;<i>     |    &quot;null&quot;
+</I>&gt;&gt;<i>     |    &quot;default&quot;
+</I>&gt;&gt;<i>     ;
+</I>&gt;&gt;<i> 
+</I>&gt;<i> ----------------------------------------------------------------------
+</I>&gt;&gt;<i> 
+</I>&gt;&gt;<i> 
+</I>&gt;&gt;<i> Yes, using syntax predicate this can be handled as
+</I>&gt;&gt;<i> 
+</I>&gt;&gt;<i> row_expr
+</I>&gt;&gt;<i>     :    (LPAREN row_list_element COMMA) =&gt;
+</I>&gt;&gt;<i>             LPAREN row_list_element ( COMMA row_list_element )*
+</I>&gt;&gt;<i> RPAREN
+</I>&gt;&gt;<i>     |    row_list_element
+</I>&gt;&gt;<i>     ;
+</I>&gt;&gt;<i> 
+</I>&gt;&gt;<i> 
+</I>&gt;&gt;<i> But I afraid this is NOT effective way.
+</I>&gt;&gt;<i> Because expr in general case can be VERY LONG and COMPLEX.
+</I>&gt;&gt;<i> 
+</I>&gt;&gt;<i> So I wonder does exists any &quot;secret&quot; &quot;cool&quot; trick to resolve this
+</I>&gt;&gt;<i> problem in
+</I>&gt;&gt;<i> row_expr ?
+</I>&gt;&gt;<i> 
+</I>&gt;&gt;<i> What is the best way ?
+</I>
+-- 
+Best regards,
+Ruslan Zasukhin      [ I feel the need...the need for speed ]
+-------------------------------------------------------------
+e-mail: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">ruslan at paradigmasoft.com</A>
+web: <A HREF="http://www.paradigmasoft.com">http://www.paradigmasoft.com</A>
+
+To subscribe to the Valentina mail list
+send a letter to <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">valentina-on at lists.macserve.net</A>
+-------------------------------------------------------------
+
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001722.html">[antlr-interest] Advice on effective expr parsing
+</A></li>
+	<LI>Next message: <A HREF="001729.html">[antlr-interest] Advice on effective expr parsing
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1725">[ date ]</a>
+              <a href="thread.html#1725">[ thread ]</a>
+              <a href="subject.html#1725">[ subject ]</a>
+              <a href="author.html#1725">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

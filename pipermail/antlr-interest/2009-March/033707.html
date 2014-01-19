@@ -1,0 +1,181 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] [3.1.1] ANTLR3_MIN_TOKEN_TYPE define	possibly	incorrect
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5B3.1.1%5D%20ANTLR3_MIN_TOKEN_TYPE%20define%0A%09possibly%09incorrect&In-Reply-To=%3C1238057860.5842.40.camel%40cartman%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="033670.html">
+   <LINK REL="Next"  HREF="033712.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] [3.1.1] ANTLR3_MIN_TOKEN_TYPE define	possibly	incorrect</H1>
+    <B>Sven Van Echelpoel</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5B3.1.1%5D%20ANTLR3_MIN_TOKEN_TYPE%20define%0A%09possibly%09incorrect&In-Reply-To=%3C1238057860.5842.40.camel%40cartman%3E"
+       TITLE="[antlr-interest] [3.1.1] ANTLR3_MIN_TOKEN_TYPE define	possibly	incorrect">sven.van.echelpoel at empolis.com
+       </A><BR>
+    <I>Thu Mar 26 01:57:40 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="033670.html">[antlr-interest] [3.1.1] ANTLR3_MIN_TOKEN_TYPE define possibly incorrect
+</A></li>
+        <LI>Next message: <A HREF="033712.html">[antlr-interest] [3.1.1] ANTLR3_MIN_TOKEN_TYPE define possibly incorrect
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#33707">[ date ]</a>
+              <a href="thread.html#33707">[ thread ]</a>
+              <a href="subject.html#33707">[ subject ]</a>
+              <a href="author.html#33707">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>[...]
+&gt;<i> &gt; At first I only checked that LT(1) returned something non-NULL, but
+</I>&gt;<i> &gt; since a node was returned in (2) I ended up creating the wrong node
+</I>&gt;<i> &gt; to
+</I>&gt;<i> &gt; return in the rewrite rule. Then I found out that the type returned
+</I>&gt;<i> &gt; was
+</I>&gt;<i> &gt; ANTLR3_TOKEN_UP and that I could use ANTLR3_MIN_TOKEN_TYPE to
+</I>&gt;<i> &gt; determine
+</I>&gt;<i> &gt; whether I had a 'valid' node or not.
+</I>&gt;<i> &gt; 
+</I>&gt;<i> &gt; Should LT(1) return a node in (2), or does that signal that
+</I>&gt;<i> &gt; something's
+</I>&gt;<i> &gt; amiss? If the behavior of LT(1) is correct, how can I determine that
+</I>&gt;<i> &gt; a
+</I>&gt;<i> &gt; node has no next sibling?
+</I>&gt;<i> &gt;   
+</I>&gt;<i> LT just returns the next token in the input stream and has no regard
+</I>&gt;<i> for rule boundaries etc. 
+</I>&gt;<i> 
+</I>&gt;<i> The input stream for an AST consists of a flat stream of tokens with
+</I>&gt;<i> the AST structure represented by the nodes ANTLR_TOKEN_DOWN and
+</I>&gt;<i> ANTLR_TOKEN_UP.
+</I>Ah, that's interesting to know.
+&gt;<i> 
+</I>&gt;<i> So, if LT(1) is ANTLR_TOKEN_UP, then it means there was no child
+</I>&gt;<i> token. However you can ask the node what the child count is too (see
+</I>&gt;<i> API). More impotantly though, this probably means that your body rule
+</I>&gt;<i> can be empty, in which case your grammar will have written the
+</I>&gt;<i> childless token without a DOWN and UP pair as a rewrite like this:
+</I>&gt;<i> 
+</I>&gt;<i> : X -&gt; ^(X)
+</I>&gt;<i> 
+</I>&gt;<i> is the same as 
+</I>&gt;<i> 
+</I>&gt;<i> : X-&gt; X
+</I>&gt;<i> 
+</I>&gt;<i> So, you might find it easier to have:
+</I>&gt;<i> 
+</I>&gt;<i> :  ^( node=NEEDS_TO_BE_REWRITTEN b=body )
+</I>&gt;<i>      -&gt; { createNewNode( $node, $b, LT( 1 ) ) }
+</I>&gt;<i> | node=NEEDS_TO_BE_REWRITTEN
+</I>&gt;<i> ;
+</I>&gt;<i> 
+</I>&gt;<i> Also though, if body cannot be empty, then LT(1) in this instance will
+</I>&gt;<i> ALWAYS be ANTLR_TOKEN_UP, matching the closing ) of the rule
+</I>&gt;<i> specification.
+</I>
+The body cannot be empty. The input I'm processing is something like
+this:
+
+A B C C ( D | E ) C ( C | C ) C
+     ^             ^         ^ 
+     P             P         P
+
+With A..E the types of elements and the | an alternation of two or more
+choices. There's a ton more operators that can be applied to the
+elements. Every C has to be transformed into a C' and inbetween two C's
+that have no other operators applied to them comes another node P. Such
+a P node can also be inserted between a C and an alternation of only
+C's, on either or both sides of the alternation. Expressions can be
+infinitely nested. The AST somewhat looks like this:
+
+|<i>
+</I>+- A
++- B
++- C
++- C
++- ALTERNATION
+|<i>  +- GROUP
+</I>|<i>  |  +- D
+</I>|<i>  +- GROUP
+</I>|<i>     +- E
+</I>+- C
++- ALTERNATION
+|<i>  +- GROUP
+</I>|<i>     +- C
+</I>|<i>  +- GROUP
+</I>|<i>     +- C
+</I>+ C
+
+Simplified, I have expressed this like so:
+
+element_list : 
+  element+ 
+;
+
+element : 
+  A
+|<i> B
+</I>|<i> C
+</I>|<i> alternation
+</I>|<i>  // ... more elements and operators that look like 
+</I>   // ^( OPERATOR element_list )
+;
+	
+alternation :
+|<i> ^( ALTERNATION group+ )
+</I>;
+
+group :
+  ^( GROUP element_list )
+;
+
+I have been unable to imagine a pattern that would single out those C's
+that need a P inbetween. I would guess that the compiler would complain
+about multiple alternatives for input... if I were to add special case
+for two consecutive C's, right? 
+
+- Incidentally, when will the AST filter grammars, as discussed in
+<A HREF="http://www.antlr.org/wiki/display/~admin/2008/10/23/tree+pattern">http://www.antlr.org/wiki/display/~admin/2008/10/23/tree+pattern</A>
++matching+grammars, be available? Or are they already? -
+
+So I settled for the very general grammar, which was easier to write and
+thus maintain, and a fallback rewrite rule with the rewrite logic
+offloaded to a C++ function. I used LT(1) to get to the next sibling.
+
+
+Sven
+
+</PRE>
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="033670.html">[antlr-interest] [3.1.1] ANTLR3_MIN_TOKEN_TYPE define possibly incorrect
+</A></li>
+	<LI>Next message: <A HREF="033712.html">[antlr-interest] [3.1.1] ANTLR3_MIN_TOKEN_TYPE define possibly incorrect
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#33707">[ date ]</a>
+              <a href="thread.html#33707">[ thread ]</a>
+              <a href="subject.html#33707">[ subject ]</a>
+              <a href="author.html#33707">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

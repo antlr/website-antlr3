@@ -1,0 +1,168 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] [C target] @after and/or finally do not cover all cleanup cases when backtracking is on
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5BC%20target%5D%20%40after%20and/or%20finally%20do%20not%20cover%0A%20all%20cleanup%20cases%20when%20backtracking%20is%20on&In-Reply-To=%3C77f7eb0d1978c4f61a50b09f92eb92ee%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="040430.html">
+   <LINK REL="Next"  HREF="040434.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] [C target] @after and/or finally do not cover all cleanup cases when backtracking is on</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5BC%20target%5D%20%40after%20and/or%20finally%20do%20not%20cover%0A%20all%20cleanup%20cases%20when%20backtracking%20is%20on&In-Reply-To=%3C77f7eb0d1978c4f61a50b09f92eb92ee%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] [C target] @after and/or finally do not cover all cleanup cases when backtracking is on">jimi at temporal-wave.com
+       </A><BR>
+    <I>Wed Dec 29 11:21:30 PST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="040430.html">[antlr-interest] [C target] @after and/or finally do not cover all	cleanup cases when backtracking is on
+</A></li>
+        <LI>Next message: <A HREF="040434.html">[antlr-interest] Unicode Character Class Support
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40432">[ date ]</a>
+              <a href="thread.html#40432">[ thread ]</a>
+              <a href="subject.html#40432">[ subject ]</a>
+              <a href="author.html#40432">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I cannot guarantee that init and after work perfectly with backtracking
+mode as it gets too complicated to deal with with just the template
+functionality. They work correctly without backtracking.
+
+I have covered this in prior posts if you look at antlr.markmail.org. But,
+the other thing you should consider is that you should not allocate memory
+until the parse is found to be good. The best way to do that is to not do
+anything until the tree walking phase. If you are trying to do things in
+the parsing phase then you have to be very careful - probably avoid @init
+and @after etc and perhaps better yet, use factories to create your
+allocations that can then track and release the memory without you dealing
+with it explicitly.
+
+
+Basically Justin you are going about constructing this in a way that is
+going to get you into trouble with the C target I think. I strongly
+recommend left factoring your grammar as the time saved later because of
+all the hassle you will avoid will outweigh the time spent doing it now.
+You main issue is that if you are using backtracking AND you are
+allocating memory then you don't always know if you allocated anything
+(without using factories or auto allocation etc) and error messages will
+turn up in very unlikely places. If you don't wish to get out of
+backtracking, then you should definitely move to parse-&gt;tree verify-&gt;tree
+walk and do stuff.
+
+Jim
+
+&gt;<i> -----Original Message-----
+</I>&gt;<i> From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:antlr-interest-
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">bounces at antlr.org</A>] On Behalf Of Justin Murray
+</I>&gt;<i> Sent: Wednesday, December 29, 2010 7:10 AM
+</I>&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> Cc: Robert Jacobs
+</I>&gt;<i> Subject: [antlr-interest] [C target] @after and/or finally do not cover
+</I>&gt;<i> all cleanup cases when backtracking is on
+</I>&gt;<i>
+</I>&gt;<i> Hello,
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> I have some concerns with the generated parser C code when using @after
+</I>&gt;<i> and/or finally blocks in conjunction with backtracking. In my parser,
+</I>&gt;<i> for every line matched in a program, I have to create a new instance of
+</I>&gt;<i> a C++ class. This instance is in the scope of the &quot;line&quot; rule, and is
+</I>&gt;<i> used by the actions of this rule and all of the nested rules that it
+</I>&gt;<i> calls. To accomplish this, I added an @init section to create the new
+</I>&gt;<i> instance. I was not sure if I should use @after or finally to do the
+</I>&gt;<i> cleanup, so I initially tried using both. See the attached Test.g for a
+</I>&gt;<i> simplified example. What I found was that with backtracking turned off,
+</I>&gt;<i> what I wanted was the finally block, and it would always free the
+</I>&gt;<i> allocated memory. Unfortunately, I am stuck with backtrack=true (at
+</I>&gt;<i> least for now), and it appears to me that the generated code will not
+</I>&gt;<i> clean up memory properly in all cases. As you can see in the attached
+</I>&gt;<i> TestParser.c, there are two cases in the line() function where there is
+</I>&gt;<i> a &quot;return;&quot; line that does not execute the cleanup code from the @after
+</I>&gt;<i> or finally blocks. I am not sure how likely it is for these cases to
+</I>&gt;<i> occur, but it is clear to me that there is a potential for memory leaks
+</I>&gt;<i> in the generated code.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> The next thing I tried was to move my allocation/deallocation code up
+</I>&gt;<i> one level, into the actions of the &quot;prog&quot; rule. This is probably a
+</I>&gt;<i> better choice because the memory will not be allocated when
+</I>&gt;<i> backtracking. See the attached Test2.g for my simplified
+</I>&gt;<i> implementation.
+</I>&gt;<i> This generated code (see attached Test2Parser.c) looks better, but
+</I>&gt;<i> there is still the potential for a memory leak. Looking at the prog()
+</I>&gt;<i> function, the memory is only allocated if BACKTRACKING == 0, and then
+</I>&gt;<i> the line() rule function is called. After it returns from line(), if
+</I>&gt;<i> HASEXCEPTION() is true, the cleanup is handled by the finally block
+</I>&gt;<i> case. However, if HASFAILED() returns true (and HASEXCEPTION() returns
+</I>&gt;<i> false), then there is again a direct &quot;return;&quot; that does not do memory
+</I>&gt;<i> cleanup. I am beginning to think that maybe this is an impossible
+</I>&gt;<i> condition (does HASFAILED() only get set when backtracking?), but it is
+</I>&gt;<i> unclear to me.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> I am hoping that you will tell me that the memory leak in the second
+</I>&gt;<i> case is an impossible condition, and then I can move on with that
+</I>&gt;<i> implementation. If that is not the case, is there some sort or
+</I>&gt;<i> workaround that I can do? Regardless of that, it seems like the first
+</I>&gt;<i> implementation should also be valid, and maybe the generated code could
+</I>&gt;<i> handle that better.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> I know that the real solution is to left-factor the grammar and not use
+</I>&gt;<i> backtracking, but the syntax is inherently flawed and ambiguous, and we
+</I>&gt;<i> are not allowed to break back compatibility. While it may be possible,
+</I>&gt;<i> I am probably not skilled enough to figure it out in the allotted
+</I>&gt;<i> timeframe. The good news is that even with backtracking and memoizing,
+</I>&gt;<i> the ANTLR parser performs 25% faster than what it replaced (Visual
+</I>&gt;<i> Parse++, an ancient and horrible parser generator).
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Thanks again,
+</I>&gt;<i>
+</I>&gt;<i> Justin Murray
+</I>&gt;<i> Software Engineer
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">jmurray at aerotech.com</A>
+</I>&gt;<i>
+</I>&gt;<i> Aerotech, Inc.
+</I>&gt;<i> 101 Zeta Drive
+</I>&gt;<i> Pittsburgh, PA 15238
+</I>&gt;<i> 412-963-7470
+</I>&gt;<i>
+</I>&gt;<i>
+</I></PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="040430.html">[antlr-interest] [C target] @after and/or finally do not cover all	cleanup cases when backtracking is on
+</A></li>
+	<LI>Next message: <A HREF="040434.html">[antlr-interest] Unicode Character Class Support
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40432">[ date ]</a>
+              <a href="thread.html#40432">[ thread ]</a>
+              <a href="subject.html#40432">[ subject ]</a>
+              <a href="author.html#40432">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

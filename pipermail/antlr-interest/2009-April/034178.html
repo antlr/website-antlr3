@@ -1,0 +1,254 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Resolving ambiguity
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Resolving%20ambiguity&In-Reply-To=%3Cc376e6ec0904251123t692e8a59ja25ed9ba0e380b5%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="034177.html">
+   <LINK REL="Next"  HREF="034179.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Resolving ambiguity</H1>
+    <B>Martijn Reuvers</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Resolving%20ambiguity&In-Reply-To=%3Cc376e6ec0904251123t692e8a59ja25ed9ba0e380b5%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Resolving ambiguity">martijn.reuvers at gmail.com
+       </A><BR>
+    <I>Sat Apr 25 11:23:09 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="034177.html">[antlr-interest] ANTLR + C Target Questions
+</A></li>
+        <LI>Next message: <A HREF="034179.html">[antlr-interest] How can I decide at runtime if a rule contains an	optional token
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#34178">[ date ]</a>
+              <a href="thread.html#34178">[ thread ]</a>
+              <a href="subject.html#34178">[ subject ]</a>
+              <a href="author.html#34178">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello everyone,
+
+I've been playing around with antlr and I am running into something I
+don't know how to fix. Below this mail follow resp. the grammar and
+tree grammar, which I've simplified to show the issue I have. Sample
+input for this grammar is:
+
+int a;
+
+a = a+10;
+
+String s = &quot;hello!&quot;;
+
+s = s + &quot;ok&quot;;
+
+s = a;
+
+The problem is somewhere in the 'str_method_var' and 'int_method_var'
+rules. They both have a NAME = expression semicolon . So there's the
+ambiguity. I tried using a predicate in str_method_var (it now just
+says {true}? as you can see) and this resolves the warning for the
+grammar. Not sure if that's the right way though.
+
+But now, the tree grammar is complaining:
+
+[java] error(211): src/antlr/basic/test08/TestTree.g:20:2: [fatal]
+rule classdef_content has non-LL(*) decision due to recursive rule
+invocations reachable from alts 1,2.  Resolve by left-factoring or
+using syntactic predicates or using backtrack=true option.
+[java] Java Result: 1
+
+Then if I try the same trick in the tree grammar (adding {true}? in
+str_method_var), it does complain:
+
+ [java] warning(203): src/antlr/basic/test08/TestTree.g:20:2: Input
+such as &quot;VARDEF&quot; is insufficiently covered withicates at locations:
+alt 2: line 40:6 at VARDEF, line 41:6 at VARDEF
+ [java] warning(200): src/antlr/basic/test08/TestTree.g:20:2: Decision
+can match input such as &quot;VARDEF&quot; using multiplternatives: 1, 2
+ [java] As a result, alternative(s) 2 were disabled for that input
+ [java] error(201): src/antlr/basic/test08/TestTree.g:20:2: The
+following alternatives can never be matched: 2
+ [java]
+ [java] Java Result: 1&quot;
+
+I am a bit lost on what to do now. I hope someone can help me out or
+put me on the right track!
+
+Thanks a lot!
+Martijn
+
+p.s. Adding {true}? predicate in the grammar unfortunately makes
+antlrworks fail with a very long error dialog when trying to debug,
+but I think that is this bug:
+<A HREF="http://www.antlr.org/jira/browse/ANTLR-378.">http://www.antlr.org/jira/browse/ANTLR-378.</A>
+
+----------------------------------------------------------------------------------
+grammar Test;
+
+options {
+	output=AST;
+}
+
+tokens {
+	VARDEF;
+}
+
+start
+	:	classdef_content+
+	;
+
+classdef_content
+	:		int_method_var
+	|		str_method_var
+	;
+
+int_global_var
+	:	MEMBER_TYPE_INT NAME SEMICOLON 													-&gt; ^(VARDEF MEMBER_TYPE_INT NAME)
+	| MEMBER_TYPE_INT NAME '=' int_expression_calc SEMICOLON 	-&gt; ^(VARDEF
+MEMBER_TYPE_INT NAME int_expression_calc)
+	;
+	
+int_method_var
+	:	int_global_var
+	| NAME '=' int_expression_calc SEMICOLON 		-&gt; ^(VARDEF NAME
+int_expression_calc)
+	;
+
+int_expression_calc
+	:	d=int_mult_expr_calc (('+'^ | '-'^) e=int_mult_expr_calc)*
+	;
+
+int_mult_expr_calc
+	:	int_atom ('*'^ int_atom)*
+	;
+
+int_atom
+	:	INT
+	|	NAME
+	| '('! int_expression_calc ')'!	
+	;
+	
+str_global_var
+	:	MEMBER_TYPE_STR NAME SEMICOLON													-&gt; ^(VARDEF MEMBER_TYPE_STR NAME)
+	| MEMBER_TYPE_STR NAME '=' str_expression_calc SEMICOLON	-&gt; ^(VARDEF
+MEMBER_TYPE_STR NAME str_expression_calc)
+	;
+	
+str_method_var
+	:	str_global_var
+	| {true}? NAME '=' str_expression_calc SEMICOLON 	-&gt; ^(VARDEF NAME
+str_expression_calc)
+	;	
+
+str_expression_calc
+	:	d=str_atom (('+'^ | '-'^) e=str_atom)*
+	;
+	
+str_atom
+	:	TEXT
+	| NAME
+	;
+
+MEMBER_TYPE_INT
+	: 'int'
+	;
+	
+MEMBER_TYPE_STR
+	:	'String'
+	;	
+
+SEMICOLON
+	:	';'
+	;
+
+INT
+	: ('0'..'9')+
+	;
+	
+TEXT
+	:	'&quot;' .* '&quot;'
+	;
+	
+NAME
+	:	('a'..'z' | 'A'..'Z' | '0'..'9' | '_' )+
+	;
+	
+WS	
+	:	(' '|'\t'|'\n'|'\r')+ { $channel=HIDDEN; }
+	;	
+----------------------------------------------------------------------------------
+
+tree grammar TestTree;
+
+options {
+	tokenVocab=Test;
+	ASTLabelType=CommonTree;	
+}
+
+start
+	:	classdef_content+
+	;
+
+classdef_content
+	:		int_method_var
+	|		str_method_var
+	;
+
+int_global_var
+	:	^(VARDEF MEMBER_TYPE_INT NAME)
+	| ^(VARDEF MEMBER_TYPE_INT NAME int_expression_calc)
+	;
+	
+int_method_var
+	:	int_global_var
+	| ^(VARDEF NAME int_expression_calc)
+	;
+
+int_expression_calc [int value]
+	:	^('+' a=int_expression_calc b=int_expression_calc) {  $value=a+b;  }
+	| ^('-' a=int_expression_calc b=int_expression_calc) {  $value=a-b;  }
+	;
+	
+str_global_var
+	:	^(VARDEF MEMBER_TYPE_STR NAME)
+	| ^(VARDEF MEMBER_TYPE_STR NAME str_expression_calc)
+	;
+	
+str_method_var
+	:	str_global_var
+	| {true}? ^(VARDEF NAME str_expression_calc)
+	;	
+
+str_expression_calc
+	:	^('+' a=str_expression_calc  b=str_expression_calc) { $value=a+b; }
+	| ^('-' a=str_expression_calc  b=str_expression_calc) {  /*$value=a-b;  */  }
+	;
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="034177.html">[antlr-interest] ANTLR + C Target Questions
+</A></li>
+	<LI>Next message: <A HREF="034179.html">[antlr-interest] How can I decide at runtime if a rule contains an	optional token
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#34178">[ date ]</a>
+              <a href="thread.html#34178">[ thread ]</a>
+              <a href="subject.html#34178">[ subject ]</a>
+              <a href="author.html#34178">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,450 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Stopping parser and lexer at first error
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Stopping%20parser%20and%20lexer%20at%20first%20error&In-Reply-To=%3C701ce3f71525c7469a2027380fb2fa93%40temporal-wave.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="038173.html">
+   <LINK REL="Next"  HREF="038169.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Stopping parser and lexer at first error</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Stopping%20parser%20and%20lexer%20at%20first%20error&In-Reply-To=%3C701ce3f71525c7469a2027380fb2fa93%40temporal-wave.com%3E"
+       TITLE="[antlr-interest] Stopping parser and lexer at first error">jimi at temporal-wave.com
+       </A><BR>
+    <I>Fri Apr  2 09:40:35 PDT 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="038173.html">[antlr-interest] Stopping parser and lexer at first error
+</A></li>
+        <LI>Next message: <A HREF="038169.html">[antlr-interest]  Creating extension libraries for a DSL
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#38174">[ date ]</a>
+              <a href="thread.html#38174">[ thread ]</a>
+              <a href="subject.html#38174">[ subject ]</a>
+              <a href="author.html#38174">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>'Wrong' might be too strong.
+
+However, you should not raise errors for that sort of thing in the lexer 'in general'. 
+
+Obviously the lexer should raise an error when it sees there is something not correct, such as a character that cannot be allowed. However, it raises a controlled error that you program and record, then does not pass the character on. You can then parse and see if there are more errors you can give out, then, if possible check semantics. Basically try to give out as much error information in once pass as possible (however you also need to know the types of errors that will create many other spurious errors and stop processing when you see them.)
+
+Your example below does not make sense to me because if:
+
+MyClass is a correct keyword
+But MyCLASS is not
+
+Then the lexer rule will not recognize myCLASS as a keyword. If there is an ID rule then it will see it as that. If MyCLASS can mean nothing at all, then there should be a rule that matches it in the lexer, but issues a controlled error and deletes it. Your compiler will not go any farther than it can/should because you will record the error, but you won't just stop at the first thing that goes wrong lexically. There is nothing worse than a compiler that says &quot;invalid character line 1, offset 34&quot; and stops, so you fix that character, run it again and it says &quot;invalid character line 1, offset 36&quot;.
+
+So, I am advising you that if you program your lexer rules anticipating anything that can go wrong, then you won't throw any ANTLR exceptions that don't tell you anything about the error. You should still catch these and raise 'Internal compiler error' (because your lexer is incorrect) of course, but not rely on this as the way to catch bad input.
+
+So:
+
+STRING : '&quot;' ~('&quot;'|'\n'|'\r')*
+          (
+               '&quot;'  // Hunky dory
+             |  { raise(UNTERMINATED_STRING); } // Missing delimiter
+          )
+        ;
+
+....
+
+ID : ('a'..'z'|morestuff)+ { checkId($text); } ;
+
+
+ANY : . { raise(ILLEGAL_CHARACTER); }
+
+
+All of the above will result in a set of tokens that you can still parse, and hopefully check semantically, but you won't generate code and so on because you recorded the fact that there were errors.
+
+Jim
+
+
+&gt;<i> -----Original Message-----
+</I>&gt;<i> From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:antlr-interest-
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">bounces at antlr.org</A>] On Behalf Of Corrado Campisano
+</I>&gt;<i> Sent: Friday, April 02, 2010 8:48 AM
+</I>&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> Subject: Re: [antlr-interest] Stopping parser and lexer at first error
+</I>&gt;<i> 
+</I>&gt;<i> Hi,
+</I>&gt;<i> 
+</I>&gt;<i> I think this could apply to lexel-level errors due to unexpected chars,
+</I>&gt;<i> but
+</I>&gt;<i> not to unexpected char-sequences.
+</I>&gt;<i> 
+</I>&gt;<i> I mean (it's not the case of my grammar, but could happen), what if I
+</I>&gt;<i> want
+</I>&gt;<i> to distinguish tokens like those:
+</I>&gt;<i>  - MyClass
+</I>&gt;<i>  - MYCONSTANT
+</I>&gt;<i>  - myVariable
+</I>&gt;<i> and consider the following ones as errors:
+</I>&gt;<i>  - MyCLass
+</I>&gt;<i>  - MYCONstant
+</I>&gt;<i>  - myVAriable
+</I>&gt;<i> 
+</I>&gt;<i> ??
+</I>&gt;<i> 
+</I>&gt;<i> Is the &quot;you should&quot; from some best-practice?
+</I>&gt;<i> 
+</I>&gt;<i> I believe the lexer should rise exceptions due to errors in the
+</I>&gt;<i> 'lexical
+</I>&gt;<i> analisys' and the parser for the 'syntactic analisys', am I wrong?
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> [image: <A HREF="http://wiki.codeblocks.org/images/a/a9/Parser_Flow.gif]">http://wiki.codeblocks.org/images/a/a9/Parser_Flow.gif]</A>
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> Regards,
+</I>&gt;<i> Corrado
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 2010/4/2 Jim Idle &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">jimi at temporal-wave.com</A>&gt;
+</I>&gt;<i> 
+</I>&gt;<i> &gt; You should program your lexer such that it does not throw any errors.
+</I>&gt;<i> &gt; Program for the common mistakes (such as un-terminated &quot;string) and
+</I>&gt;<i> have a
+</I>&gt;<i> &gt; catch all rule for unknown characters.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Jim
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; &gt; -----Original Message-----
+</I>&gt;<i> &gt; &gt; From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:antlr-interest-
+</I>&gt;<i> &gt; &gt; <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">bounces at antlr.org</A>] On Behalf Of Corrado Campisano
+</I>&gt;<i> &gt; &gt; Sent: Friday, April 02, 2010 7:59 AM
+</I>&gt;<i> &gt; &gt; To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> &gt; &gt; Subject: Re: [antlr-interest] Stopping parser and lexer at first
+</I>&gt;<i> error
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; Hi all,
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; I setup an ANTLR-maven archetype with a grammar providing the
+</I>&gt;<i> override
+</I>&gt;<i> &gt; &gt; for
+</I>&gt;<i> &gt; &gt; the 'always resume' behaviour.
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; You can find details on my
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> website&lt;<A HREF="http://www.servicemix.eu/index.php?option=com_content&amp;view=arti">http://www.servicemix.eu/index.php?option=com_content&amp;view=arti</A>
+</I>&gt;<i> &gt; &gt; cle&amp;id=14&gt;,
+</I>&gt;<i> &gt; &gt; maybe it's worth checking it and adding a notice on this archetype
+</I>&gt;<i> to
+</I>&gt;<i> &gt; &gt; this
+</I>&gt;<i> &gt; &gt; ANTLR wiki
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> page&lt;<A HREF="http://www.antlr.org/wiki/display/ANTLR3/Building+ANTLR+Projects+w">http://www.antlr.org/wiki/display/ANTLR3/Building+ANTLR+Projects+w</A>
+</I>&gt;<i> &gt; &gt; ith+Maven&gt;and/or
+</I>&gt;<i> &gt; &gt; to the ANTLR
+</I>&gt;<i> &gt; &gt; v3 Maven plugin page &lt;<A HREF="http://www.antlr.org/antlr3-maven-">http://www.antlr.org/antlr3-maven-</A>
+</I>&gt;<i> &gt; &gt; plugin/index.html&gt;.
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; Regards,
+</I>&gt;<i> &gt; &gt; Corrado.
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; 2010/3/10 Corrado Campisano &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">corrado.campisano at gmail.com</A>&gt;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; &gt; Hi all,
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt; &gt; I needed to catch any syntax error (letting the lexer
+</I>&gt;<i> insert/delete
+</I>&gt;<i> &gt; &gt; chars
+</I>&gt;<i> &gt; &gt; &gt; or the parser keeping parsing with the sys.err message only could
+</I>&gt;<i> be
+</I>&gt;<i> &gt; &gt; very
+</I>&gt;<i> &gt; &gt; &gt; dangerous to my application), so I took a look on the reference
+</I>&gt;<i> &gt; &gt; (which
+</I>&gt;<i> &gt; &gt; &gt; reports information not valid anymore) and on the internet and I
+</I>&gt;<i> &gt; &gt; found
+</I>&gt;<i> &gt; &gt; &gt; several hints and articles:
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt; &gt; Why the generated parser code tolerates illegal
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> expression?&lt;<A HREF="http://www.antlr.org/wiki/pages/viewpage.action?pageId=4554">http://www.antlr.org/wiki/pages/viewpage.action?pageId=4554</A>
+</I>&gt;<i> &gt; &gt; 943&gt;
+</I>&gt;<i> &gt; &gt; &gt; How can I make the lexer exit upon first lexical
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> error?&lt;<A HREF="http://www.antlr.org/wiki/pages/viewpage.action?pageId=5341217">http://www.antlr.org/wiki/pages/viewpage.action?pageId=5341217</A>&gt;
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> <A HREF="http://www.antlr.org/wiki/display/ANTLR3/Custom+Syntax+Error+Recovery">http://www.antlr.org/wiki/display/ANTLR3/Custom+Syntax+Error+Recovery</A>
+</I>&gt;<i> &gt; &gt; &gt; [antlr-interest] I want to throw an exception and stop parse,
+</I>&gt;<i> please!
+</I>&gt;<i> &gt; &gt; &gt; &lt;<A HREF="http://www.antlr.org/pipermail/antlr-interest/2009-">http://www.antlr.org/pipermail/antlr-interest/2009-</A>
+</I>&gt;<i> May/034605.html&gt;
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt; &gt; It looks to me I found a way to do this, maybe it's worth to
+</I>&gt;<i> publish
+</I>&gt;<i> &gt; &gt; that
+</I>&gt;<i> &gt; &gt; &gt; on the wiki, once validated.
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt; &gt; I just added the following overrides to my grammar (attached):
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt; &gt; @parser::members
+</I>&gt;<i> &gt; &gt; &gt; {
+</I>&gt;<i> &gt; &gt; &gt;     public class ParserException extends RuntimeException {
+</I>&gt;<i> &gt; &gt; &gt;             Object objCurrentInputSymbol = null;
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt; &gt;             public ParserException(Object oCurrentInputSymbol) {
+</I>&gt;<i> &gt; &gt; &gt;                 this.objCurrentInputSymbol = oCurrentInputSymbol;
+</I>&gt;<i> &gt; &gt; &gt;             }
+</I>&gt;<i> &gt; &gt; &gt;         }
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt; &gt;         protected Object recoverFromMismatchedToken(IntStream
+</I>&gt;<i> input,
+</I>&gt;<i> &gt; &gt; int
+</I>&gt;<i> &gt; &gt; &gt; ttype, BitSet follow) throws RecognitionException {
+</I>&gt;<i> &gt; &gt; &gt;             System.out.println(&quot;PARSER :
+</I>&gt;<i> &gt; &gt; &gt; this.getCurrentInputSymbol(input).toString() : &quot; +
+</I>&gt;<i> &gt; &gt; &gt; this.getCurrentInputSymbol(input).toString());
+</I>&gt;<i> &gt; &gt; &gt;             System.out.println(&quot;PARSER : this.failed() : &quot; +
+</I>&gt;<i> &gt; &gt; &gt; this.failed());
+</I>&gt;<i> &gt; &gt; &gt;             System.out.println(&quot;PARSER :
+</I>&gt;<i> &gt; &gt; this.getNumberOfSyntaxErrors() : &quot;
+</I>&gt;<i> &gt; &gt; &gt; + this.getNumberOfSyntaxErrors());
+</I>&gt;<i> &gt; &gt; &gt;             throw new
+</I>&gt;<i> &gt; &gt; ParserException(this.getCurrentInputSymbol(input));
+</I>&gt;<i> &gt; &gt; &gt;         }
+</I>&gt;<i> &gt; &gt; &gt; }
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt; &gt; @lexer::members
+</I>&gt;<i> &gt; &gt; &gt; {
+</I>&gt;<i> &gt; &gt; &gt;     public class LexerException extends RuntimeException {
+</I>&gt;<i> &gt; &gt; &gt;             RecognitionException recognitionException = null;
+</I>&gt;<i> &gt; &gt; &gt;             String strErrorHeader = null;
+</I>&gt;<i> &gt; &gt; &gt;             String strErrorMessage = null;
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt; &gt;             public LexerException(RecognitionException recExc,
+</I>&gt;<i> String
+</I>&gt;<i> &gt; &gt; &gt; sHead, String sMsg) {
+</I>&gt;<i> &gt; &gt; &gt;                 this.recognitionException = recExc;
+</I>&gt;<i> &gt; &gt; &gt;                 this.strErrorHeader = sHead;
+</I>&gt;<i> &gt; &gt; &gt;                 this.strErrorMessage = sMsg;
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt; &gt;                 System.out.println(&quot;LEXER : ErrorHeader : &quot; +
+</I>&gt;<i> sHead);
+</I>&gt;<i> &gt; &gt; &gt;                 System.out.println(&quot;LEXER : ErrorMessage : &quot; +
+</I>&gt;<i> sMsg);
+</I>&gt;<i> &gt; &gt; &gt;                 System.out.println(&quot;LEXER : RecognitionException
+</I>&gt;<i> : &quot;
+</I>&gt;<i> &gt; &gt; +
+</I>&gt;<i> &gt; &gt; &gt; this.recognitionException.toString());
+</I>&gt;<i> &gt; &gt; &gt;             }
+</I>&gt;<i> &gt; &gt; &gt;         }
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt; &gt;         public void reportError(RecognitionException recExc) {
+</I>&gt;<i> &gt; &gt; &gt;         throw new LexerException(recExc,
+</I>&gt;<i> this.getErrorHeader(recExc),
+</I>&gt;<i> &gt; &gt; &gt; getErrorMessage(recExc, this.getTokenNames()));
+</I>&gt;<i> &gt; &gt; &gt;     }
+</I>&gt;<i> &gt; &gt; &gt; }
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt; &gt; Then I tested it with a simple class:
+</I>&gt;<i> &gt; &gt; &gt;     public static void main(String[] args) {
+</I>&gt;<i> &gt; &gt; &gt;         testLexerError();
+</I>&gt;<i> &gt; &gt; &gt;         testParserError();
+</I>&gt;<i> &gt; &gt; &gt;     }
+</I>&gt;<i> &gt; &gt; &gt;     private static void testLexerError() {
+</I>&gt;<i> &gt; &gt; &gt;         String strDlToParse = &quot;{CORRADO PIPPO ;feee}&quot;;
+</I>&gt;<i> &gt; &gt; &gt;         System.out.println(&quot;TESTING LEXER with : &quot; +
+</I>&gt;<i> strDlToParse);
+</I>&gt;<i> &gt; &gt; &gt;         testError(strDlToParse);
+</I>&gt;<i> &gt; &gt; &gt;     }
+</I>&gt;<i> &gt; &gt; &gt;     private static void testParserError() {
+</I>&gt;<i> &gt; &gt; &gt;         String strDlToParse = &quot;{CORRADO PIPPO feee} dhert&quot;;
+</I>&gt;<i> &gt; &gt; &gt;         System.out.println(&quot;TESTING PARSER with : &quot; +
+</I>&gt;<i> strDlToParse);
+</I>&gt;<i> &gt; &gt; &gt;         testError(strDlToParse);
+</I>&gt;<i> &gt; &gt; &gt;     }
+</I>&gt;<i> &gt; &gt; &gt;     private static void testError(String strDlToParse) {
+</I>&gt;<i> &gt; &gt; &gt;         CommonTree tree=null;
+</I>&gt;<i> &gt; &gt; &gt;         String strError = null;
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt; &gt;         ANTLRStringStream input = new
+</I>&gt;<i> &gt; &gt; &gt; org.antlr.runtime.ANTLRStringStream(strDlToParse);
+</I>&gt;<i> &gt; &gt; &gt;         Dl2OwlJavaBLexer lexer = new Dl2OwlJavaBLexer(input);
+</I>&gt;<i> &gt; &gt; &gt;         TokenStream tokens = new
+</I>&gt;<i> &gt; &gt; &gt; org.antlr.runtime.CommonTokenStream(lexer);
+</I>&gt;<i> &gt; &gt; &gt;         Dl2OwlJavaBParser parser = new Dl2OwlJavaBParser(tokens);
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt; &gt;         try {
+</I>&gt;<i> &gt; &gt; &gt;             // this may rise an exception
+</I>&gt;<i> &gt; &gt; &gt;             // TODO : check why NO EXCEPTION is risen with error
+</I>&gt;<i> &gt; &gt; &quot;line 1:9
+</I>&gt;<i> &gt; &gt; &gt; no viable alternative at character ';'&quot; on inputs like &quot;{CORRADO
+</I>&gt;<i> ;}&quot;
+</I>&gt;<i> &gt; &gt; &gt;             eu.servicemix.dl2owl.Dl2OwlJavaBParser.axiom_return
+</I>&gt;<i> ret =
+</I>&gt;<i> &gt; &gt; &gt; parser.axiom();
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt; &gt;             // TODO : check if this will be executed if no
+</I>&gt;<i> exception
+</I>&gt;<i> &gt; &gt; rises
+</I>&gt;<i> &gt; &gt; &gt;             tree = (CommonTree) ret.getTree();
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt; &gt;             printTreeHelper(tree);
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt; &gt;         } catch (RecognitionException e) {
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt; &gt;             System.out.println(e.toString());
+</I>&gt;<i> &gt; &gt; &gt;             e.printStackTrace();
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt; &gt;         } catch (RuntimeException e) {
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt; &gt;             System.out.println(e.toString());
+</I>&gt;<i> &gt; &gt; &gt;             e.printStackTrace();
+</I>&gt;<i> &gt; &gt; &gt;         }
+</I>&gt;<i> &gt; &gt; &gt;     }
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt; &gt; The output looks ok, I wonder whether the whole 'trick' is too...
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt; &gt; TESTING LEXER with : {CORRADO PIPPO *;*feee}
+</I>&gt;<i> &gt; &gt; &gt; LEXER : ErrorHeader : line 1:15
+</I>&gt;<i> &gt; &gt; &gt; LEXER : ErrorMessage : no viable alternative at character ';'
+</I>&gt;<i> &gt; &gt; &gt; LEXER : RecognitionException : NoViableAltException(';'@[1:1:
+</I>&gt;<i> Tokens
+</I>&gt;<i> &gt; &gt; : (
+</I>&gt;<i> &gt; &gt; &gt; T__37 | T__38 | T__39 | T__40 | HAS_VALUE | ALL_VALUES |
+</I>&gt;<i> SOME_VALUES
+</I>&gt;<i> &gt; &gt; | DOT |
+</I>&gt;<i> &gt; &gt; &gt; HAS_CARD | MIN_CARD | MAX_CARD | NOT | AND | OR | URI_REF |
+</I>&gt;<i> INT_VALUE
+</I>&gt;<i> &gt; &gt; | WS |
+</I>&gt;<i> &gt; &gt; &gt; CTRL_CHAR );])
+</I>&gt;<i> &gt; &gt; &gt; eu.servicemix.dl2owl.Dl2OwlJavaBLexer$LexerException
+</I>&gt;<i> &gt; &gt; &gt; eu.servicemix.dl2owl.Dl2OwlJavaBLexer$LexerException
+</I>&gt;<i> &gt; &gt; &gt;     at
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> eu.servicemix.dl2owl.Dl2OwlJavaBLexer.reportError(Dl2OwlJavaBLexer.java
+</I>&gt;<i> &gt; &gt; :69)
+</I>&gt;<i> &gt; &gt; &gt;     at org.antlr.runtime.Lexer.nextToken(Lexer.java:94)
+</I>&gt;<i> &gt; &gt; &gt;     at
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> org.antlr.runtime.CommonTokenStream.fillBuffer(CommonTokenStream.java:1
+</I>&gt;<i> &gt; &gt; 19)
+</I>&gt;<i> &gt; &gt; &gt;     at
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> org.antlr.runtime.CommonTokenStream.LT&lt;<A HREF="http://org.antlr.runtime.commont">http://org.antlr.runtime.commont</A>
+</I>&gt;<i> &gt; &gt; okenstream.lt/&gt;
+</I>&gt;<i> &gt; &gt; &gt; (CommonTokenStream.java:238)
+</I>&gt;<i> &gt; &gt; &gt;     at
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> eu.servicemix.dl2owl.Dl2OwlJavaBParser.axiom(Dl2OwlJavaBParser.java:110
+</I>&gt;<i> &gt; &gt; )
+</I>&gt;<i> &gt; &gt; &gt;     at
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> eu.servicemix.dl2owl.CommonTreeHelper.testError(CommonTreeHelper.java:1
+</I>&gt;<i> &gt; &gt; 40)
+</I>&gt;<i> &gt; &gt; &gt;     at
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> eu.servicemix.dl2owl.CommonTreeHelper.testLexerError(CommonTreeHelper.j
+</I>&gt;<i> &gt; &gt; ava:121)
+</I>&gt;<i> &gt; &gt; &gt;     at
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> eu.servicemix.dl2owl.CommonTreeHelper.main(CommonTreeHelper.java:113)
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt; &gt; TESTING PARSER with : {CORRADO PIPPO feee} *dhert*
+</I>&gt;<i> &gt; &gt; &gt; PARSER : this.getCurrentInputSymbol(input).toString() :
+</I>&gt;<i> &gt; &gt; &gt; [@8,21:25='dhert',&lt;7&gt;,1:21]
+</I>&gt;<i> &gt; &gt; &gt; PARSER : this.failed() : false
+</I>&gt;<i> &gt; &gt; &gt; PARSER : this.getNumberOfSyntaxErrors() : 0
+</I>&gt;<i> &gt; &gt; &gt; eu.servicemix.dl2owl.Dl2OwlJavaBParser$ParserException
+</I>&gt;<i> &gt; &gt; &gt; eu.servicemix.dl2owl.Dl2OwlJavaBParser$ParserException
+</I>&gt;<i> &gt; &gt; &gt;     at
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> eu.servicemix.dl2owl.Dl2OwlJavaBParser.recoverFromMismatchedToken(Dl2Ow
+</I>&gt;<i> &gt; &gt; lJavaBParser.java:97)
+</I>&gt;<i> &gt; &gt; &gt;     at
+</I>&gt;<i> &gt; &gt; org.antlr.runtime.BaseRecognizer.match(BaseRecognizer.java:115)
+</I>&gt;<i> &gt; &gt; &gt;     at
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> eu.servicemix.dl2owl.Dl2OwlJavaBParser.axiom(Dl2OwlJavaBParser.java:232
+</I>&gt;<i> &gt; &gt; )
+</I>&gt;<i> &gt; &gt; &gt;     at
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> eu.servicemix.dl2owl.CommonTreeHelper.testError(CommonTreeHelper.java:1
+</I>&gt;<i> &gt; &gt; 40)
+</I>&gt;<i> &gt; &gt; &gt;     at
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> eu.servicemix.dl2owl.CommonTreeHelper.testParserError(CommonTreeHelper.
+</I>&gt;<i> &gt; &gt; java:126)
+</I>&gt;<i> &gt; &gt; &gt;     at
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> eu.servicemix.dl2owl.CommonTreeHelper.main(CommonTreeHelper.java:114)
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt; &gt; Any comment really appreciated!!
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt; &gt; Corrado
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt; &gt;
+</I>&gt;<i> &gt; &gt;
+</I>&gt;<i> &gt; &gt; List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> &gt; &gt; Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-">http://www.antlr.org/mailman/options/antlr-</A>
+</I>&gt;<i> interest/your-
+</I>&gt;<i> &gt; &gt; email-address
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> &gt; Unsubscribe:
+</I>&gt;<i> &gt; <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-">http://www.antlr.org/mailman/options/antlr-interest/your-email-</A>
+</I>&gt;<i> address
+</I>&gt;<i> &gt;
+</I>&gt;<i> 
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-">http://www.antlr.org/mailman/options/antlr-interest/your-</A>
+</I>&gt;<i> email-address
+</I>
+
+
+</PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="038173.html">[antlr-interest] Stopping parser and lexer at first error
+</A></li>
+	<LI>Next message: <A HREF="038169.html">[antlr-interest]  Creating extension libraries for a DSL
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#38174">[ date ]</a>
+              <a href="thread.html#38174">[ thread ]</a>
+              <a href="subject.html#38174">[ subject ]</a>
+              <a href="author.html#38174">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

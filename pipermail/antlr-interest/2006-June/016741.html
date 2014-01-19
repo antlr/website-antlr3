@@ -1,0 +1,178 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Lexing C# strings; generated lexer is incorrect?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Lexing%20C%23%20strings%3B%20generated%20lexer%20is%20incorrect%3F&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="016744.html">
+   <LINK REL="Next"  HREF="016742.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Lexing C# strings; generated lexer is incorrect?</H1>
+    <B>Wilke Havinga</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Lexing%20C%23%20strings%3B%20generated%20lexer%20is%20incorrect%3F&In-Reply-To="
+       TITLE="[antlr-interest] Lexing C# strings; generated lexer is incorrect?">havingaw at cs.utwente.nl
+       </A><BR>
+    <I>Wed Jun 28 02:58:10 PDT 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="016744.html">[antlr-interest] Wrong generated code (Version 3.01b)
+</A></li>
+        <LI>Next message: <A HREF="016742.html">[antlr-interest] Lexing C# strings; generated lexer is incorrect?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#16741">[ date ]</a>
+              <a href="thread.html#16741">[ thread ]</a>
+              <a href="subject.html#16741">[ subject ]</a>
+              <a href="author.html#16741">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+While trying to modify a C# lexer, I ran into trouble. So, I reduced the
+lexer to the smallest size where the problem still occurs (see below).
+It seems to me that either I'm doing something very wrong, or the
+antlr-generated lexer source is incorrect. If someone can enlighten me
+which of those is the case, and what I can do about it, I'd be very
+thankful ;)
+
+The offending lexer code:
+
+---- csharp.g -----------
+class CSharpLexer extends Lexer;
+options { k=2; } // Or 3 or 4, doesn't matter
+	
+STRING_LITERAL : QUOTE 'a' QUOTE
+                 | '@' QUOTE 'a' QUOTE;
+QUOTE          : &quot;\&quot;&quot;;
+------ end csharp.g ----
+
+This construct is supposed to match CSharp strings; I simplified it to
+match only the exact string &quot;a&quot; and the C# 'verbatim' string notation
+@&quot;a&quot;. One would expect that this lexer rule certainly should *not* match
+the sequence @a (at-sign followed by character a, without any quotes
+being involved).
+
+However, this is the generated CSharpLexer.java:
+
+----- CSharpLexer.java ----
+public Token nextToken() {
+[..]
+if ((LA(1)=='&quot;'||LA(1)=='@') &amp;&amp; (LA(2)=='&quot;'||LA(2)=='a')) {
+    mSTRING_LITERAL(true);
+    theRetToken=_returnToken;
+}
+else if ((LA(1)=='&quot;') &amp;&amp; (true)) {
+    mQUOTE(true);
+    theRetToken=_returnToken;
+}
+---- end CSharpLexer.java -
+
+This code clearly matches the combination '@a' as a STRING_LITERAL,
+although that string certainly doesn't match the pattern! Setting
+testLiterals (to true or false) doesn't make a difference, by the way.
+
+This becomes really problematic when another rule is introduced, e.g.:
+
+IDENTIFIER:	'@' 'a' // real version: STARTCHAR (ANYCHAR)+ etc.
+
+(because identifiers in C# can also start with a '@'-sign). This results
+in the following error message:
+
+ANTLR Parser Generator   Version 2.7.6 (2005-12-22)   1989-2005
+csharp.g: warning:lexical nondeterminism between rules STRING_LITERAL
+and IDENTIFIER upon
+csharp.g:     k==1:'@'
+csharp.g:     k==2:'a'
+
+So apparently, antlr has some internal model where the string '@a'
+really matches the STRING_LITERAL token. Something doesn't seem right
+here...
+
+I expect that this may in some way be related to the lexical
+lookahead/end-of-token stuff described here:
+<A HREF="http://sds.sourceforge.net/src/antlr/doc/lexer.html#lexicallookahead">http://sds.sourceforge.net/src/antlr/doc/lexer.html#lexicallookahead</A> -
+because the 'QUOTE' token is a single character which can be followed by
+any other token (i.e. &quot;anything&quot;); maybe it's impossible to distinguish
+QUOTE from STRING_LITERAL then? However, if that is the case, Antlr
+should already have complained about that in the first case (the lexer
+without the IDENTIFIER rule) instead of generating code that matches
+things that clearly do not match the specified pattern.
+
+
+To summarize, my questions are: I want to lex C# strings (such as &quot;A&quot; or
+@&quot;A&quot;), C# identifiers (such as A or @A) and recognize the QUOTE (&quot;) as a
+standalone token, too. Question 1: Is that even possible (in a lexer)?
+Question 2: If not (because of ambiguity caused by end-of-token
+basically limiting lookahead), shouldn't Antlr have flagged my first
+lexer definition as ambiguous, then? (rather than generating an
+incorrect lexer)?
+
+Attached: the offending lexer source + generated lexer (source).
+
+
+
+Any help would be appreciated,
+
+Wilke Havinga
+
+-------------- next part --------------
+class CSharpLexer extends Lexer;
+
+options 
+{
+	k=2; // Was originally 4; doesn't matter
+}	
+	
+STRING_LITERAL
+	:	QUOTE 'a' QUOTE
+	|	'@' QUOTE 'a' QUOTE
+	;
+
+QUOTE		:	&quot;\&quot;&quot;    ;
+
+// Uncomment to get the ambiguity warning
+//IDENTIFIER
+//	:	'@' 'a';
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: CSharpLexer.java
+Type: text/java
+Size: 4252 bytes
+Desc: not available
+Url : <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20060628/5ada5394/CSharpLexer.bin">http://www.antlr.org/pipermail/antlr-interest/attachments/20060628/5ada5394/CSharpLexer.bin</A>
+</PRE>
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="016744.html">[antlr-interest] Wrong generated code (Version 3.01b)
+</A></li>
+	<LI>Next message: <A HREF="016742.html">[antlr-interest] Lexing C# strings; generated lexer is incorrect?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#16741">[ date ]</a>
+              <a href="thread.html#16741">[ thread ]</a>
+              <a href="subject.html#16741">[ subject ]</a>
+              <a href="author.html#16741">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

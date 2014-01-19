@@ -1,0 +1,151 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] multiple lexer
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20multiple%20lexer&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="009919.html">
+   <LINK REL="Next"  HREF="009975.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] multiple lexer</H1>
+    <B>Alexey Demakov</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20multiple%20lexer&In-Reply-To="
+       TITLE="[antlr-interest] multiple lexer">demakov at ispras.ru
+       </A><BR>
+    <I>Sat Nov  6 05:23:49 PST 2004</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="009919.html">[antlr-interest] multiple lexer
+</A></li>
+        <LI>Next message: <A HREF="009975.html">[antlr-interest] multiple lexer
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#9923">[ date ]</a>
+              <a href="thread.html#9923">[ thread ]</a>
+              <a href="subject.html#9923">[ subject ]</a>
+              <a href="author.html#9923">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+From: &quot;hst_12345&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">hst_12345 at yahoo.com</A>&gt;
+&gt;<i> I am wokring on a project to parse expressions which is part of the 
+</I>&gt;<i> doc.  So I wrote a seperate parser for the expression. And use 
+</I>&gt;<i> multiple lexer. The problem I have is that when switch back, one 
+</I>&gt;<i> token is eaten from the expression parser. Here is my doc syntax:
+</I>&gt;<i> main parser:
+</I>&gt;<i> 
+</I>&gt;<i> EXP { '1.2+3.5' T;  '3.6+6.8' H;}
+</I>&gt;<i> So the main parser rule:
+</I>&gt;<i> expression:
+</I>&gt;<i>      EXP LCURLY 
+</I>&gt;<i>      ( SINGLE_QUOTE {
+</I>&gt;<i>            _selector.select(&quot;expressionLex&quot;);
+</I>&gt;<i>            expressionParser.Parse();
+</I>&gt;<i>            _selector.select(&quot;mainLex&quot;);
+</I>&gt;<i>            }
+</I>&gt;<i>        SINGLE_QUOTE character
+</I>&gt;<i>       )+
+</I>&gt;<i>       ;
+</I>&gt;<i> The problem is when switch back, it complains to look for SINGLE_QUOTE 
+</I>&gt;<i> but get T which is next token. I do print out the expression which is 
+</I>&gt;<i> OK that does not include the single quote. So I do not know where 
+</I>&gt;<i> the single quote. why when it gets back to main parser and the single 
+</I>&gt;<i> quote went away.
+</I>
+It seems to me that expression parser takes the second single quote from
+input strem. In your situation, expression parser needs to see next character
+to decide whether to stop parsing expression. It calls nextToken() removing
+single token from input stream and donesn't consume it desining to stop 
+expression parsing.
+
+The simplest solution - to have in nested lexer/parser stop condition that doesn't
+use next token. In this case it is single quote at the end of expression.
+And expression lexer will be responsilble for restoring main lexer:
+
+expr: ... SINGLE_QOUTE { _selector.pop(); }
+
+So, in main lexer you only push expression lexer:
+
+expression:
+     EXP LCURLY 
+     ( SINGLE_QUOTE 
+       {
+           _selector.push(&quot;expressionLex&quot;);
+           expressionParser.Parse();
+           // restored by expression lexer
+           // _selector.select(&quot;mainLex&quot;);
+       }
+       // it is consumed by expression lexer
+       // SINGLE_QUOTE 
+       character
+      )+
+      ;
+
+I've never changed lexer from my parser before and have used
+something like this in main lexer:
+
+SINGLE_QUOTE: '\'' { _selector.push(&quot;expressionLex&quot;); }
+
+So main parser can process tokens from expression lexer:
+
+expression:
+     EXP LCURLY 
+     ( SINGLE_QUOTE 
+       realExpr // tokens from expression lexer
+       character
+      )+
+      ;
+
+Regards,
+Alexey
+
+-----
+Alexey Demakov
+TreeDL: Tree Description Language: <A HREF="http://treedl.sourceforge.net">http://treedl.sourceforge.net</A>
+RedVerst Group: <A HREF="http://www.unitesk.com">http://www.unitesk.com</A>
+
+
+
+
+ 
+Yahoo! Groups Links
+
+&lt;*&gt; To visit your group on the web, go to:
+    <A HREF="http://groups.yahoo.com/group/antlr-interest/">http://groups.yahoo.com/group/antlr-interest/</A>
+
+&lt;*&gt; To unsubscribe from this group, send an email to:
+    <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-unsubscribe at yahoogroups.com</A>
+
+&lt;*&gt; Your use of Yahoo! Groups is subject to:
+    <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A>
+ 
+
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="009919.html">[antlr-interest] multiple lexer
+</A></li>
+	<LI>Next message: <A HREF="009975.html">[antlr-interest] multiple lexer
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#9923">[ date ]</a>
+              <a href="thread.html#9923">[ thread ]</a>
+              <a href="subject.html#9923">[ subject ]</a>
+              <a href="author.html#9923">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

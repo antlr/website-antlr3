@@ -1,0 +1,205 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] [AST grammar] input null pointer exception
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5BAST%20grammar%5D%20input%20null%20pointer%20exception&In-Reply-To=%3C727141.20355.qm%40web26002.mail.ukl.yahoo.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="030696.html">
+   <LINK REL="Next"  HREF="030697.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] [AST grammar] input null pointer exception</H1>
+    <B>maulattu</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5BAST%20grammar%5D%20input%20null%20pointer%20exception&In-Reply-To=%3C727141.20355.qm%40web26002.mail.ukl.yahoo.com%3E"
+       TITLE="[antlr-interest] [AST grammar] input null pointer exception">maulattu at yahoo.it
+       </A><BR>
+    <I>Tue Sep 16 07:00:16 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="030696.html">[antlr-interest] Ruby Target
+</A></li>
+        <LI>Next message: <A HREF="030697.html">[antlr-interest] [AST grammar] input null pointer exception
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30689">[ date ]</a>
+              <a href="thread.html#30689">[ thread ]</a>
+              <a href="subject.html#30689">[ subject ]</a>
+              <a href="author.html#30689">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi mates!
+I'm using antlr to build a tree grammar used to parse this pseudo-language 
+BUS_0 := EBUS_0 | EBUS_1;
+
+in order to have a compiled code like this:
+0; 0; 1; 128
+that is:
+    * 0 -&gt; &quot;or&quot; (operator)
+    * 0 -&gt; ebus_0 (1st operand)
+    * 1 -&gt; ebus_1 (2nd operand)
+    * 128 -&gt; bus_0 (result)
+
+I've an assignment operator (:=), or (|) and &quot;and&quot; (&amp;). In future it will support shift operator.
+
+I used a grammar to build an AST derived from the simpleCalc grammar available on the antlr book as well as on the wiki:
+grammar canScript;
+
+options {
+  language = Java;
+  output = AST;
+  ASTLabelType=CommonTree; // type of $stat.tree ref etc...
+}
+
+prog:   ( stat {System.out.println($stat.tree.toStringTree());} )+ ;
+
+stat:   busExpr ':=' expr ';'     -&gt; ^(':=' busExpr expr)
+    |   NEWLINE                    -&gt;
+    ;
+
+expr:   andExpr ('|'^ andExpr)*
+    ; 
+
+andExpr
+    :   atom ('&amp;'^ atom)*
+    ; 
+
+atom:   INT
+    |   ebusExpr
+    |   '('! expr ')'!
+    ;
+
+busExpr
+    :    'BUS_0'
+    |    'BUS_1'
+    |    'BUS_2'
+    ;
+ebusExpr
+    :    'EBUS_0'
+    |    'EBUS_1'
+    |    'EBUS_2'
+    ;
+
+INT :   '0'..'9'+ ;
+NEWLINE:'\r'? '\n' ;
+WS  :   (' '|'\t'|'\n'|'\r')+ {skip();} ;
+
+This is the walker grammar:
+tree grammar canScriptEval;
+
+options {
+    language = Java;
+    tokenVocab = canScript;
+    ASTLabelType = CommonTree;
+}
+
+@header {
+import java.util.Vector;
+}
+
+@members {
+Vector&lt;String&gt; vect = new Vector&lt;String&gt;(50,50);
+}
+
+prog
+    :    stat+
+    ;
+
+stat
+    :   expr
+    |   ^(':=' busExpr expr)
+    ;
+
+expr
+    :   ^('|' a=expr b=expr)    {
+                                    vect.add(new String(&quot;OR&quot;));
+                                    /*vect.add($a.text);
+                                    vect.add($b.text);*/
+                                }
+    |    ^('&amp;' a=expr b=expr)    {
+                                    vect.add(new String(&quot;AND&quot;));
+                                    /*vect.add($a.text);
+                                    vect.add($b.text);*/
+                                }
+    | ebusExpr
+    | INT
+    ;
+
+busExpr
+    :    'BUS_0'
+    |    'BUS_1'
+    |    'BUS_2'
+    ;
+ebusExpr
+    :    'EBUS_0'
+    |    'EBUS_1'
+    |    'EBUS_2'
+    ;
+
+It works fine, since that if it receives as input
+BUS_0 := (EBUS_0 | EBUS_1) &amp; EBUS_2;
+it will correctly build the ast:
+(:= BUS_0 (&amp; (| EBUS_0 EBUS_1) EBUS_2))
+
+As you can see from the walker grammar, the commented rows cause a null-pointer exception in the resulting java code
+vect.add(new String(&quot;OR&quot;));
+                                                        vect.add((a!=null?(input.getTokenStream().toString(
+                      input.getTreeAdaptor().getTokenStartIndex(a.start),
+                      input.getTreeAdaptor().getTokenStopIndex(a.start))):null));
+
+In particular, input.getTokenStream() returns null and I can't understand why (it is in the &quot;expr()&quot; function)
+
+A lot of thanks in advance!
+
+Mau
+
+
+__________________________________________________
+Do You Yahoo!?
+Poco spazio e tanto spam? Yahoo! Mail ti protegge dallo spam e ti da tanto spazio gratuito per i tuoi file e i messaggi 
+<A HREF="http://mail.yahoo.it">http://mail.yahoo.it</A> 
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20080916/6e9226b1/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20080916/6e9226b1/attachment.html</A> 
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="030696.html">[antlr-interest] Ruby Target
+</A></li>
+	<LI>Next message: <A HREF="030697.html">[antlr-interest] [AST grammar] input null pointer exception
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30689">[ date ]</a>
+              <a href="thread.html#30689">[ thread ]</a>
+              <a href="subject.html#30689">[ subject ]</a>
+              <a href="author.html#30689">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

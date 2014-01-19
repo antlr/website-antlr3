@@ -1,0 +1,186 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Tokens
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Tokens&In-Reply-To=%3Cb5a08f6d1672394caa961e5403b223b2%40temporal-wave.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="036855.html">
+   <LINK REL="Next"  HREF="036856.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Tokens</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Tokens&In-Reply-To=%3Cb5a08f6d1672394caa961e5403b223b2%40temporal-wave.com%3E"
+       TITLE="[antlr-interest] Tokens">jimi at temporal-wave.com
+       </A><BR>
+    <I>Fri Nov 27 20:50:30 PST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="036855.html">[antlr-interest] Tokens
+</A></li>
+        <LI>Next message: <A HREF="036856.html">[antlr-interest] Tokens
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36857">[ date ]</a>
+              <a href="thread.html#36857">[ thread ]</a>
+              <a href="subject.html#36857">[ subject ]</a>
+              <a href="author.html#36857">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>You can, and should, override the type in the parser easily if the output of the parser is a tree parser. Then your tree parser is much simpler and will not need a special id rule in the tree grammar, which will reduce the complexity (and code size) of the tree parser grammar that you will need to walk it. 
+
+Don't try to do any manipulation in the lexer unless it is trivial and very deterministic, such as keywords only being keywords after some delimiter, or at the start of a line and so on.
+
+All you need for a tree producing parser (which is generally what you should be using), is:
+
+id
+	: ID
+	| k=keywords  -&gt;ID[$k.start]
+	;
+
+You could also use the tree node API to set the type if that feels clearer to you.
+
+For a parser that does not produce a tree, just do (off the top of my head):
+
+keywords
+   : (
+         k=A
+       | k=B
+        ... etc
+     )
+     {
+         $k.setType(ID);
+     }
+   ;
+
+While you can deal with the token without changing its type, unless you need to know that it was a keyword, it is probably simpler for debugging etc if you change it to be an ID type.
+
+For lexers, just follow:
+
+First list all the known, deterministic things, such as keywords, followed by any general rules that would otherwise match the same things:
+
+K1 : 'K1' ;
+K2 : 'K2' ;
+...
+
+ID : ('A'..'Z' | 'a'..'z') ('A'..'Z' | 'a'..'z'| '0'..'9')* ;
+
+Where there is not a conflict between things of indeterminate length, then ANTLR will work out what it has to do to distinguish anyway, such as '/' vs '/=' and so on, though for clarity you might list the longer sequences first.
+
+Play with the order of a few simple lexer rules, and you will soon pick it up from the fact that ANTLR gives you a warning or an error:
+
+ID : ('A'..'Z' | 'a'..'z') ('A'..'Z' | 'a'..'z'| '0'..'9')* ;
+K1 : 'K1';
+
+[20:50:00] error(208): T.g:16:1: The following token definitions can never be matched because prior tokens match the same input: K1
+
+Jim
+
+&gt;<i> -----Original Message-----
+</I>&gt;<i> From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:antlr-interest-
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">bounces at antlr.org</A>] On Behalf Of Kevin J. Cummings
+</I>&gt;<i> Sent: Friday, November 27, 2009 6:18 PM
+</I>&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> Subject: Re: [antlr-interest] Tokens
+</I>&gt;<i> 
+</I>&gt;<i> On 11/27/2009 08:39 PM, David-Sarah Hopwood wrote:
+</I>&gt;<i> &gt; Kevin J. Cummings wrote:
+</I>&gt;<i> &gt;&gt; On 11/27/2009 06:05 PM, Ronald Sok wrote:
+</I>&gt;<i> &gt;&gt;&gt; Kevin J. Cummings wrote:
+</I>&gt;<i> &gt;&gt;&gt;&gt; You are close.  What you have here is keywords as opposed to
+</I>&gt;<i> reserved
+</I>&gt;<i> &gt;&gt;&gt;&gt; words.  When implementing the former, you will need to do
+</I>&gt;<i> something like
+</I>&gt;<i> &gt;&gt;&gt;&gt; (at least this is what I do using ANTLR 2.7.7):
+</I>&gt;<i> &gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt; id : ID
+</I>&gt;<i> &gt;&gt;&gt;&gt;    | k:keyword
+</I>&gt;<i> &gt;&gt;&gt;&gt;       { #k-&gt;setType(ID); }
+</I>&gt;<i> &gt;&gt;&gt;&gt;       // This changes the token type of a keyword to an ID
+</I>&gt;<i> &gt;&gt;&gt;&gt;    ;
+</I>&gt;<i> &gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt; keyword
+</I>&gt;<i> &gt;&gt;&gt;&gt;    : APPLE | PEAR | ORANGE
+</I>&gt;<i> &gt;&gt;&gt;&gt;    ;
+</I>&gt;<i> &gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt; someName
+</I>&gt;<i> &gt;&gt;&gt;&gt;    :     'Name:' id NEWLINE
+</I>&gt;<i> &gt;&gt;&gt;&gt;    ;
+</I>&gt;<i> &gt;&gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt;&gt; You could reduce the number of productions by folding, but the
+</I>&gt;<i> principal
+</I>&gt;<i> &gt;&gt;&gt;&gt; of changing the token type of keywords is what is important here.
+</I>&gt;<i> And
+</I>&gt;<i> &gt;&gt;&gt;&gt; you may have to find out how to do this with ANTLR 3.x.
+</I>&gt;<i> &gt;&gt;&gt;
+</I>&gt;<i> &gt;&gt;&gt; Ok, I tried to change this into ANTLR 3 syntax, but ran into the
+</I>&gt;<i> fact that
+</I>&gt;<i> &gt;&gt;&gt; the result of keyword is a subtype of ParserRuleReturnScope, which
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; Sorry, my bad, should be KEYWORD and done in the lexer, not the
+</I>&gt;<i> parser!
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; That won't work because either:
+</I>&gt;<i> &gt;  - KEYWORD is before APPLE, PEAR and ORANGE, in which case it always
+</I>&gt;<i> takes
+</I>&gt;<i> &gt;    priority and the type of a Token will never be APPLE, PEAR or
+</I>&gt;<i> ORANGE;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;  - or, KEYWORD is after APPLE, PEAR and ORANGE, in which case those
+</I>&gt;<i> rules
+</I>&gt;<i> &gt;    take priority and the type of a Token will never initially be
+</I>&gt;<i> KEYWORD.
+</I>&gt;<i> &gt;    You could override it, but if you do that in a lexer rule then you
+</I>&gt;<i> &gt;    don't have enough context to determine what it should be (and
+</I>&gt;<i> '$type ='
+</I>&gt;<i> &gt;    can't be used in a parser rule).
+</I>&gt;<i> 
+</I>&gt;<i> Hmmm, in the context I used it in, I had to be able to tell when a
+</I>&gt;<i> keyword was being used as an identifier.  In ANTLR-2, I could override
+</I>&gt;<i> the token's type in the parser.  (Makes expression evaluation a whole
+</I>&gt;<i> lot easier further down the line when checking for an identifier....)
+</I>&gt;<i> 
+</I>&gt;<i> &gt; As I said in my other followup, it's usually not necessary to change
+</I>&gt;<i> the
+</I>&gt;<i> &gt; type (but you can do so using the code given in that post if you
+</I>&gt;<i> want).
+</I>&gt;<i> 
+</I>&gt;<i> --
+</I>&gt;<i> Kevin J. Cummings
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">kjchome at rcn.com</A>
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">cummings at kjchome.homeip.net</A>
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">cummings at kjc386.framingham.ma.us</A>
+</I>&gt;<i> Registered Linux User #1232 (<A HREF="http://counter.li.org">http://counter.li.org</A>)
+</I>&gt;<i> 
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-">http://www.antlr.org/mailman/options/antlr-interest/your-</A>
+</I>&gt;<i> email-address
+</I>
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="036855.html">[antlr-interest] Tokens
+</A></li>
+	<LI>Next message: <A HREF="036856.html">[antlr-interest] Tokens
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36857">[ date ]</a>
+              <a href="thread.html#36857">[ thread ]</a>
+              <a href="subject.html#36857">[ subject ]</a>
+              <a href="author.html#36857">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,223 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] The right way to invoke templates with null	arguments?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20The%20right%20way%20to%20invoke%20templates%20with%20null%0A%09arguments%3F&In-Reply-To=%3Cb6077b530706210357v77dfc84bp4f9421e103982b7%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="021605.html">
+   <LINK REL="Next"  HREF="021595.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] The right way to invoke templates with null	arguments?</H1>
+    <B>Tim Clark</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20The%20right%20way%20to%20invoke%20templates%20with%20null%0A%09arguments%3F&In-Reply-To=%3Cb6077b530706210357v77dfc84bp4f9421e103982b7%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] The right way to invoke templates with null	arguments?">timgclark at gmail.com
+       </A><BR>
+    <I>Thu Jun 21 03:57:48 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="021605.html">[antlr-interest] Problem with $type in final ANTLR 3.0
+</A></li>
+        <LI>Next message: <A HREF="021595.html">[antlr-interest] The right way to invoke templates with null	arguments?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#21580">[ date ]</a>
+              <a href="thread.html#21580">[ thread ]</a>
+              <a href="subject.html#21580">[ subject ]</a>
+              <a href="author.html#21580">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi
+
+My application is outputting 'assembler code' for a stack machine.
+Corresponding to this tree parser rule:
+
+-------------A------------------
+ifStatement
+    :
+    ^(IF_STAT e=expr s1=statement s2=statement?)
+     -&gt; ifStat(
+             expr={$e.st},
+             stat1={$s1.st},
+             stat2={$s2.st},
+             L1={myHelper.nextLabel()},
+             L2={myHelper.nextLabel()}
+         )
+-------------------------------
+
+I have this template:
+
+-------------------------------
+ifStat(expr,stat1,stat2,L1,L2) ::= &lt;&lt;
+    &lt;expr&gt;
+&lt;if(stat2)&gt;
+    ifFalse &lt;L1&gt;
+    &lt;stat1&gt;
+    goto &lt;L2&gt;
+    &lt;L1&gt;:
+    &lt;stat2&gt;
+    &lt;L2&gt;:
+&lt;else&gt;
+    ifFalse &lt;L1&gt;
+    &lt;stat1&gt;
+    &lt;L1&gt;:
+&lt;endif&gt;
+
+&gt;&gt;<i>
+</I>-------------------------------
+
+so that the code generated for
+
+if(expr) stat
+
+should be something like this:
+-------------------------------
+&lt;expr&gt;        // leaves result on stack
+ifFalse L_1  // consumes top of stack
+&lt;stat1&gt;
+L_1:
+-------------------------------
+
+and the code generated for
+
+if(expr) stat1 else stat2
+
+should be something like this:
+-------------------------------
+&lt;expr&gt;
+ifFalse L_1
+&lt;stat1&gt;
+goto L_2
+L_1:
+&lt;stat2&gt;
+L_2:
+-------------------------------
+
+However, in the first case (no else clause) the template rewrite part of the
+code generated for the rule throws a NullPointerException, because $s2 is
+null.
+
+
+If I change the rule to:
+
+--------------B-----------------
+ifStat
+    :
+    ^(IF_STAT e=expr s1=statement s2=statement?)
+     -&gt; {$e2 != null}?
+         ifStat(
+             expr={$e.st},
+             stat1={$s1.st},
+             stat2={$s2.st},
+             L1={myHelper.nextLabel()},
+             L2={myHelper.nextLabel()}
+         )
+    -&gt; ifStat(
+            expr={$e.st},
+            stat1={$s1.st},
+            L1={myHelper.nextLabel()}
+        )
+    ;
+-------------------------------
+
+then Antlr complains with this message: &quot;missing attribute access on rule
+scope: s2&quot;. This is unfortunate, because it seems to me that this is the
+right way to express this. [Manually changing the parser code generated for
+form (A) to test $s2 for nullness does actually makes it work.]
+
+It doesn't help to change the semantic predicate to {$s2.st}?  (which
+persuades Anlr to accept it), because it's $s2 that is null, not $s2.st, so
+the exception still happens.
+
+It would seem that the only solution is to change the rule to this:
+
+----------------C---------------
+ifStat
+options{ backtrack=true;}
+    :
+    ^(IF_STAT e=expr s1=statement s2=statement)
+     -&gt; ifStat(
+             expr={$e.st},
+             stat1={$s1.st},
+             stat2={$s2.st},
+             L1={myHelper.nextLabel()},
+             L2={myHelper.nextLabel()}
+         )
+    |
+    ^(IF_STAT e=expr s1=statement)
+    -&gt; ifStat(
+            expr={$e.st},
+            stat1={$s1.st},
+            L1={myHelper.nextLabel()}
+        )
+    ;
+-------------------------------
+
+The backtracking option is necessary, otherwise Anlr sees it as ambiguous.
+This version does work. I don't think it's the right way, and for more
+complicated constructions like for statements, or case statements, there are
+many more possible alternatives to cover.
+
+My question is this: is this how it's intended to be, or is there a bug,
+preventing what I think is the right way from working?
+
+
+The obvious solution that springs to mind, to change STAttrMap (in the Antlr
+code generator) like this:
+
+    public static class STAttrMap extends HashMap {
+      public STAttrMap put(String attrName, Object value) {
+        if(value != null) super.put(attrName, value);
+        return this;
+      }
+      public STAttrMap put(String attrName, int value) {
+        super.put(attrName, new Integer(value));
+        return this;
+      }
+    }
+
+unfortunately does not work, because one is invoking templates with things
+like $e.st, where it's $e that may be null, not $e.st.
+
+Regards
+Tim
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20070621/535fc439/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20070621/535fc439/attachment.html</A> 
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="021605.html">[antlr-interest] Problem with $type in final ANTLR 3.0
+</A></li>
+	<LI>Next message: <A HREF="021595.html">[antlr-interest] The right way to invoke templates with null	arguments?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#21580">[ date ]</a>
+              <a href="thread.html#21580">[ thread ]</a>
+              <a href="subject.html#21580">[ subject ]</a>
+              <a href="author.html#21580">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

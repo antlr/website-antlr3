@@ -1,0 +1,149 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] How to do preprocessing in antlr v4?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20How%20to%20do%20preprocessing%20in%20antlr%20v4%3F&In-Reply-To=%3CCAF9KzRP5ZGvABX1O1qsX1JqugPvaCWwtPZz%3DXKKMZJ3e62GdNw%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="045762.html">
+   <LINK REL="Next"  HREF="045763.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] How to do preprocessing in antlr v4?</H1>
+    <B>Bernard Kaiflin</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20How%20to%20do%20preprocessing%20in%20antlr%20v4%3F&In-Reply-To=%3CCAF9KzRP5ZGvABX1O1qsX1JqugPvaCWwtPZz%3DXKKMZJ3e62GdNw%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] How to do preprocessing in antlr v4?">bkaiflin.ruby at gmail.com
+       </A><BR>
+    <I>Mon Nov 19 11:35:31 PST 2012</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="045762.html">[antlr-interest] How to do preprocessing in antlr v4?
+</A></li>
+        <LI>Next message: <A HREF="045763.html">[antlr-interest] How to do preprocessing in antlr v4?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#45765">[ date ]</a>
+              <a href="thread.html#45765">[ thread ]</a>
+              <a href="subject.html#45765">[ subject ]</a>
+              <a href="author.html#45765">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+great, the CHUNK token. I had always trouble when I wanted to ignore (part
+of) lines.
+The code/extras/CPPBaseLexer.g4 and Co. is worth studying. Programming this
+way gives great flexibility and power.
+
+Nevertheless I find it more difficult to work in the lexer than in the
+parser. It took me a couple of hours until I obtained what I wanted.
+One token too much, as in CHUNK : ~'#'+ '\n' ; and it fails with a # inside
+a string, one token less, as in
+'#define' ID REPLACE and you get a token recognition error at: '#define '.
+Without adding ~'d' in OTHER_CMD, all preprocessor statements were captured
+by OTHER_CMD. It gives a feeling of fragility.
+
+Following is the grammar rewritten in &quot;lexer style&quot;, a sample input and
+execution.
+
+grammar Cmacros_d;
+
+/* Process #define statements in a C file.
+   TODO : extract information from DEFINE_PARAM.
+*/
+
+program
+@init {System.out.println(&quot;Cmacros_d last update 2013&quot;);}
+    :   ( DEFINE_PARAM
+               {System.out.print(&quot;&gt;&gt;&gt;macro(parameters) &quot; +
+$DEFINE_PARAM.text);}
+    |     DEFINE_SIMPLE
+               {System.out.print(&quot;&gt;&gt;&gt;simple macro : &quot; +
+$DEFINE_SIMPLE.text);}
+    |     OTHER_CMD
+    |     CHUNK
+        )+
+    ;
+
+DEFINE_PARAM
+    :   '#define' WS ID '(' WS? ID ( WS? ',' WS? ID )*  WS? ')' REPLACE
+    ;
+
+DEFINE_SIMPLE
+    :   '#define' WS ID WS REPLACE
+    ;
+
+OTHER_CMD
+    :   '#' ~'d' ~[\r\n]* '\r'? '\n' ;// can't use .*; scarfs \n\n after
+include
+
+WS  :   [ \t]+ -&gt; channel(HIDDEN) ;
+
+CHUNK : ~'#'+ ; // anything else
+
+fragment ID       : ( ID_FIRST (ID_FIRST | DIGIT)* ) ;
+fragment DIGIT    : [0-9] ;
+fragment ID_FIRST : LETTER | '_' ;
+fragment LETTER   : [a-zA-Z] ;
+fragment REPLACE  : ~[\r\n]* '\r'? '\n' ;
+
+
+static char *usage_msg[] = {&quot;-x[directory]   strip off text before #!ruby
+line ...&quot;};
+#ifndef CharNext
+#define CharNext(p) ((p) + mblen(p, RUBY_MBCHAR_MAXSIZE))
+#define CharNext    simple replacement
+#endif
+#define BITSTACK_PUSH(stack, n) (stack = (stack&lt;&lt;1)|((n)&amp;1))
+
+
+$ grun Cmacros_d program -tokens -diagnostics tcpreproc.c
+[@0,0:66='static char *usage_msg[] = {&quot;-x[directory]   strip off text
+before ',&lt;5&gt;,1:0]
+[@1,67:85='#!ruby line ...&quot;};\n',&lt;3&gt;,1:67]
+[@2,86:102='#ifndef CharNext\n',&lt;3&gt;,2:0]
+[@3,103:160='#define CharNext(p) ((p) + mblen(p,
+RUBY_MBCHAR_MAXSIZE))\n',&lt;1&gt;,3:0]
+[@4,161:199='#define CharNext    simple replacement\n',&lt;2&gt;,4:0]
+[@5,200:206='#endif\n',&lt;3&gt;,5:0]
+[@6,207:267='#define BITSTACK_PUSH(stack, n)\t(stack =
+(stack&lt;&lt;1)|((n)&amp;1))\n',&lt;1&gt;,6:0]
+[@7,268:267='&lt;EOF&gt;',&lt;-1&gt;,7:61]
+Cmacros_d last update 2013
+&gt;&gt;&gt;<i>macro(parameters) #define CharNext(p) ((p) + mblen(p,
+</I>RUBY_MBCHAR_MAXSIZE))
+&gt;&gt;&gt;<i>simple macro : #define CharNext    simple replacement
+</I>&gt;&gt;&gt;<i>macro(parameters) #define BITSTACK_PUSH(stack, n) (stack =
+</I>(stack&lt;&lt;1)|((n)&amp;1))
+
+
+
+2012/11/19 Terence Parr &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">parrt at cs.usfca.edu</A>&gt;
+
+&gt;<i> Hi. in the extras code dir from book you'll find a C preprocessor like
+</I>&gt;<i> sample.
+</I>&gt;<i> Ter
+</I></PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="045762.html">[antlr-interest] How to do preprocessing in antlr v4?
+</A></li>
+	<LI>Next message: <A HREF="045763.html">[antlr-interest] How to do preprocessing in antlr v4?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#45765">[ date ]</a>
+              <a href="thread.html#45765">[ thread ]</a>
+              <a href="subject.html#45765">[ subject ]</a>
+              <a href="author.html#45765">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

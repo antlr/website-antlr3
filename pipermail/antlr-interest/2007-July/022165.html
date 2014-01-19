@@ -1,0 +1,238 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Trouble parsing a language where '{' has too many	meanings
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Trouble%20parsing%20a%20language%20where%20%27%7B%27%20has%20too%20many%0A%09meanings&In-Reply-To=%3C468E943C.3050000%40belugalounge.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="022164.html">
+   <LINK REL="Next"  HREF="022178.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Trouble parsing a language where '{' has too many	meanings</H1>
+    <B>Felix Schmid</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Trouble%20parsing%20a%20language%20where%20%27%7B%27%20has%20too%20many%0A%09meanings&In-Reply-To=%3C468E943C.3050000%40belugalounge.net%3E"
+       TITLE="[antlr-interest] Trouble parsing a language where '{' has too many	meanings">felix at belugalounge.net
+       </A><BR>
+    <I>Fri Jul  6 12:13:00 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="022164.html">[antlr-interest] Trouble with syntactic predicates for	parenthesized expressions
+</A></li>
+        <LI>Next message: <A HREF="022178.html">[antlr-interest] Trouble parsing a language where '{' has too	many meanings
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#22165">[ date ]</a>
+              <a href="thread.html#22165">[ thread ]</a>
+              <a href="subject.html#22165">[ subject ]</a>
+              <a href="author.html#22165">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello everyone,
+
+Antlr is a great tool and Terence and his folks have been doing a
+wonderful job on it. Thank you!!
+
+However, I am getting frustrated on a problem I am not able to solve.
+Maybe someone here can help me, any advice is greatly appreciated.
+
+I am trying to write a parser that recognizes data record schema
+descriptions like the the following:
+
+blubber {
+    Type = Hash
+    ShortHelp = &quot;A short comment&quot;
+    LongHelp = {
+        Some other comment ending with a dot.
+    }.
+    Items {
+        FirstName {
+            Type = String, ShortHelp = &quot;Hallo&quot;
+            LongHelp = {
+                Long Explanatory test spanning
+                over multiple lines
+            }.
+        }
+        LastName {
+            Type = String
+            Default = &quot;Blah&quot;
+            ShortHelp = &quot;(not so) interesting comment&quot;
+        }
+    }
+}
+
+
+The grammar is pretty simple, however I am having a real hard time to
+handle the multi-line text in the 'LongHelp' blocks.
+The problem seems to be the curly braces surrounding (not only) the
+multi-line text block.
+
+My grammar looks as follows (condensed version):
+
+grammar TEST;
+
+options {
+    output = AST;
+}
+
+tokens {
+    ROOT ;
+    SECTION ;
+    ID ;
+    DECL ;
+    COMMA = ',' ;
+    DOT = '.' ;
+    QUOT = '&quot;' ;
+}
+
+@lexer::header {
+package foo;
+}
+
+@header {
+package foo;
+}
+
+root
+    :    section+ EOF
+            -&gt; ^( ROOT section+ )
+    ;
+
+section
+    :    IDENT '{' section_type_decl '}'
+            -&gt; ^(SECTION ^(ID IDENT) section_type_decl)
+     ;
+
+section_type_decl
+     :    'Type' '=' hash_type_decl
+    ;
+
+hash_type_decl
+    :    'Hash' ( COMMA? hash_decl_elem ( COMMA? hash_decl_elem )* )?
+            -&gt; ^( DECL ^( 'Type' 'Hash') hash_decl_elem+ )
+    ;
+
+hash_decl_elem
+    :    'Items' hash_items_decl
+            -&gt; ^('Items' hash_items_decl)
+    |    help
+    ;
+
+hash_items_decl
+    :    '{' hash_item_decl ( (COMMA?)! hash_item_decl )* '}'
+    ;
+
+hash_item_decl
+    :    IDENT '{' hash_item_decl_elem ( COMMA? hash_item_decl_elem )* '}'
+            -&gt; ^( DECL ^( ID IDENT ) hash_item_decl_elem+)
+    ;
+
+hash_item_decl_elem
+    :    'Type' '=' basic_type_decl
+    ;
+
+basic_type_decl
+    :    'String' ( COMMA? string_decl_elem ( COMMA? string_decl_elem)* )?
+            -&gt; ^( 'Type' 'String' ) string_decl_elem*
+    ;
+
+string_decl_elem
+    :    'Default' '=' STRING
+            -&gt; ^('Default' STRING)
+    |    'Mandatory' '=' ( 'true' -&gt; ^('Mandatory' 'true' ) | 'false' -&gt;
+^( 'Mandatory' 'false' ) )
+    |    help
+    ;
+
+help
+    :    'ShortHelp' '=' STRING  -&gt; ^( 'ShortHelp' STRING )
+//    |    'LongHelp' '=' ML_TEXT   -&gt; ^( 'LongHelp' ML_TEXT )
+    |    'LongHelp' '=' text   -&gt; ^( 'LongHelp' text )
+    ;
+
+text
+    :    '{'! ( options { greedy=false; } : .* )^ '}'! DOT!
+    ;
+
+fragment DIGIT
+    :    ('0'..'9') ;
+
+fragment LETTER
+    :    ('A'..'Z' | 'a'..'z') ;
+
+fragment UC_LETTER
+    :    ('A'..'Z') ;
+
+STRING
+    :    QUOT ( ~( QUOT | '\n' ) )* QUOT {setText(getText().substring(1,
+getText().length()-1));}
+    ;
+
+ML_TEXT
+    :    '{'
+        ( options {greedy=false;} : . )*
+        '}' '.' {setText(getText().substring(1, getText().length()-2));}
+    ;
+
+IDENT
+    :    UC_LETTER ( LETTER | DIGIT )*
+    ;
+
+WS  :     ( ' ' | '\r' '\n' | '\n' | '\t' ) { $channel=HIDDEN; }
+    ;
+
+
+I have tried several ways to capture the LongHelp content, however none
+worked. Cause is that the lexer thinks he sees a multi-line comment as
+soon as he sees a '{' (even if that '{' does not denote the beginning of
+a ml text block).
+
+What confuses me is that writing a parser for this by hand appears
+straight forward: I am the parser and I have seen 'LongHelp' followed by
+'=' followed by '{', so, lexer, give me all text until you see a '}'
+followed by a '.'.
+Apparently ANTLR works exactly the opposite way: I am the lexer, an I
+see a '{'. I assume that this denotes the start of a multi-line comment,
+so I read everything until I see a '}' followed by a '.' an give this to
+the parser.
+
+I have tried not matching the surroundings '{' ... '}' '.' in a parser
+rule but this doesn't help for apparent reasons.
+
+Can someone shed light on this, please? It seems to be such a simple
+problem...
+
+thank you,
+felix
+
+
+</PRE>
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="022164.html">[antlr-interest] Trouble with syntactic predicates for	parenthesized expressions
+</A></li>
+	<LI>Next message: <A HREF="022178.html">[antlr-interest] Trouble parsing a language where '{' has too	many meanings
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#22165">[ date ]</a>
+              <a href="thread.html#22165">[ thread ]</a>
+              <a href="subject.html#22165">[ subject ]</a>
+              <a href="author.html#22165">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

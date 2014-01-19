@@ -1,0 +1,287 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Non-disjoint tokens
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Non-disjoint%20tokens&In-Reply-To=%3C4749752B.2020108%40Yahoo.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="024901.html">
+   <LINK REL="Next"  HREF="024910.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Non-disjoint tokens</H1>
+    <B>Austin Hastings</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Non-disjoint%20tokens&In-Reply-To=%3C4749752B.2020108%40Yahoo.com%3E"
+       TITLE="[antlr-interest] Non-disjoint tokens">Austin_Hastings at Yahoo.com
+       </A><BR>
+    <I>Sun Nov 25 05:14:19 PST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="024901.html">[antlr-interest] Non-disjoint tokens
+</A></li>
+        <LI>Next message: <A HREF="024910.html">[antlr-interest] Non-disjoint tokens
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24903">[ date ]</a>
+              <a href="thread.html#24903">[ thread ]</a>
+              <a href="subject.html#24903">[ subject ]</a>
+              <a href="author.html#24903">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>This 'design feature' has been discussed before, in the context of 
+recognizing a range of numbers. The resulting faq entry, added September 
+09, will probably help:
+
+<A HREF="http://www.antlr.org/wiki/pages/viewpage.action?pageId=3604497">http://www.antlr.org/wiki/pages/viewpage.action?pageId=3604497</A>
+
+I have a similar problem in my code. The grammar has two different uses 
+of '{'. One is to delimit a list, the other is to delimit an opaque 
+block of code in some other language. I've included some excerpts below 
+to show a &quot;real world&quot; example. What I did was to use a toggle at the 
+lexer level. The various tokens that look inside code blocks know who 
+they are, and they toggle a switch in the lexer.
+
+This lets me use
+
+    -&gt; { /* opaque code block with code in it */ }
+
+as well as
+
+    -&gt; TOKENS { t1, t2, t3 } // transparent block with stuff I have to 
+parse in it.
+
+I think my handling of code blocks corresponds roughly with your desired 
+handling of &lt;HTML&gt; versus '&lt;'.  One thing to keep in mind is that the 
+lexer generator wants to optimize performance, so
+it's hard to write a token rule that uses the lexer's internal 
+variables. If you use a simple pattern in the description of the token, 
+the lexer's mTokens() function is going to have too much information in 
+it. If you look in my NestedCodeBlock rule, you'll see there's a .* '}' 
+at the end to scare the lexer generator into not pretending it knows how 
+long my token will be. Of course, I return before I get there, but I had 
+to do that in a &quot;creative&quot; way, too, since otherwise the 
+never-to-be-sufficiently-accursed java compiler will whine about 
+unreachable code. (Naturally it considers that to be an error, not a 
+warning. Stupid gee-whiz language wankers!)
+
+Anyway, enough chatter, here's some code:
+
+
+// This is just to get strings back as useable literals. Unlike everyone 
+else on the list, I like using literals in my grammars.
+tokens
+{
+    LCB = '{';
+    TOKENS = 'TOKENS';
+}
+
+@lexer::members
+{
+    /**
+    Tells lexer how to handle {...} blocks. If true, the block
+    is treated as a big, opaque, possibly recursive string. If false, the
+    '{' token type is returned and lexing continues inside the block.
+    */
+    private
+    Boolean    matchCodeBlocks = true;
+}
+
+// Later in the grammar, here's an example of matching a code block 
+(remember, blocks are opaque so there isn't much Ican do with them):
+atAction
+    : action=('@header' | '@members') CODE_BLOCK
+      {
+    addAction($action.text, $CODE_BLOCK.text);
+      }
+    ;
+
+// Later in the grammar, here's an example of matching the 
+open-curly-bracket only (no code block).
+assertTokensMatch returns [ List&lt;Object&gt; token_info]
+    @init
+    {
+    $token_info = new ArrayList&lt;Object&gt;();
+    }
+    : 'TOKENS' '{'
+      ( tokenSpec { $token_info.add($tokenSpec.info); }
+      )+
+      '}'
+    ;
+
+// In the lexer, here's the details:
+CODE_BLOCK
+    : {matchCodeBlocks}? =&gt; NestedCodeBlock
+      { setText(getText().substring(1, getText().length() - 1)); }
+    | '{'
+      {
+    $type = LCB;
+    matchCodeBlocks = true;
+      }
+    ;
+// This has to be below code_block so it can be unreachable.
+// Otherwise the definition in the tokens{} block takes
+// precedence, and CODE_BLOCK can't be seen.
+LCB: '{' ;
+
+// Finally, here's the &quot;good stuff.&quot;
+// This fragment recognizes an opaque block of source code
+// surrounded by curlies, possibly nested, with Java style
+// comments (either kind) and quoted literals embedded,
+fragment
+NestedCodeBlock
+    : '{'
+    {
+    loopNCB:
+    do
+    {
+        int next_char = input.LA(1);
+
+        switch (next_char)
+        {
+        case '}':
+        break loopNCB;
+
+        case '&quot;': mQlit_Double(); break;
+        case '\'': mQlit_Single(); break;
+        case '\u00AB': mQlit_Willies(); break;
+        case '&lt;':
+        if (input.LA(2) == '&lt;')
+            mQlit_Angles();
+        else
+            matchAny();
+        break;
+
+        case '/':
+        switch (input.LA(2))
+        {
+        case '/': mSingleLineComment(); break;
+        case '*': mMultiLineComment(); break;
+        default: matchAny(); break;
+        }
+        break;
+
+        case '{': mNestedCodeBlock(); break;
+        default: matchAny(); break;
+        }
+
+        if (failed) return;
+    }
+    while (true);
+    match('}');
+    if (!failed) return;
+    }
+    .* '}'
+    ;
+
+// Here's a rule that toggles the code-block-matching:
+OPTIONS
+    : 'options' { matchCodeBlocks = false; }
+    ;
+
+TOKENS
+    : 'TOKENS' { matchCodeBlocks = false; }
+    ;
+
+
+Harald Mueller wrote:
+&gt;<i> Hi -
+</I>&gt;<i> I think this is one of the real FAQs with ANTLR ... Antlr computes a minimal k to disambiguate the tokens AS PRESENT IN THE GRAMMAR. &lt; and &lt;HTML can be distinguished by just looking on more character ahead - so k=2 is enough. Even with syntactic predicates, this behavior does not change (why? - probably Terence has explained that somewhere - it's a feature):
+</I>&gt;<i>
+</I>&gt;<i> HTML: ('&lt;HTML&gt;')? =&gt; '&lt;HTML&gt;';
+</I>&gt;<i> LT: '&lt;';
+</I>&gt;<i>
+</I>&gt;<i> does not help, therefore: The syntactic predicate is abbreviated to the same 'starts with &quot;&lt;H&quot;' condition.
+</I>&gt;<i>
+</I>&gt;<i> What does help are semantic predicates (essentially, &quot;arbitrary conditions&quot;):
+</I>&gt;<i>
+</I>&gt;<i> HTML: {input.LA(1)=='&lt;' &amp;&amp; 
+</I>&gt;<i>        input.LA(2)=='H' &amp;&amp; 
+</I>&gt;<i>        input.LA(3)=='T' &amp;&amp; 
+</I>&gt;<i>        input.LA(4)=='M' &amp;&amp; 
+</I>&gt;<i>        input.LA(5)=='L' &amp;&amp; 
+</I>&gt;<i>        input.LA(6)=='&gt;'
+</I>&gt;<i>       }? =&gt; '&lt;HTML&gt;';
+</I>&gt;<i> LT: '&lt;';
+</I>&gt;<i>
+</I>&gt;<i> If there is any other way to do this, I'd also like to know it!!
+</I>&gt;<i>
+</I>&gt;<i> (and I'm not sure what happends at the end of the input with the above condition: say the end of the file is ...&lt;HT&gt; - would the access to input.LA(6) crash? - I think not, but I did not try it...).
+</I>&gt;<i>
+</I>&gt;<i> Regards
+</I>&gt;<i> Harald M.
+</I>&gt;<i>
+</I>&gt;<i> -------- Original-Nachricht --------
+</I>&gt;<i>   
+</I>&gt;&gt;<i> Datum: Sun, 25 Nov 2007 22:41:30 +1100
+</I>&gt;&gt;<i> Von: &quot;Steve Bennett&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">stevagewp at gmail.com</A>&gt;
+</I>&gt;&gt;<i> An: &quot;antlr-interest Interest&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>&gt;
+</I>&gt;&gt;<i> Betreff: [antlr-interest] Non-disjoint tokens
+</I>&gt;&gt;<i>     
+</I>&gt;<i>
+</I>&gt;<i>   
+</I>&gt;&gt;<i> Given an input stream like this:
+</I>&gt;&gt;<i> blah &lt;HTML&gt; &lt;NOTHING blah &lt;HTMNOTL&gt; ...
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I need to parse &lt;HTML&gt; as one token, and otherwise &lt; as its own token.
+</I>&gt;&gt;<i> &lt;HTMNOTL&gt; would ideally be 3 tokens (&lt;, HTMNOTL, &gt;) but it can be one
+</I>&gt;&gt;<i> token.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I'm finding that the with rules like this:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> HTML: '&lt;HTML&gt;';
+</I>&gt;&gt;<i> LT: '&lt;';
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> The lexer falls into a hole when it hits a sequence of characters with
+</I>&gt;&gt;<i> the same first two characters as '&lt;HTML&gt;'. In the debugger, the input
+</I>&gt;&gt;<i> pane shows that the &lt;HT have been completely swallowed.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Is there a way to avoid this? A work around? It seems like a pretty
+</I>&gt;&gt;<i> common thing to want - would this not mean that you couldn't have a
+</I>&gt;&gt;<i> token which matches 'private' yet an identifier 'privort'?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I've tried refactoring along the lines of:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> LT: '&lt;';
+</I>&gt;&gt;<i> HTML: LT 'HTML&gt;;
+</I>&gt;&gt;<i> LT_LITERAL: LT;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> But this still doesn't seem to work.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Any suggestions? This is a complete show stopper if i can't find a way
+</I>&gt;&gt;<i> around this. It's really crucial that the lexer can recognise this tag
+</I>&gt;&gt;<i> so it can tokenise the following input differently...
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Steve
+</I>&gt;&gt;<i>     
+</I>&gt;<i>
+</I>&gt;<i>   
+</I>
+</PRE>
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="024901.html">[antlr-interest] Non-disjoint tokens
+</A></li>
+	<LI>Next message: <A HREF="024910.html">[antlr-interest] Non-disjoint tokens
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24903">[ date ]</a>
+              <a href="thread.html#24903">[ thread ]</a>
+              <a href="subject.html#24903">[ subject ]</a>
+              <a href="author.html#24903">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

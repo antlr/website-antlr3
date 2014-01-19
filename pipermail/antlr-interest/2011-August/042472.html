@@ -1,0 +1,273 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Syntatic Predicate vs Backtracking Optimizations; Why are Syntactic Predicates always Evaluated?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Syntatic%20Predicate%20vs%20Backtracking%20Optimizations%3B%0A%20Why%20are%20Syntactic%20Predicates%20always%20Evaluated%3F&In-Reply-To=%3CCAJQwtsjh6xDopr-10JNhNtC%3DMfEukNRiO_ZZzuQqgL9w52-AfQ%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="042471.html">
+   <LINK REL="Next"  HREF="042473.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Syntatic Predicate vs Backtracking Optimizations; Why are Syntactic Predicates always Evaluated?</H1>
+    <B>chris king</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Syntatic%20Predicate%20vs%20Backtracking%20Optimizations%3B%0A%20Why%20are%20Syntactic%20Predicates%20always%20Evaluated%3F&In-Reply-To=%3CCAJQwtsjh6xDopr-10JNhNtC%3DMfEukNRiO_ZZzuQqgL9w52-AfQ%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Syntatic Predicate vs Backtracking Optimizations; Why are Syntactic Predicates always Evaluated?">kingces95 at gmail.com
+       </A><BR>
+    <I>Wed Aug 24 12:41:09 PDT 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="042471.html">[antlr-interest] Command line option -Xnoprune, what does it do?
+</A></li>
+        <LI>Next message: <A HREF="042473.html">[antlr-interest] Syntatic Predicate vs Backtracking Optimizations; Why are Syntactic Predicates always Evaluated?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#42472">[ date ]</a>
+              <a href="thread.html#42472">[ thread ]</a>
+              <a href="subject.html#42472">[ subject ]</a>
+              <a href="author.html#42472">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I'm working to resolve a C# grammar ambiguity in my
+class_member_declarationrule arising because (1) all members are
+prefixed with custom attributes (a
+recursive rule) and (2) many productions are prefixed with a type (recursive
+due to generics). I could solve the first by left-factoring but that's not
+as readable. The second would be a super pain to left-factor. So like the
+reference says, I solve these problems using backtracking and syntactic
+predicates (Chapter 12). And those techniques do solve the problem.
+
+My issue is with the optimizations. Backtracking optimizes the common case
+(no custom attributes, non-generic types) by sticking a DFA in front of the
+implicit syntactic predicate so those decisions that can be made via regex
+(trained monkey). This is the &quot;Java For-Loop&quot; (p. 300) optimization. However
+for the hard case backtracking tries to match the entire rule and some rules
+like method_declaration have a body (nested_type_declaration is even worse).
+This is the &quot;C Function Definition vs. Declaration&quot; ambiguity and Tar's
+advice here is not to use backtracking but instead use a Syntactic Predicate
+(p. 303, &quot;Although you could simply turn on the auto-backtracking feature,
+that is unnecessarily inefficient because the parser will backtrack over the
+entire function body&quot;).
+
+So to optimize the hard case I use a syntactic predicate and specify just
+the prefix for each class_member_declaration rule necessary to choose that
+alternative (again p. 303, &quot;A more efficient approach is to use a manually
+specified syntactic predicate that provides the minimum necessary lookahead
+to distinguish the first alternative from the second.&quot;). That optimizes the
+hard case well; I don't match method bodies during backtracking. However now
+the common case is slow because explicitly specified syntactic predicates
+are always evaluated; no DFA; no trained monkey; (p. 302 &quot;Manually specified
+syntactic predicates are always evaluated, but those implicitly added by
+auto-backtracking mode are not.&quot;).
+
+So now I'm feeling a bit stuck. I got a solution but can only optimize the
+common case using backtracking or the hard case (or just slightly less
+common) using syntactic predicates. So I guess my question is: *Why are
+syntactic predicates are always evaluated when a DFA monkey could have
+predicted the alternative? *
+
+Thanks,
+Chris
+
+p.s.
+
+To make sure my understanding is correct I have some traces. I share them
+here for posterity (i.e. Google). For simplicity I only include
+class_member_declaration
+rules that are ambiguous because of the leading attribute_section -- not
+type which I have restricted to only match non-recursive non-generic types.
+My common case input is &quot;const int c = 1;&quot; and my hard case input is
+&quot;[Foo]const
+int c = 1;&quot;. Here is the grammar for the back tracking solution:
+
+public
+unattributed_class_member_declaration
+  options { backtrack=true; }
+  : constant_declaration
+  | event_declaration
+
+constant_declaration
+  : attribute_section* CONST type constant_declarators SEMI_COLON
+  ;
+
+event_declaration
+  : attribute_section* EVENT type variable_declarators SEMI_COLON
+  ;
+
+attribute_section // is recursive
+  options { memoize=true; }
+  : OPEN_SQUARE_BRACKET attribute_target_specifier? attribute_list COMMA?
+CLOSE_SQUARE_BRACKET
+  ;
+
+And here is the trace for the common case (it's optimized in that there are
+no invocation of syntactic predicates -- pure DFA monkey).
+
+Enter class_member_declaration 49
+[@-1,0:4='const',&lt;31&gt;,1:0]
+ Enter constant_declaration 50
+[@-1,6:8='int',&lt;108&gt;,1:6]
+  Enter type 26
+   Enter named_type 27
+    Enter named_value_type 29
+     Enter named_numeric_type 30
+      Enter named_integral_type 31
+[@-1,10:10='c',&lt;104&gt;,1:10]
+      Leave named_integral_type 31
+     Leave named_numeric_type 30
+    Leave named_value_type 29
+   Leave named_type 27
+  Leave type 26
+  Enter constant_declarators 52
+   Enter constant_declarator 53
+[@-1,12:12='=',&lt;58&gt;,1:12]
+[@-1,14:14='1',&lt;37&gt;,1:14]
+    Enter constant_expression 203
+     Enter expression 201
+       ...
+                      Enter literal 113
+                       Enter integer_literal 114
+[@-1,15:15=';',&lt;158&gt;,1:15]
+                       Leave integer_literal 114
+                      Leave literal 113
+       ...
+     Leave expression 201
+    Leave constant_expression 203
+   Leave constant_declarator 53
+  Leave constant_declarators 52
+ Leave constant_declaration 50
+Leave class_member_declaration 49
+
+Here is the trace for the hard case (it's unoptimized as the backtracking
+syntactic predicate [in yellow] is matching tokens past 'const' [in red]) :
+
+Enter class_member_declaration 49
+[@-1,0:0='[',&lt;129&gt;,1:0]
+[@-1,1:3='Foo',&lt;104&gt;,1:1]
+ Enter synpred1_CSharp_fragment 308
+  Enter constant_declaration 50
+   Enter attribute_section 292
+    Enter attribute_list 295
+     Enter attribute 296
+      Enter attribute_name 297
+       Enter type_name 15
+        Enter namespace_or_type_name 16
+[@-1,4:4=']',&lt;28&gt;,1:4]
+        Leave namespace_or_type_name 16
+       Leave type_name 15
+      Leave attribute_name 297
+     Leave attribute 296
+    Leave attribute_list 295
+[@-1,5:9='const',&lt;31&gt;,1:5]
+   Leave attribute_section 292
+[@-1,11:13='int',&lt;108&gt;,1:11]
+   Enter type 26
+    Enter named_type 27
+     Enter named_value_type 29
+      Enter named_numeric_type 30
+       Enter named_integral_type 31
+[@-1,15:15='c',&lt;104&gt;,1:15]
+       Leave named_integral_type 31
+      Leave named_numeric_type 30
+     Leave named_value_type 29
+    Leave named_type 27
+   Leave type 26
+   Enter constant_declarators 52
+    Enter constant_declarator 53
+[@-1,17:17='=',&lt;58&gt;,1:17]
+[@-1,19:19='1',&lt;37&gt;,1:19]
+     Enter constant_expression 203
+      Enter expression 201
+       ...
+                       Enter literal 113
+                        Enter integer_literal 114
+[@-1,20:20=';',&lt;158&gt;,1:20]
+                        Leave integer_literal 114
+                       Leave literal 113
+       ...
+   Leave constant_declarators 52
+  Leave constant_declaration 50
+ Leave synpred1_CSharp_fragment 308
+
+Here is the Syntactic Predicate solution (same as backtracking solution with
+the addition of syntactic predicates [yellow]):
+
+public
+unattributed_class_member_declaration
+  options { backtrack=true; }
+  : (attribute_section* constant_modifier* CONST)=&gt; constant_declaration
+  | (attribute_section* event_modifier* EVENT)=&gt; event_declaration
+
+constant_declaration
+  : attribute_section* CONST type constant_declarators SEMI_COLON
+  ;
+
+event_declaration
+  : attribute_section* EVENT type variable_declarators SEMI_COLON
+  ;
+
+attribute_section // is recursive
+  options { memoize=true; }
+  : OPEN_SQUARE_BRACKET attribute_target_specifier? attribute_list COMMA?
+CLOSE_SQUARE_BRACKET
+  ;
+
+Here is the trace for the hard case (now optimized as the syntactic
+predicate bails soon after it sees 'const'):
+
+Enter class_member_declaration 49
+[@-1,0:0='[',&lt;129&gt;,1:0]
+[@-1,1:3='Foo',&lt;104&gt;,1:1]
+ Enter synpred1_CSharp_fragment 308
+  Enter attribute_section 292
+   Enter attribute_list 295
+    Enter attribute 296
+     Enter attribute_name 297
+      Enter type_name 15
+       Enter namespace_or_type_name 16
+[@-1,4:4=']',&lt;28&gt;,1:4]
+       Leave namespace_or_type_name 16
+      Leave type_name 15
+     Leave attribute_name 297
+    Leave attribute 296
+   Leave attribute_list 295
+[@-1,5:9='const',&lt;31&gt;,1:5]
+  Leave attribute_section 292
+[@-1,11:13='int',&lt;108&gt;,1:11]
+ Leave synpred1_CSharp_fragment 308
+
+And here is the trace for the common case (now unoptimized as a DFA monkey
+could have predicted the alternative but instead the syntactic predicate was
+invoked):
+
+Enter class_member_declaration 49
+[@-1,0:4='const',&lt;31&gt;,1:0]
+ Enter synpred1_CSharp_fragment 308
+[@-1,6:8='int',&lt;108&gt;,1:6]
+ Leave synpred1_CSharp_fragment 308
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="042471.html">[antlr-interest] Command line option -Xnoprune, what does it do?
+</A></li>
+	<LI>Next message: <A HREF="042473.html">[antlr-interest] Syntatic Predicate vs Backtracking Optimizations; Why are Syntactic Predicates always Evaluated?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#42472">[ date ]</a>
+              <a href="thread.html#42472">[ thread ]</a>
+              <a href="subject.html#42472">[ subject ]</a>
+              <a href="author.html#42472">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

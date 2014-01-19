@@ -1,0 +1,161 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] [C target] @after and/or finally do not cover all	cleanup cases when backtracking is on
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5BC%20target%5D%20%40after%20and/or%20finally%20do%20not%20cover%20all%0A%09cleanup%20cases%20when%20backtracking%20is%20on&In-Reply-To=%3C6B458D23F5D4A24ABCDB3C78EA97393B01FCA000%40EXCH-VIRTUAL.aerotechad.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="040429.html">
+   <LINK REL="Next"  HREF="040432.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] [C target] @after and/or finally do not cover all	cleanup cases when backtracking is on</H1>
+    <B>Justin Murray</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5BC%20target%5D%20%40after%20and/or%20finally%20do%20not%20cover%20all%0A%09cleanup%20cases%20when%20backtracking%20is%20on&In-Reply-To=%3C6B458D23F5D4A24ABCDB3C78EA97393B01FCA000%40EXCH-VIRTUAL.aerotechad.com%3E"
+       TITLE="[antlr-interest] [C target] @after and/or finally do not cover all	cleanup cases when backtracking is on">jmurray at aerotech.com
+       </A><BR>
+    <I>Wed Dec 29 07:10:05 PST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="040429.html">[antlr-interest] Mapping Language Constructs
+</A></li>
+        <LI>Next message: <A HREF="040432.html">[antlr-interest] [C target] @after and/or finally do not cover all cleanup cases when backtracking is on
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40430">[ date ]</a>
+              <a href="thread.html#40430">[ thread ]</a>
+              <a href="subject.html#40430">[ subject ]</a>
+              <a href="author.html#40430">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hello,
+
+ 
+
+I have some concerns with the generated parser C code when using @after
+and/or finally blocks in conjunction with backtracking. In my parser,
+for every line matched in a program, I have to create a new instance of
+a C++ class. This instance is in the scope of the &quot;line&quot; rule, and is
+used by the actions of this rule and all of the nested rules that it
+calls. To accomplish this, I added an @init section to create the new
+instance. I was not sure if I should use @after or finally to do the
+cleanup, so I initially tried using both. See the attached Test.g for a
+simplified example. What I found was that with backtracking turned off,
+what I wanted was the finally block, and it would always free the
+allocated memory. Unfortunately, I am stuck with backtrack=true (at
+least for now), and it appears to me that the generated code will not
+clean up memory properly in all cases. As you can see in the attached
+TestParser.c, there are two cases in the line() function where there is
+a &quot;return;&quot; line that does not execute the cleanup code from the @after
+or finally blocks. I am not sure how likely it is for these cases to
+occur, but it is clear to me that there is a potential for memory leaks
+in the generated code.
+
+ 
+
+The next thing I tried was to move my allocation/deallocation code up
+one level, into the actions of the &quot;prog&quot; rule. This is probably a
+better choice because the memory will not be allocated when
+backtracking. See the attached Test2.g for my simplified implementation.
+This generated code (see attached Test2Parser.c) looks better, but there
+is still the potential for a memory leak. Looking at the prog()
+function, the memory is only allocated if BACKTRACKING == 0, and then
+the line() rule function is called. After it returns from line(), if
+HASEXCEPTION() is true, the cleanup is handled by the finally block
+case. However, if HASFAILED() returns true (and HASEXCEPTION() returns
+false), then there is again a direct &quot;return;&quot; that does not do memory
+cleanup. I am beginning to think that maybe this is an impossible
+condition (does HASFAILED() only get set when backtracking?), but it is
+unclear to me.
+
+ 
+
+I am hoping that you will tell me that the memory leak in the second
+case is an impossible condition, and then I can move on with that
+implementation. If that is not the case, is there some sort or
+workaround that I can do? Regardless of that, it seems like the first
+implementation should also be valid, and maybe the generated code could
+handle that better.
+
+ 
+
+I know that the real solution is to left-factor the grammar and not use
+backtracking, but the syntax is inherently flawed and ambiguous, and we
+are not allowed to break back compatibility. While it may be possible, I
+am probably not skilled enough to figure it out in the allotted
+timeframe. The good news is that even with backtracking and memoizing,
+the ANTLR parser performs 25% faster than what it replaced (Visual
+Parse++, an ancient and horrible parser generator).
+
+ 
+
+Thanks again,
+
+Justin Murray 
+Software Engineer 
+<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">jmurray at aerotech.com</A>
+
+Aerotech, Inc. 
+101 Zeta Drive 
+Pittsburgh, PA 15238 
+412-963-7470
+
+ 
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: Test.g
+Type: application/octet-stream
+Size: 444 bytes
+Desc: Test.g
+Url : <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20101229/3680e829/attachment.obj">http://www.antlr.org/pipermail/antlr-interest/attachments/20101229/3680e829/attachment.obj</A> 
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: TestParser.c
+Type: application/octet-stream
+Size: 23731 bytes
+Desc: TestParser.c
+Url : <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20101229/3680e829/attachment-0001.obj">http://www.antlr.org/pipermail/antlr-interest/attachments/20101229/3680e829/attachment-0001.obj</A> 
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: Test2.g
+Type: application/octet-stream
+Size: 469 bytes
+Desc: Test2.g
+Url : <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20101229/3680e829/attachment-0002.obj">http://www.antlr.org/pipermail/antlr-interest/attachments/20101229/3680e829/attachment-0002.obj</A> 
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: Test2Parser.c
+Type: application/octet-stream
+Size: 23984 bytes
+Desc: Test2Parser.c
+Url : <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20101229/3680e829/attachment-0003.obj">http://www.antlr.org/pipermail/antlr-interest/attachments/20101229/3680e829/attachment-0003.obj</A> 
+</PRE>
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="040429.html">[antlr-interest] Mapping Language Constructs
+</A></li>
+	<LI>Next message: <A HREF="040432.html">[antlr-interest] [C target] @after and/or finally do not cover all cleanup cases when backtracking is on
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40430">[ date ]</a>
+              <a href="thread.html#40430">[ thread ]</a>
+              <a href="subject.html#40430">[ subject ]</a>
+              <a href="author.html#40430">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

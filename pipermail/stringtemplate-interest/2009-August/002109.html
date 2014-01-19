@@ -1,0 +1,263 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [stringtemplate-interest] Updated field and method accessors in the	C# port
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20Updated%20field%20and%20method%20accessors%20in%20the%0A%09C%23%20port&In-Reply-To=%3C86403CA0939415448BCCB83855EFE09AA684B6%40Bloodymary.ironwillgames.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002110.html">
+   <LINK REL="Next"  HREF="002115.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[stringtemplate-interest] Updated field and method accessors in the	C# port</H1>
+    <B>Sam Harwell</B> 
+    <A HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20Updated%20field%20and%20method%20accessors%20in%20the%0A%09C%23%20port&In-Reply-To=%3C86403CA0939415448BCCB83855EFE09AA684B6%40Bloodymary.ironwillgames.com%3E"
+       TITLE="[stringtemplate-interest] Updated field and method accessors in the	C# port">sharwell at pixelminegames.com
+       </A><BR>
+    <I>Tue Aug  4 11:59:04 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002110.html">[stringtemplate-interest] Iteration
+</A></li>
+        <LI>Next message: <A HREF="002115.html">[stringtemplate-interest] load jarred group definition with a a	group loader
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2109">[ date ]</a>
+              <a href="thread.html#2109">[ thread ]</a>
+              <a href="subject.html#2109">[ subject ]</a>
+              <a href="author.html#2109">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>As some of you (probably very few) know, the C# port of StringTemplate
+builds and caches dynamic accessors for fields and methods to improve
+performance. Today I made an update that I should have made in the past.
+Instead of manually building the IL for the accessors, I use the LINQ
+expression trees to handle the work behind the scenes. Behind the scenes
+work includes selecting the proper opcode for the call (direct vs.
+indirect dispatch), optimizations for static methods, and only boxing
+results when necessary. The front-end work (actually relevant to the
+task at hand) is now a clean expression of the desired behavior.
+
+ 
+
+Later I'll be updating the experimental ST compiler (only available via
+the depot source for the C# port, and disabled by default) to use
+expression trees instead of building IL and re-benchmarking it.
+
+ 
+
+The result looks like this:
+
+ 
+
+Before:
+
+ 
+
+private static Func&lt;object, object&gt; BuildAccessor( MethodInfo method )
+
+{
+
+    System.Reflection.Emit.DynamicMethod dm = new
+System.Reflection.Emit.DynamicMethod(method.DeclaringType.Name +
+method.Name + &quot;MethodAccessor&quot;, typeof(object), new Type[] {
+typeof(object) }, method.DeclaringType);
+
+    var gen = dm.GetILGenerator();
+
+ 
+
+    if (!method.IsStatic)
+
+    {
+
+        gen.Emit(System.Reflection.Emit.OpCodes.Ldarg_0);
+
+        gen.Emit(System.Reflection.Emit.OpCodes.Castclass,
+method.DeclaringType);
+
+    }
+
+ 
+
+    if (method.IsVirtual &amp;&amp; !method.IsFinal)
+
+        gen.EmitCall(System.Reflection.Emit.OpCodes.Callvirt, method,
+null);
+
+    else
+
+        gen.EmitCall(System.Reflection.Emit.OpCodes.Call, method, null);
+
+ 
+
+    if (method.ReturnType.IsValueType)
+
+        gen.Emit(System.Reflection.Emit.OpCodes.Box, method.ReturnType);
+
+ 
+
+    gen.Emit(System.Reflection.Emit.OpCodes.Ret);
+
+    return (Func&lt;object, object&gt;)dm.CreateDelegate(typeof(Func&lt;object,
+object&gt;));
+
+}
+
+ 
+
+private static Func&lt;object, object&gt; BuildAccessor( FieldInfo field )
+
+{
+
+    System.Reflection.Emit.DynamicMethod dm = new
+System.Reflection.Emit.DynamicMethod(field.DeclaringType.Name +
+field.Name + &quot;FieldAccessor&quot;, typeof(object), new Type[] {
+typeof(object) }, field.DeclaringType);
+
+ 
+
+    var gen = dm.GetILGenerator();
+
+    if (field.IsStatic)
+
+    {
+
+        gen.Emit(System.Reflection.Emit.OpCodes.Ldsfld, field);
+
+    }
+
+    else
+
+    {
+
+        gen.Emit(System.Reflection.Emit.OpCodes.Ldarg_0);
+
+        gen.Emit(System.Reflection.Emit.OpCodes.Castclass,
+field.DeclaringType);
+
+        gen.Emit(System.Reflection.Emit.OpCodes.Ldfld, field);
+
+    }
+
+ 
+
+    if (field.FieldType.IsValueType)
+
+        gen.Emit(System.Reflection.Emit.OpCodes.Box, field.FieldType);
+
+ 
+
+    gen.Emit(System.Reflection.Emit.OpCodes.Ret);
+
+    return (Func&lt;object, object&gt;)dm.CreateDelegate(typeof(Func&lt;object,
+object&gt;));
+
+}
+
+ 
+
+After:
+
+ 
+
+private static Func&lt;object, object&gt; BuildAccessor(MethodInfo method)
+
+{
+
+    ParameterExpression obj = Expression.Parameter(typeof(object),
+&quot;obj&quot;);
+
+    Expression&lt;Func&lt;object, object&gt;&gt; expr =
+Expression.Lambda&lt;Func&lt;object, object&gt;&gt;(
+
+        Expression.Convert(
+
+            Expression.Call(
+
+                Expression.Convert(obj, method.DeclaringType),
+
+                method),
+
+            typeof(object)),
+
+        obj);
+
+ 
+
+    return expr.Compile();
+
+}
+
+ 
+
+private static Func&lt;object, object&gt; BuildAccessor(FieldInfo field)
+
+{
+
+    ParameterExpression obj = Expression.Parameter(typeof(object),
+&quot;obj&quot;);
+
+    Expression&lt;Func&lt;object, object&gt;&gt; expr =
+Expression.Lambda&lt;Func&lt;object, object&gt;&gt;(
+
+        Expression.Convert(
+
+            Expression.Field(
+
+                Expression.Convert(obj, field.DeclaringType),
+
+                field),
+
+            typeof(object)),
+
+        obj);
+
+ 
+
+    return expr.Compile();
+
+}
+
+ 
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/stringtemplate-interest/attachments/20090804/eab42847/attachment-0001.html">http://www.antlr.org/pipermail/stringtemplate-interest/attachments/20090804/eab42847/attachment-0001.html</A> 
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002110.html">[stringtemplate-interest] Iteration
+</A></li>
+	<LI>Next message: <A HREF="002115.html">[stringtemplate-interest] load jarred group definition with a a	group loader
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2109">[ date ]</a>
+              <a href="thread.html#2109">[ thread ]</a>
+              <a href="subject.html#2109">[ subject ]</a>
+              <a href="author.html#2109">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">More information about the stringtemplate-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,270 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Parsing (a+b)+(c+d)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Parsing%20%28a%2Bb%29%2B%28c%2Bd%29&In-Reply-To=%3C48A873EB.5080104%40Yahoo.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="030066.html">
+   <LINK REL="Next"  HREF="030074.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Parsing (a+b)+(c+d)</H1>
+    <B>Austin Hastings</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Parsing%20%28a%2Bb%29%2B%28c%2Bd%29&In-Reply-To=%3C48A873EB.5080104%40Yahoo.com%3E"
+       TITLE="[antlr-interest] Parsing (a+b)+(c+d)">Austin_Hastings at Yahoo.com
+       </A><BR>
+    <I>Sun Aug 17 11:54:35 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="030066.html">[antlr-interest] Parsing (a+b)+(c+d)
+</A></li>
+        <LI>Next message: <A HREF="030074.html">[antlr-interest] Parsing (a+b)+(c+d)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30071">[ date ]</a>
+              <a href="thread.html#30071">[ thread ]</a>
+              <a href="subject.html#30071">[ subject ]</a>
+              <a href="author.html#30071">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Tom,
+
+There are some important differences between LALR and LL, and you will 
+kind of have to bump up against them as you go along -- hearing about 
+them doesn't really get it burned into your brain.
+ 
+The &quot;big thing&quot; with expression parsing in antlr is implementing 
+precedence and associativity. (If you don't know what those two words 
+mean in this context, try Wikipedia.)
+
+The simplest approach is to build a new rule for each level of 
+precedence. In your (a+b)+(c+d) example, you have three different things 
+going on:
+
+1. Identifiers
+2. The '+' operator
+3. Parenthesized sub-expressions.
+
+In general, an identifier is an atom -- it cannot be further divided for 
+parsing, so it is the innermost thing. But a (subexpr) is also an atom 
+for purposes of expression evaluation. So you'll see a lot of expression 
+parsing examples that look like this:
+
+atom: IDENTIFIER | '(' expression ')' ;
+
+That represents the innermost layer of precedence. You proceed to wrap 
+things around it. But one issue you have to stay aware of is that for a 
+complex grammar, you aren't REQUIRED to have a certain operator in use. 
+That is, just because you support both '+' and '*' doesn't mean that 
+every expression has to use them. So your first consideration has to be 
+for &quot;passing through&quot; an expression that doesn't use a particular operation.
+
+plus_expr : atom ;
+
+Then you make the operator, and the rest of the expression, optional:
+
+plus_expr : atom ( '+' atom)? ;
+
+But most languages support a+b+c syntax without parens, so you'll have 
+to support more than just zero-or-one operators:
+
+plus_expr : atom ('+' atom)* ;    // Note '*' instead of '?' at end
+
+Then tie it up with a nice bow on it, by providing a top-level entry point:
+
+expression: plus_expr ;
+plus_expr : atom ('+' atom)* ;    // Note '*' instead of '?' at end
+atom: IDENTIFIER | '(' expression ')' ;
+
+One thing this does not address is associativity. If you have a 
+left-associative operator (and most 'math' is left-assoc) you can build 
+your tree as you go along:
+
+plus_expr
+    : ( atom -&gt; atom )
+      ( ( '+' atom -&gt;  ^('+' $plus_expr atom) )
+     // | ( '-' etc. )
+      )*
+    ;
+
+This takes a+b+c and yields an AST like (+ (+ a b) c). The $plus_expr 
+takes the &quot;present result&quot; of the parsing and inserts it into a larger 
+AST expression.
+
+On the other hand, exponentiation is right-associative. a**b**c should 
+eval as (** a (** b c)). This is a question of mathematical convenience. 
+If the associativity were left, then
+a**b**c would be the same as a**(bc), which reduces the expressive power 
+of the notation. Mathematicians are all about expressive power.
+
+Since the expression is right-associative, you just have to recognize 
+the leftmost bits, grab them, and recurse. BUT you have to make sure you 
+have one absolutely distinctive leftmost bit to grab. If your left side 
+is ambiguous, you're in hell. Make sure, if possible, that there's an 
+explicit operator or token to use as the signal.
+
+expon_expr : atom '**' expon_expr ;
+
+Of course, the operator isn't required:
+
+expon_expr
+    : atom ('**' expon_expr  -&gt; ^('**' atom expon_expr)
+             | /*nothing*/ -&gt; atom)
+    ;
+
+
+Finally, two things to keep in mind in &quot;expression-land.&quot; First, in C 
+and similar languages, there are some cases where the syntax changes if 
+an operator is not used. In particular, assignment expressions (a = b) 
+are lower priority than conditional expressions (a ? b : c). But a 
+conditional expression is NOT a legal Lvalue, so an assignment has a 
+different syntax than a pass-thru:
+
+assignment
+    : lvalue '=' assignment
+    | conditional //passthru
+    ;
+
+Second, keep in mind that a token is not a magic cookie. Tokens get 
+reused, a LOT. Sometimes it isn't completely obvious. C, et al, use 
+commas as an operator and to delimit lists. You will have to handle 
+these cases separately, and you will have to provide a entry point into 
+your expression hierarchy so that a parse context that needs commas for 
+list delimiters can skip over the comma-as-operator part of the 
+expression chain. (Similarly, parens are both postfix-operators for 
+calling functions, and circumfix operators for delimiting subexpressions.)
+
+Good luck,
+
+=Austin
+
+  
+Ana Nelson wrote:
+&gt;<i> Tom,
+</I>&gt;<i>
+</I>&gt;<i> This example grammar might give you an idea:
+</I>&gt;<i> <A HREF="http://www.antlr.org/wiki/display/ANTLR3/Expression+evaluator">http://www.antlr.org/wiki/display/ANTLR3/Expression+evaluator</A>
+</I>&gt;<i>
+</I>&gt;<i> Regards,
+</I>&gt;<i> Ana
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> On 17 Aug 2008, at 11:47, Tom Edwards wrote:
+</I>&gt;<i>
+</I>&gt;&gt;<i> Hi,
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Sorry if this is a bit of newb question however I am pretty new to
+</I>&gt;&gt;<i> language translation and I can't seem to find the answer to this
+</I>&gt;&gt;<i> question. I am trying to parse the following simple expression:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> (a+b)+(c+d)
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> With the following grammar:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> grammar Vector;
+</I>&gt;&gt;<i> options {
+</I>&gt;&gt;<i>       output=AST;
+</I>&gt;&gt;<i>       ASTLabelType=CommonTree;
+</I>&gt;&gt;<i> }
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> prog    :       (stmt
+</I>&gt;&gt;<i> {System.out.println($stmt.tree.toStringTree());} )+;
+</I>&gt;&gt;<i> stmt    :       expr NEWLINE?;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> expr    :       IDENTIFIER exprD
+</I>&gt;&gt;<i>       |       '(' expr ')';
+</I>&gt;&gt;<i> exprD   :       OP (exprD|IDENTIFIER);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> OP      :       '+';
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> IDENTIFIER
+</I>&gt;&gt;<i>       :       ('a'..'z'|'A'..'Z');
+</I>&gt;&gt;<i> NEWLINE :        '\r'?'\n';
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Which is based of an example I have found on the website.
+</I>&gt;&gt;<i> The problem is that as Antlr is LL (am I right here?) you cannot have
+</I>&gt;&gt;<i> left recursion, which is fine, however I am not sure how you can
+</I>&gt;&gt;<i> construct something to parse the original problem. Splitting the
+</I>&gt;&gt;<i> problem into expr and exprD is a technique I have borrowed from the
+</I>&gt;&gt;<i> &quot;dragon&quot; book, however in this case it does work very well, but not
+</I>&gt;&gt;<i> with the parenthesis.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Again, sorry if this is a silly question however it is bugging me and
+</I>&gt;&gt;<i> I don't have any other form of support.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Kind regards and thanks for any help you can offer.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Tom
+</I>&gt;&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="030066.html">[antlr-interest] Parsing (a+b)+(c+d)
+</A></li>
+	<LI>Next message: <A HREF="030074.html">[antlr-interest] Parsing (a+b)+(c+d)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30071">[ date ]</a>
+              <a href="thread.html#30071">[ thread ]</a>
+              <a href="subject.html#30071">[ subject ]</a>
+              <a href="author.html#30071">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

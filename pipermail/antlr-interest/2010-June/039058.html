@@ -1,0 +1,196 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Continue parsing after an error
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Continue%20parsing%20after%20an%20error&In-Reply-To=%3C4C2B805B.2070706%40ontology-partners.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="039056.html">
+   <LINK REL="Next"  HREF="039059.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Continue parsing after an error</H1>
+    <B>Luchesar Cekov</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Continue%20parsing%20after%20an%20error&In-Reply-To=%3C4C2B805B.2070706%40ontology-partners.com%3E"
+       TITLE="[antlr-interest] Continue parsing after an error">luchesar.cekov at ontology-partners.com
+       </A><BR>
+    <I>Wed Jun 30 10:35:23 PDT 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="039056.html">[antlr-interest] Continue parsing after an error
+</A></li>
+        <LI>Next message: <A HREF="039059.html">[antlr-interest] Continue parsing after an error
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#39058">[ date ]</a>
+              <a href="thread.html#39058">[ thread ]</a>
+              <a href="subject.html#39058">[ subject ]</a>
+              <a href="author.html#39058">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Gordon,
+
+Thanks for the prompt response.
+Adding OTHER as an alternative was what I tried to do in the beginning. 
+Unfortunately my use case is a bit more complex. I have worked out a 
+better example below.
+In this example, the input string  [ax][kx][ax] is wrong (k is not 
+allowed) but the grammar builds the full ast tree, so it recovers from 
+the error - it would generate three expression nodes the second of which 
+contains a ErrorCommonToken inside as per recoverFromMismatchedToken().
+The string [ax]sax][ax] on the other end, generates only the first bit 
+of the tree, till the error.  - it generares only one expression node.
+
+I do not understand why I get this different behavior - the parser 
+recovers if the error happens in the middle of a rule, but not if the 
+error is at the beginning of a rule.
+
+Is this a problem in my grammar or it is just the way ANTLR works?
+
+Thanks,
+Luchesar
+
+================
+grammar StartOfARuleFailTest;
+
+options {    output=AST;    ASTLabelType=CommonTree; }
+
+tokens { ROOT_TOKEN;ERROR_TOKEN;EXPRESSIONS;EXPRESSION; }
+
+@members {
+    @Override
+    protected Object recoverFromMismatchedToken(IntStream input, int 
+ttype, BitSet follow)
+            throws RecognitionException {
+        MismatchedTokenException ex = new 
+MismatchedTokenException(ttype, input);
+        input.consume();
+        return createErrorToken(ex, ttype);
+    }
+   
+    public static ErrorCommonToken createErrorToken(RecognitionException 
+ex, int ttype) {
+        ErrorCommonToken errorCommonToken = new ErrorCommonToken(ex.token);
+        errorCommonToken.setType(ttype);
+       
+        return errorCommonToken;
+    }
+}
+
+root : expressions  EOF -&gt; ^(ROOT_TOKEN expressions) ;
+expressions  : expression* -&gt; ^(EXPRESSIONS expression*) ;
+expression : '[' 'a' 'x' ']' -&gt; ^(EXPRESSION '[' 'a' 'x' ']');
+
+OTHER   : . ;
+================
+
+
+Gordon Tyler wrote:
+&gt;<i> The grammar you have defined says, roughly:
+</I>&gt;<i>
+</I>&gt;<i> Parse any number of '[' or ']' until you reach EOF.
+</I>&gt;<i>
+</I>&gt;<i> It does not describe what to do if something other than '[' or ']' are found before EOF is found.
+</I>&gt;<i>
+</I>&gt;<i> You have defined a token, OTHER, to match the other stuff, but your parse rules do not reference OTHER. Perhaps something like this would work:
+</I>&gt;<i>
+</I>&gt;<i> root : (expressions | OTHER)* EOF -&gt; ^(ROOT_TOKEN expressions) ;
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> -----Original Message-----
+</I>&gt;<i> From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Luchesar Cekov
+</I>&gt;<i> Sent: June 30, 2010 10:10 AM
+</I>&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> Cc: Valerio Malenchino
+</I>&gt;<i> Subject: [antlr-interest] Continue parsing after an error
+</I>&gt;<i>
+</I>&gt;<i> Dear ANTLR enthusiasts,
+</I>&gt;<i>
+</I>&gt;<i> I am struggling with a problem. The parser jumps to the end of file from 
+</I>&gt;<i> the middle of the document.
+</I>&gt;<i>
+</I>&gt;<i> The setup is as follow:
+</I>&gt;<i>     * I have two alternatives flowed by EOF
+</I>&gt;<i>     * during parse time in the middle of the document next token can not 
+</I>&gt;<i> match either alternatives start
+</I>&gt;<i>
+</I>&gt;<i> This leads to parsing termination because the parser jumps to the EndOfFile.
+</I>&gt;<i>
+</I>&gt;<i> A simple grammar the illustrates the problem is
+</I>&gt;<i>
+</I>&gt;<i> ===============
+</I>&gt;<i> tokens {ROOT_TOKEN;}
+</I>&gt;<i> root
+</I>&gt;<i>     : expressions EOF -&gt; ^(ROOT_TOKEN expressions) ;
+</I>&gt;<i> expressions : ('[' | ']')* ;
+</I>&gt;<i> OTHER   : . ;
+</I>&gt;<i> ===============
+</I>&gt;<i>
+</I>&gt;<i> If then I try parsing &quot;[[][]]sdsdf[]][]][&quot; the parsing will stop and the 
+</I>&gt;<i> first &quot;s&quot; and will try to recover as if the EOF was the next token.
+</I>&gt;<i> When looking at the generated Parser it looks like if there is no viable 
+</I>&gt;<i> alternative in the top rule in this case &quot;root&quot; the parser will behave 
+</I>&gt;<i> as if it reached the EOF and will skip the rest of the tokens.
+</I>&gt;<i>
+</I>&gt;<i> The result AST will contain only children up until the first illegal 
+</I>&gt;<i> token &quot;s&quot;.
+</I>&gt;<i>
+</I>&gt;<i> I cannot see where my mistake is. It looks like the parser should not do 
+</I>&gt;<i> that. Can you suggest a workaround for the problem?
+</I>&gt;<i>
+</I>&gt;<i> Thanks in advance,
+</I>&gt;<i> Luchesar
+</I>&gt;<i>   
+</I>
+-- 
+
+Luchesar Cekov
+Software Engineer
++44 (0) 207 239 4949
+*Ontology Systems*
+www.ontology.com &lt;<A HREF="http://www.ontology.com/">http://www.ontology.com/</A>&gt;
+
+	
+
+award list of icons       
+
+ 
+
+ 
+
+ 
+
+ 
+
+.
+
+ 
+
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="039056.html">[antlr-interest] Continue parsing after an error
+</A></li>
+	<LI>Next message: <A HREF="039059.html">[antlr-interest] Continue parsing after an error
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#39058">[ date ]</a>
+              <a href="thread.html#39058">[ thread ]</a>
+              <a href="subject.html#39058">[ subject ]</a>
+              <a href="author.html#39058">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

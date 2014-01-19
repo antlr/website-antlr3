@@ -1,0 +1,256 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Incompatible type in subrules with OR
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Incompatible%20type%20in%20subrules%20with%20OR&In-Reply-To=%3C4E2D7D0B.3000103%40tis.bz.it%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="042212.html">
+   <LINK REL="Next"  HREF="042188.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Incompatible type in subrules with OR</H1>
+    <B>Claudio Martella</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Incompatible%20type%20in%20subrules%20with%20OR&In-Reply-To=%3C4E2D7D0B.3000103%40tis.bz.it%3E"
+       TITLE="[antlr-interest] Incompatible type in subrules with OR">claudio.martella at tis.bz.it
+       </A><BR>
+    <I>Mon Jul 25 07:26:19 PDT 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="042212.html">[antlr-interest] Incompatible type in subrules with OR
+</A></li>
+        <LI>Next message: <A HREF="042188.html">[antlr-interest] (no subject)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#42222">[ date ]</a>
+              <a href="thread.html#42222">[ thread ]</a>
+              <a href="subject.html#42222">[ subject ]</a>
+              <a href="author.html#42222">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>(Sorry for the double mail, clicked wrong!)
+
+
+I applied (1) and it worked. I have one problem with this grammar
+though. I'm debugging it with ANTLRWorks and the generated Parse Tree is
+correct. The problem is that when I visualize the AST some things don't
+work. In particular the filterFunction internal node is not always
+present. Sometimes the filter node has a direct child &quot;PREFIX(&quot; and the
+token ')' is still present instead of being discarded. I don't
+understand how this can be possible as the Parse Tree is correct AND for
+certain examples the AST for filter is also correct.
+
+To replicate it try the query &quot;claudio :: age [MAX(10)][MIN(3)] &gt; age
+[country = EQUALS('italy')] &gt; weight [MIN(3)] (*3) .DISTANCE('marco')&quot;
+
+with this grammar:
+grammar RDFPath;
+
+options { output = AST; }
+tokens {
+    QUERY           = 'query';
+    LOCATIONSTEP    = 'locationstep';
+    CONDITION       = 'condition';
+    FILTER          = 'filter';
+    FILTERFUNCTION  = 'filterfunction';
+    SUBQUERY        = 'subquery';
+    REPEAT          = 'repeat';
+    SHORTESTPATH    = 'shortestpath';
+    ENDNODEFUNCTION = 'endnodefunction';
+    STARTNODE       = 'startnode';
+    EDGE            = 'edge';
+}
+
+/* PARSER RULES */
+
+query: startNode '::' locationStep ('&gt;' locationStep)* ('.'
+endNodeFunction)?
+    -&gt; ^(QUERY startNode locationStep+ endNodeFunction);
+
+locationStep: edge condition* (repeat | shortestPath)?
+   -&gt; ^(LOCATIONSTEP condition? repeat? shortestPath?);
+
+condition: '[' ( filter | subquery ) ']'
+   -&gt; ^(CONDITION filter? subquery?);
+
+
+filter: filterFunction
+    -&gt; ^(FILTER filterFunction);
+
+filterFunction: fn='EQUALS(' v=STRING ')' | fn='EQUALS(' v=INTVALUE ')'
+        | fn='SUFFIX(' v=STRING ')' | fn='PREFIX(' v=STRING ')' 
+        | fn='MIN(' v=INTVALUE ')' | fn='MAX(' v=INTVALUE ')'
+    -&gt; ^(FILTERFUNCTION $fn $v);
+
+subquery: edge '=' filterFunction
+    -&gt; ^(SUBQUERY edge filterFunction);
+
+repeat: '(' v=INTVALUE ')'
+    -&gt; ^(REPEAT $v);
+
+shortestPath: '(*' v=INTVALUE ')'
+    -&gt; ^(SHORTESTPATH $v);
+
+endNodeFunction: fn='COUNT()' | fn='SUM()' | fn='AVG()'
+             | fn='MIN()' | fn='MAX()' | fn='DISTANCE(' v=STRING ')'
+        -&gt; ^(ENDNODEFUNCTION $fn $v);
+
+startNode: v='*' | v=TEXTVALUE
+    -&gt; ^(STARTNODE $v);
+
+edge: v=TEXTVALUE
+    -&gt; ^(EDGE $v);
+
+/* LEXER RULES */
+
+TEXTVALUE: ('a'..'z'|'A'..'Z')('a'..'z'|'A'..'Z'|'0'..'9')* ;
+
+INTVALUE: ('0'..'9')+ ;
+
+STRING    : '\'' TEXTVALUE '\'' ;
+
+ID:    ('a'..'z'|'A'..'Z'|'_') ('a'..'z'|'A'..'Z'|'0'..'9'|'_')* ;
+
+WS:   (' ' | '\t' | '\r' | '\n') {$channel=HIDDEN;};
+
+
+
+
+
+
+On 7/22/11 2:10 AM, Gary Miller wrote:
+&gt;<i> Try the following options.
+</I>&gt;<i>
+</I>&gt;<i> 1.
+</I>&gt;<i> locationStep: edge condition? (repeat | shortestPath)? ('&gt;' locationStep)?
+</I>&gt;<i>    -&gt; ^(LOCATIONSTEP condition? repeat? shortestPath? locationStep?);
+</I>&gt;<i>
+</I>&gt;<i> condition: ( filter | subquery ) condition?
+</I>&gt;<i>    -&gt; ^(CONDITION filter? subquery? condition?);
+</I>&gt;<i>
+</I>&gt;<i> or
+</I>&gt;<i> 2.
+</I>&gt;<i> locationStep
+</I>&gt;<i> :  edge condition? repeat?  ('&gt;' locationStep)?  -&gt; ^(LOCATIONSTEP
+</I>&gt;<i> condition? shortestPath? locationStep?)
+</I>&gt;<i> |  edge condition? shortestPath? ('&gt;' locationStep)?  -&gt;
+</I>&gt;<i> ^(LOCATIONSTEP condition? shortestPath? locationStep?)
+</I>&gt;<i> ;
+</I>&gt;<i>
+</I>&gt;<i> condition
+</I>&gt;<i> : filter condition?   -&gt; ^(CONDITION filter condition?)
+</I>&gt;<i> | subquery condition?   -&gt; ^(CONDITION subquery condition?)
+</I>&gt;<i> ;
+</I>&gt;<i>
+</I>&gt;<i> Regards
+</I>&gt;<i> Gary
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> On Thu, Jul 21, 2011 at 9:16 PM, Claudio Martella
+</I>&gt;<i> &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">claudio.martella at tis.bz.it</A>&gt; wrote:
+</I>&gt;&gt;<i> Hello,
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I've this grammar: <A HREF="http://pastebin.com/dNzdGx8R">http://pastebin.com/dNzdGx8R</A> but i get this error
+</I>&gt;&gt;<i> when I test it with AntlrWorks:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> [11:23:59] /Users/hammer/output/RDFPathParser.java:383: incompatible types
+</I>&gt;&gt;<i> [11:23:59] found   : RDFPathParser.repeat_return
+</I>&gt;&gt;<i> [11:23:59] required: RDFPathParser.shortestPath_return
+</I>&gt;&gt;<i> [11:23:59]                     v=repeat();
+</I>&gt;&gt;<i> [11:23:59]                             ^
+</I>&gt;&gt;<i> [11:23:59] /Users/hammer/output/RDFPathParser.java:586: incompatible types
+</I>&gt;&gt;<i> [11:23:59] found   : RDFPathParser.filter_return
+</I>&gt;&gt;<i> [11:23:59] required: RDFPathParser.subquery_return
+</I>&gt;&gt;<i> [11:23:59]                     v=filter();
+</I>&gt;&gt;<i> [11:23:59]                             ^
+</I>&gt;&gt;<i> [11:23:59] 2 errors
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Basically I think the problem is the assignment in the subrules with ORs
+</I>&gt;&gt;<i> in two statements:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> locationStep: edge condition? (v=repeat | v=shortestPath)? ('&gt;'
+</I>&gt;&gt;<i> locationStep)?
+</I>&gt;&gt;<i>    -&gt; ^(LOCATIONSTEP condition $v locationStep);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> condition: ( v=filter | v=subquery ) condition?
+</I>&gt;&gt;<i>    -&gt; ^(CONDITION $v condition);
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> How do I handle these situations where I have the two or more options in
+</I>&gt;&gt;<i> a subrule?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Thanks
+</I>&gt;&gt;<i> Claudio
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> --
+</I>&gt;&gt;<i> Claudio Martella
+</I>&gt;&gt;<i> Free Software &amp; Open Technologies
+</I>&gt;&gt;<i> Analyst
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> TIS innovation park
+</I>&gt;&gt;<i> Via Siemens 19 | Siemensstr. 19
+</I>&gt;&gt;<i> 39100 Bolzano | 39100 Bozen
+</I>&gt;&gt;<i> Tel. +39 0471 068 123
+</I>&gt;&gt;<i> Fax  +39 0471 068 129
+</I>&gt;&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">claudio.martella at tis.bz.it</A> <A HREF="http://www.tis.bz.it">http://www.tis.bz.it</A>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Short information regarding use of personal data. According to Section 13 of Italian Legislative Decree no. 196 of 30 June 2003, we inform you that we process your personal data in order to fulfil contractual and fiscal obligations and also to send you information regarding our services and events. Your personal data are processed with and without electronic means and by respecting data subjects' rights, fundamental freedoms and dignity, particularly with regard to confidentiality, personal identity and the right to personal data protection. At any time and without formalities you can write an e-mail to <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">privacy at tis.bz.it</A> in order to object the processing of your personal data for the purpose of sending advertising materials and also to exercise the right to access personal data and other rights referred to in Section 7 of Decree 196/2003. The data controller is TIS Techno Innovation Alto Adige, Siemens Street n. 19, Bolzano. You can find the complete information on the web si
+</I>&gt;&gt;<i>  te www.tis.bz.it.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i>
+</I>
+
+-- 
+Claudio Martella
+Free Software &amp; Open Technologies
+Analyst
+
+TIS innovation park
+Via Siemens 19 | Siemensstr. 19
+39100 Bolzano | 39100 Bozen
+Tel. +39 0471 068 123
+Fax  +39 0471 068 129
+<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">claudio.martella at tis.bz.it</A> <A HREF="http://www.tis.bz.it">http://www.tis.bz.it</A>
+
+Short information regarding use of personal data. According to Section 13 of Italian Legislative Decree no. 196 of 30 June 2003, we inform you that we process your personal data in order to fulfil contractual and fiscal obligations and also to send you information regarding our services and events. Your personal data are processed with and without electronic means and by respecting data subjects' rights, fundamental freedoms and dignity, particularly with regard to confidentiality, personal identity and the right to personal data protection. At any time and without formalities you can write an e-mail to <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">privacy at tis.bz.it</A> in order to object the processing of your personal data for the purpose of sending advertising materials and also to exercise the right to access personal data and other rights referred to in Section 7 of Decree 196/2003. The data controller is TIS Techno Innovation Alto Adige, Siemens Street n. 19, Bolzano. You can find the complete information on the web site www.tis.bz.it.
+
+
+
+
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="042212.html">[antlr-interest] Incompatible type in subrules with OR
+</A></li>
+	<LI>Next message: <A HREF="042188.html">[antlr-interest] (no subject)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#42222">[ date ]</a>
+              <a href="thread.html#42222">[ thread ]</a>
+              <a href="subject.html#42222">[ subject ]</a>
+              <a href="author.html#42222">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

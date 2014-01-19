@@ -1,0 +1,206 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] AST - Ordering of sibling nodes
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20AST%20-%20Ordering%20of%20sibling%20nodes&In-Reply-To=%3CCAM1TniB2MC0_C%2BJWZyWnWpgw06f1fihUj18GZOj1d%2BFfa0%3DH6Q%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="044152.html">
+   <LINK REL="Next"  HREF="044153.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] AST - Ordering of sibling nodes</H1>
+    <B>S&#248;ren Boisen</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20AST%20-%20Ordering%20of%20sibling%20nodes&In-Reply-To=%3CCAM1TniB2MC0_C%2BJWZyWnWpgw06f1fihUj18GZOj1d%2BFfa0%3DH6Q%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] AST - Ordering of sibling nodes">sboisen at mail.dk
+       </A><BR>
+    <I>Tue Feb 28 05:35:06 PST 2012</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="044152.html">[antlr-interest] AST - Ordering of sibling nodes
+</A></li>
+        <LI>Next message: <A HREF="044153.html">[antlr-interest] C# target: String Templates and translation bug?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#44162">[ date ]</a>
+              <a href="thread.html#44162">[ thread ]</a>
+              <a href="subject.html#44162">[ subject ]</a>
+              <a href="author.html#44162">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>For reference, here is my solution, that seems to be working.
+
+I created a simple base class for sorting (just to have as much Java
+code in .java files as possible as opposed to having it floating
+around in the grammar file):
+
+
+
+public abstract class BaseSqlSorter extends TreeRewriter {
+
+    private Map&lt;Integer, Integer&gt; sortValues = new HashMap&lt;Integer,
+Integer&gt;(10);
+
+    public BaseSqlSorter (TreeNodeStream input) {
+        super(input);
+        insertSortValues(sortValues);
+    }
+
+    public BaseSqlSorter (TreeNodeStream input, RecognizerSharedState state) {
+        super(input, state);
+        insertSortValues(sortValues);
+    }
+
+    protected abstract void insertSortValues (Map&lt;Integer, Integer&gt; map);
+
+    public final class NodeComparator implements Comparator&lt;ODataNode&gt; {
+        @Override
+        public int compare (ODataNode n1, ODataNode n2) {
+            Integer s1 = sortValues.get(n1.getType());
+            Integer s2 = sortValues.get(n2.getType());
+
+            assert s1 != null &amp;&amp; s2 != null : &quot;unrecognized token type(s): &quot;
+                    + n1.getType() + &quot;, &quot; + n2.getType();
+
+            return s1.compareTo(s2);
+        }
+    }
+
+    public void sortChildren (ODataNode uriNode) {
+        List&lt;ODataNode&gt; children = new
+ArrayList&lt;ODataNode&gt;(uriNode.getChildren());
+        Collections.sort(children, new NodeComparator());
+
+        ODataNode root = new ODataNode((Token) null);
+        root.addChildren(children);
+
+        input.replaceChildren(uriNode, 0, children.size()-1, root);
+    }
+
+}
+
+
+
+
+And then I can create a very primitive rewrite tree grammar:
+
+tree grammar SqlSorter;
+options {
+    tokenVocab = QueryParser;
+    ASTLabelType = ODataNode;
+    filter = true;
+    output = AST;
+    superClass = BaseSqlSorter;
+}
+
+@header {
+&lt;------- SNIP ---------&gt;
+}
+
+@members {
+    protected void insertSortValues (Map&lt;Integer, Integer&gt; map) {
+        map.put(SELECT, 25);
+        map.put(RESOURCE, 50);
+        map.put(FILTER, 75);
+        map.put(ORDERBY, 100);
+    }
+}
+
+topdown:    sortUriChildren ;
+
+sortUriChildren
+       :    ^(URI .*) {
+           sortChildren($URI);
+       } ;
+
+
+
+This way I emulate what happens during normal tree rewrite operations,
+so I should hopefully be pretty safe :)
+
+
+/S&#248;ren
+
+
+27. feb. 2012 11.10 skrev S&#248;ren Boisen &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">sboisen at mail.dk</A>&gt;:
+&gt;<i> Hi there, I'm transforming a URL query language (OData) to SQL. In the
+</I>&gt;<i> query language the query operators can be specified in arbitrary
+</I>&gt;<i> sequence:
+</I>&gt;<i>
+</I>&gt;<i> uri &#160; &#160; : &#160; resource ('?' query)? EOF
+</I>&gt;<i> &#160; &#160; &#160; &#160;-&gt; &#160;^(URI resource query?) ;
+</I>&gt;<i>
+</I>&gt;<i> query &#160; : &#160; queryOp ('&amp;' queryOp)*
+</I>&gt;<i> &#160; &#160; &#160; &#160;-&gt; &#160;^(QUERY queryOp+) ;
+</I>&gt;<i>
+</I>&gt;<i> queryOp : &#160; &#160; &#160; &#160; expandQueryOp
+</I>&gt;<i> &#160; &#160; &#160; &#160;| &#160; &#160; &#160; &#160; orderByQueryOp
+</I>&gt;<i> &#160; &#160; &#160; &#160;| &#160; &#160; &#160; &#160; selectQueryOp
+</I>&gt;<i> &#160; &#160; &#160; &#160;| &#160; &#160; &#160; &#160; filterQueryOp ;
+</I>&gt;<i>
+</I>&gt;<i> &lt;--------snip---------&gt;
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> However, in SQL I of course have to abide by a very specific ordering:
+</I>&gt;<i>
+</I>&gt;<i> selectClause
+</I>&gt;<i> fromClause
+</I>&gt;<i> whereClause
+</I>&gt;<i> orderByClause
+</I>&gt;<i>
+</I>&gt;<i> The question is, what's the best/easiest/simplest way of reordering
+</I>&gt;<i> the AST nodes, so they align with the SQL requirements?
+</I>&gt;<i> Currently I'm generating the SQL via string templates like so:
+</I>&gt;<i>
+</I>&gt;<i> uri &#160; &#160; : &#160; ^(URI clauses+=resource clauses+=queryOp*)
+</I>&gt;<i> &#160; &#160; &#160; &#160;-&gt; &#160;query(clauses={$clauses}) ;
+</I>&gt;<i>
+</I>&gt;<i> resource: &#160; ^(RESOURCE ID s=subResource*)
+</I>&gt;<i> &#160; &#160; &#160; &#160; &#160; &#160; -&gt; fromClause(entity={entity($ID)}, joins={$s.st}) ;
+</I>&gt;<i>
+</I>&gt;<i> queryOp : &#160; ^(SELECT items=selectItem+) &#160; &#160; &#160; &#160;-&gt;
+</I>&gt;<i> selectClause(items={$items.st})
+</I>&gt;<i> &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160;| &#160; ^(FILTER expr) &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160; -&gt;
+</I>&gt;<i> whereClause(condition={$expr.st})
+</I>&gt;<i> &#160; &#160; &#160; &#160; &#160; &#160; &#160; &#160;| &#160; ^(ORDERBY items=orderByItem+) &#160; -&gt;
+</I>&gt;<i> orderByClause(items={$items.st}) ;
+</I>&gt;<i>
+</I>&gt;<i> &lt;--------snip---------&gt;
+</I>&gt;<i>
+</I>&gt;<i> But this requires that the nodes are already sorted in the right order.
+</I>&gt;<i>
+</I>&gt;<i> /S&#248;ren
+</I></PRE>
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="044152.html">[antlr-interest] AST - Ordering of sibling nodes
+</A></li>
+	<LI>Next message: <A HREF="044153.html">[antlr-interest] C# target: String Templates and translation bug?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#44162">[ date ]</a>
+              <a href="thread.html#44162">[ thread ]</a>
+              <a href="subject.html#44162">[ subject ]</a>
+              <a href="author.html#44162">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

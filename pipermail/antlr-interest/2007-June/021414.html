@@ -1,0 +1,170 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Bug using rule action?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Bug%20using%20rule%20action%3F&In-Reply-To=%3CD9F01011-2E89-4FFA-8132-70D5F0A2348A%40classdump.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="021357.html">
+   <LINK REL="Next"  HREF="021358.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Bug using rule action?</H1>
+    <B>Kay Roepke</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Bug%20using%20rule%20action%3F&In-Reply-To=%3CD9F01011-2E89-4FFA-8132-70D5F0A2348A%40classdump.org%3E"
+       TITLE="[antlr-interest] Bug using rule action?">kroepke at classdump.org
+       </A><BR>
+    <I>Sat Jun 16 06:34:44 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="021357.html">[antlr-interest] Bug using rule action?
+</A></li>
+        <LI>Next message: <A HREF="021358.html">[antlr-interest] Sydney ANTLR lecture, change of venue
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#21414">[ date ]</a>
+              <a href="thread.html#21414">[ thread ]</a>
+              <a href="subject.html#21414">[ subject ]</a>
+              <a href="author.html#21414">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Cameron!
+
+On Jun 14, 2007, at 1:19 AM, Cameron Esfahani wrote:
+
+&gt;<i> I'm trying to add an action to one of my rules and I'm seeing some  
+</I>&gt;<i> strange behavior:
+</I>&gt;<i>
+</I>&gt;<i> grammar Test;
+</I>&gt;<i> [...]
+</I>&gt;<i> number_size
+</I>&gt;<i> 	:	num = NUMBER size = size_qualifier {
+</I>&gt;<i> 			// Validate that NUMBER fits within the size qualifier.
+</I>&gt;<i> 			System.out.printf( &quot;!\%s, !\%s\n&quot;, $num.toString(), $size.getTree 
+</I>&gt;<i> ().toString() );
+</I>&gt;<i> 		} -&gt; size_qualifier NUMBER
+</I>&gt;<i> 	;
+</I>&gt;<i> If I try to run this through ANTLR, I get an error:
+</I>&gt;<i>
+</I>&gt;<i> error(116): Test.g:30:39: unknown attribute for rule  
+</I>&gt;<i> size_qualifier: getTree
+</I>&gt;<i>
+</I>&gt;<i> When I examine TestParser.java, I see that &quot;$size&quot; is still there.   
+</I>&gt;<i> If I change the action, to remove the $ character, then it works:
+</I>&gt;<i>
+</I>&gt;<i> 			System.out.printf( &quot;!\%s, !\%s\n&quot;, $num.toString(), size.getTree 
+</I>&gt;<i> ().toString() );
+</I>&gt;<i>
+</I>&gt;<i> Why do I have to do this?  How come $num correctly causes a local  
+</I>&gt;<i> variable named num to be created, but not $size?
+</I>
+Don't remove the $ char, as this defeats any checking ANTLR can do on  
+rule attributes. When doing that you rely on the internal naming
+scheme ANTLR uses for the generated code. In the Objective-C target,  
+for instance, this would break your code as I'm prefixing every local  
+variable
+with an _ character to avoid name clashes.
+
+The reason for the behavior you are seeing is that ANTLR checks  
+whether attributes on labels are valid. When it sees $size.getTree()  
+it thinks you want to access the getTree field of whatever  
+size_qualifier returns and discovers that size_qualifier doesn't  
+declare any attribute with that name. Consequently it flags it as an  
+error. It's a bit unfortuntate because it doesn't know about methods  
+in the size_return class, even though it has generated that method  
+itself.
+
+When you use $size.tree.toString() it will work because the tree  
+attribute is a &quot;predefined attribute&quot; of rules. The code generated  
+would look like:
+
+	// Validate that NUMBER fits within the size qualifier.
+	System.out.printf( &quot;!%s, !%s\n&quot;, num.toString(), ((CommonTree) 
+size.tree).toString() );
+
+The reason that $num.toString works is that $num refers to a Token  
+and not a rule. It is allowed to reference a token or token label in  
+a &quot;stand-alone&quot; manner, while this is not permitted for rule references.
+
+Note that you can do without any labels in your example:
+
+number_size
+	:	NUMBER size_qualifier {
+			// Validate that NUMBER fits within the size qualifier.
+			System.out.printf( &quot;!\%s, !\%s\n&quot;, $NUMBER.toString(),  
+$size_qualifier.tree.toString() );
+		} -&gt; size_qualifier NUMBER
+	;
+
+generates your action as:
+
+	// Validate that NUMBER fits within the size qualifier.
+	System.out.printf( &quot;!%s, !%s\n&quot;, NUMBER4.toString(), ((CommonTree) 
+size_qualifier5.tree).toString() );
+
+Labels are only necessary to disambiguate between multiple references  
+to the same rule or token. This also nicely illustrates that you  
+shouldn't rely on any naming scheme for rule returns because they  
+will highly depend on the input grammar.
+By using the predefined rule attributes we can ensure that we  
+generate better code and are more flexible with future changes.
+
+HTH,
+
+-k
+
+-- 
+Kay R&#246;pke
+<A HREF="http://classdump.org/">http://classdump.org/</A>
+
+
+
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="021357.html">[antlr-interest] Bug using rule action?
+</A></li>
+	<LI>Next message: <A HREF="021358.html">[antlr-interest] Sydney ANTLR lecture, change of venue
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#21414">[ date ]</a>
+              <a href="thread.html#21414">[ thread ]</a>
+              <a href="subject.html#21414">[ subject ]</a>
+              <a href="author.html#21414">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

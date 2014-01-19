@@ -1,0 +1,143 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [stringtemplate-interest] v4 renderers
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20v4%20renderers&In-Reply-To=%3CBDD7AE0B-8DD8-46ED-9193-EA47EAD51ABD%40abego-software.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="002860.html">
+   <LINK REL="Next"  HREF="002868.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[stringtemplate-interest] v4 renderers</H1>
+    <B>Udo Borkowski</B> 
+    <A HREF="mailto:stringtemplate-interest%40antlr.org?Subject=Re:%20%5Bstringtemplate-interest%5D%20v4%20renderers&In-Reply-To=%3CBDD7AE0B-8DD8-46ED-9193-EA47EAD51ABD%40abego-software.de%3E"
+       TITLE="[stringtemplate-interest] v4 renderers">ub at abego-software.de
+       </A><BR>
+    <I>Wed Dec 22 14:10:21 PST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="002860.html">[stringtemplate-interest] v4 renderers
+</A></li>
+        <LI>Next message: <A HREF="002868.html">[stringtemplate-interest] v4 renderers
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2863">[ date ]</a>
+              <a href="thread.html#2863">[ thread ]</a>
+              <a href="subject.html#2863">[ subject ]</a>
+              <a href="author.html#2863">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>&gt;<i> Look ok?  Same would work for registerModelAdaptor(type, adap), right?  Upon &lt;a.p&gt; and a.getClass() is instanceof or implements type, then I'd ask adap how to get p from 'a', right?  Later I can cache a.getClass -&gt; adap mapping.
+</I>
+Rather than caching a.getClass -&gt; adap I would ask adap for an object I could use for caching (and accessing a property value). This is because it may still be expensive for the adapter to calculate the property value, but easier if some &quot;calculation&quot; is already done (and only done once).
+
+E.g. imagine you want to implement the current property access behaviour (as defined by Interpreter#getObjectProperty(&#8230;)) by an adapter. This would require first checking for the &quot;Map&quot; case, then the &quot;ST&quot; case, then the &quot;getFoo()&quot; case, then the &quot;isFoo()&quot; case and finally the field &quot;foo&quot; case. Actually this only needs do be done once per class and property(name). 
+
+Therefore I defined one &quot;Access class&quot; for each of these cases and store the proper one with each class and property (name) pair. (Undefined properties map to a unique &quot;UNDEFINED&quot; accessor).
+
+E.g. for the &quot;ST&quot; case the code looks like this:
+
+	private final static PropertyAccessor PROPERTY_ACCESSOR_FOR_ST = new PropertyAccessor() {
+
+		@Override
+		public Object getProperty(Object o, Object property, ST template,
+				Interpreter interpreter) {
+			if (o instanceof ST) {
+				ST st = (ST) o;
+				return st.getAttribute((String) property);
+			} else {
+				ErrorManager.runTimeError(
+						template,
+						interpreter.current_ip,
+						ErrorType.INTERNAL_ERROR,
+						null,
+						String.format(&quot;Expected instance of ST, got %s&quot;,
+								o.getClass()));
+				return null;
+			}
+		}
+	};
+
+
+Udo
+
+
+On 22.12.2010, at 22:29, Terence Parr wrote:
+
+&gt;<i> ok, v4 works for renderers now with instanceof functionality:
+</I>&gt;<i> 
+</I>&gt;<i> 	@Test public void testInstanceofRenderer() throws Exception {
+</I>&gt;<i> 		String templates =
+</I>&gt;<i> 				&quot;numberThing(x,y,z) ::= \&quot;numbers: &lt;x&gt;, &lt;y&gt;; &lt;z&gt;\&quot;\n&quot;;
+</I>&gt;<i> 		writeFile(tmpdir, &quot;t.stg&quot;, templates);
+</I>&gt;<i> 		STGroup group = new STGroupFile(tmpdir+&quot;/t.stg&quot;);
+</I>&gt;<i> 		group.registerRenderer(Number.class, new NumberRenderer());
+</I>&gt;<i> 		ST st = group.getInstanceOf(&quot;numberThing&quot;);
+</I>&gt;<i> 		st.add(&quot;x&quot;, -2100);
+</I>&gt;<i> 		st.add(&quot;y&quot;, 3.14159);
+</I>&gt;<i> 		st.add(&quot;z&quot;, &quot;hi&quot;); 
+</I>&gt;<i> 		String expecting = &quot;numbers: -2100, 3.14159; hi&quot;;
+</I>&gt;<i> 		String result = st.render();
+</I>&gt;<i> 		assertEquals(expecting, result);
+</I>&gt;<i> 	}
+</I>&gt;<i> 
+</I>&gt;<i> Note that Integer and Double are subclasses of Number.
+</I>&gt;<i> 
+</I>&gt;<i> Look up for each attribute ref is hyperslow at the moment (checks attributeType against all renderers):
+</I>&gt;<i> 
+</I>&gt;<i> 	public AttributeRenderer getAttributeRenderer(Class attributeType) {
+</I>&gt;<i> 		if ( renderers==null ) return null;
+</I>&gt;<i> 		// TODO: cache this lookup
+</I>&gt;<i> 		for (Class t : renderers.keySet()) {
+</I>&gt;<i> 			// t works for attributeType if attributeType subclasses t or implements
+</I>&gt;<i> 			if ( t.isAssignableFrom(attributeType) ) return renderers.get(t);
+</I>&gt;<i> 		}
+</I>&gt;<i> 		return null;
+</I>&gt;<i> 	}
+</I>&gt;<i> 
+</I>&gt;<i> Look ok?  Same would work for registerModelAdaptor(type, adap), right?  Upon &lt;a.p&gt; and a.getClass() is instanceof or implements type, then I'd ask adap how to get p from 'a', right?  Later I can cache a.getClass -&gt; adap mapping.
+</I>&gt;<i> 
+</I>&gt;<i> Latest is here, updated hourly: (the ant build should work)
+</I>&gt;<i> 
+</I>&gt;<i> <A HREF="http://www.stringtemplate.org/depot/ST4/java/main">http://www.stringtemplate.org/depot/ST4/java/main</A>
+</I>&gt;<i> 
+</I>&gt;<i> Ter
+</I>&gt;<i> _______________________________________________
+</I>&gt;<i> stringtemplate-interest mailing list
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">stringtemplate-interest at antlr.org</A>
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">http://www.antlr.org/mailman/listinfo/stringtemplate-interest</A>
+</I>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/stringtemplate-interest/attachments/20101222/ef28bb79/attachment.html">http://www.antlr.org/pipermail/stringtemplate-interest/attachments/20101222/ef28bb79/attachment.html</A> 
+</PRE>
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="002860.html">[stringtemplate-interest] v4 renderers
+</A></li>
+	<LI>Next message: <A HREF="002868.html">[stringtemplate-interest] v4 renderers
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#2863">[ date ]</a>
+              <a href="thread.html#2863">[ thread ]</a>
+              <a href="subject.html#2863">[ subject ]</a>
+              <a href="author.html#2863">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/stringtemplate-interest">More information about the stringtemplate-interest
+mailing list</a><br>
+</body></html>

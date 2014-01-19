@@ -1,0 +1,184 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] please help on lexer rules antlr v3
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20please%20help%20on%20lexer%20rules%20antlr%20v3&In-Reply-To=E1GSxes-0003ab-00%40gecko">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="017740.html">
+   <LINK REL="Next"  HREF="017748.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] please help on lexer rules antlr v3</H1>
+    <B>Michiel Vermandel</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20please%20help%20on%20lexer%20rules%20antlr%20v3&In-Reply-To=E1GSxes-0003ab-00%40gecko"
+       TITLE="[antlr-interest] please help on lexer rules antlr v3">Michiel_Vermandel at axi.be
+       </A><BR>
+    <I>Fri Sep 29 00:34:02 PDT 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="017740.html">[antlr-interest] please help on lexer rules antlr v3
+</A></li>
+        <LI>Next message: <A HREF="017748.html">[antlr-interest] please help on lexer rules antlr v3
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#17741">[ date ]</a>
+              <a href="thread.html#17741">[ thread ]</a>
+              <a href="subject.html#17741">[ subject ]</a>
+              <a href="author.html#17741">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi John,
+
+Thanks for your remarks.
+I made the changes you suggested, though, still the &quot;-- axi.reject&quot; string 
+is consumed as an SL_COMMENT...
+For the moment I kept the name SL_COMMENT just to make it easier to track 
+the changed.
+Can you please tell why this modified grammar acts in just the same way as 
+the previous?
+
+Thanks!
+
+------------------------------modified grammar----------------------------
+grammar TestParser;
+options {k=2; backtrack=true; memoize=true;}
+
+statement: (directive )+ EOF;
+
+directive: SL_COMMENT;
+
+
+LF      :       '\n' { channel=99; };
+
+CRLF    :       '\r' ('\n')? { channel=99; };
+
+TAB     :       '\t' { channel=99; };
+
+SPACE   :       ' ' { channel=99; };
+
+fragment
+ANYTHING_2_EOL: (~('\n'|'\r' ))* ('\n'|'\r'('\n')?);
+
+//fragment
+//DIRECTIVE: ('axi.locate' | 'axi.reject');
+
+// Single-line comment
+SL_COMMENT:  '--' ( 'axi.locate' | 'axi.reject' | ( ANYTHING_2_EOL { 
+channel=99; }) );
+
+WS      :       ( TAB | SPACE | CRLF | LF )+ { channel=99; };
+
+
+
+
+
+
+
+Pardon me for butting in...
+
+Your grammar is incorrect but also exposes a bug in ANTLR (IMHO). See 
+below.
+
+&gt;<i>...snipped...
+</I>&gt;<i>My test string is:
+</I>&gt;<i>
+</I>&gt;<i>-- axi.reject
+</I>&gt;<i>
+</I>&gt;<i>followed by a single CRLF
+</I>&gt;<i>
+</I>&gt;<i>Any idea why the   -- axi.reject  is still consumed as  a comment (on 
+</I>&gt;<i>channel 99) ?
+</I>
+this in not what i see...
+
+&gt;<i>...snipped...
+</I>&gt;<i>---------------------------- grammar --------------------------
+</I>&gt;<i>
+</I>&gt;<i>grammar TestParser;
+</I>&gt;<i>options {k=2; backtrack=true; memoize=true;}
+</I>&gt;<i>
+</I>&gt;<i>statement: (directive )+ EOF;
+</I>&gt;<i>
+</I>&gt;<i>directive: DIRECTIVE;
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>LF      :       '\n' { channel=99; };
+</I>&gt;<i>
+</I>&gt;<i>CRLF    :       '\r' ('\n')? { channel=99; };
+</I>&gt;<i>
+</I>&gt;<i>TAB     :       '\t' { channel=99; };
+</I>&gt;<i>
+</I>&gt;<i>SPACE   :       ' ' { channel=99; };
+</I>&gt;<i>
+</I>&gt;<i>fragment
+</I>&gt;<i>ANYTHING_2_EOL: (~('\n'|'\r' ))* ('\n'|'\r'('\n')?);
+</I>&gt;<i>
+</I>&gt;<i>fragment
+</I>&gt;<i>DIRECTIVE: (SPACE | TAB )* ('axi.locate' | 'axi.reject');
+</I>&gt;<i>
+</I>&gt;<i>// Single-line comment
+</I>&gt;<i>SL_COMMENT:  '--' ( DIRECTIVE | ( ANYTHING_2_EOL { channel=99;} ) );
+</I>&gt;<i>
+</I>&gt;<i>WS      :       ( TAB | SPACE | CRLF | LF )+ { channel=99; };
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>---------------------------------------------------------------------------
+</I>
+actually, when i run your grammar, i get a parsing error indicating no 
+match
+was found for this text: -- axi.reject
+
+in your directive rule you use the token DIRECTIVE. yet the lexer rule
+DIRECTIVE is marked as a fragment (e.g. not visible to the parser).
+
+Therefore the directive parsing rule will be never matched (because a
+DIRECTIVE is never emitted by the lexer, you have told antlr that it is a
+fragment of some other token).
+
+change the directive rule to be:
+
+directive: SL_COMMENT; /*and pick better name*/
+
+and things work much better... ;-)
+
+
+
+Question for Dr. Parr - shouldn't Antlr disallow parser references to 
+lexer
+fragments?
+
+
+
+Hope this helps...
+   -jbb
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20060929/9dca8d3a/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20060929/9dca8d3a/attachment.html</A> 
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="017740.html">[antlr-interest] please help on lexer rules antlr v3
+</A></li>
+	<LI>Next message: <A HREF="017748.html">[antlr-interest] please help on lexer rules antlr v3
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#17741">[ date ]</a>
+              <a href="thread.html#17741">[ thread ]</a>
+              <a href="subject.html#17741">[ subject ]</a>
+              <a href="author.html#17741">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

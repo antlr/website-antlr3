@@ -1,0 +1,183 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] request for comments on language implementation
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20request%20for%20comments%20on%20language%20implementation&In-Reply-To=%3C49A669E8.2050603%40smartshift.de%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="033092.html">
+   <LINK REL="Next"  HREF="033095.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] request for comments on language implementation</H1>
+    <B>Andreas Meyer</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20request%20for%20comments%20on%20language%20implementation&In-Reply-To=%3C49A669E8.2050603%40smartshift.de%3E"
+       TITLE="[antlr-interest] request for comments on language implementation">andreas.meyer at smartshift.de
+       </A><BR>
+    <I>Thu Feb 26 02:07:36 PST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="033092.html">[antlr-interest] request for comments on language implementation
+</A></li>
+        <LI>Next message: <A HREF="033095.html">[antlr-interest] request for comments on language implementation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#33094">[ date ]</a>
+              <a href="thread.html#33094">[ thread ]</a>
+              <a href="subject.html#33094">[ subject ]</a>
+              <a href="author.html#33094">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Andy Tripp schrieb:
+&gt;<i> Hi Andreas,
+</I>&gt;<i>
+</I>&gt;<i> Andreas Meyer wrote:
+</I>&gt;&gt;<i> Hi!
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Your mail was addressed to Michael, but I hope it's ok to answer 
+</I>&gt;&gt;<i> nonetheless:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I would consider hand-written code to walk an AST harmful. Maybe 
+</I>&gt;&gt;<i> there are cases where it is useful, but walking a dynamically typed 
+</I>&gt;&gt;<i> tree like this looks like a maintenance nightmare to me. 
+</I>&gt;<i>
+</I>&gt;<i> I've found it much easier to do &quot;hand-written&quot; AST transformations.
+</I>&gt;<i> For example, to find cases like &quot;x+0&quot; and replace with just &quot;x&quot;, you'd
+</I>&gt;<i> have something like:
+</I>&gt;<i>
+</I>&gt;<i> List&lt;AST&gt; pluses = root.findAncestorsOfType(MyTokenTypes.PLUS);
+</I>&gt;<i> for (AST ast: plusses) {
+</I>&gt;<i>        if (ast.getChildCount() == 2         &amp;&amp; 
+</I>&gt;<i> ast.getSecondChild().getType() == MyTokenTypes.INTEGER
+</I>&gt;<i>            &amp;&amp; ast.getSecondChild().getText().equals(&quot;0&quot;)) {
+</I>&gt;<i>         ast.replaceMyself(ast.getFirstChild());  // replace &quot;x+0&quot; with 
+</I>&gt;<i> just &quot;x&quot;
+</I>&gt;<i>     }
+</I>&gt;<i> }
+</I>
+Well, written out as a &quot;concrete syntax pattern&quot;, this looks somewhat 
+like &quot;pattern(x) = x + 0 ==&gt; x&quot;. There exist lots of tools that do this, 
+MatchO maybe can be extended to do it with similar syntax, although some 
+feature may be missing from a fully fledged term rewriting engine (order 
+of rule application, traversal etc).  (I must admit I have not used any 
+of these as of now, so I'm only repeating what I saw elsewhere. I still 
+have to figure out what is feasible to implement).
+
+
+&gt;<i>
+</I>&gt;<i> It's maintainable because later, when you want to also replace &quot;x*1&quot; 
+</I>&gt;<i> with just &quot;x&quot;, and a few
+</I>&gt;<i> other similar patterns, you can make this into a generic function:
+</I>&gt;<i>
+</I>&gt;<i> void replaceIdentity(MyTokenType type, String value, AST root) {
+</I>&gt;<i>     List&lt;AST&gt; asts = root.findAncestorsOfType(type);
+</I>&gt;<i>     for (AST ast: plusses) {
+</I>&gt;<i>            if (ast.getChildCount() == 2             &amp;&amp; 
+</I>&gt;<i> ast.getSecondChild().getType() == MyTokenTypes.INTEGER
+</I>&gt;<i>                &amp;&amp; ast.getSecondChild().getText().equals(&quot;0&quot;)) {
+</I>&gt;<i>             ast.replaceMyself(ast.getFirstChild());  // replace &quot;x OP 
+</I>&gt;<i> VALUE&quot; with just &quot;x&quot;
+</I>&gt;<i>         }
+</I>&gt;<i>     }
+</I>&gt;<i> }
+</I>&gt;<i>
+</I>&gt;<i> And now, you just have:
+</I>&gt;<i> replaceIdentity(MyTokenType.PLUS, &quot;0&quot;, root); // replace &quot;x+0&quot; with &quot;x&quot;
+</I>&gt;<i> replaceIdentity(MyTokenType.MINUS, &quot;0&quot;, root);// replace &quot;x-0&quot; with &quot;x&quot;
+</I>&gt;<i> replaceIdentity(MyTokenType.MULTIPLY, &quot;1&quot;, root);// replace &quot;x*1&quot; with 
+</I>&gt;<i> &quot;x&quot;
+</I>&gt;<i> replaceIdentity(MyTokenType.DIVIDE, &quot;1&quot;, root);// replace &quot;x/1&quot; with &quot;x&quot;
+</I>
+Once you have such a generic function, indeed it looks interesting. If 
+your application is built on top of a few of those, maybe this would 
+also appeal to me. For our purposes, we need to recognize lots of 
+patterns, that's why I prefer pattern matching :-)
+&gt;<i>
+</I>&gt;<i> I don't see how an ANTLR treewalker lets you make things modular (and 
+</I>&gt;<i> thus maintainable)
+</I>&gt;<i> like this.
+</I>
+Me too. As said above, for transformations I would prefer patterns and a 
+pattern-matching-engine.
+&gt;<i>
+</I>&gt;<i>
+</I>&gt;&gt;<i> Also, you make yourself highly dependent on the underlying 
+</I>&gt;&gt;<i> tree-model, which changed a lot from antlr2 to antlr3.
+</I>&gt;<i>
+</I>&gt;<i> Assuming by &quot;tree-model&quot;, you mean the shape of the AST you're 
+</I>&gt;<i> creating, no,
+</I>&gt;<i> that wouldn't (or shouldn't) change with the version of ANTLR that you're
+</I>&gt;<i> using. You build the AST to be the shape that you want, regardless of 
+</I>&gt;<i> ANTLR version.
+</I>
+Have you used antlr3? In our application, the migration to antlr3 is a 
+major effort. For example, an antlr2 AST node can be a singular node,or 
+a node with a sibling, which has another sibling. So, it can be either a 
+node or a list of nodes. If your code depends on this, you end up 
+replacing many type definitions with List&lt;AST&gt;. Or you add the nodes you 
+actually want to return to a dummy parent, return the first child of 
+that parent, and let the caller find out if the returned node has a 
+parent and if so, regard all its childs as the rest of the list. If you 
+did not write your program in such a fashion, maybe the translation to 
+antlr3 gets easier then. But still, there is a function called 
+&quot;setNextSibling&quot; in antlr2. How do you emulate that in antlr3? You have 
+to distinguish lots of special cases to find out if it means: addChild, 
+deleteChild, deleteRangeOfChildren .. whatever.
+&gt;<i>
+</I>&gt;<i> I think &quot;hand-written&quot; code to walk an AST is less
+</I>&gt;<i> dependent on AST structure than an ANTLR treewalker is.
+</I>&gt;<i> For example, suppose I want to find all the ancestor nodes of type
+</I>&gt;<i> &quot;INT&quot;. The &quot;hand-written&quot; code is something like:
+</I>&gt;<i>
+</I>&gt;<i> List&lt;AST&gt; nodes = someNode.findAncestorsOfType(MyLanguageTokenTypes.INT);
+</I>&gt;<i>
+</I>&gt;<i> ...while the ANTLR treewalker that does the same thing consists of the
+</I>&gt;<i> *entire* tree shape, with extra code added. The ANTLR treewalker forces
+</I>&gt;<i> you to specify much more info than you actually care about.
+</I>
+You could have only a basic tree walker and inherit from that, 
+overriding only the places you want. So, if you have a lot more easy 
+tree walkers, the single tree-walker copy of the antlr grammar is still 
+a burden, but it only exists once.
+&gt;<i> If by &quot;tree-model&quot; you mean the ANTLR syntax and semantics, then 
+</I>&gt;<i> obviously
+</I>&gt;<i> the &quot;hand-written&quot; treewalker is not dependent on it at all, while the
+</I>&gt;<i> ANLTR treewalker is completely dependent on it.
+</I>
+Well, there might be lots of syntactic changes, but I consider these a 
+lot easier to deal with than a structural change of the internal tree 
+representation, as was the case between antlr2-&gt;antlr3. And if you dont 
+like treewalker's at all, then maybe generic visitors/combinators could 
+be of interest to you (see JJtraveller). Maybe it's possible to also 
+write such a tool for antlr, so that, in effect, you get a 
+base-tree-walker (without any actions) for free.
+
+So, although my mail contains lots of speculation, I hope it provides 
+some ideas that seem useful to you :-)
+Andreas
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="033092.html">[antlr-interest] request for comments on language implementation
+</A></li>
+	<LI>Next message: <A HREF="033095.html">[antlr-interest] request for comments on language implementation
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#33094">[ date ]</a>
+              <a href="thread.html#33094">[ thread ]</a>
+              <a href="subject.html#33094">[ subject ]</a>
+              <a href="author.html#33094">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

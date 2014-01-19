@@ -1,0 +1,215 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Embedding expressions in plain text -- how to?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Embedding%20expressions%20in%20plain%20text%20--%20how%20to%3F&In-Reply-To=%3C738584f80711101159l3c22a844g3e15a6d02b05ad96%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="024629.html">
+   <LINK REL="Next"  HREF="024631.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Embedding expressions in plain text -- how to?</H1>
+    <B>Rob Greene</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Embedding%20expressions%20in%20plain%20text%20--%20how%20to%3F&In-Reply-To=%3C738584f80711101159l3c22a844g3e15a6d02b05ad96%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Embedding expressions in plain text -- how to?">robgreene at gmail.com
+       </A><BR>
+    <I>Sat Nov 10 11:59:25 PST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="024629.html">[antlr-interest] case sensitivity for ANTLR v3 lexers
+</A></li>
+        <LI>Next message: <A HREF="024631.html">[antlr-interest] Embedding expressions in plain text -- how to?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24630">[ date ]</a>
+              <a href="thread.html#24630">[ thread ]</a>
+              <a href="subject.html#24630">[ subject ]</a>
+              <a href="author.html#24630">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>How should I go about embedding an expression language in plain text.  The
+expression is wrapped in '${' and '}' but may occur zero to many times
+within plain text.  When in plain text, I want to keep the whitespace, but
+within the expression, it should be ignored.
+
+I've currently placed a boolean into a ThreadLocal and check that before
+calling skip() in my whitespace rule.  But, that causes issues with the
+actual expressions.
+
+For instance, &quot;${true}&quot; returns Boolean.TRUE while &quot;${ true }&quot; returns a
+null.  If I take out the test in WS, I can have those spaces within an
+expression, but the plain text loses all white space.
+
+I'm certain this is a simple fix, but I haven't a clue what to do!
+
+I'm using ANTLR 3.0.1.
+
+Thanks!
+-Rob
+
+/**
+ * Language is the simple expression language used throughout the XML
+Template Engine.
+ * General language constructs:
+ * - functionName(argument, argument, ...)
+ * - object.method.method
+ * - 'string constant'
+ * - &quot;string constant&quot;
+ * - 1234.56
+ * - true
+ * - false
+ * - null
+ * - [ array, values, ... ]
+ */
+grammar Language;
+
+/**
+ * Use the embeddedExpression entry for expressions that are embedded within
+other
+ * forms of text.
+ * &lt;p&gt;
+ * Note that unknown magic occurs because the plainText is somehow
+ * glommed together into one string instead of character
+ * by character.
+ */
+embeddedExpression returns [List&lt;Object&gt; list]
+@init { list = new ArrayList&lt;Object&gt;(); }
+    :    (    '${' expression '}'    { list.add($expression.value); }
+        |    plainText            { list.add($plainText.value); }
+        )*
+    ;
+
+/**
+ * Handle plain text that wraps around the expression.
+ */
+plainText returns [String value]
+@init { ThreadState.current().ignoreWhitespace = false; }
+@after { ThreadState.current().ignoreWhitespace = true; }
+    :    '\\' '$'                { $value = &quot;$&quot;; }
+    |    '\\' b=~('$')            { $value = $b.text; }
+    |    a=~('$')                { $value = $a.text; }
+    ;
+
+/**
+ * This is the bare expression evaluation.  Evaluates one expression and
+returns
+ * an Object.
+ */
+expression returns [Object value]
+    :    function            { $value = $function.value; }
+    |    constant            { $value = $constant.value; }
+    |    reference            { $value = $reference.value; }
+    ;
+
+/**
+ * Evaluate a function invocation, along with parameters and return the
+Object result.
+ */
+function returns [Object value]
+    :    ID '(' arguments ')'        { $value =
+Helper.invoke($ID.text,$arguments.value);
+}
+    ;
+catch [LanguageException le] {
+    emitErrorMessage(le.getMessage());
+    throw new RuntimeException(le);
+}
+
+/**
+ * Evaluate a constant value and return that value.
+ */
+constant returns [Object value]
+    :    STRING                { $value =
+$STRING.text.substring(1,$STRING.text.length()-1); }
+    |    NUMBER                { $value = Double.valueOf($NUMBER.text); }
+    |    'true'                { $value = Boolean.TRUE; }
+    |    'false'                { $value = Boolean.FALSE; }
+    |    'null'                { $value = null; }
+    |    '[' arguments ']'        { $value = $arguments.value; }
+    ;
+
+/**
+ * Evaluate an object reference and any nested evaluations and return that
+value.
+ */
+reference returns [Object value]
+    :    a=ID                { $value = Helper.find($a.text); }
+        ('.' b=ID            { $value = Helper.reflect($value,$b.text); }
+         )*
+    ;
+catch [LanguageException le] {
+    emitErrorMessage(le.getMessage());
+    throw new RuntimeException(le);
+}
+
+/**
+ * A comma-separated argument list.  Use for the function invocation and
+array list.
+ */
+arguments returns [List&lt;Object&gt; value]
+@init { value = new ArrayList&lt;Object&gt;(); }
+    :    (a=expression            { $value.add($a.value); }
+        (',' b=expression        { $value.add($b.value); }
+         )* )?
+    ;
+
+ID    :    Char (Char|Digit)*
+    ;
+STRING    :    '&quot;' ~('&quot;')* '&quot;'
+    |    '\'' ~('\'')* '\''
+    ;
+NUMBER    :    ('-'|'+')? Digit+ ('.' Digit+)?
+    ;
+WS
+    :    (' '|'\t'|'\r'|'\n')+    { if
+(!ThreadState.current().ignoreWhitespace) skip(); }
+    ;
+
+fragment Char
+    :    'a'..'z' | 'A'..'Z' | '_'
+    ;
+fragment Digit
+    :    '0'..'9'
+    ;
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20071110/3fecfd0b/attachment-0001.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20071110/3fecfd0b/attachment-0001.html</A> 
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="024629.html">[antlr-interest] case sensitivity for ANTLR v3 lexers
+</A></li>
+	<LI>Next message: <A HREF="024631.html">[antlr-interest] Embedding expressions in plain text -- how to?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#24630">[ date ]</a>
+              <a href="thread.html#24630">[ thread ]</a>
+              <a href="subject.html#24630">[ subject ]</a>
+              <a href="author.html#24630">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

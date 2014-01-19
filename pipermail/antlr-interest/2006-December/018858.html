@@ -1,0 +1,181 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] V3 grammar writing tactics
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20V3%20grammar%20writing%20tactics&In-Reply-To=4582D213.4070103%40moncons.co.uk">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="018857.html">
+   <LINK REL="Next"  HREF="018880.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] V3 grammar writing tactics</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20V3%20grammar%20writing%20tactics&In-Reply-To=4582D213.4070103%40moncons.co.uk"
+       TITLE="[antlr-interest] V3 grammar writing tactics">jimi at intersystems.com
+       </A><BR>
+    <I>Fri Dec 15 12:30:04 PST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="018857.html">[antlr-interest] V3 grammar writing tactics
+</A></li>
+        <LI>Next message: <A HREF="018880.html">[antlr-interest] V3 grammar writing tactics
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#18858">[ date ]</a>
+              <a href="thread.html#18858">[ thread ]</a>
+              <a href="subject.html#18858">[ subject ]</a>
+              <a href="author.html#18858">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Andrew,
+
+A couple of points for you.
+
+Rather than try to use lexer tokens for case insensitivity, try the code
+below this text. This will use upper case only to recognize tokens, but
+will preserve case in the input stream and is probably what most people
+want to do.
+
+Perhaps recent grammar analysis changes have bitten you on this one, I
+know some bugs have been fixed and some others tweaked since the release
+you are using, but not exactly sure what.
+
+Assuming that the analysis will eventually finish and not just loop
+forever (ANTLRWorks does this on certain strange inputs right now), then
+use the command line option: -Xmx1000M  on your java invocation
+(assuming Windows, you may need to consult the java command line for you
+actual system etc).
+
+Jim
+
+
+Use the following where you would normally use an ANTLRFileStream, to
+create a case insensitive lexer which preserves case in the input
+stream:
+
+import org.antlr.runtime.*;
+import java.io.*;
+
+/**
+ *
+ * @author jimi
+ */
+public class ANTLRNoCaseFileStream  extends ANTLRFileStream
+{
+	public ANTLRNoCaseFileStream(String fileName) throws IOException
+{
+		super(fileName, null);
+	}
+
+	public ANTLRNoCaseFileStream(String fileName, String encoding)
+throws IOException {
+		super(fileName, encoding);
+	}
+	    
+	public int LA(int i) {
+		if ( i==0 ) {
+			return 0; // undefined
+		}
+		if ( i&lt;0 ) {
+			i++; // e.g., translate LA(-1) to use offset 0 
+		}
+
+		if ( (p+i-1) &gt;= n ) {
+            //System.out.println(&quot;char LA(&quot;+i+&quot;)=EOF; p=&quot;+p);
+            return CharStream.EOF;
+        }
+        //System.out.println(&quot;char LA(&quot;+i+&quot;)=&quot;+data.charAt(p+i-1)+&quot;;
+p=&quot;+p);
+        return Character.toUpperCase(data[p+i-1]);
+    }
+
+-----Original Message-----
+From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>
+[mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Andrew Smith
+Sent: Friday, December 15, 2006 8:49 AM
+To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+Subject: [antlr-interest] V3 grammar writing tactics
+
+Hi all,
+
+Can I pick the collective brains of the group's experts with a rather
+general question about approaches to writing grammars?
+
+Background
+I am writing a grammar to produce ASTs for a Pascal variant of similar
+complexity to Java, except that case insensitivity is required. I have
+worked up from lexer tokens via expression rules to rules accepting
+blocks of statements and am approaching completion with rules which will
+enable programme source files to be analysed. The grammars have no
+parser/lexer errors as the lower stages give no warnings about
+ambiguity, recursion etc. However ANTLR V3.0b5 runs slower than 3.0b4 or
+earlier, taking minutes rather than seconds for my grammars, and uses
+large amounts of Heap memory (I have seen about 500MB in a profiler). I
+have now reached an impasse because the more developed grammars cannot
+be analysed because of runtime Heap overflow, even on command line runs.
+I think that this is because the upper level grammars greatly increase
+the complexity of the resultant AST by linking disparate branches
+together. The running time is not very important to me, but Heap errors
+that terminate analysis are show stoppers.
+
+Tactics
+My tactic for this task was to keep the individual rules as simple as
+possible to aid understanding their operation. As a result there are a
+large number of rules, I estimate that slightly more than 300 will be
+needed in the full, tree constructing, grammar. A large number of these
+rules, 148, are lexer tokens introduced to overcome V3 case sensitivity.
+To stop ambiguity I allow a full k* analysis to occur.
+
+Observations
+The step that induced the final Heap overflow increased the rules from
+272 to 274 to take the scope from &quot;Block&quot; to &quot;Programme Block&quot;.
+Terence analyses Java 1.5 files in 148 rules, virtually none of which
+are tokens. (Note- the V3 J1.5 java.g only produces a flat linked AST.
+&gt;<i>From this stage my grammars needed about 20 new rules to give the tree
+</I>topology which I require.) The java grammar is also analysed very
+quickly on 3.0b5 and probably also uses minimal Heap.
+Inspection shows that Ter's tactic was to write fewer, more complex
+rules as distinct from my own more but simpler approach. He has also the
+restriction, k=2, and accepts that two warnings are permissible.
+
+Questions
+1) Is it possible to generalise that one of these approaches to rule
+writing is likely to produce grammars which are less memory heavy and
+run faster? (That is - fewer, more complex rules vs. more, simpler
+ones.)
+2) If so, is the second approach inevitably the &quot;bad&quot; one?
+3) If not, should the aim be to keep k as low as possible whilst
+eliminating all ambiguities?
+4) If not, should the aim be to keep k as low as possible at the expense
+ of accepting limited ambiguities?
+
+Apologies for the length, but thanks anyway,
+Andrew Smith
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="018857.html">[antlr-interest] V3 grammar writing tactics
+</A></li>
+	<LI>Next message: <A HREF="018880.html">[antlr-interest] V3 grammar writing tactics
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#18858">[ date ]</a>
+              <a href="thread.html#18858">[ thread ]</a>
+              <a href="subject.html#18858">[ subject ]</a>
+              <a href="author.html#18858">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

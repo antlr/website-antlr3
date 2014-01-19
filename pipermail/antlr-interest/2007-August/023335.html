@@ -1,0 +1,234 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Stuck
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Stuck&In-Reply-To=%3C1187630776.13163.5.camel%40teak%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="023339.html">
+   <LINK REL="Next"  HREF="023337.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Stuck</H1>
+    <B>Ryan Daum</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Stuck&In-Reply-To=%3C1187630776.13163.5.camel%40teak%3E"
+       TITLE="[antlr-interest] Stuck">ryan at darksleep.com
+       </A><BR>
+    <I>Mon Aug 20 10:26:16 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="023339.html">[antlr-interest] libantlr3c version
+</A></li>
+        <LI>Next message: <A HREF="023337.html">[antlr-interest] Stuck
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#23335">[ date ]</a>
+              <a href="thread.html#23335">[ thread ]</a>
+              <a href="subject.html#23335">[ subject ]</a>
+              <a href="author.html#23335">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi all,
+
+I'm writing a fairly simple grammar for the following protocol:
+
+<A HREF="http://www.belfry.com/fuzzball/trebuchet/mcp.html">http://www.belfry.com/fuzzball/trebuchet/mcp.html</A>
+
+However, I'm stuck on a problem at the lexer level that I can't seem to
+solve.  I believe it's my final issue before I have a working parser.
+
+Basically, I have a number of rules which can match a combination of
+characters:
+
+        fragment
+        LINE 	:	(LINE_CHAR)* EOF;
+        IDENT 	:	ALPHA (ALPHA|DIGIT|'-' ~(SPACE | COLON |
+        OTHER_CHAR))* ;
+        
+        
+        UNQUOTED_STRING 
+        	:	SIMPLE_CHAR+;
+        
+        QUOTED_STRING 
+        	:	'&quot;' (SIMPLE_CHAR | SPACE | '\\' QUOTE_CHAR | COLON | STAR)*
+        '&quot;';
+        
+This is all fine, individually they work well.  However, in the rule: 
+
+        messageContinue
+          	:	STAR SPACE datatag SPACE IDENT COLON SPACE LINE 
+          		-&gt; ^(MESSAGE_CONTINUE datatag LINE);
+
+Working against the following line:
+
+        * 9b76 text: This is some sample text.
+
+I always get a MismatchedTokenException because the parser seems to want
+to turn everything after SPACE into an IDENT, rather than a line.  The
+intention of &quot;LINE&quot; is just to collect all input after the SPACE in a
+messageContinue; I do not want the rest of the lexer's rules to apply at
+all.  
+
+I'm not that adapt with this stuff, but I haven't had many problems
+until now.  Can anybody help me with this?  Is this a token precedence
+problem?  Is this even possible with Antlr v3?  I've attached the entire
+grammar, which works inside AntlrWorks.  The test failure can be
+replicated with the example line above.
+
+Ryan
+
+-------------- next part --------------
+grammar Mcp;
+
+options {
+output=AST;
+backtrack=true;
+memoize=true;
+backtrack=true;
+filter=true;
+}
+
+tokens {
+MESSAGE_START;
+MESSAGE_CONTINUE;
+MESSAGE_END;
+KEY_VALUES;
+KEY;
+CONTINUE_KEY;
+}
+
+@header {
+package com.thimbleware.cometMoo;
+}
+
+@lexer::header {
+package com.thimbleware.cometMoo;
+}
+
+
+// Tree grammar
+
+// Grammar
+
+message        :	(messageStart  | messageContinue | messageEnd) ;
+messageStart
+	:	IDENT SPACE authKey keyVals? EOF -&gt; ^(MESSAGE_START authKey keyVals?)
+;
+
+messageContinue
+  	:	STAR SPACE datatag SPACE IDENT COLON SPACE LINE 
+  		-&gt; ^(MESSAGE_CONTINUE datatag LINE);
+
+	
+messageEnd	:	COLON SPACE datatag EOF;
+
+
+authKey	:	UNQUOTED_STRING;
+datatag	:	UNQUOTED_STRING;
+keyVals	:	(SPACE keyval)+ -&gt; ^(KEY_VALUES keyval+);
+keyval	:	key !(COLON) !(SPACE) value ;
+
+value	:	(UNQUOTED_STRING | QUOTED_STRING | IDENT)
+	;
+
+
+key	:	regularKey | continueKey;
+
+regularKey
+	:	IDENT -&gt; ^(KEY IDENT);
+continueKey
+	:	IDENT STAR -&gt; ^(CONTINUE_KEY IDENT);
+	
+
+
+// Lexer
+
+fragment
+LINE 	:	(LINE_CHAR)* EOF;
+IDENT 	:	ALPHA (ALPHA|DIGIT|'-' ~(SPACE | COLON | OTHER_CHAR))* ;
+
+
+
+UNQUOTED_STRING 
+	:	SIMPLE_CHAR+;
+	
+QUOTED_STRING 
+	:	'&quot;' (SIMPLE_CHAR | SPACE | '\\' QUOTE_CHAR | COLON | STAR)* '&quot;';
+
+
+SPACE 	:	' ';
+
+fragment
+QUOTE_CHAR
+	:	('&quot;' | '\\');
+
+fragment
+SIMPLE_CHAR
+	:	ALPHA | DIGIT | OTHER_CHAR;
+
+fragment
+OTHER_CHAR
+	:	'-' | '~' | '`' | '!' | '@' |  '$' | '%' | '^'
+        | '&amp;' | '(' | ')' | '=' | '+' | '{' | '}' | '[' | ']' | '|' 
+        | '\'' | ';' | '?' | '/' | '&gt;' | '&lt;' | '.' | ',' | '#'
+	;
+
+fragment
+LINE_CHAR
+	:	SIMPLE_CHAR | QUOTE_CHAR | SPACE | COLON | STAR;
+	
+STAR	:	'*';
+
+fragment
+ALPHA
+	:	('A'..'Z'
+	|	'a'..'z'
+	|	'_')
+	;
+	
+
+
+
+DIGIT	:	'0'..'9'
+		;
+		
+
+COLON
+	:	':'
+	;
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="023339.html">[antlr-interest] libantlr3c version
+</A></li>
+	<LI>Next message: <A HREF="023337.html">[antlr-interest] Stuck
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#23335">[ date ]</a>
+              <a href="thread.html#23335">[ thread ]</a>
+              <a href="subject.html#23335">[ subject ]</a>
+              <a href="author.html#23335">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

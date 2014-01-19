@@ -1,0 +1,220 @@
+Manual Tree Manual
+by Michael Barnett
+Foundations of Software Engineering
+Microsoft Research
+http://www.research.microsoft.com/fse
+22 August 2000
+========================================================
+
+This document describes:
+
+1. How to write Antlr rules that construct trees of various shapes.
+
+2. How to write manual tree construction semantic actions. While the
+automatic tree construction of Antlr is usually what one wants to use,
+there are situations where one needs/wants to perform manual tree
+construction.
+
+3. How to write tree parser rules that explore the abstract syntax trees
+in a different order than the default left-to-right depth-first
+traversal.
+
+NOTATION
+========================================
+
+An identifier written in all caps is a token. If it is in lower case
+from the beginning of the alphabet, then it is a non-terminal (i.e., a
+parser rule), and if it is in lower case from the end of the alphabet,
+then it is either a token or a non-terminal. Angled brackets around an
+identifier means the tree built for source input xxx.
+
+Non-terminals represent both a rule in the grammar and the sub-tree
+built up by the rule during parsing. They are completely equivalent;
+context makes clear which meaning is intended.
+
+	Example
+	XYZ	A token, either created by the lexer, or a synthetic
+token.
+	a	Either a rule named "a" or the sub-tree built by rule a.
+	x	Either a token or a rule, it doesn't matter.
+
+AUTOMATIC TREES AND THEIR MANUAL COUNTERPARTS
+========================================
+Here are some rules with automatic tree construction, with each followed
+by an equivalent rule with manual tree construction that builds exactly
+the same tree. If you aren't sure why you would want the manual
+versions, see the last section.
+
+r1_auto: x y z
+  ;
+r1_manual:! e1:x e2:y e3:z { ## = #(#e1,#e2,#e3); }
+  ;
+r1_manual:!	{ ## = nullAST; }
+		e1:x { ## = #(nullAST,##,#e1); } // add x as a sibling
+		e2:y { ## = #(nullAST,##,#e2); } // add y as a sibling
+		e3:z { ## = #(nullAST,##,#e3); } // add z as a sibling
+
+r1_manual:!	{ ## = nullAST; }
+		e1:x { ##->addChild(#e1); }
+		e2:y { ##->addChild(#e2); }
+		e3:z { ##->addChild(#e3); }
+
+All r1 rules should build trees that look like: #(x y z).
+
+r2_auto: x A^ y
+  ;
+r2_manual: e1:x a:A e2:y { ## = #(#a,#e1,#e2); }
+  ;
+r2_manual: e1:x A e2:y { ## = #([A],#e1,#e2); }
+  ;
+r2_manual:!	{ ## = nullAST; }
+		e1:x { ## = #(nullAST,##,#e1); }
+		a:A  { ## = #(a,##); }
+		e2:y { ##->addChild(#e2); }
+
+All r2 rules should build trees that look like: #(A x y).
+
+LEFT-BRANCHING TREES
+========================================
+To get left-branching structures, use iteration. For instance, suppose
+the source language has a left-associative operator represented by the
+token OP, and that the rule x recognizes the operands to OP. (Usually, x
+is a "lower" rule than left_ in that it recognizes expressions involving
+an operator that binds tighter than OP. See the Java or C examples in
+the distribution.)
+
+left_auto: x (OP^ x)*
+  ;
+
+left_manual: e1:x ( /* nothing, but allows automatic tree construction
+for empty case */
+                  |! OP e2:x { ## = #([OP],#e1,#e2); #e1 = ##; } )+
+  ;
+
+left_manual:! e1:x { ## = #e1; }
+              (OP e2:x { ## = #([OP],#e1,#e2); #e1 = ##; })*
+  ;
+
+All left rules should build trees that look like:
+
+	#(OP #(OP <x1> <x2>) <x3>)
+
+RIGHT-BRANCHING TREES
+========================================
+To get right branching structures for right-associative expressions
+using operator OP, use recursion on the rule itself:
+
+right_auto: x (OP^ right_auto)
+  ;
+
+right_manual:! e1:x { ## = #e1; } (OP e2:right_manual { ## =
+#([OP],#e1,#e2); })?
+  ;
+
+All left rules should build trees that look like:
+
+	#(OP <x1> #(OP <x2> <x3>))
+
+Suppose you want, for whatever reason, the keyword "elif" in your
+language so nested if statements are written as:
+
+  if   B1 then
+    S1
+  elif B2 then
+    S2
+  elif B3 then
+    S3
+  else
+    S4
+
+You would want the trees to look like this:
+
+  #([IF],<B1>,<S1>,#([IF],<B2>,<S2>,#([IF],<B3>,<S3>,<S4>)))
+
+(Note: With the plain if-then-else construct this problem doesn't come
+up, because Antlr's default matching means that an if-statement in an
+else-branch ends up constructing a tree like the one above.)
+
+If you use the following simple rule for if-statements, you won't get
+the proper trees.
+
+if: IF^ expression THEN! block
+    (ELIF! expression THEN! block)*
+    (ELSE! block)?
+  ;
+
+You would get a tree like this for the above example:
+
+	#(IF <B1> <S1> <B2> <S2> <B3> <S3> <S4>)
+
+But here is a rule for getting a right branching tree:
+
+if!:
+	IF
+	e:expression
+	THEN
+	b:block
+	r:restOfIf[#e,#b]
+	{ ## = #r; }
+  ;
+restOfIf![ANTLR_USE_NAMESPACE(antlr)RefAST condition,
+          ANTLR_USE_NAMESPACE(antlr)RefAST then_clause]:
+		/* nothing */
+		{ ## = #([IF,"IF"],condition,then_clause); }
+
+	|	ELSE b:block
+		{ ## = #([IF,"IF"],condition,then_clause,#b); }
+
+	|	ELSEIF
+		e:expression
+		THEN
+		b2:block
+		r:restOfIf[#e,#b2]
+		{ ## = #([IF,"IF"],condition,then_clause,#r); }
+	;
+
+WHY USE MANUAL TREE CONSTRUCTION?
+========================================
+Why use the manual rules? One example is that I wanted all of my binary
+operators to form trees with a common root. That is, I wanted my ASTs to
+look like this: #([BINARY],OP,left,right) so I could use a single
+alternative in my tree parser for all binary operators. This constrasts
+with the tree grammar for Java in the examples directory which has one
+alternative per operator. So I used an action like the following:
+
+	{ ## = #([BINARY],OP,#e1,#e2); }
+
+Another, perhaps more persuasive, reason to put different tokens at the
+root of trees is to be able to step over them efficiently in a tree
+parser. For instance, a parser rule like:
+
+parser_rule: x (y)* z
+  ;
+
+leads to trees that look like: #(x y...y z), where "y...y" represents an
+arbitrary number of y sub-trees. Now if you have a tree parser that
+wants to explore the x and z sub-trees, but doesn't want to explore the
+y sub-trees, it isn't possible. But if all of the y sub-trees are
+gathered under a single root:
+
+parser_rule: x gather_y_trees z
+  ;
+gather_y_trees: (y)* { ## = #([Y_TREES],##); }
+  ;
+
+then the trees look like this #(x #(Y_TREES y...y) z). Now the tree
+parser can be written as:
+
+tree_parser_rule: #(x . z)
+  ;
+explore_y_trees: #(Y_TREES (y)*)
+  ;
+
+The rule tree_parser_rule will now skip over the y sub-trees without
+exploring them. This assumes you will explore the y sub-trees in another
+part of the grammar or in a separate tree grammar. For the former,
+suppose you want to explore the y sub-trees after you explore the z
+sub-tree:
+
+tree_parser_rule: #(x y:. z { explore_y_trees(#y); } )
+  ;

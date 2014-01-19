@@ -1,0 +1,225 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Updates for release 3.2 of the C Target
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Updates%20for%20release%203.2%20of%20the%20C%20Target&In-Reply-To=%3C4ABAA42B.9000300%40temporal-wave.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="036078.html">
+   <LINK REL="Next"  HREF="036061.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Updates for release 3.2 of the C Target</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Updates%20for%20release%203.2%20of%20the%20C%20Target&In-Reply-To=%3C4ABAA42B.9000300%40temporal-wave.com%3E"
+       TITLE="[antlr-interest] Updates for release 3.2 of the C Target">jimi at temporal-wave.com
+       </A><BR>
+    <I>Wed Sep 23 15:41:47 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="036078.html">[antlr-interest] Question with greedy
+</A></li>
+        <LI>Next message: <A HREF="036061.html">[antlr-interest] Updates for release 3.2 of the C Target
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36060">[ date ]</a>
+              <a href="thread.html#36060">[ thread ]</a>
+              <a href="subject.html#36060">[ subject ]</a>
+              <a href="author.html#36060">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>The following should be read carefully before upgrading to release 3.2 
+of the C target:
+
+Firstly, please note that this is kind of an interim release for targets 
+other than the Jav target and we will be releasing a 3.2.1 version that 
+gets all the actively maintained targets up to date as soon as possible. 
+However, a number of bugs have been fixed for the C target, which you 
+may or may not wish to upgrade for:
+
+1) A number of required bug fixes for tree parsing are included in this 
+release, notably some situations where an empty tree coudl be produced 
+by accident in a parser - I suspect that there is one more instance of 
+this in 3.2 but cannot yet trace it. However, I am going to replace the 
+tree building parts that are responsible for this in 3.2.1, which will 
+drastically reduce memory footprints, reuse discarded objects and 
+drastically improve tree building performance ;
+2) A number of bug fixes over release 3.1.3, as shown by looking thorugh 
+the JIRA reports closed for 3.1.4 (which will change to 3.2 shortly - we 
+were going to have 3.1.4, but the changes were too much for a simple 2 
+point release);
+3) Changes and fixes for the handling of @after, catch and finally. 
+There has always been some confusion over what these mean and especially 
+in the C target, where the concepts are not easily handled for all 
+combinations of rule options. I woudl very much like for some of you to 
+test these changes before 3.2.1:
+
+Note, that the definitions now only depart from Java in the fact that 
+the sections do not unwind scopes until AFTER the coded sections have 
+been run. This is because there is no garbage collection in C, and 
+unwinding too early means it is difficult to free memory allocated in 
+scopes (although, that is what the freePtr element of all scope entries 
+is for really)...
+
+    * @declarations - used to separate rule local variable definitions
+      from their initializations.
+    * @init - always gets executed, even before backtracking/memoization
+      is looked for.
+    * @after - gets executed even if memoization determines that the
+      rule has already run for this token position. This is so you can
+      release anything that you allocated in @init. Note however that
+      @after runs ONLY if the parse was successful. If the rule hits a
+      parsing error, then @after is no executed.
+    * catch[] - Note that any exception type listed between [] is
+      ignored. You can check the exception type by switching on
+      EXECEPTION-&gt;type. These sections of code are ONLY executed if a
+      parsing exception is detected while in the rule.
+    * finally - this code is executed whether the rule parses
+      successfully or not. This is probably where you should free
+      allocations, but you should guard against uninitialized elements,
+      which may not have been created on a parse error.
+
+
+CAVEATS:
+
+    * I have not found a way to access finally code when a rule returns
+      as part of a backtracking parser that fails the parse. I ran out
+      of time and wil look again at this for 3.2.1 - but you shoudl not
+      be using backtracking parsers anyway right ;-). This means that
+      you should probably not make allocations in @init until I can work
+      out a schema for this - the problems is the accessibility of the
+      finally code block in tree walkers.. I have to make it available
+      in a wider stringtemplate scope.
+    * I have not performed too much testing on this arrangement, so
+      please be careful to test your parsers before using 3.2 in
+      production (though it is otherwise sound I think)
+    * Because you can end up executing both @after and finally code, use
+      safe programming patterns (you should be anyway ;-, and assign
+      NULL to anything after declaring it and immediately before freeing
+      it. Also, guard against free(NULL) unless the semantics of your
+      system specify that free(NULL) is allowed. Basically you don;t
+      want to end up freeing things twice.
+
+
+Here is an example of how to use the sections:
+
+rule
+scope { int a; }
+@init
+{
+  // init code is here
+}
+@after {
+// After code here - runs if parse is successful
+}
+:<i> a | b
+</I>;
+catch []
+{
+  // exception code - runs on parser error detection
+}
+finally {
+  // finally code - always runs, see caveats though
+}
+
+If you make a noddy grammar of this with whatever options you are 
+using,  and generate the C code, you can see where the code for each 
+section resides.
+
+While still not perfect because of the after stuff in backtracking 
+parsers, you should now be able to clean up scopes and so on (though I 
+would still recommend you add a free function to the scope instance in 
+the @init() section as per the C parser example.
+
+
+4) Changes to default settings controlling switch() vs if() vs tableDFA. 
+The C Target now overrides the default settings for these elements to do 
+the following:
+
+avoid generating tables at all costs, even though the tables are 
+reasonably contiguous and CPU cache hit rates will help, and cache hit 
+fail will dog teh performance of your parser. Hence it is preferable to 
+use inline if statements over tables because branch prediction kicks in. 
+However, modern C compilers are very good at optimizing large switch 
+statements and so the defaults are now changed to generate a switch 
+directly for any alt selection between 1 and 3000 labels. You can 
+increase this further with new -X options (see -X help message from the 
+tool for details). In general, this improves performance a lot for 
+complicated parsers with lots of keywords that can be identifiers. As 
+much as 25% can be gained. [Thanks to Yitzhak Sapir of DCF Tech for 
+pointing the way here.]
+
+The defaults for other targets are unchanged, but you may wish to 
+experiment with these new -X options:
+
+$ java -jar antlr-3.2.jar -X
+ANTLR Parser Generator  Version 3.2 Sep 23, 2009 14:39:33
+   -Xgrtree                print the grammar AST
+   -Xdfa                   print DFA as text
+   -Xnoprune               test lookahead against EBNF block exit branches
+   -Xnocollapse            collapse incident edges into DFA states
+   -Xdbgconversion         dump lots of info during NFA conversion
+   -Xmultithreaded         run the analysis in 2 threads
+   -Xnomergestopstates     do not merge stop states
+   -Xdfaverbose            generate DFA states in DOT with NFA configs
+   -Xwatchconversion       print a message for each NFA before converting
+   -XdbgST                 put tags at start/stop of all templates in output
+   -Xnfastates             for nondeterminisms, list NFA states for each 
+path
+   -Xm m                   max number of rule invocations during 
+conversion           [4]
+   -Xmaxdfaedges m         max &quot;comfortable&quot; number of edges for single 
+DFA state     [65534]
+   -Xconversiontimeout t   set NFA conversion timeout (ms) for each 
+decision          [1000]
+*  -Xmaxinlinedfastates m  max DFA states before table used rather than 
+inlining      [10]
+   -Xmaxswitchcaselabels m don't generate switch() statements for dfas 
+bigger  than m [300]
+   -Xminswitchalts m       don't generate switch() statements for dfas 
+smaller than m [3]*
+
+Note that the API docs are not yet updated. I will do this with 3.2.1, 
+which will have greatly expanded documentation.
+
+Jim
+
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20090923/315f42c8/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20090923/315f42c8/attachment.html</A> 
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="036078.html">[antlr-interest] Question with greedy
+</A></li>
+	<LI>Next message: <A HREF="036061.html">[antlr-interest] Updates for release 3.2 of the C Target
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36060">[ date ]</a>
+              <a href="thread.html#36060">[ thread ]</a>
+              <a href="subject.html#36060">[ subject ]</a>
+              <a href="author.html#36060">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

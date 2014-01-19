@@ -1,0 +1,148 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Understanding priorities in lexing (newbie)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Understanding%20priorities%20in%20lexing%20%28newbie%29&In-Reply-To=%3C07BD711C-B103-403A-B3BD-B7D46F68DECC%40wincent.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="022333.html">
+   <LINK REL="Next"  HREF="022330.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Understanding priorities in lexing (newbie)</H1>
+    <B>Wincent Colaiuta</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Understanding%20priorities%20in%20lexing%20%28newbie%29&In-Reply-To=%3C07BD711C-B103-403A-B3BD-B7D46F68DECC%40wincent.com%3E"
+       TITLE="[antlr-interest] Understanding priorities in lexing (newbie)">win at wincent.com
+       </A><BR>
+    <I>Thu Jul 12 00:54:59 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="022333.html">[antlr-interest] Understanding priorities in lexing (newbie)
+</A></li>
+        <LI>Next message: <A HREF="022330.html">[antlr-interest] beginner's question
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#22335">[ date ]</a>
+              <a href="thread.html#22335">[ thread ]</a>
+              <a href="subject.html#22335">[ subject ]</a>
+              <a href="author.html#22335">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>El 12/7/2007, a las 7:59, <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">mail.acc at freenet.de</A> escribi&#243;:
+
+&gt;<i> I am trying to write a stand alone lexer
+</I>&gt;<i> which can cope with arbitrary input without
+</I>&gt;<i> reporting a &quot;missmatched token&quot;-error.
+</I>&gt;<i>
+</I>&gt;<i> It should however recognize some combination
+</I>&gt;<i> as Tokens.
+</I>&gt;<i>
+</I>&gt;<i> This is my first approach:
+</I>&gt;<i> --------------------------------------------
+</I>&gt;<i> lexer grammar LexerJava;
+</I>&gt;<i> KEYWORDA : 'int'|'float';
+</I>&gt;<i> KEYWORDB : 'public'|'static'|'void';
+</I>&gt;<i> COMMENT  : '/*' ( options {greedy=false;} : . )* '*/'
+</I>&gt;<i>     	 | '//' ~('n'|'r')* 'r'? 'n'
+</I>&gt;<i> 	 ;
+</I>&gt;<i> // fallback rule
+</I>&gt;<i> ELSE	 :.;
+</I>&gt;<i> --------------------------------------------
+</I>&gt;<i>
+</I>&gt;<i> On an input like the following it reports
+</I>&gt;<i> several errors:
+</I>&gt;<i> --------------------------------------------
+</I>&gt;<i> 01: public class Test {
+</I>&gt;<i> 02:     private int varclassTmp = 3;
+</I>&gt;<i> 03:     [...]
+</I>&gt;<i> 04:     /* Comment */
+</I>&gt;<i> 05:     public static void main(String[] av) {
+</I>&gt;<i> 06:          float i=0;
+</I>&gt;<i> 07:          float[] sum; // comment
+</I>&gt;<i> 08:          int tmp;
+</I>&gt;<i> 09:          [...]
+</I>&gt;<i> 10:          float internationalization = 4.;
+</I>&gt;<i> 11:          /* int float */
+</I>&gt;<i> 12:     }
+</I>&gt;<i> 13: }
+</I>&gt;<i> 14: /* Comment */
+</I>&gt;<i> --------------------------------------------
+</I>&gt;<i> line 1:17 mismatched character ' ' expecting 'a'
+</I>&gt;<i> line 5:24 mismatched character '(' expecting 't'
+</I>&gt;<i> line 5:30 mismatched character 'g' expecting 't'
+</I>&gt;<i>
+</I>&gt;<i> In some sense I am able to relate these errors,
+</I>&gt;<i> because every time a KEYWORD seem to match
+</I>&gt;<i> (Test-&gt;static; main-&gt;int; Strin-&gt;int) but I
+</I>&gt;<i> can not figure out why rule ELSE doesen't match
+</I>&gt;<i> in these cases.
+</I>
+As Ter has already stated, you need a filtering lexer for this. It's  
+purpose is to try the lexer rules in order, using backtracking to  
+catch failures, and if no rule matches then the input is advanced one  
+character (discarded) and ANTLR starts trying all over again. In your  
+case your ELSE rule means that all characters will match and nothing  
+will be discarded.
+
+This won't work in a non-filtering lexer because ANTLR is based on  
+prediction. This may seem counter-intuitive at first but you just  
+have to accept that as a basic premise ANTLR is all about speed and  
+that means no backtracking in the event of an error (unless you  
+explicitly turn it on); ANTLR tries to predict which rule will match  
+as quickly as possible and once a predication is made race ahead and  
+match as fast as possible.
+
+For example, the first error occurs when ANTLR sees the &quot;st&quot; of  
+&quot;Test&quot;; at that point ANTLR predicts that rule KEYWORDB should match  
+and that the next character should be the &quot;a&quot; of &quot;static&quot;, and of  
+course it isn't. But note that this doesn't occur earlier on in the  
+line where ANTLR sees the first &quot;s&quot; of &quot;class&quot;. That is, seeing &quot;s&quot;  
+is not enough to make ANTLR predict &quot;static&quot;; it will only predict  
+that if it sees &quot;st&quot;.
+
+Without a filtering lexer you'd have to non-ambiguously specify how  
+to recognise all the constructs in the language so that everything  
+could be tokenized, but that isn't very efficient because you're only  
+interested in a subset of the possible syntax and all the other  
+tokens would just be thrown away.
+
+To fully understand how all this works you should take a simple  
+grammar like the one you post and look very, very carefully at the  
+generated code. You will see how the generated methods are divided  
+into two sections: a prediction part (&quot;if&quot; statements that use  
+lookeahead) and a recognition part (code for matching according to  
+the prediction inside a &quot;switch&quot; statement). I recommend reading  
+Ter's ANTLR book; combine that with writing real grammars (and  
+hitting problems like this one) and you will eventually &quot;get&quot; ANTLR.
+
+Cheers,
+Wincent
+
+</PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="022333.html">[antlr-interest] Understanding priorities in lexing (newbie)
+</A></li>
+	<LI>Next message: <A HREF="022330.html">[antlr-interest] beginner's question
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#22335">[ date ]</a>
+              <a href="thread.html#22335">[ thread ]</a>
+              <a href="subject.html#22335">[ subject ]</a>
+              <a href="author.html#22335">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

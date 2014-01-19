@@ -1,0 +1,140 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Problems with spurious EOF tree nodes while	working with a tree parser
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Problems%20with%20spurious%20EOF%20tree%20nodes%20while%0A%09working%20with%20a%20tree%20parser&In-Reply-To=%3C4F9058D2.8030501%40esd-electronics.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="044484.html">
+   <LINK REL="Next"  HREF="044491.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Problems with spurious EOF tree nodes while	working with a tree parser</H1>
+    <B>Stefan M&#228;tje</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Problems%20with%20spurious%20EOF%20tree%20nodes%20while%0A%09working%20with%20a%20tree%20parser&In-Reply-To=%3C4F9058D2.8030501%40esd-electronics.com%3E"
+       TITLE="[antlr-interest] Problems with spurious EOF tree nodes while	working with a tree parser">Stefan.Maetje at esd-electronics.com
+       </A><BR>
+    <I>Thu Apr 19 11:26:26 PDT 2012</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="044484.html">[antlr-interest] ANTLR C target FAQ
+</A></li>
+        <LI>Next message: <A HREF="044491.html">[antlr-interest] Problems with spurious EOF tree nodes while working with a tree parser (update)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#44485">[ date ]</a>
+              <a href="thread.html#44485">[ thread ]</a>
+              <a href="subject.html#44485">[ subject ]</a>
+              <a href="author.html#44485">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+generate an AST with a combined lexer/parser grammar. Then I feed the 
+generated AST via a CommonTreeNodeStream into a tree grammar to build up 
+a symbol table. The tree grammar is in filter mode and I use my
+own tree nodes called Pearl90Tree. Therefore I created a custom
+Pearl90TreeAdaptor class.
+
+In my tree grammar I have two very simple rules quoted below:
+
+label_dcl
+//	:	LBL_DCL ID		// Won't match
+	:	LBL_DCL EOF ID		// Will match
+	{
+		dbgOut.println(&quot;-&gt; <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">Label at _</A>&quot;,$ID.line, $ID.pos));
+	}
+	;
+
+label_resolve
+//	:	gt='GOTO' id=ID			// Won't match
+	:	gt='GOTO' eof=EOF myId=ID	// Will match
+	{
+	dbgOut.println(&quot;GOTO_Label &quot;+$myId.toString());
+	dbgOut.println(&quot;EOF #&quot;+$eof.serial);
+	}
+	;
+
+The parser generates simply &quot;LBL_DCL ID&quot; for each label definition and a 
+sequence of &quot;'GOTO' ID&quot; for a goto statement. I verified that the AST is 
+correct. Also I dumped the CommonTreeNodeStream to see that it doesn't 
+contain any EOF tree node behind the 'GOTO' or LBL_DCL tree node. My 
+test source input is this:
+
+MODULE goto;
+PROBLEM;
+P: PROC;
+   label: GOTO label;
+END;
+MODEND;
+
+The CommonTreeNodeStream dumped follows here:
+
++++++++++++++++ Tree +++++++++++++++++++++
+Pearl90Tree node #-1, c:2; token type: 92 'MODULE', value: 'MODULE'
+Pearl90Tree node #-1, c:0; token type: 2 '&lt;DOWN&gt;', value: 'DOWN'
+Pearl90Tree node #0, c:0; token type: 73 'ID', value: 'goto'
+Pearl90Tree node #1, c:1; token type: 182 ''PROBLEM'', value: 'PROBLEM'
+Pearl90Tree node #-1, c:0; token type: 2 '&lt;DOWN&gt;', value: 'DOWN'
+Pearl90Tree node #0, c:3; token type: 115 'PROC_DCL', value: 'PROC_DCL'
+Pearl90Tree node #-1, c:0; token type: 2 '&lt;DOWN&gt;', value: 'DOWN'
+Pearl90Tree node #0, c:0; token type: 73 'ID', value: 'P'
+Pearl90Tree node #1, c:0; token type: 93 'MOD_LIST', value: 'MOD_LIST'
+Pearl90Tree node #2, c:4; token type: 27 'BODY', value: 'BODY'
+Pearl90Tree node #-1, c:0; token type: 2 '&lt;DOWN&gt;', value: 'DOWN'
+Pearl90Tree node #0, c:0; token type: 85 'LBL_DCL', value: 'LBL_DCL'
+Pearl90Tree node #1, c:0; token type: 73 'ID', value: 'label'
+Pearl90Tree node #2, c:0; token type: 77 'KW_GOTO', value: 'GOTO'
+Pearl90Tree node #3, c:0; token type: 73 'ID', value: 'label'
+Pearl90Tree node #-1, c:0; token type: 3 '&lt;UP&gt;', value: 'UP'
+Pearl90Tree node #-1, c:0; token type: 3 '&lt;UP&gt;', value: 'UP'
+Pearl90Tree node #-1, c:0; token type: 3 '&lt;UP&gt;', value: 'UP'
+Pearl90Tree node #-1, c:0; token type: 3 '&lt;UP&gt;', value: 'UP'
+Pearl90Tree node #-1, c:0; token type: -1 '&gt;EOF&lt;', value: 'EOF'
+
+What I can see is that the tree parser in the filter mode generates lots 
+of UP, DOWN and EOF tree nodes. Apparently the tree parser stuffs some 
+of these EOF nodes between the others. (I know this because the tree 
+parser calls my Pearl90TreeAdaptor to generate these nodes.)
+
+Because of this added EOF it can only match to &quot;'GOTO' EOF ID&quot; which I 
+believe to be very strange. Why doesn't it match the &quot;LBL_DCL ID&quot; 
+sequence either?
+
+What am I doing wrong? Any suggestions to get this running without 
+putting this &quot;magic&quot; EOF in between?
+
+Thanks in advance,
+	Stefan
+
+
+
+</PRE>
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="044484.html">[antlr-interest] ANTLR C target FAQ
+</A></li>
+	<LI>Next message: <A HREF="044491.html">[antlr-interest] Problems with spurious EOF tree nodes while working with a tree parser (update)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#44485">[ date ]</a>
+              <a href="thread.html#44485">[ thread ]</a>
+              <a href="subject.html#44485">[ subject ]</a>
+              <a href="author.html#44485">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

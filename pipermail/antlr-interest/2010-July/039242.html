@@ -1,0 +1,154 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] looking for rewrite rule - (UNION | EXCEPT)^ ALL? put in one token
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20looking%20for%20rewrite%20rule%20-%20%28UNION%20%7C%20EXCEPT%29%5E%0A%20ALL%3F%20put%20in%20one%20token&In-Reply-To=%3C1280154944.18164.24.camel%40gecko.home.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="039240.html">
+   <LINK REL="Next"  HREF="039256.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] looking for rewrite rule - (UNION | EXCEPT)^ ALL? put in one token</H1>
+    <B>John B. Brodie</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20looking%20for%20rewrite%20rule%20-%20%28UNION%20%7C%20EXCEPT%29%5E%0A%20ALL%3F%20put%20in%20one%20token&In-Reply-To=%3C1280154944.18164.24.camel%40gecko.home.org%3E"
+       TITLE="[antlr-interest] looking for rewrite rule - (UNION | EXCEPT)^ ALL? put in one token">jbb at acm.org
+       </A><BR>
+    <I>Mon Jul 26 07:35:44 PDT 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="039240.html">[antlr-interest] looking for rewrite rule - (UNION | EXCEPT)^ ALL?	put in one token
+</A></li>
+        <LI>Next message: <A HREF="039256.html">[antlr-interest] looking for rewrite rule - (UNION | EXCEPT)^ ALL? put in one token
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#39242">[ date ]</a>
+              <a href="thread.html#39242">[ thread ]</a>
+              <a href="subject.html#39242">[ subject ]</a>
+              <a href="author.html#39242">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Greetings!
+
+On Mon, 2010-07-26 at 06:52 -0700, S.Eifert wrote:
+&gt;<i> Hi everyone,
+</I>&gt;<i> 
+</I>&gt;<i> I'm working on an existing project with a SQL-Grammar. So I have strict
+</I>&gt;<i> limitations to watch while I have to enhance the functions.
+</I>&gt;<i> There's one rule which I just cant figure out how to solve. The following is
+</I>&gt;<i> in the grammar so far.
+</I>&gt;<i> 
+</I>&gt;<i> query_exp
+</I>&gt;<i>   : query_term ((UNION | EXCEPT)^ ALL?  query_term)*   
+</I>&gt;<i>   ;
+</I>&gt;<i> 
+</I>&gt;<i> - query_term can reference back on query_exp
+</I>&gt;<i> - UNION etc. are lexical rules to ignore casesensivity
+</I>&gt;<i> example:
+</I>&gt;<i> UNION : U N I O N;
+</I>&gt;<i> EXCEP : E X C E P T;
+</I>&gt;<i> The single letters are matched to their upper and lower counterpart.
+</I>&gt;<i> 
+</I>&gt;<i> I now need to change the way a UNION ALL is parsed. If I use the structure
+</I>&gt;<i> above ALL will be a child of UNION. But I need a single Token named
+</I>&gt;<i> UNIONALL. The rest of the structure needs to be the same. The treehandling
+</I>&gt;<i> is in a part I can not touch.
+</I>&gt;<i> 
+</I>&gt;<i> What I tried:
+</I>&gt;<i> 
+</I>&gt;<i> query_exp
+</I>&gt;<i>   : query_term ((UNION | UNIONALL | EXCEPT | EXCEPTALL)^ query_term)*   
+</I>&gt;<i>   ;
+</I>&gt;<i> 
+</I>&gt;<i> - This does not work, because the lexical rules for UNION / UNIONALL
+</I>&gt;<i> conflict each other. At least that seems to be the problem.
+</I>
+having UNIONALL and EXCEPTALL tokens produced by the lexer is (IMHO) the
+best way to go (but i have an alternative below, if my lexing suggestion
+does not work...)
+
+add a tokens { UNIONALL; EXCEPTALL; } section to your grammar just after
+your options {...} section but before any rule.
+
+modify the lexer rules for UNION and EXCEPT to be:
+
+UNION : U N I O N ( WS A L L { $type=UNIONALL; } )? ;
+EXCEPT : E X C E P T ( WS A L L { $type=EXCEPTALL; } )? ;
+fragment WS :
+    ( ' ' | '\t' | '\r' | '\n' )+ ; // token delimiting white-space
+
+and now your modified query_exp rule above should work....
+
+&gt;<i> 
+</I>&gt;<i> I tried to use a rewrite rule. I used an Integer to keep track of which
+</I>&gt;<i> option (UNION/EXCEPT, maybe ALL) was chosen and put several conditioned
+</I>&gt;<i> rewrite rules. The problem was the Integer in the Parser was inside an
+</I>&gt;<i> if-clause and could not be read.
+</I>&gt;<i> 
+</I>&gt;<i> if ( state.backtracking==0 ) {
+</I>&gt;<i>               int MYINTEGER = 0;
+</I>&gt;<i>             }
+</I>&gt;<i> 
+</I>&gt;<i> Finally I tinkered with an additional rule where I build a String for the
+</I>&gt;<i> option taken (EXCEPT ALL, EXCEPT.. etc) and tried to return this. I think I
+</I>&gt;<i> was on the wrong track there.. it did not work at all.
+</I>
+the second alternative (if the above lexing changes do not work out) is
+similar to this (sort of). e.g. use a parsing rule to recognize the
+union/except operator.
+
+still need the tokens { } section for UNIONALL and EXCEPTALL
+
+no change to the lexer.
+
+add parser rule (very much untested, but should work, i think):
+
+query_operator : UNION | EXCEPT
+   | (tok=UNION ALL -&gt; UNIONALL[$tok,&quot;UNIONALL&quot;] )
+   | (tok=EXCEPT ALL -&gt; EXCEPTALL[$tok,&quot;EXCEPTALL&quot;] )
+   ;
+
+query_exp : query_term ( query_operator^ query_term )* ;
+
+&gt;<i> 
+</I>&gt;<i> Probably the solution is very simple and I just cant find. I would be very
+</I>&gt;<i> thankfull for some input.
+</I>&gt;<i> I'm using ANTLR 3.1.2
+</I>&gt;<i> 
+</I>
+hope this helps...
+   -jbb
+
+
+</PRE>
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="039240.html">[antlr-interest] looking for rewrite rule - (UNION | EXCEPT)^ ALL?	put in one token
+</A></li>
+	<LI>Next message: <A HREF="039256.html">[antlr-interest] looking for rewrite rule - (UNION | EXCEPT)^ ALL? put in one token
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#39242">[ date ]</a>
+              <a href="thread.html#39242">[ thread ]</a>
+              <a href="subject.html#39242">[ subject ]</a>
+              <a href="author.html#39242">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

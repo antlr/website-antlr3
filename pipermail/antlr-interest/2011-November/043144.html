@@ -1,0 +1,202 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] about range float and stuff
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20about%20range%20float%20and%20stuff&In-Reply-To=%3CCAOrgODZ%3DuuSReG40KunDjH-U1gE6xCx9th6MJE1f%2BfNuHdzdog%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="043141.html">
+   <LINK REL="Next"  HREF="043147.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] about range float and stuff</H1>
+    <B>Bart Kiers</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20about%20range%20float%20and%20stuff&In-Reply-To=%3CCAOrgODZ%3DuuSReG40KunDjH-U1gE6xCx9th6MJE1f%2BfNuHdzdog%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] about range float and stuff">bkiers at gmail.com
+       </A><BR>
+    <I>Fri Nov  4 01:48:00 PDT 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="043141.html">[antlr-interest] about range float and stuff
+</A></li>
+        <LI>Next message: <A HREF="043147.html">[antlr-interest] about range float and stuff
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#43144">[ date ]</a>
+              <a href="thread.html#43144">[ thread ]</a>
+              <a href="subject.html#43144">[ subject ]</a>
+              <a href="author.html#43144">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi Fabien,
+
+Handling this in the parser will make your life much harder than it has to.
+Doing it in the lexer, you will need a bit of custom code, but I'd go for
+something similar to this (something like it is on the WIki somewhere, but
+can't find it...):
+
+grammar RangeDemo;
+
+@lexer::members {
+
+  java.util.Queue&lt;Token&gt; tokens = new java.util.LinkedList&lt;Token&gt;();
+
+  public void offer(int ttype, String ttext) {
+    emit(new CommonToken(ttype, ttext));
+  }
+
+  @Override
+  public void emit(Token t) {
+    state.token = t;
+    tokens.offer(t);
+  }
+
+  @Override
+  public Token nextToken() {
+    super.nextToken();
+    return tokens.isEmpty() ? Token.EOF_TOKEN : tokens.poll();
+  }
+}
+
+parse
+  :  (t=. {System.out.printf(&quot;\%-10s \%s\n&quot;, tokenNames[$t.type],
+$t.text);})* EOF
+  ;
+
+FLOAT
+  :  INT '..'   {offer(INT, $INT.text); offer(RANGE, &quot;..&quot;);}
+  |  OCTAL '..' {offer(OCTAL, $OCTAL.text); offer(RANGE, &quot;..&quot;);}
+  |  '.' DIGITS
+  |  DIGITS '.' DIGITS?
+  ;
+
+RANGE
+  :  '..'
+  ;
+
+INT
+  :  '1'..'9' DIGIT*
+  |  '0'
+  ;
+
+OCTAL
+  :  '0' ('0'..'7')+
+  ;
+
+fragment DIGITS : DIGIT+;
+fragment DIGIT  : '0'..'9';
+
+SPACE
+  :  (' ' | '\t' | '\r' | '\n') {skip();}
+  ;
+
+And if you run the class:
+
+import org.antlr.runtime.*;
+
+public class Main {
+  public static void main(String[] args) throws Exception {
+    String src = &quot;..07..8.5 1.9..02 1..3.4&quot;;
+    RangeDemoLexer lexer = new RangeDemoLexer(new ANTLRStringStream(src));
+    RangeDemoParser parser = new RangeDemoParser(new
+CommonTokenStream(lexer));
+    System.out.println(&quot;Parsing: '&quot; + src + &quot;'&quot;);
+    parser.parse();
+  }
+}
+
+You'll see the following being printed to the console:
+
+Parsing: '..07..8.5 1.9..02 1..3.4'
+RANGE      ..
+OCTAL      07
+RANGE      ..
+FLOAT      8.5
+FLOAT      1.9
+RANGE      ..
+OCTAL      02
+INT        1
+RANGE      ..
+FLOAT      3.4
+
+
+Regards,
+
+Bart.
+
+
+
+On Fri, Nov 4, 2011 at 7:28 AM, Fabien Hermenier
+&lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">hermenierfabien at gmail.com</A>&gt;wrote:
+
+&gt;<i> Hi
+</I>&gt;<i>
+</I>&gt;<i> In an earlier version of my language, I had to parse range of integers
+</I>&gt;<i> in various base. Now I want to include float. I have read
+</I>&gt;<i>
+</I>&gt;<i> <A HREF="http://www.antlr.org/wiki/display/ANTLR3/Lexer+grammar+for+floating+point,+dot,+range,+time+specs">http://www.antlr.org/wiki/display/ANTLR3/Lexer+grammar+for+floating+point,+dot,+range,+time+specs</A>
+</I>&gt;<i> but I've still got some questions.
+</I>&gt;<i>
+</I>&gt;<i> All the work seems to be done at the lexer level so the type of the
+</I>&gt;<i> following tokens will be as example:
+</I>&gt;<i> 5 : DECIMAL_LITTERAL
+</I>&gt;<i> 07 : OCTAL_LITTERAL
+</I>&gt;<i> 7.5: FLOATING_POINT_LITTERAL
+</I>&gt;<i> 5..7 : DOTDOT
+</I>&gt;<i>
+</I>&gt;<i> In the last example, the result is not very convenient because I will
+</I>&gt;<i> still have to extract the bounds
+</I>&gt;<i> and compute their type by myself which seems quite redundant with the
+</I>&gt;<i> job performed by the lexer.
+</I>&gt;<i> May be I am missing something ?
+</I>&gt;<i>
+</I>&gt;<i> I would rather be able to express the range at the parser level which
+</I>&gt;<i> seems much more convenient to me:
+</I>&gt;<i> range: FLOATING_POINT_LITTERAL DOTDOT FLOATING_POINT_LITTERAL.
+</I>&gt;<i> In this way, I will also be able to manage the possible spaces between
+</I>&gt;<i> the bounds and the DOTDOT.
+</I>&gt;<i>
+</I>&gt;<i> So, am I right to try to parse range at the parser level ? Or is there a
+</I>&gt;<i> solution to extract easily the bounds with their type if I am doing the
+</I>&gt;<i> job at the lexer level ?
+</I>&gt;<i>
+</I>&gt;<i> Thanks in advance,
+</I>&gt;<i> Fabien.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe:
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i>
+</I></PRE>
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="043141.html">[antlr-interest] about range float and stuff
+</A></li>
+	<LI>Next message: <A HREF="043147.html">[antlr-interest] about range float and stuff
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#43144">[ date ]</a>
+              <a href="thread.html#43144">[ thread ]</a>
+              <a href="subject.html#43144">[ subject ]</a>
+              <a href="author.html#43144">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

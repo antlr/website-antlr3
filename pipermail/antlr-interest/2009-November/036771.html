@@ -1,0 +1,296 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] [C Target] How to skip a whole sub-tree (not	just a token)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5BC%20Target%5D%20How%20to%20skip%20a%20whole%20sub-tree%20%28not%0A%09just%20a%20token%29&In-Reply-To=%3C538050a90911150707j13477146o8fe66141dcc370f8%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="036770.html">
+   <LINK REL="Next"  HREF="036772.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] [C Target] How to skip a whole sub-tree (not	just a token)</H1>
+    <B>Mohamed Yousef</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5BC%20Target%5D%20How%20to%20skip%20a%20whole%20sub-tree%20%28not%0A%09just%20a%20token%29&In-Reply-To=%3C538050a90911150707j13477146o8fe66141dcc370f8%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] [C Target] How to skip a whole sub-tree (not	just a token)">harrrrpo at gmail.com
+       </A><BR>
+    <I>Sun Nov 15 07:07:38 PST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="036770.html">[antlr-interest] [C Target] How to skip a whole sub-tree (not	just a token)
+</A></li>
+        <LI>Next message: <A HREF="036772.html">[antlr-interest] ANTLR-based COBOL structure to XML schema	translator
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36771">[ date ]</a>
+              <a href="thread.html#36771">[ thread ]</a>
+              <a href="subject.html#36771">[ subject ]</a>
+              <a href="author.html#36771">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>well , sorry jim if i sound offensive , i didn't mean it :)
+anyway , did you check the indices problem , was i right or was i reading it
+from a wrong place
+the indices of tokens in parser are the same of them tree parser they are
+indices of lexical tokens not tree nodes in stream
+take this example
+
+if (c) then 10 else 20
+
+EIF D EIF_COND D OPERAND c U U  EIF_THEN D 10 U  EIF_ELSE D 20 U U
+(D =&gt; DOWN , U =&gt; UP)
+
+EIF.start =0 , EIF.end=11 ( there are 10 lexems , in tree parser it should
+be 0,16)
+EIF_THEN.start = 8 , EIF_THEN.end=  8 (it's only the &quot;10&quot; lexeme there)
+
+the problem is i'm in the middle of my senior project so i can't go back and
+i can't wait wait for 3.2.1
+so i had to find a solution myself , it may be useless by 3.2.1 but i can't
+wait
+
+@Claude
+my approach is a bit different , it's better depicted by the C code (assume
+all indices are recorded in savedIndex field) , i don't think Terence would
+be counting UP's and DOWN's for jumping this would be really ineffecient
+compared to jumping using saved indices
+
+Parser grammar :
+
+if_expr
+    :KW_IF cond=expr_g  ( KW_THEN | KW_DO )  then=expr_g  (KW_ELSE
+relse=expr_g)?
+
+    -&gt; ^(EIF ^(EIF_COND $cond) ^(EIF_THEN $then) ^(EIF_ELSE ($relse)?)
+EIF_END )
+
+    ;
+
+tree Parser :
+
+if_expr
+    :
+      ^( j= EIF ^(EIF_COND c =expr_g)
+{TInterp::IfExpr::Exec($j,$c.start,ctx);}  )
+
+the code for that method
+
+pANTLR3_BASE_TREE r;
+//cond is our condition imaginary node
+if(*((Tvarp)(cond-&gt;u))).bool== BTrue )
+{
+    r=(pANTLR3_BASE_TREE)(ifnode-&gt;getChild(ifnode,1)); //first child is
+'then' node
+    SEEK(r-&gt;savedIndex);
+    MATCHT(EIF_THEN,NULL);
+    MATCHT(ANTLR3_TOKEN_DOWN,NULL);
+    xyz-&gt;expr_g(xyz); //xyz is our ctx , generally this parses/interprets
+the 'then' statments
+    r=(pANTLR3_BASE_TREE)(ifnode-&gt;getChild(ifnode,3));//3 is our END_IF node
+    SEEK(r-&gt;savedIndex);
+    MATCHT(EIF_END,NULL);
+}
+else
+{
+    r=(pANTLR3_BASE_TREE)(ifnode-&gt;getChild(ifnode,2));
+    SEEK(r-&gt;savedIndex);
+    MATCHT(EIF_ELSE,NULL);
+    if(LA(1)==ANTLR3_TOKEN_DOWN) //if we can go down , this means there is
+'else' statement
+    {
+        MATCHT(ANTLR3_TOKEN_DOWN,NULL);
+        xyz-&gt;expr_g(xyz);//go interpret it
+    }
+    MATCHT(ANTLR3_TOKEN_UP,NULL);
+    MATCHT(EIF_END,NULL);
+}
+
+Regards,
+Mohammed Yousef
+
+2009/11/15 Claude Moulin &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">claude.moulin at hds.utc.fr</A>&gt;
+
+&gt;<i>  Hello Mohamed,
+</I>&gt;<i>
+</I>&gt;<i> You are right. The parser consumes the nodes of the tree without doing
+</I>&gt;<i> nothing. I suppose it is based on DOWN and UP node matching. Terrence could
+</I>&gt;<i> explain better than me.
+</I>&gt;<i>
+</I>&gt;<i> For me the dot (.) metacharacter is only useful if it represents a tree,
+</I>&gt;<i> not a single node. The principle works well with a tree (I have if, for,
+</I>&gt;<i> while statements that which can be nested). If you may have a case with one
+</I>&gt;<i> single node, I advice to create a tree with a node based on an imaginary
+</I>&gt;<i> token.
+</I>&gt;<i>
+</I>&gt;<i> In my structure I have a IF tree with two or three child nodes which are
+</I>&gt;<i> trees.
+</I>&gt;<i>
+</I>&gt;<i> To be completely exact I mark before the then case and before the else case
+</I>&gt;<i> (not after the then case as you said). The else case may not be present in
+</I>&gt;<i> the tree and that&#8217;s why I test if the else_list node is not null.
+</I>&gt;<i>
+</I>&gt;<i> I wait the parser is ready to parse the instruction after the IF and then I
+</I>&gt;<i> push the index I have marked, because any method built on a rule begins with
+</I>&gt;<i> a pop action. I need to pop after the method I use (list_instructions to
+</I>&gt;<i> actually parse the tree) because this one pushes an index that I have to
+</I>&gt;<i> cancel in order to retrieve the expected situation.
+</I>&gt;<i>
+</I>&gt;<i> I am sorry but I have no experience with C. I don&#8217;t know the behavior and
+</I>&gt;<i> the methods to use.
+</I>&gt;<i>
+</I>&gt;<i> Regards,
+</I>&gt;<i>
+</I>&gt;<i> Claude
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> *De :* Mohamed Yousef [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">harrrrpo at gmail.com</A>]
+</I>&gt;<i> *Envoy&#233; :* dimanche 15 novembre 2009 04:50
+</I>&gt;<i> *&#192; :* Claude Moulin
+</I>&gt;<i> *Cc **:* <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> *Objet :* Re: [antlr-interest] [C Target] How to skip a whole sub-tree
+</I>&gt;<i> (not just a token)
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Thanks Claude,
+</I>&gt;<i> if i understand your code correctly , it looks that the &quot;.&quot; eats the whole
+</I>&gt;<i> &quot;Then&quot; tree ( tree executed when condition is true ) so u mark berfore it (
+</I>&gt;<i> then case) and after it (else cases) , is that true ?
+</I>&gt;<i>
+</I>&gt;<i> well , if this is true and this is the standard implementation , then this
+</I>&gt;<i> is a bug in the C Target
+</I>&gt;<i> in the C Target the macro MATCHANYT() represents the &quot;.&quot; , unfortunetly it
+</I>&gt;<i> matches only a signle token , not a sub-tree , making it really usless
+</I>&gt;<i>
+</I>&gt;<i> however , it's really easy to modify this in the c target , just confirm me
+</I>&gt;<i> this is the standard behavior
+</I>&gt;<i> ( a note i thinked of now , can anybody check to see if the java terget
+</I>&gt;<i> saves the indexes of nodes , and i mean indexes of them as they appear in
+</I>&gt;<i> the flattened parse tree , coz this is another cause of problems in C Target
+</I>&gt;<i> )
+</I>&gt;<i>
+</I>&gt;<i> Thanks
+</I>&gt;<i> Regards,
+</I>&gt;<i> Mohammed Yousef
+</I>&gt;<i>
+</I>&gt;<i>  2009/11/14 Claude Moulin &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">claude.moulin at hds.utc.fr</A>&gt;
+</I>&gt;<i>
+</I>&gt;<i> Here is the solution I use in Java. The principle is also valid for loops.
+</I>&gt;<i>
+</I>&gt;<i> I suppose the CommonTreeNodeStream methods () I use have equivalent
+</I>&gt;<i> functions in C
+</I>&gt;<i>
+</I>&gt;<i> push, pop, and mark
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> if_statement
+</I>&gt;<i>
+</I>&gt;<i> @init{
+</I>&gt;<i>
+</I>&gt;<i>   int mark_before_true = 0;
+</I>&gt;<i>
+</I>&gt;<i>   int mark_before_false = 0;
+</I>&gt;<i>
+</I>&gt;<i> }     :
+</I>&gt;<i>
+</I>&gt;<i>  ^(IF e = expbool {mark_before_true = input.mark();} . ({mark_before_false
+</I>&gt;<i> = input.mark();} else_list = .)? )
+</I>&gt;<i>
+</I>&gt;<i>         {
+</I>&gt;<i>
+</I>&gt;<i>          if ($e.b) {
+</I>&gt;<i>
+</I>&gt;<i>              push(mark_before_true);
+</I>&gt;<i>
+</I>&gt;<i>              list_instructions();
+</I>&gt;<i>
+</I>&gt;<i>              pop();
+</I>&gt;<i>
+</I>&gt;<i>          }
+</I>&gt;<i>
+</I>&gt;<i>          else
+</I>&gt;<i>
+</I>&gt;<i>          if (else_liste != null) {
+</I>&gt;<i>
+</I>&gt;<i>              push(mark_before_false);
+</I>&gt;<i>
+</I>&gt;<i>              list_instructions();
+</I>&gt;<i>
+</I>&gt;<i>              pop();
+</I>&gt;<i>
+</I>&gt;<i>          }
+</I>&gt;<i>
+</I>&gt;<i>         }
+</I>&gt;<i>
+</I>&gt;<i>       ;
+</I>&gt;<i>
+</I>&gt;<i> expbool is a rule returning a Boolean in its b field.
+</I>&gt;<i>
+</I>&gt;<i> list_instructions is a rule parsing a tree containing instructions in a
+</I>&gt;<i> list.
+</I>&gt;<i>
+</I>&gt;<i> input.mark()  gives the index of the following node and in this case it is
+</I>&gt;<i> the index I want to store.
+</I>&gt;<i>
+</I>&gt;<i> And in the @members section I add two methods in order to simplify the
+</I>&gt;<i> code:
+</I>&gt;<i>
+</I>&gt;<i>   public void push(int index) {
+</I>&gt;<i>
+</I>&gt;<i>      ((CommonTreeNodeStream)input).push(index);
+</I>&gt;<i>
+</I>&gt;<i>   }
+</I>&gt;<i>
+</I>&gt;<i>   public void pop() {
+</I>&gt;<i>
+</I>&gt;<i>      ((CommonTreeNodeStream)input).pop();
+</I>&gt;<i>
+</I>&gt;<i>   }
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> I hope it is usefull.
+</I>&gt;<i>
+</I>&gt;<i> Claude
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe:
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20091115/a23b1288/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20091115/a23b1288/attachment.html</A> 
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="036770.html">[antlr-interest] [C Target] How to skip a whole sub-tree (not	just a token)
+</A></li>
+	<LI>Next message: <A HREF="036772.html">[antlr-interest] ANTLR-based COBOL structure to XML schema	translator
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#36771">[ date ]</a>
+              <a href="thread.html#36771">[ thread ]</a>
+              <a href="subject.html#36771">[ subject ]</a>
+              <a href="author.html#36771">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

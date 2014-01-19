@@ -1,0 +1,206 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] java.lang.OutOfMemoryError: Java heap space
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20java.lang.OutOfMemoryError%3A%20Java%20heap%20space&In-Reply-To=%3C4A67A329E202470683697B557B777FD2%40GWB%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="021143.html">
+   <LINK REL="Next"  HREF="021170.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] java.lang.OutOfMemoryError: Java heap space</H1>
+    <B>Robin Davies</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20java.lang.OutOfMemoryError%3A%20Java%20heap%20space&In-Reply-To=%3C4A67A329E202470683697B557B777FD2%40GWB%3E"
+       TITLE="[antlr-interest] java.lang.OutOfMemoryError: Java heap space">rerdavies at rogers.com
+       </A><BR>
+    <I>Wed Jun  6 13:01:53 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="021143.html">[antlr-interest] java.lang.OutOfMemoryError: Java heap space
+</A></li>
+        <LI>Next message: <A HREF="021170.html">[antlr-interest] java.lang.OutOfMemoryError: Java heap space
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#21155">[ date ]</a>
+              <a href="thread.html#21155">[ thread ]</a>
+              <a href="subject.html#21155">[ subject ]</a>
+              <a href="author.html#21155">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>&gt;<i> fragment DEC_OCTET
+</I>&gt;<i>  : DIGIT               // 0-9
+</I>&gt;<i>   | '1'..'9' DIGIT      // 10-99
+</I>&gt;<i>   | '1' DIGIT DIGIT     // 100-199
+</I>&gt;<i>  | '2' '0'..'4' DIGIT  // 200-249
+</I>&gt;<i>   | '25' '0'..'5'       // 250-255
+</I>&gt;<i>   ;
+</I>Have to wonder whether this is really a smart thing to do. You're using a 
+lexer to enforce a semantic restriction: namely that a DEC_OCTET must have a 
+value between of 0 to 255.
+
+&gt;<i>From an efficiency point of view, wouldn't it make sense to go for
+</I>   DEC_OCTET: DIGIT+;  (not a fragment!)
+and then build addresses at the parser level rather than at the lexer level, 
+and enforce semantic restrictions either with predicates, or (even better, I 
+think) in the processing code.
+
+One of the downsides of this kind of semantic enforcement lexically is that 
+you end up with crazy error messages like :
+
+   Input: 1.1.257.1
+    Error: Expecting &quot;.&quot;, &quot;0&quot;, &quot;1&quot;, &quot;2&quot;, &quot;3&quot;, &quot;4&quot;, or &quot;5&quot;.
+(not a very helpful error message, in my opinion).
+
+If handle this error in a semantic level then you can provide much more 
+semantically relevant error messages like:
+   &quot;Malformed IPv4 address&quot;.
+
+Not knowing the details of the ANTLR DFA implementation, I have to think 
+that the amount of state information that a DFA has to track is going to be 
+crazy by the time you get a few octets into an IPv4 address. It doesn't 
+surprise me that the size of the lexer DFA goes ballistic, though.
+
+I'm struggling with this in some of the sample grammars. I can't help 
+thinking (for example) that it's a very bad idea to treat   &quot;\z&quot; in a 
+C/C++/C# string as a lexical error (&quot;not expecting 'z') rather than a 
+semantic error (&quot;illegal escape sequence&quot;).
+
+
+
+
+----- Original Message ----- 
+From: &quot;Wincent Colaiuta&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">win at wincent.com</A>&gt;
+To: &quot;ANTLR mail-list&quot; &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>&gt;
+Sent: Wednesday, June 06, 2007 6:03 AM
+Subject: Re: [antlr-interest] java.lang.OutOfMemoryError: Java heap space
+
+
+El 5/6/2007, a las 21:18, Wincent Colaiuta escribi&#243;:
+
+&gt;<i> El 5/6/2007, a las 21:04, Terence Parr escribi&#243;:
+</I>&gt;<i>
+</I>&gt;&gt;<i> Hmm...there is supposed to be a fail safe in their bad times out  if it 
+</I>&gt;&gt;<i> takes too long to build a DFA. is the grammar very big?
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>  perhaps you guys can e-mail me or grammars separately and I can  try 
+</I>&gt;&gt;<i> them out.
+</I>&gt;<i>
+</I>&gt;<i> The grammar can be viewed here:
+</I>&gt;<i>
+</I>&gt;<i>   &lt;<A HREF="http://pastie.textmate.org/68006">http://pastie.textmate.org/68006</A>&gt;
+</I>&gt;<i>
+</I>&gt;<i> Or directly downloaded here:
+</I>&gt;<i>
+</I>&gt;<i>   &lt;<A HREF="http://pastie.textmate.org/68006/download">http://pastie.textmate.org/68006/download</A>&gt;
+</I>
+Ok, so I've done a bit more investigation with the following results:
+
+- removing references to the IPV6_ADDRESS rule is enough to prevent
+the out-of-memory errors; this is a nasty rule and I need to find
+some better way of describing it: for the record the original ABNF
+grammar in the RFC describes it as follows (not very pretty):
+
+       IPv6address =                            6( h16 &quot;:&quot; ) ls32
+                   /                       &quot;::&quot; 5( h16 &quot;:&quot; ) ls32
+                   / [               h16 ] &quot;::&quot; 4( h16 &quot;:&quot; ) ls32
+                   / [ *1( h16 &quot;:&quot; ) h16 ] &quot;::&quot; 3( h16 &quot;:&quot; ) ls32
+                   / [ *2( h16 &quot;:&quot; ) h16 ] &quot;::&quot; 2( h16 &quot;:&quot; ) ls32
+                   / [ *3( h16 &quot;:&quot; ) h16 ] &quot;::&quot;    h16 &quot;:&quot;   ls32
+                   / [ *4( h16 &quot;:&quot; ) h16 ] &quot;::&quot;              ls32
+                   / [ *5( h16 &quot;:&quot; ) h16 ] &quot;::&quot;              h16
+                   / [ *6( h16 &quot;:&quot; ) h16 ] &quot;::&quot;
+
+       ls32        = ( h16 &quot;:&quot; h16 ) / IPv4address
+
+       h16         = 1*4HEXDIG
+
+- even after removing the IPV6_ADDRESS rule the generated lexer is
+still huge (290K lines of C, or 181K lines of Java)
+
+- visually inspecting the generated file shows that most of the
+methods are no more than a few hundred lines long and the vast
+majority of them are much less
+
+- the vast bulk of the file is occupied by the HOST rule (179K lines
+of Java):
+
+fragment HOST
+   : IP_LITERAL
+   | (IPV4_ADDRESS)=&gt; IPV4_ADDRESS
+   | REG_NAME
+   ;
+
+- removing the IPV4_ADDRESS subrule causes the line count for the
+lexer to drop down to a much more reasonable 2K lines of Java; for
+reference, the IPV4_ADDRESS subrule is as follows:
+
+fragment IPV4_ADDRESS: DEC_OCTET '.' DEC_OCTET '.' DEC_OCTET '.'
+DEC_OCTET;
+fragment DEC_OCTET
+   : DIGIT               // 0-9
+   | '1'..'9' DIGIT      // 10-99
+   | '1' DIGIT DIGIT     // 100-199
+   | '2' '0'..'4' DIGIT  // 200-249
+   | '25' '0'..'5'       // 250-255
+   ;
+
+- it's not the IPV4_ADDRESS subrule in itself which is the problem,
+rather the way it interacts with the REG_NAME subrule; I can confirm
+this because removing the REG_NAME subrule instead of the
+IPV4_ADDRESS has the same effect (lexer stays small)
+
+- adding the IPV6_ADDRESS rule back in causes the out-of-memory error
+to return immediately
+
+So I've narrowed down the source of the problem quite a bit. I'm not
+sure why the interaction between the IPV4_ADDRESS and REG_NAME
+subrules would cause such a problem; the RFC acknowledges that they
+are ambiguous but it also specifies that IPV4_ADDRESS should be
+preferred, so the syntactic predicate should handle that. Given that
+I am not interested in the internal structure of the URIs (I only
+want to recognize them and move on) I can probably just drop the
+reference to IPV4_ADDRESS in the HOST rule because REG_NAME will
+match IPv4 addresses anyway.
+
+Does anyone now how I could express the IPV6_ADDRESS rule in a way
+that won't cause ANTLR to choke?
+
+Cheers,
+Wincent
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="021143.html">[antlr-interest] java.lang.OutOfMemoryError: Java heap space
+</A></li>
+	<LI>Next message: <A HREF="021170.html">[antlr-interest] java.lang.OutOfMemoryError: Java heap space
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#21155">[ date ]</a>
+              <a href="thread.html#21155">[ thread ]</a>
+              <a href="subject.html#21155">[ subject ]</a>
+              <a href="author.html#21155">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

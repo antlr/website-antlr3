@@ -1,0 +1,158 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Bounding the token stream in the C backend
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Bounding%20the%20token%20stream%20in%20the%20C%20backend&In-Reply-To=%3C4a051d931003031119v4664dcfp3b1fe82f5b2cc6a3%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="037841.html">
+   <LINK REL="Next"  HREF="037845.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Bounding the token stream in the C backend</H1>
+    <B>Christopher L Conway</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Bounding%20the%20token%20stream%20in%20the%20C%20backend&In-Reply-To=%3C4a051d931003031119v4664dcfp3b1fe82f5b2cc6a3%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Bounding the token stream in the C backend">cconway at cs.nyu.edu
+       </A><BR>
+    <I>Wed Mar  3 11:19:39 PST 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="037841.html">[antlr-interest] Bounding the token stream in the C backend
+</A></li>
+        <LI>Next message: <A HREF="037845.html">[antlr-interest] Bounding the token stream in the C backend
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37844">[ date ]</a>
+              <a href="thread.html#37844">[ thread ]</a>
+              <a href="subject.html#37844">[ subject ]</a>
+              <a href="author.html#37844">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi, Jim,
+
+On Wed, Mar 3, 2010 at 2:36 AM, Jim Idle &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">jimi at temporal-wave.com</A>&gt; wrote:
+&gt;<i> Your points are well taken, but there are some misunderstandings here. I have tried to say on a number of occasions that the string factory thing coming from $xyz.text is just a convenience thing that should not be used in any environment that requires performance/memory efficiency. It is just a reasonable way to access the pointers and stuff.
+</I>&gt;<i>
+</I>&gt;<i> However, look guys, this is C!! By which I mean, for real efficiency, you should be accessing things such as the text of the token via the pointers in the token and not via the artifice of $text.
+</I>
+Thanks for this tip! By replacing
+
+    std::string id( $IDENTIFIER.text-&gt;chars )
+
+with
+
+    pANTLR3_COMMON_TOKEN token = $IDENTIFIER;
+    ANTLR3_MARKER start = token-&gt;getStartIndex(token);
+    ANTLR3_MARKER end = token-&gt;getStopIndex(token);
+    std::string id( (const char *)start, end-start+1 );
+
+I see another 3-fold decrease in memory usage. In combination with the
+bounded lookahead stream and token factory, this brings the memory
+usage of my ANTLR 3 C parser roughly in line the ANTLR 2.7 C++ version
+(it's still ~40% faster).
+
+&gt;<i> In the next release I will document this better and I apologize for not having done so up to press. There are also lots of macros and switches you can set that will improve performance a lot, and the upcoming release has lots of performance improvements. For comparison, I am currently working on a parser for IBM that is 7X faster than the 2.7.x C++ equivalent. Once again, I apologize for not documenting all of this stuff as well as it might be, but the code itself is well documented; there just needs to be more usage docs I think.
+</I>
+This is intriguing. Could you point to a few of the important settings
+I should be looking at?
+
+Regards,
+Chris
+
+&gt;<i> -----Original Message-----
+</I>&gt;<i> From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Christopher L Conway
+</I>&gt;<i> Sent: Tuesday, March 02, 2010 6:44 PM
+</I>&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> Subject: Re: [antlr-interest] Bounding the token stream in the C backend
+</I>&gt;<i>
+</I>&gt;<i> On Thu, Feb 25, 2010 at 12:09 AM, Christopher L Conway
+</I>&gt;<i> &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">cconway at cs.nyu.edu</A>&gt; wrote:
+</I>&gt;&gt;<i> I've got a large input file (~39MB) that I'm attempting to parse with
+</I>&gt;&gt;<i> an ANTLR3-generated C parser. The parser is using a huge amount of
+</I>&gt;&gt;<i> memory (~3.7GB) and seems to start thrashing without making much
+</I>&gt;&gt;<i> progress towards termination. I found a thread from earlier this month
+</I>&gt;&gt;<i> (<A HREF="http://markmail.org/message/jfngdd2ci6h7qrbo">http://markmail.org/message/jfngdd2ci6h7qrbo</A>) suggesting the most
+</I>&gt;&gt;<i> likely cause of such behavior is a parser bug, but I've stepped
+</I>&gt;&gt;<i> through the code and it seems to be lexing just fine. Rather, it seems
+</I>&gt;&gt;<i> the problem is that fillBuffer() is tokenizing the whole file in one
+</I>&gt;&gt;<i> go; then, the parsing rules slow to a crawl because the token buffer
+</I>&gt;&gt;<i> is sitting on all the memory.
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> I wonder if there is a way to change fillBuffer()'s behavior, so that
+</I>&gt;&gt;<i> it will only lex some bounded number of tokens before allowing parsing
+</I>&gt;&gt;<i> to proceed?
+</I>&gt;<i>
+</I>&gt;<i> I have a partial solution to this problem. To be clear, the issue is:
+</I>&gt;<i>
+</I>&gt;<i> 1. The default token stream implementation tokenizes the entire input
+</I>&gt;<i> on the first call to LT().
+</I>&gt;<i> 2. The default token factory never de-allocates tokens.
+</I>&gt;<i>
+</I>&gt;<i> Since a token structure is more than 100 bytes, large inputs can
+</I>&gt;<i> easily consume multiple GB before parsing even begins. (This is in the
+</I>&gt;<i> C back-end. I don't know about other back-ends.)
+</I>&gt;<i>
+</I>&gt;<i> The solution consists of:
+</I>&gt;<i>
+</I>&gt;<i> 1. A token stream implementation that tokenizes up to a fixed lookahead limit.
+</I>&gt;<i> 2. A token factory that pre-allocates a fixed number of tokens,
+</I>&gt;<i> recycling old tokens when new ones are requested.
+</I>&gt;<i>
+</I>&gt;<i> This seems to be a sound strategy, so long as the input grammar has an
+</I>&gt;<i> known lookahead limit and the allocation pool is sufficiently large.
+</I>&gt;<i> My grammar is LL(2), and a lookahead limit of 2 with a token pool of 8
+</I>&gt;<i> tokens works just fine.
+</I>&gt;<i>
+</I>&gt;<i> Using this implementation, I'm able to parse the above-mentioned 39MB
+</I>&gt;<i> input file using less than 700MB memory, a more than 5-fold
+</I>&gt;<i> improvement on the defaults (as an added benefit, the parser actually
+</I>&gt;<i> terminated after 45s and didn't completely lock my system!). The
+</I>&gt;<i> parser is about 40% faster than an equivalent ANTLR 2.7 parser using
+</I>&gt;<i> the C++ back-end, but still uses about 5 times as much memory. The
+</I>&gt;<i> remaining excess memory usage seems to be due to the default string
+</I>&gt;<i> factory implementation, which also doesn't seem to ever release memory
+</I>&gt;<i> once allocated. This is a much more complex beast and I'm hesitant to
+</I>&gt;<i> tackle it.
+</I>&gt;<i>
+</I>&gt;<i> If anybody is interested in using this code, I'm willing to clean it
+</I>&gt;<i> up and share it with the community. Please feel free to contact me.
+</I>&gt;<i>
+</I>&gt;<i> Regards,
+</I>&gt;<i> Chris
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i>
+</I></PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="037841.html">[antlr-interest] Bounding the token stream in the C backend
+</A></li>
+	<LI>Next message: <A HREF="037845.html">[antlr-interest] Bounding the token stream in the C backend
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#37844">[ date ]</a>
+              <a href="thread.html#37844">[ thread ]</a>
+              <a href="subject.html#37844">[ subject ]</a>
+              <a href="author.html#37844">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

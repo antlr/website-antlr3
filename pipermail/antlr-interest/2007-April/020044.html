@@ -1,0 +1,418 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Newbie: How to debug in C++?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Newbie%3A%20How%20to%20debug%20in%20C%2B%2B%3F&In-Reply-To=%3Cb9fb3efe0704021202kc439fd7s1db626f4b3f0a74c%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="020043.html">
+   <LINK REL="Next"  HREF="020045.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Newbie: How to debug in C++?</H1>
+    <B>me 262</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Newbie%3A%20How%20to%20debug%20in%20C%2B%2B%3F&In-Reply-To=%3Cb9fb3efe0704021202kc439fd7s1db626f4b3f0a74c%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Newbie: How to debug in C++?">me262c at gmail.com
+       </A><BR>
+    <I>Mon Apr  2 12:02:30 PDT 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="020043.html">[antlr-interest] Very general question,	might require a book as an answer
+</A></li>
+        <LI>Next message: <A HREF="020045.html">[antlr-interest] can ANTLR tool itself use 1.5?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#20044">[ date ]</a>
+              <a href="thread.html#20044">[ thread ]</a>
+              <a href="subject.html#20044">[ subject ]</a>
+              <a href="author.html#20044">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi,
+
+  I tried to convert Alex Miller's examples into C++ (MSVC7)
+<A HREF="http://tech.puredanger.com/2007/01/13/implementing-a-scripting-language-with-antlr-part-1-lexer/">http://tech.puredanger.com/2007/01/13/implementing-a-scripting-language-with-antlr-part-1-lexer/</A>
+
+  The lexer went OK, the Parser is missing DumpASTVisitor in C++, but
+otherwise OK too. The script.g however got a lot of error in
+ScriptWalker.hpp. Here is the *.g file for C++ (you can find the java
+version on Alex's blog, part 2).
+
+  A Main.cpp for testing is also attached.
+
+  It would not compile at all. Can someone point out what went wrong here?
+
+Thanks
+
+/* ############################## L E X E R ############################ */
+options {
+	language=&quot;Cpp&quot;;
+}
+
+
+class ScriptLexer extends Lexer;
+
+	options {
+		k=1; 	// Only 1 lookahead character required
+	}
+	
+	// Define string values - either simple unquoted or complex quoted
+	STRING : ('a'..'z'|'A'..'Z'|'0'..'9'|'_')+
+			| ('&quot;' (~'&quot;')* '&quot;');
+	
+	// Ignore all whitespace
+	WS     :
+	    (' '
+	    | '\t'
+	    | '\r' '\n' { newline(); }
+	    | '\n'      { newline(); }
+	    )
+	    { $setType(antlr::Token::SKIP); } ;
+	
+	// Single-line comment
+	LINE_COMMENT : '#' (~('\n'|'\r'))* ('\n'|'\r'('\n')?)?
+		{ $setType(antlr::Token::SKIP); newline(); } ;
+	
+	// Punctuation
+	LBRACE : '{';
+	RBRACE : '}';
+	EQUALS : '=';
+	SEMI : ';';
+
+
+/* ############################## P A R S E R ############################ */
+
+class ScriptParser extends Parser;
+
+	options {
+		buildAST=true; 		// Automatically build the AST while parsing
+		k=2; 				// Need lookahead of two for props without keys (to check for the =)
+	}
+	
+	tokens {
+		SCRIPT;				// Imaginary token inserted at the root of the script
+		BLOCK;				// Imaginary token inserted at the root of a block
+		COMMAND;			// Imaginary token inserted at the root of a command
+		PROPERTY;			// Imaginary token inserted at the root of a property
+	}
+	
+	/**
+	 * Parse a script, which consists of 0 or more blocks.  The AST
+produced will contain an imaginary
+	 * SCRIPT node at the root with child block ASTs.
+	 */
+	script : (block)*
+		{#script = #([SCRIPT, &quot;SCRIPT&quot;], #script);};		// Magic to insert the
+imgainary SCRIPT node
+	
+	/**
+	 * Parse a block, which consists of a block name then 0 or more
+commands in { }.  The AST produced
+	 * will contain an imaginary BLOCK node at the root with children
+which are the block name followed
+	 * by an AST for each child command.  The { } are not included in the AST.
+	 */
+	block : (STRING LBRACE! (command)* RBRACE!)
+		{#block = #([BLOCK, &quot;BLOCK&quot;], #block);};
+
+	/**
+	 * Parse a command, which consists of a command name, followed by 0
+or more command properties and
+	 * terminated with a semicolon.
+	 */
+	command : (STRING (property)* SEMI!)
+		{#command = #([COMMAND, &quot;COMMAND&quot;], #command);};
+	
+	/**
+	 * Parse a property definition, which consists either of an unkeyed value
+	 * or as a key-value pair.  The AST produced will contain an
+imaginary PROPERTY token node at the root
+	 * with either one child (for a non-keyed value) or two children if
+there is a key and a value.
+	 * The = is not included in the AST.
+	 */
+	property : ( (STRING EQUALS!)? STRING)
+		{#property = #([PROPERTY, &quot;PROPERTY&quot;], #property);};
+
+
+/* ############################## T R E E  W A L K E R
+############################ */
+
+class ScriptWalker extends TreeParser;
+
+{
+	/**
+	 * Helper method to remove quotes from a quoted string.
+	 * @param value The value to remove quotes from
+	 * @return The value with surrounding quotes (if any) removed
+	 */
+
+    std::string removeQuotes(std::string &amp;value) {
+       // if(value != null &amp;&amp; value.startsWith(&quot;\&quot;&quot;)) {
+       //     return value.substring(1, value.length()-1);
+       // }
+        return value;
+    }
+}
+
+	/**
+	 * Look for SCRIPT node with child BLOCK ASTs and return a Script object
+	 * @return Script object, never null
+	 */
+	script returns [Script script]
+	{
+		script = new Script();
+	}
+		:	#( SCRIPT (block[script] )* );
+		
+	/**
+	 * Look for BLOCK node with child COMMAND ASTs and add any block
+found to the blocks list.
+	 * @param blocks The blocks being collected
+	 */
+	block [Script script]
+	{
+		Block block = null;
+	}
+		:	#( 	BLOCK
+				 (
+					b:STRING
+					{
+						block = new Block(removeQuotes(b-&gt;getText()));
+					}
+					(command[block])*
+				)
+			)
+			{ script-&gt;addBlock(block); }
+		;
+	
+	/**
+	 * Look for COMMAND node with child command name and properties and
+add the command
+	 * info to the block.
+	 * @param block The block being parsed
+	 */
+	command [Block block]
+	{
+		Command command = null;
+	}
+		:	#( 	COMMAND
+				(
+					c:STRING
+					{
+						command = new Command(removeQuotes(c-&gt;getText()));
+						block-&gt;addCommand(command);
+					}
+					(property[command])*
+				)
+			);
+	
+	/**
+	 * Look for PROPERTY node with child (optional) key and value and add
+the property
+	 * to the current CommandInfo.
+	 * @param command The current command
+	 */
+	property [Command command]
+		: 	#( PROPERTY
+				(
+					p1:STRING (p2:STRING)?
+					{
+						if(p2 == null) {
+							command-&gt;addProperty(removeQuotes(p1-&gt;getText()));
+						} else {
+							command-&gt;addProperty(removeQuotes(p1-&gt;getText()),
+removeQuotes(p2-&gt;getText()));
+						}
+					}
+				)
+			);
+	
+
+//--------------------------------------------------------------------------------
+// The main.cpp
+//--------------------------------------------------------------------------------
+/* Calculate an expression read from stdin or from the arguments passed to
+ * the program (using stringstream's)
+ */
+#include &lt;iostream&gt;
+#include &lt;fstream&gt;
+#include &lt;sstream&gt;
+#include &lt;string&gt;
+
+#include &quot;antlr/CommonAST.hpp&quot;
+#include &quot;antlr/AST.hpp&quot;
+#include &quot;ScriptLexer.hpp&quot;
+#include &quot;ScriptParser.hpp&quot;
+#include &quot;ScriptWalker.hpp&quot;
+
+using namespace std;
+
+string getTokenType(int tokenType)
+{
+        switch(tokenType) {
+
+		case ScriptLexerTokenTypes::STRING: return &quot;STRING&quot;;
+		case ScriptLexerTokenTypes::LBRACE: return &quot;LBRACE&quot;;
+		case ScriptLexerTokenTypes::RBRACE: return &quot;RBRACE&quot;;
+		case ScriptLexerTokenTypes::EQUALS: return &quot;EQUALS&quot;;
+		case ScriptLexerTokenTypes::SEMI: return &quot;SEMI&quot;;
+
+        default: return &quot;OTHER&quot;;
+        }
+ }
+
+int main( int argc, char* argv[] )
+{
+	ANTLR_USING_NAMESPACE(std)
+	ANTLR_USING_NAMESPACE(antlr)
+	try
+	{
+		ifstream in(argv[1],ios::in);
+		ScriptLexer lexer(in);
+     /*
+		RefToken token = lexer.nextToken();
+		while(token-&gt;getType() != ScriptLexerTokenTypes::EOF_) {
+            cout &lt;&lt; &quot;\t&quot; + getTokenType(token-&gt;getType()) + &quot;\t\t&quot; +
+token-&gt;getText()&lt;&lt;endl;
+            token = lexer.nextToken();
+        }
+	 */
+
+		ScriptParser parser(lexer);
+
+		ASTFactory ast_factory;
+		parser.initializeASTFactory(ast_factory);
+		parser.setASTFactory(&amp;ast_factory);
+
+		parser.script();
+
+		RefAST ast = (RefAST) parser.getAST();
+	
+		/*
+		DumpASTVisitor visitor;
+		visitor.visit(ast);
+		*/
+
+	}
+	catch(ANTLRException&amp; e)
+	{
+		cerr &lt;&lt; &quot;Parse exception: &quot; &lt;&lt; e.toString() &lt;&lt; endl;
+		return -1;
+	}
+	catch(exception&amp; e)
+	{
+		cerr &lt;&lt; &quot;exception: &quot; &lt;&lt; e.what() &lt;&lt; endl;
+		return -1;
+	}
+	return 0;
+}
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: script.g
+Type: application/octet-stream
+Size: 4751 bytes
+Desc: not available
+Url : <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20070402/c6a7a416/attachment.obj">http://www.antlr.org/pipermail/antlr-interest/attachments/20070402/c6a7a416/attachment.obj</A> 
+-------------- next part --------------
+/* Calculate an expression read from stdin or from the arguments passed to
+ * the program (using stringstream's)
+ */
+#include &lt;iostream&gt;
+#include &lt;fstream&gt;
+#include &lt;sstream&gt;
+#include &lt;string&gt;
+
+#include &quot;antlr/CommonAST.hpp&quot;
+#include &quot;antlr/AST.hpp&quot;
+#include &quot;ScriptLexer.hpp&quot;
+#include &quot;ScriptParser.hpp&quot;
+#include &quot;ScriptWalker.hpp&quot;
+
+using namespace std;
+
+string getTokenType(int tokenType) 
+{
+        switch(tokenType) {
+
+		case ScriptLexerTokenTypes::STRING: return &quot;STRING&quot;;
+		case ScriptLexerTokenTypes::LBRACE: return &quot;LBRACE&quot;;
+		case ScriptLexerTokenTypes::RBRACE: return &quot;RBRACE&quot;;
+		case ScriptLexerTokenTypes::EQUALS: return &quot;EQUALS&quot;;
+		case ScriptLexerTokenTypes::SEMI: return &quot;SEMI&quot;;
+
+        default: return &quot;OTHER&quot;;
+        }
+ }
+
+int main( int argc, char* argv[] )
+{
+	ANTLR_USING_NAMESPACE(std)
+	ANTLR_USING_NAMESPACE(antlr)
+	try
+	{
+		ifstream in(argv[1],ios::in);
+		ScriptLexer lexer(in);
+     /*  
+		RefToken token = lexer.nextToken();
+		while(token-&gt;getType() != ScriptLexerTokenTypes::EOF_) {
+            cout &lt;&lt; &quot;\t&quot; + getTokenType(token-&gt;getType()) + &quot;\t\t&quot; + token-&gt;getText()&lt;&lt;endl;
+            token = lexer.nextToken();
+        }
+	 */
+
+		ScriptParser parser(lexer);
+
+		ASTFactory ast_factory;
+		parser.initializeASTFactory(ast_factory);
+		parser.setASTFactory(&amp;ast_factory);
+
+		parser.script();
+
+		RefAST ast = (RefAST) parser.getAST();
+	
+		/*
+		DumpASTVisitor visitor;
+		visitor.visit(ast);
+		*/
+
+	}
+	catch(ANTLRException&amp; e)
+	{
+		cerr &lt;&lt; &quot;Parse exception: &quot; &lt;&lt; e.toString() &lt;&lt; endl;
+		return -1;
+	}
+	catch(exception&amp; e)
+	{
+		cerr &lt;&lt; &quot;exception: &quot; &lt;&lt; e.what() &lt;&lt; endl;
+		return -1;
+	}
+	return 0;
+}
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="020043.html">[antlr-interest] Very general question,	might require a book as an answer
+</A></li>
+	<LI>Next message: <A HREF="020045.html">[antlr-interest] can ANTLR tool itself use 1.5?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#20044">[ date ]</a>
+              <a href="thread.html#20044">[ thread ]</a>
+              <a href="subject.html#20044">[ subject ]</a>
+              <a href="author.html#20044">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

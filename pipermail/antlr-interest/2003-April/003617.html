@@ -1,0 +1,194 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Re: More Error Handling and Recovery
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20More%20Error%20Handling%20and%20Recovery&In-Reply-To=b74ljb%2Bhkj6%40eGroups.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003580.html">
+   <LINK REL="Next"  HREF="003581.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Re: More Error Handling and Recovery</H1>
+    <B>antlrlist</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20More%20Error%20Handling%20and%20Recovery&In-Reply-To=b74ljb%2Bhkj6%40eGroups.com"
+       TITLE="[antlr-interest] Re: More Error Handling and Recovery">antlrlist at yahoo.com
+       </A><BR>
+    <I>Wed Apr 16 11:42:13 PDT 2003</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003580.html">[antlr-interest] More Error Handling and Recovery
+</A></li>
+        <LI>Next message: <A HREF="003581.html">[antlr-interest] comments in grammar files
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3617">[ date ]</a>
+              <a href="thread.html#3617">[ thread ]</a>
+              <a href="subject.html#3617">[ subject ]</a>
+              <a href="author.html#3617">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+I see that you have some wrong concepts.
+
+I'll begin assuming that you're not turning off the
+defaultErrorHandler option.
+
+The error handler that you use in &quot;startRule&quot; does nothing, because is
+exactly the same that ANTLR generates by default (this is, when
+defaultErrorHandler=true -by default it is-).
+
+By the way, ANTLR generates that handler for EVERY rule in your
+grammar. This is, &quot;line&quot; has an error handler, &quot;date&quot; has an error
+handler, and so on.
+
+The default error handler is allways the same:
+
+void  myRule()
+{
+  try {
+   ... // &lt;= Normal recogniton
+  } catch (RecognitionException re) { //
+    reportError(re);                  //  &lt;= Default error handler
+    consume();                        //
+    consumeUntil(???);                //
+  }
+}
+
+Now, what is ??? ?. It's the FOLLOW set of myRule. It's codified in a
+BitSet (antlr.Collections.impl.BitSet) object.
+
+If you want to use BitSets in your actions or in your exception
+handlers, you can use $FIRST and $FOLLOW. $FIRST(rulename) maps to
+&quot;the FIRST set of rulename&quot;. $FOLLOW works the same way. If you use
+$FIRST alone (no args) you're meaning &quot;the FIRST set for the rule
+where the exception handler is&quot;.
+
+So for your startRule you could write something like this:
+
+startRule
+     :  ( line )+ EOF
+     ;
+     exception // for rule
+     catch [RecognitionException ex] {
+     reportError(ex); // Console.Error.WriteLine(&quot;exception: &quot;+ex);
+     consume();
+     consumeUntil($FOLLOW); // &lt;= HERE!
+     }
+
+You can use other sets instead of $FOLLOW, like $FOLLOW(startRule).
+You should never use _tokenSet_XX for that, 'cause that's just
+unstable. If you can not use directly $FOLLOW or $FIRST, you can:
+a) Create a bitset {BitSet b=new BitSet();},
+   add the tokens you need {b.add(IDENT); b.add(WS); ...}
+   and then consume {consumeUntil(b);}
+or b) Create a bitset with boolean operations like &quot;and&quot; and &quot;or&quot;
+   { BitSet b = $FIRST.or($FOLLOW); }
+   and then consume {consumeUntil(b);}
+
+The point is that startRule's error handler helps you very little.
+You'll wait for FOLLOW(startRule). And while waiting the recognition
+process will end. This will happen for two reasons:
+FOLLOW(startRule)'s an empty set, and the recognition is already over
+when you reach startRule's error handler.
+
+Here are my advices:
+
+1- Familiarize yourself with FOLLOW and FIRST (I mean the abstract
+concepts, not ANTLR's commands!)
+2- Familiarize yourself with how ANTLR implements error recovery. The
+file err.htm in the docs is a good start.
+3- Have a look at the code ANTLR generates for your analyzer, until
+you understand why the error handler you've used in startRule is
+(sorry) useless.
+
+Normally error recovery is a very long task that envolves lots of
+code-tweaking and code generation understanding; this is, nothing that
+you can do with a single exception handler in a sigle rule.
+
+In other order of things, why are you recognizing EOF and WS? You're
+using a Lexer and a Parser, right?
+
+I hope I could help you. Cheers!
+
+Enrique
+
+
+
+
+
+--- In <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at yahoogroups.com</A>, &quot;madison_stjames&quot;
+&lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">madison_stjames at y...</A>&gt; wrote:
+&gt;<i> Ok, I think I've almost got it:
+</I>&gt;<i> 
+</I>&gt;<i> Here's my start rule:
+</I>&gt;<i>  startRule
+</I>&gt;<i>     :  ( line )+ EOF
+</I>&gt;<i>     ;
+</I>&gt;<i>     exception // for rule
+</I>&gt;<i>     catch [RecognitionException ex] {
+</I>&gt;<i>     Console.Error.WriteLine(&quot;exception: &quot;+ex);
+</I>&gt;<i>     consume();
+</I>&gt;<i>     consumeUntil(tokenSet_0_);
+</I>&gt;<i>     }
+</I>&gt;<i> 
+</I>&gt;<i> What I want to do is resume the line production, upon encountering 
+</I>&gt;<i> an unrecognized token. The error is written out, and parsing 
+</I>&gt;<i> continues with the next line in the file.
+</I>&gt;<i> 
+</I>&gt;<i> The line production composed of sub-productions as follows:
+</I>&gt;<i> 
+</I>&gt;<i> line
+</I>&gt;<i>     : ( date WS time WS cip WS csusername WS sip WS sport WS 
+</I>&gt;<i> csmethod WS csuristem WS csuriquery WS scstatus WS csuseragent (WS)?
+</I>&gt;<i>         { 
+</I>&gt;<i>            Console.Out.WriteLine( SBLine.ToString() );
+</I>&gt;<i>            SBLine = new StringBuilder();
+</I>&gt;<i>         }
+</I>&gt;<i>        )
+</I>&gt;<i>     ; 
+</I>&gt;<i> 
+</I>&gt;<i> I want to continue to the next rule that the parser can recognize. I 
+</I>&gt;<i> thought line should work, for example: consumeUntil(line) but that 
+</I>&gt;<i> causes an error.
+</I>&gt;<i> 
+</I>&gt;<i> I looked at the parser file from a previous version, and noticed 
+</I>&gt;<i> that error handling specified token sets. How do these map to the 
+</I>&gt;<i> rules? And how do I determine which ones to use?
+</I>&gt;<i> 
+</I>&gt;<i> The exception handling routine above works, but I'm not sure exactly 
+</I>&gt;<i> what I'm referencing with tokenSet_0_;
+</I>&gt;<i> 
+</I>&gt;<i> Thanks Again!
+</I>
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003580.html">[antlr-interest] More Error Handling and Recovery
+</A></li>
+	<LI>Next message: <A HREF="003581.html">[antlr-interest] comments in grammar files
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3617">[ date ]</a>
+              <a href="thread.html#3617">[ thread ]</a>
+              <a href="subject.html#3617">[ subject ]</a>
+              <a href="author.html#3617">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

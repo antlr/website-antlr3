@@ -1,0 +1,246 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Help needed upgrading java.g to support Generics
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Help%20needed%20upgrading%20java.g%20to%20support%20Generics&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="003306.html">
+   <LINK REL="Next"  HREF="003308.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Help needed upgrading java.g to support Generics</H1>
+    <B>Matt Quail</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Help%20needed%20upgrading%20java.g%20to%20support%20Generics&In-Reply-To="
+       TITLE="[antlr-interest] Help needed upgrading java.g to support Generics">matt at cortexebusiness.com.au
+       </A><BR>
+    <I>Wed Mar 12 19:20:06 PST 2003</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="003306.html">[antlr-interest] Changing AST order in a complex rule
+</A></li>
+        <LI>Next message: <A HREF="003308.html">[antlr-interest] Linking to the ANTLR C# Runtime
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3307">[ date ]</a>
+              <a href="thread.html#3307">[ thread ]</a>
+              <a href="subject.html#3307">[ subject ]</a>
+              <a href="author.html#3307">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi all,
+
+I'm trying to update the java.g grammar with support for Generics (as defined 
+by JSR14, grab the pdf spec at 
+<A HREF="http://www.jcp.org/aboutJava/communityprocess/review/jsr014/index.html">http://www.jcp.org/aboutJava/communityprocess/review/jsr014/index.html</A> ). My 
+intent is to upgrade the grammar and submit a patch back to the &quot;offical&quot; 
+java.g; so any help will hopefully help us all.
+
+The MAJOR problem is that JDK1.5 will allow this:
+
+List&lt;List&lt;String&gt;&gt; x = ...;
+                 ^^
+The problem is that the lexer will match &quot;&gt;&gt;&quot; as a shift-right token, but we 
+really want to parse it as two GT tokens in this context. The JSR pdf has a BNF 
+grammar that solves this problem, at it is that pattern that I am trying to 
+implement in ANTLR. (A re-cap of this trick is given at the end of the email.)
+
+(Note that there is also a problem lexing &quot;&gt;&gt;&gt;&quot;, but lets just confine 
+ourselves to &quot;&gt;&gt;&quot; for the moment.)
+
+Okay, after a few false starts, I've come up with the following grammar (note 
+that it is not the full JavaRecogniser parser, just enough to parse a SEMICOLON 
+seperated list of types) (it uses the standard JavaLexer):
+
+--------
+compilationUnit
+	:
+         ( type SEMI ) *
+		EOF!
+	;
+
+type
+	:	referenceType
+	|	builtInType (arrayDecl)?
+	;
+
+referenceType:
+         identifier
+         (  arrayDecl
+         |  LT referenceTypeList1
+         )?
+     ;
+
+referenceTypeList1:
+         (referenceType1)=&gt; referenceType1
+     |
+         (options{greedy=false;}: referenceType COMMA)+
+         referenceType1
+     ;
+
+referenceType1:
+         (referenceType GT)=&gt; referenceType GT
+     |
+         identifier LT referenceTypeList2
+     ;
+
+referenceTypeList2 :
+         (referenceType2)=&gt; referenceType2
+     |
+         (options{greedy=false;}: referenceType COMMA)+
+         referenceType2
+     ;
+
+referenceType2:
+         referenceType SR
+     ;
+
+arrayDecl:
+         (LBRACK RBRACK)+
+     ;
+// The primitive types.
+builtInType
+	:	&quot;void&quot;
+	|	&quot;boolean&quot;
+	|	&quot;byte&quot;
+	|	&quot;char&quot;
+	|	&quot;short&quot;
+	|	&quot;int&quot;
+	|	&quot;float&quot;
+	|	&quot;long&quot;
+	|	&quot;double&quot;
+	;
+
+identifier
+	:	IDENT ( DOT^ IDENT)*
+	;
+--------
+
+This grammar will sucessfully parse these constructs:
+--------
+String;
+java.lang.String;
+int;
+float;
+int[];
+String[];
+float[][][];
+List&lt;String&gt;;
+List&lt;String[]&gt;;
+List&lt;List&lt;String[]&gt; &gt;;
+List&lt;List&lt;String[]&gt;&gt;;
+
+Map&lt;String,Integer&gt;;
+Map&lt;String,List&lt;Integer&gt; &gt;;
+Map&lt;String,List&lt;Integer&gt;&gt;;
+Map&lt;List&lt;Integer&gt;,String&gt;;
+Map&lt;List&lt;Integer&gt;,List&lt;String&gt;&gt;;
+
+Map3&lt;String,Integer,Float&gt;;
+
+Map&lt;Map&lt;String,String&gt;,Map3&lt;String,Integer,Float&gt;&gt;;
+Map&lt;List&lt;String&gt;,List&lt;Integer&gt;&gt;;
+--------
+
+But it will not parse these:
+Map3&lt;List&lt;String&gt;,List&lt;Integer&gt;,List&lt;Float&gt;&gt;;
+Map3&lt;String,List&lt;Integer&gt;,Float&gt;;
+
+The errors are:
+G1.java:20:18: unexpected token: Integer
+and
+G1.java:24:24: unexpected token: Integer
+
+Now, I can see why this is happening, it is caused by my non-greedy rules in 
+referenceTypeList1 and referenceTypeList2. But I need them to be non-greedy (in 
+some fashion), because I don't want them to match the last &quot;referenceType&quot; that 
+  preceeds the next GT or SR token.
+
+(Making them both greedy means that it matches too many times...)
+
+I'm starting to get to the limits of my understanding of ANTLR... I started 
+thinking it was a look-ahead problem... but it really requires &quot;lots&quot; of 
+lookahead, that's why I have those syntactic predicates everywhere).
+
+Any help will be greatly appreciated! Have I gone down the wrong track?
+
+=Matt
+
+PS: The 'trick' JSR14 uses to parse &quot;&gt;&gt;&quot; and &quot;&gt;&gt;&gt;&quot;:
+The 'naive' grammar for parameterized type declarations (using the notation 
+used in the JLS) is:
+
+ReferenceType ::= ClassOrInterfaceType
+                 | ArrayType
+                 | TypeVariable
+
+TypeVariable ::= Identifier
+
+ClassOrInterfaceType ::= ClassOrInterface TypeArgumentsOpt
+
+ClassOrInterface ::= Identifier
+                    | ClassOrInterfaceType . Identifier
+
+TypeArguments ::= &lt; ReferenceTypeList &gt;
+
+ReferenceTypeList ::= ReferenceType
+                     | ReferenceTypeList , ReferenceType
+
+
+The &quot;trick&quot; is as folows (copied verbatim from the JSR14 spec)
+
+ReferenceType ::= ClassOrInterfaceType
+                 | ArrayType
+                 | TypeVariable
+
+ClassOrInterfaceType ::= Name
+                        | Name &lt; ReferenceTypeList1
+
+ReferenceTypeList1 ::= ReferenceType1
+                      | ReferenceTypeList , ReferenceType1
+
+ReferenceType1 ::= ReferenceType &gt;
+                  | Name &lt; ReferenceTypeList2
+
+ReferenceTypeList2 ::= ReferenceType2
+                      | ReferenceTypeList , ReferenceType2
+
+ReferenceType2 ::= ReferenceType &gt;&gt;
+                  | Name &lt; ReferenceTypeList3
+
+ReferenceTypeList3 ::= ReferenceType3
+                      | ReferenceTypeList , ReferenceType3
+
+ReferenceType3 ::= ReferenceType &gt;&gt;&gt;
+
+
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="003306.html">[antlr-interest] Changing AST order in a complex rule
+</A></li>
+	<LI>Next message: <A HREF="003308.html">[antlr-interest] Linking to the ANTLR C# Runtime
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#3307">[ date ]</a>
+              <a href="thread.html#3307">[ thread ]</a>
+              <a href="subject.html#3307">[ subject ]</a>
+              <a href="author.html#3307">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

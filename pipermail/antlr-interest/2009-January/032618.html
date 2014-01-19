@@ -1,0 +1,160 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] C Runtime Error Handling Problems
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20C%20Runtime%20Error%20Handling%20Problems&In-Reply-To=%3C49807EC8.7040703%40temporal-wave.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="032617.html">
+   <LINK REL="Next"  HREF="032623.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] C Runtime Error Handling Problems</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20C%20Runtime%20Error%20Handling%20Problems&In-Reply-To=%3C49807EC8.7040703%40temporal-wave.com%3E"
+       TITLE="[antlr-interest] C Runtime Error Handling Problems">jimi at temporal-wave.com
+       </A><BR>
+    <I>Wed Jan 28 07:50:32 PST 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="032617.html">[antlr-interest] C Runtime Error Handling Problems
+</A></li>
+        <LI>Next message: <A HREF="032623.html">[antlr-interest] C Runtime Error Handling Problems
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#32618">[ date ]</a>
+              <a href="thread.html#32618">[ thread ]</a>
+              <a href="subject.html#32618">[ subject ]</a>
+              <a href="author.html#32618">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Bot Tiger wrote:
+&gt;<i> Hello ANTLR community,
+</I>&gt;<i>
+</I>&gt;<i> I have been testing out the error reporting capabilities of the C 
+</I>&gt;<i> runtime and have run into some difficulties trying to get a Line Number.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Using the calculator example from the 5 minute intro to ANTLR, I have 
+</I>&gt;<i> tried to use the default error handler.
+</I>&gt;<i> However, upon trying to detect an EOF token, it segfaults, so I have 
+</I>&gt;<i> attempted to override the default error handlers at
+</I>
+I think that this was just an error trying to make a string out of it, 
+which is fixed in the latest snapshot I think. If it isn't, then I shall 
+have to look in to this some more.
+&gt;<i>
+</I>&gt;<i> pParser-&gt;rec-&gt;reportError
+</I>&gt;<i> pParser-&gt;rec-&gt;recover
+</I>&gt;<i>
+</I>&gt;<i> pLexer-&gt;rec-&gt;reportError
+</I>&gt;<i> pLexer-&gt;rec-&gt;recover
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Entering an incomplete expression such as &quot;1+2+&quot; results in an error 
+</I>&gt;<i> of ANTLR3_EARLY_EXIT_EXCEPTION.
+</I>&gt;<i>
+</I>&gt;<i> Unfortunately, in antlr3baserecognizer.c, all it does is:
+</I>&gt;<i> ANTLR3_FPRINTF(stderr, &quot; : missing elements...\n&quot;);
+</I>&gt;<i>
+</I>&gt;<i> All my attempts to get a string offset from anywhere have failed.
+</I>Just look at what the other exceptions do. It probably prints this 
+string because it thinks the location information is already printed. As 
+it says in the comments this routine is meant to be a guideline, as I 
+cannot know what you need an error message routine to do in advance.
+&gt;<i>
+</I>&gt;<i> Here are a list of my attempts and why it fails.
+</I>&gt;<i>
+</I>&gt;<i> ========================================
+</I>&gt;<i> recognizer-&gt;state-&gt;exception-&gt;charPositionInLine      
+</I>&gt;<i> --- returns -1
+</I>This indicates EOF or some other token that is not actually in the input 
+stream and is thefore telling you not to make a string out of the token 
+directly.
+&gt;<i>
+</I>&gt;<i> theToken    = (pANTLR3_COMMON_TOKEN)(recognizer-&gt;state-&gt;exception-&gt;token);
+</I>&gt;<i> ttext        = theToken-&gt;toString(theToken);
+</I>&gt;<i> --- returns a gibberish string
+</I>It isn't returning a string, it returns a pANTLR3_STRING, from which you 
+can get a null terminated string to printf with. HOwever, I think that 
+the toString() onan EOF token was the abort that I just fixed this weekend.
+&gt;<i>
+</I>&gt;<i> theToken-&gt;getCharPositionInLine(theToken);
+</I>&gt;<i> --- also returns -1
+</I>See above.
+&gt;<i>
+</I>&gt;<i> recognizer-&gt;state-&gt;tokenNames[exception-&gt;expecting]
+</I>&gt;<i> --- exception-&gt;expecting is always 0, and the string returned is 
+</I>&gt;<i> always &quot;&lt;invalid&gt;&quot;
+</I>This means that it could not determine  what should have come next, or 
+that the expecting field is actaully an expecting set and not a single 
+token. The set is contained in the exception.
+&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> recognizer-&gt;state-&gt;tokenStartLine
+</I>&gt;<i> --- always returns 0
+</I>&gt;<i>
+</I>&gt;<i> recognizer-&gt;state-&gt;tokenStartCharPositionInLine
+</I>&gt;<i> --- always returns 0
+</I>&gt;<i>
+</I>&gt;<i> recognizer-&gt;state-&gt;tokenStartCharIndex
+</I>&gt;<i> --- always returns 0
+</I>&gt;<i>
+</I>It isn't a real token, then it has no position in the token stream.
+&gt;<i>
+</I>&gt;<i> (pANTLR3_COMMON_TOKEN)exception-&gt;token-&gt;....
+</I>&gt;<i> --- same problems as tokens above
+</I>&gt;<i>
+</I>See above.
+&gt;<i> recognizer-&gt;state-&gt;token-&gt;....
+</I>&gt;<i> --- same problem as tokens above
+</I>see above.
+&gt;<i>
+</I>&gt;<i> (pANTLR3_COMMON_TOKEN)recognizer-&gt;getCurrentInputSymbol(recognizer, 
+</I>&gt;<i> parser-&gt;tstream-&gt;istream)
+</I>&gt;<i> --- same problems as the tokens above
+</I>See above.
+&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> As you can see I've exhausted almost every combination I can think of, 
+</I>&gt;<i> and I am just wondering if none of the offset indexes are implemented.
+</I>It is all there, copy the code for other exceptions basically. Also try 
+the latests snapshots and see if the EOF error has gone away or not. If 
+not then I will add a bug.
+
+Jim
+</PRE>
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="032617.html">[antlr-interest] C Runtime Error Handling Problems
+</A></li>
+	<LI>Next message: <A HREF="032623.html">[antlr-interest] C Runtime Error Handling Problems
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#32618">[ date ]</a>
+              <a href="thread.html#32618">[ thread ]</a>
+              <a href="subject.html#32618">[ subject ]</a>
+              <a href="author.html#32618">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

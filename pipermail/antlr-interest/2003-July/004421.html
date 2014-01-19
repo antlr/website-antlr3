@@ -1,0 +1,364 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Need help to finish a grammar for the IETF's ABNF language
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Need%20help%20to%20finish%20a%20grammar%20for%20the%20IETF%27s%20ABNF%20language&In-Reply-To=">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="004564.html">
+   <LINK REL="Next"  HREF="004422.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Need help to finish a grammar for the IETF's ABNF language</H1>
+    <B>David Bullock</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Need%20help%20to%20finish%20a%20grammar%20for%20the%20IETF%27s%20ABNF%20language&In-Reply-To="
+       TITLE="[antlr-interest] Need help to finish a grammar for the IETF's ABNF language">db at dawnbreaks.net
+       </A><BR>
+    <I>Mon Jul  7 09:54:54 PDT 2003</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="004564.html">[antlr-interest] Re: Paraphrase option and C++ generation
+</A></li>
+        <LI>Next message: <A HREF="004422.html">[antlr-interest] Summary of ANTLR Issues
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4421">[ date ]</a>
+              <a href="thread.html#4421">[ thread ]</a>
+              <a href="subject.html#4421">[ subject ]</a>
+              <a href="author.html#4421">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi folks,
+
+I was wondering if someone had time to help me with
+a (short) grammar.  This is partly a learning exercise
+for me, since I still don't quite &quot;get&quot; where to draw
+the line between the parser and the lexer.
+
+However, the grammar itself should be a useful one:
+it is the self-description of the IETF's Augmented BNF
+grammar, converted to an ANTLR-parseable grammar.
+The purpose of this translator is to convert other
+IETF specifications (such as the forthcoming revision
+to the Generic URI Syntax), which use ABNF, into
+ANTLR grammars.
+
+I've already done much of the hackwork of converting
+the syntax, but the placement of rules into either
+the parser or the lexer needs some help.  My basic
+confusion is, if one of the rules defines the token:
+
+    OCTET
+        // 8 bits of data
+        : '\u0000'..'\u00FF'
+        ;
+
+... does this doom the lexer to only ever giving the
+token 'OCTET', and causing the otherwise lexable rule:
+
+    SP
+        // space
+        : '\u0020'
+        ;
+
+to become a parser rule?
+
+(I know about 'protected' ... assume that, for the
+purposes of this question, both OCTET and SP are
+ referenced from a parser rule)
+
+
+The text file abnf.g is attached, with heavy commenting.
+Any revisions towards 'compiles with ANTLR without warnings'
+would be very much appreciated.  If you could explain your
+thought processes and the decisions you make, that would be
+even better!
+
+RFC 2234 can be found at
+<A HREF="ftp://ftp.rfc-editor.org/in-notes/rfc2234.txt">ftp://ftp.rfc-editor.org/in-notes/rfc2234.txt</A>
+
+
+many thanks,
+a parsing newbie,
+David Bullock
+
+
+PS.
+I will offer the finished translator for inclusion on the
+ANTLR resources page, if it is successful.  I realise there
+is still a lot to do after the grammar compiles.
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+-------------- next part --------------
+/**
+ * An ANTLR Parser for the IETF's ABNF grammar: translates ABNF
+ * grammars into ANTLR grammars.
+ * 
+ * This grammar is a straightforward adaption of the ABNF
+ * syntax from section 4 of RFC 2234, quite mechanically 
+ * acording to the following rules:
+ * 
+ *  1. replace '-' with '_' in rule names
+ *  2. replace '[...]' productions with '(...)?'
+ *  3. replace '=' between rulename and definition
+ *  4. replace '/' with '|'
+ *  5. digest cardinality operators to: '*' or '+' or '?' and relocate to tail of subrule, grouping single references where necessary (ie. '1*DIGIT' becomes '(DIGIT)+')
+ *  6. comments denoted with ';' changed to '//'
+ *  7. ANTLR rule terminator ';' added
+ *  8. convert %xHH literal references to '\u00HH' literal references
+ *  9. convert 'literal-literal' ranges to 'literal'..'literal' ranges
+ * 10. non-semantic formatting applied as per ANTLR established practice
+ * 11. add additional grouping parentheses where the original relied on 
+ *     the reader knowing the ABNF 'concatenation' operator (LWS) is 
+ *     stronger than the 'alternative operator' (&quot;|&quot;) (the rule for LWSP
+ *     needed this treatment) 
+ *
+ * The purpose of this ANTLR grammar is to make a tool
+ * which will do all of the above transformations automatically,
+ * thus assisting quick transcription of any IETF specified 
+ * grammar for use with ANTLR.
+ *
+ * The ABNF grammar is defined at <A HREF="ftp://ftp.rfc-editor.org/in-notes/rfc2234.txt">ftp://ftp.rfc-editor.org/in-notes/rfc2234.txt</A>
+ *
+ * Work yet to be done:
+ *
+ *  1. decide what to do with literals in what
+ *     appear to be parser rules
+ *
+ *  2. de-capitalize that subset of the 'core'
+ *     rules which are not lexer rules
+ *
+ *  3. decide which rules are lexer rules, and 
+ *     which rules are parser rules
+ *
+ *  4. for parser rules, separate them into ABNFGrammar
+ *     and ABNFCore parsers, and make the ABNFGrammar
+ *     push the ABNFCore parser onto the parser stack 
+ *     when required.    
+ */
+class ABNFGrammarParser extends Parser;
+
+rulelist
+    : ( rule | ((c_wsp)* c_nl) )+
+    ;
+
+rule
+    // continues if next line starts
+    // with white space
+    : rulename defined_as elements c_nl
+    ;
+
+rulename
+    : ALPHA (ALPHA | DIGIT | &quot;-&quot;)*
+    ;
+
+defined_as
+    // rules definition and
+    // incremental alternatives
+    : (c_wsp)* (&quot;=&quot; | &quot;=/&quot;) (c_wsp)*
+    ;
+    
+elements
+    : alternation (c_wsp)*
+    ;
+
+c_wsp
+    : WSP | (c_nl WSP)
+    ;
+
+c_nl
+    // comment or newline
+    : comment | CRLF
+    ;
+    
+comment
+    : &quot;;&quot; (WSP | VCHAR)* CRLF
+    ;
+
+alternation
+    : concatenation ((c_wsp)* &quot;/&quot; (c_wsp)* concatenation)*
+    ;
+
+concatenation
+    : repetition ((c_wsp)+ repetition)*
+    ;
+    
+repetition
+    : (repeat)? element
+    ;
+
+repeat
+    : (DIGIT)+ | ((DIGIT)* &quot;*&quot; (DIGIT)*)
+    ;
+
+element
+    : rulename | group | option 
+    | char_val | num_val | prose_val
+    ;
+
+group
+    : &quot;(&quot; (c_wsp)* alternation (c_wsp)* &quot;)&quot;
+    ;
+
+option
+    : &quot;[&quot; (c_wsp)* alternation (c_wsp)* &quot;]&quot;
+    ;
+
+char_val
+    // quoted string of SP and VCHAR without DQUOTE
+    : DQUOTE ('\u0020'..'\u0021' | '\u0023'..'\u007E')* DQUOTE
+    ;
+
+num_val
+    : &quot;%&quot; (bin_val | dec_val | hex_val)
+    ;
+
+bin_val
+    // series of concatenated bit values
+    // or single ONEOF range
+    : &quot;b&quot; (BIT)* ((&quot;.&quot; (BIT)*)+ | (&quot;-&quot; (BIT)+))?
+    ;
+
+dec_val
+    : &quot;d&quot; (DIGIT)+ ( (&quot;.&quot; (DIGIT)+ )+ | (&quot;-&quot; (DIGIT)+) )?
+    ;
+
+hex_val
+    : &quot;x&quot; (HEXDIG)+ ( (&quot;.&quot; (HEXDIG)+ )+ | (&quot;-&quot; (HEXDIG)+) )?
+    ;
+
+prose_val
+    // bracketed string of SP and VCHAR without angles
+    // prose description, to be used as last resort
+    : &quot;&lt;&quot; ('\u0020'..'\u003D' | '\u003F'..'\u007E')* &quot;&gt;&quot;
+    ;
+
+
+/*
+ * The ABNFGrammarParser relies on a core set of 
+ * rules which all ITEF ABNF grammars assume exist.
+ * However, these rules are not special to the 
+ * specification of the ABNF grammar, and so we are
+ * attempting here to achieve parser reuse. 
+ */
+// TODO: DECIDE WHICH RULES BELOW BELONG HERE.
+// class ABNFCoreParser extends Parser;
+
+
+/*
+ * The ABNFGrammarParser &lt;em&gt;and&lt;/em&gt; the ABNFCoreParser
+ * &lt;em&gt;both&lt;/em&gt; rely on the tokens produced by this Lexer.
+ */
+// TODO: DECIDE WHICH RULES BELOW BELONG HERE.
+// class ABNFCoreLexer extends Lexer;
+
+
+
+// The following capitalized rules are from section 6.1
+// of RFC 2234.  
+    
+ALPHA
+    // A-Z | a-z
+    : '\u0041'..'\u005A' | '\u0061'..'\u007A'
+    ;
+
+BIT
+    : &quot;0&quot; | &quot;1&quot;
+    ;
+
+CHAR
+    // any 7-bit US-ASCII character, excluding NUL
+    : '\u0001'..'\u007F'
+    ;
+
+CR
+    // carriage return
+    : '\u000D'
+    ;
+
+CRLF
+    // Internet standard newline
+    : CR LF
+    ;
+
+CTL
+    // controls
+    : '\u0000'..'\u001F' | '\u007F'
+    ;
+
+DIGIT
+    // 0-9
+    : '\u0030'..'\u0039'
+    ; 
+
+DQUOTE
+    // &quot; (Double Quote)
+    : '\u0022'
+    ;
+
+HEXDIG
+    : DIGIT | &quot;A&quot; | &quot;B&quot; | &quot;C&quot; | &quot;D&quot; | &quot;E&quot; | &quot;F&quot;
+    ;
+
+HTAB
+    // horizontal tab
+    : '\u0009'
+    ;   
+
+LF
+    // linefeed
+    : '\u000A'
+    ;
+
+LWSP
+    // linear white space (past newline)    
+    : (WSP | (CRLF WSP))*
+    ;
+
+OCTET
+    // 8 bits of data
+    : '\u0000'..'\u00FF'
+    ;
+
+SP
+    // space
+    : '\u0020'
+    ;
+
+VCHAR
+    // visible (printing) characters
+    : '\u0021'..'\u007E'
+    ;
+    
+WSP
+    // white space
+    : SP | HTAB
+    ;
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="004564.html">[antlr-interest] Re: Paraphrase option and C++ generation
+</A></li>
+	<LI>Next message: <A HREF="004422.html">[antlr-interest] Summary of ANTLR Issues
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#4421">[ date ]</a>
+              <a href="thread.html#4421">[ thread ]</a>
+              <a href="subject.html#4421">[ subject ]</a>
+              <a href="author.html#4421">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

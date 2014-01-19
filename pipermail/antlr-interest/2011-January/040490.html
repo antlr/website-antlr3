@@ -1,0 +1,144 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] match parser rule inside every rule (compile time reflections)
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20match%20parser%20rule%20inside%20every%20rule%20%28compile%0A%20time%20reflections%29&In-Reply-To=%3CED474DDA5167ED448245DD89A4718EC9A2433D7199%40GLDMS60322.goldlnk.rootlnka.net%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="040474.html">
+   <LINK REL="Next"  HREF="040491.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] match parser rule inside every rule (compile time reflections)</H1>
+    <B>Daniels, Troy (US SSA)</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20match%20parser%20rule%20inside%20every%20rule%20%28compile%0A%20time%20reflections%29&In-Reply-To=%3CED474DDA5167ED448245DD89A4718EC9A2433D7199%40GLDMS60322.goldlnk.rootlnka.net%3E"
+       TITLE="[antlr-interest] match parser rule inside every rule (compile time reflections)">troy.daniels at baesystems.com
+       </A><BR>
+    <I>Mon Jan 10 12:59:52 PST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="040474.html">[antlr-interest] match parser rule inside every rule (compile time reflections)
+</A></li>
+        <LI>Next message: <A HREF="040491.html">[antlr-interest] match parser rule inside every rule (compile time reflections)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40490">[ date ]</a>
+              <a href="thread.html#40490">[ thread ]</a>
+              <a href="subject.html#40490">[ subject ]</a>
+              <a href="author.html#40490">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>It seems likely your grammar has a form like:
+
+start: class+ ;
+
+class: CLASS NAME LP declarations* methods* RP;
+
+declaration: TYPE NAME (COMMA NAME)* SEMI;
+
+method: NAME argList LP statement* RP;
+
+statement: assign | methodCall | returnStatement | ifStatement | whileLoop | ... ;
+
+Followed by rules that are fairly specific.  Assuming that there are reasonable restrictions on where the reflection calls can go, you should be able to rewrite the above as 
+
+start: class+ ;
+
+class: FORALL argList LP class RP |
+	   CLASS NAME LP declarations* methods* RP;
+
+declaration: FORALL argList LP declaration RP |
+			 TYPE NAME (COMMA NAME)* SEMI;
+
+method: FORALL argList LP method RP | 
+		NAME argList LP statement* RP;
+
+statement: FORALL argList LP statement RP | 
+		   assign | methodCall | returnStatement | ifStatement | whileLoop | ... ;
+
+But then the rules I skipped do not need to be aware of the FORALL construct.  OTOH, if you can do things like
+
+	x = 3 + #for_all($<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">m,Test at intVars</A>) { $m + } y; // x = 3 + i + j + y;
+
+Then you might need to spread the details for FORALL throughout the grammar.  Think about where the reflection commands can go in the most abstract terms, then create rules for those situations. 
+
+Troy
+&gt;<i> -----Original Message-----
+</I>&gt;<i> From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> 
+</I>&gt;<i> [mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Alexander Herz
+</I>&gt;<i> Sent: Friday, January 07, 2011 7:59 AM
+</I>&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> Subject: Re: [antlr-interest] match parser rule inside every 
+</I>&gt;<i> rule (compile time reflections)
+</I>&gt;<i> 
+</I>&gt;<i> Hi,
+</I>&gt;<i> 
+</I>&gt;<i> I'm trying to implement compile time reflections, so inside 
+</I>&gt;<i> the language (imagine java) there is a preprocessor like 
+</I>&gt;<i> language which can access static properties of elements 
+</I>&gt;<i> defined in the language:
+</I>&gt;<i> 
+</I>&gt;<i> Example:
+</I>&gt;<i> 
+</I>&gt;<i> class Test
+</I>&gt;<i> {
+</I>&gt;<i>      int i,j;
+</I>&gt;<i> 
+</I>&gt;<i>      Test()
+</I>&gt;<i>      {
+</I>&gt;<i>          //iterates over all members of Test
+</I>&gt;<i>          #for_all($<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">m,Test at members</A>)
+</I>&gt;<i>          {
+</I>&gt;<i>              $m=0;
+</I>&gt;<i>          }
+</I>&gt;<i>          //will be evaluated to:
+</I>&gt;<i>          i=0;
+</I>&gt;<i>          j=0;
+</I>&gt;<i>      }
+</I>&gt;<i> }
+</I>&gt;<i> 
+</I>&gt;<i> It doesn't make sense to implement this in a preprocessor 
+</I>&gt;<i> since the full AST is needed to process the #for_all directive.
+</I>&gt;<i> Therefore, I'd like to implement it in the grammar of the 
+</I>&gt;<i> language. Now, the problem is that the #for_all (and other 
+</I>&gt;<i> related directives) can be placed anywhere (outside of 
+</I>&gt;<i> classes, etc). So I would need to put the rule for #for_all 
+</I>&gt;<i> into all the rules inside my grammar which seems ugly and cumbersome.
+</I>&gt;<i> 
+</I>&gt;<i> Any ideas how to solve this?
+</I>&gt;<i> 
+</I>&gt;<i> Thx,
+</I>&gt;<i> Alex
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> 
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: 
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-address">http://www.antlr.org/mailman/options/antlr-interest/your-email-address</A>
+</I>&gt;<i> 
+</I></PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="040474.html">[antlr-interest] match parser rule inside every rule (compile time reflections)
+</A></li>
+	<LI>Next message: <A HREF="040491.html">[antlr-interest] match parser rule inside every rule (compile time reflections)
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40490">[ date ]</a>
+              <a href="thread.html#40490">[ thread ]</a>
+              <a href="subject.html#40490">[ subject ]</a>
+              <a href="author.html#40490">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

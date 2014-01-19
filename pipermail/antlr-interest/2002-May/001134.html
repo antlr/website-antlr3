@@ -1,0 +1,144 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Re: Problems with Unicode support in ANTLR
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20Problems%20with%20Unicode%20support%20in%20ANTLR&In-Reply-To=ac1mdg%2B5ph1%40eGroups.com">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="001133.html">
+   <LINK REL="Next"  HREF="001135.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Re: Problems with Unicode support in ANTLR</H1>
+    <B>Terence Parr</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Re%3A%20Problems%20with%20Unicode%20support%20in%20ANTLR&In-Reply-To=ac1mdg%2B5ph1%40eGroups.com"
+       TITLE="[antlr-interest] Re: Problems with Unicode support in ANTLR">parrt at jguru.com
+       </A><BR>
+    <I>Thu May 16 18:53:39 PDT 2002</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="001133.html">[antlr-interest] Re: Problems with Unicode support in ANTLR
+</A></li>
+        <LI>Next message: <A HREF="001135.html">[antlr-interest] Re: Problems with Unicode support in ANTLR
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1134">[ date ]</a>
+              <a href="thread.html#1134">[ thread ]</a>
+              <a href="subject.html#1134">[ subject ]</a>
+              <a href="author.html#1134">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>&gt;<i> Erm....Terrence are you there?  ;-)
+</I>
+Who me? ;)  I've been waiting to see what direction people would point 
+me. ;)  I've just looked at the source for Character.getType() and all 
+those wacky mysterious tables at the bottom of the Character.java source.
+
+Recall that ANTLR generates bitsets on its own.  If you say (' '|'\t') 
+or 'a'..'z' you'll see that antlr tests LA(1) is member &quot;some bitset 
+defined in bottom of lexer file&quot;.  What we need is for ANTLR to be aware 
+of the standard categories (UnicodeBlocks) like LOWERCASE_LETTER.  The 
+only problem is that we'll have to convert LOWERCASE_LETTER to a 
+straight bitset that maps char -&gt; yes/no if it's in that set.  So we 
+could do test LA(1), the next char of lookahead, against it.  Also, 
+don't forget that ANTLR needs to do the grammar analysis so that it can 
+determine if you have a nondetermism.  For example, I presume the 
+following would be ambiguous/nondeterministic:
+
+DUH : LOWERCASE_LETTER | BASIC_LATIN | BENGALI ;
+
+I believe I could predefine all these character categories and then 
+simply let you refer to them.  Note that for every set you reference 
+though would be a potentially very big uncompressed bitset.  Worst case, 
+if you have digit \uFFFE defined, you'd have about 65 kilobits in the 
+set or about 8k per bitset.  Every time I have to combine this set with 
+a character or another set, that's another 8k worst case.  I could 
+probably make a simple compression that ignored long runs of zeros on 
+the front of the bit set.
+
+Is this the kind of thing you would need?  I.e., to be able to 
+specifically refer to predefined Java character blocks as predefined 
+ANTLR &quot;characters&quot;?
+
+Ter
+
+On Thursday, May 16, 2002, at 06:29  PM, micheal_jor wrote:
+
+&gt;<i>
+</I>&gt;&gt;<i> Okay, I see what you are talking about. Java's Character class does
+</I>&gt;<i> have
+</I>&gt;&gt;<i> support for some catagories; see
+</I>&gt;&gt;<i> <A HREF="http://java.sun.com/j2se/1.4/docs/api/java/lang/Character.html">http://java.sun.com/j2se/1.4/docs/api/java/lang/Character.html</A>
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i> Please look at the listed catagories and let me know if it is too
+</I>&gt;&gt;<i> limited. In particular, java.lang.Character.getType(), and the
+</I>&gt;<i> static
+</I>&gt;&gt;<i> final catagory constants.
+</I>&gt;<i>
+</I>&gt;<i> I saw the static constants but could see that they were used
+</I>&gt;<i> anywhere. Not surprisingly, I don't believe someone actually
+</I>&gt;<i> thought &quot;getType()&quot; makes sense as the accessor for a character's
+</I>&gt;<i> Unicode General Category -- what happened to getCategory() or
+</I>&gt;<i> getGeneralCategory()?. Sheez!
+</I>&gt;<i>
+</I>&gt;<i> In any case, you are right that the feature is supported.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;&gt;<i> I would rather not have my Unicode-parsing application depend on
+</I>&gt;<i> IBM's
+</I>&gt;&gt;<i> library since I would have to distribute it. I think that the
+</I>&gt;&gt;<i> java.lang.Character class's support is sufficient.
+</I>&gt;<i>
+</I>&gt;<i> For the feature we've discussed fo far, yes it is. The license for
+</I>&gt;<i> IBM's package doesn't forbid extracting what we need into ANTLR if
+</I>&gt;<i> memory serves.
+</I>&gt;<i>
+</I>&gt;&gt;<i> Presumably, the modified ANTLR would then generate code like this:
+</I>&gt;&gt;<i>      int type = Character.getType(LA(1));
+</I>&gt;&gt;<i>      switch (type) {
+</I>&gt;&gt;<i>         case Character.END_PUNCTUATION:
+</I>&gt;&gt;<i>              mRULE(true);
+</I>&gt;&gt;<i>              theRetToken=_returnToken;
+</I>&gt;&gt;<i>              break;
+</I>&gt;&gt;<i>         ....
+</I>&gt;&gt;<i>      }
+</I>&gt;&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Erm....Terrence are you there?  ;-)
+</I>&gt;<i>
+</I>&gt;<i> Micheal
+</I>&gt;<i>
+</I>--
+Co-founder, <A HREF="http://www.jguru.com">http://www.jguru.com</A>
+Creator, ANTLR Parser Generator: <A HREF="http://www.antlr.org">http://www.antlr.org</A>
+
+
+ 
+
+Your use of Yahoo! Groups is subject to <A HREF="http://docs.yahoo.com/info/terms/">http://docs.yahoo.com/info/terms/</A> 
+
+</PRE>
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="001133.html">[antlr-interest] Re: Problems with Unicode support in ANTLR
+</A></li>
+	<LI>Next message: <A HREF="001135.html">[antlr-interest] Re: Problems with Unicode support in ANTLR
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#1134">[ date ]</a>
+              <a href="thread.html#1134">[ thread ]</a>
+              <a href="subject.html#1134">[ subject ]</a>
+              <a href="author.html#1134">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

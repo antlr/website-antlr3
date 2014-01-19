@@ -1,0 +1,124 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] rewrite rules cont.
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20rewrite%20rules%20cont.&In-Reply-To=%3C1288211162.5035.32.camel%40gecko.home.org%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="039935.html">
+   <LINK REL="Next"  HREF="039939.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] rewrite rules cont.</H1>
+    <B>John B. Brodie</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20rewrite%20rules%20cont.&In-Reply-To=%3C1288211162.5035.32.camel%40gecko.home.org%3E"
+       TITLE="[antlr-interest] rewrite rules cont.">jbb at acm.org
+       </A><BR>
+    <I>Wed Oct 27 13:26:02 PDT 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="039935.html">[antlr-interest] rewrite rules cont.
+</A></li>
+        <LI>Next message: <A HREF="039939.html">[antlr-interest] rewrite rules cont.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#39938">[ date ]</a>
+              <a href="thread.html#39938">[ thread ]</a>
+              <a href="subject.html#39938">[ subject ]</a>
+              <a href="author.html#39938">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>On Tue, 2010-10-26 at 20:07 -0700, Trevor John Thompson wrote:
+&gt;<i> Greetings.
+</I>&gt;<i> I continue to wrestle with rewrite rules for AST construction. I am trying to treat semicolon and newline as equivalent separators, and gather a sequence of expressions as children of a single AST node. The grammar looks like
+</I>&gt;<i> =======
+</I>&gt;<i> grammar Test;
+</I>&gt;<i> options {output=AST;}
+</I>&gt;<i> prog:	expr EOF!;
+</I>&gt;<i> expr:	(term-&gt;term) (((NL|SC) term)+ -&gt; ^(NL $expr term+))?;
+</I>&gt;<i> term:	ID
+</I>&gt;<i> 	|	-&gt;ID	// empty treated as no-name ID
+</I>&gt;<i> 	;
+</I>&gt;<i> fragment
+</I>&gt;<i> SP	:	' '|'\t';
+</I>&gt;<i> SC	:	';';
+</I>&gt;<i> ID	:	SP*
+</I>&gt;<i> 		('a'..'z'|'A'..'Z'|'_')
+</I>&gt;<i> 		('0'..'9'|'a'..'z'|'A'..'Z'|'_')*
+</I>&gt;<i> 	;
+</I>&gt;<i> NL	:	('\r'|'\n')+;
+</I>&gt;<i> =======
+</I>&gt;<i> The problem is that if the sequence does *not* include newline, then i get RewriteEmptyStreamException on the NL in the rewrite rule; i.e. &quot;a;\n&quot; works, but &quot;a;&quot; does not.
+</I>&gt;<i> 
+</I>&gt;<i> What particularly baffles me is that if i build the node with any token other than NL or SC (e.g. SP), then the rule *always* works.
+</I>&gt;<i> 
+</I>&gt;<i> Could someone please explain what is going on?
+</I>
+ANTLR will create a root token when that token does not appear on the
+left hand side of the rewrite operator (the -&gt;). this is known as an
+`imaginary token`. imaginary tokens do not appear in the input token
+stream.
+
+But any token that appears on both sides of the -&gt; must be present in
+the input token stream as you have encountered.
+
+So you want to create a NL token as the root, even tho it does not
+appear in the input token stream - but might. therefore:
+
+expr:   term (((x=NL|x=SC) term)+ -&gt; ^(NL[$x] term+))?;
+
+the [...] stuff on the right hand side of the rewrite tells ANTLR to
+always construct a new imaginary token that is derived from a real
+token. the stuff inside the [] tells ANTLR how to initialize the
+imaginary token. so in the above case &quot;a;&quot; will end up with a tree whose
+root is actually a NL token.type but with a token.text of &quot;;&quot; and
+position information of the SC.
+
+SP as root node worked because it did not appear on the left hand side
+of the rewrite so ANTLR just knew you wanted to construct an imaginary
+token (but with no text or position information initialized).
+
+you really want to use the [] form of token construction so that the
+position information will get set so that later error messages will be
+(hopefully) more meaningful.
+
+overriding the text of the NL to be &quot;;&quot; is, to me, rather unexpected. so
+i would suggest 
+
+expr : term ((x=NL|x=SC) term)+ -&gt; ^(EXPR_LIST[$x,&quot;EXPR_LIST&quot;] term+) ;
+
+where EXPR_LIST is an imaginary token type that you have specified in
+the tokens{} section of your grammar.
+
+hope this helps...
+   -jbb
+
+
+
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="039935.html">[antlr-interest] rewrite rules cont.
+</A></li>
+	<LI>Next message: <A HREF="039939.html">[antlr-interest] rewrite rules cont.
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#39938">[ date ]</a>
+              <a href="thread.html#39938">[ thread ]</a>
+              <a href="subject.html#39938">[ subject ]</a>
+              <a href="author.html#39938">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

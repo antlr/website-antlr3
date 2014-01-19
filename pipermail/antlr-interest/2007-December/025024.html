@@ -1,0 +1,166 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] PL/SQL grammar problems
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20PL/SQL%20grammar%20problems&In-Reply-To=%3CBD08272222A4F849880057274FA7A7C20577A5D0%40EDCWMSGP001BZ.bcbsfl.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="025023.html">
+   <LINK REL="Next"  HREF="025025.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] PL/SQL grammar problems</H1>
+    <B>Dussinger, Steven</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20PL/SQL%20grammar%20problems&In-Reply-To=%3CBD08272222A4F849880057274FA7A7C20577A5D0%40EDCWMSGP001BZ.bcbsfl.com%3E"
+       TITLE="[antlr-interest] PL/SQL grammar problems">Steven.Dussinger at bcbsfl.com
+       </A><BR>
+    <I>Sun Dec  2 09:28:52 PST 2007</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="025023.html">[antlr-interest] ANTLRWorks 1.1.5 released
+</A></li>
+        <LI>Next message: <A HREF="025025.html">[antlr-interest] Error nodes created upon syntax error
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25024">[ date ]</a>
+              <a href="thread.html#25024">[ thread ]</a>
+              <a href="subject.html#25024">[ subject ]</a>
+              <a href="author.html#25024">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Hi All:
+
+I recently was tasked to look into parsing PL/SQL from Oracle in order
+to gather some metrics. I found the PL/SQL grammar on the Antlr site and
+am trying to use it, but I've run into a problem that I just can't seem
+to figure out how to fix.
+
+My test case (as follows) contains three procedure definitions, each
+containing a simple if-then statement. The only difference in the three
+procedures is the location of the parens in the if clause. The first two
+procedures parse just fine (with parens around the entire boolean
+expression or with no parens at all), but the third procedure (with
+parens surrounding only the calculation portion of the boolean
+expression) fails with the following messages:
+
+line 36:22: expecting &quot;then&quot;, found '&lt;'
+line 39:11: unexpected token: IF
+line 42:1: expecting EOF, found 'END'
+
+The test case is as follows:
+
+CREATE OR REPLACE 
+PACKAGE BODY p_accounts_payable_1
+IS
+
+   PROCEDURE works (
+      po_s_return_code      IN OUT   VARCHAR2
+   )
+   IS
+
+   BEGIN
+      IF     (X + Y &lt; 100) -- Note the parens surround the entire
+boolean expression
+      THEN
+         po_s_return_code := '0';
+      END IF;
+   END;
+
+   PROCEDURE works2 (
+      po_s_return_code      IN OUT   VARCHAR2
+   )
+   IS
+
+   BEGIN
+      IF     X + Y &lt; 100 -- Note no parens at all
+      THEN
+         po_s_return_code := '0';
+      END IF;
+   END;
+
+   PROCEDURE fails (
+      po_s_return_code      IN OUT   VARCHAR2
+   )
+   IS
+
+   BEGIN
+      IF     (X + Y) &lt; 100 -- Note the parens surround the calculation
+only (not the boolean expression)
+      			   -- This one fails to parse.
+      THEN
+         po_s_return_code := '0';
+      END IF;
+   END;
+
+END;
+
+I think I've narrowed the problem down to the following portion of the
+grammar:
+
+boolean_factor    returns [ CommonToken r = null ] :
+          ( OPEN_PAREN boolean_exp CLOSE_PAREN ) =&gt;
+        o:OPEN_PAREN boolean_exp cp:CLOSE_PAREN 
+      | user_defined_function
+      | ( plsql_expression
+      ( (relational_op plsql_expression) =&gt;( r=relational_op
+          plsql_expression )
+      | ( &quot;is&quot; ) =&gt; ( i:&quot;is&quot; (no:&quot;not&quot;)? n:&quot;null&quot; )
+      | ( ( &quot;not&quot; ) ? &quot;like&quot;) =&gt;( (n1:&quot;not&quot;)? l:&quot;like&quot; match_string )
+      | ( ( &quot;not&quot; ) ? &quot;between&quot;) =&gt; (n2:&quot;not&quot;)? b:&quot;between&quot;
+plsql_expression
+                                a:&quot;and&quot; plsql_expression 
+      | ( (n3:&quot;not&quot;)? in:&quot;in&quot; op:OPEN_PAREN plsql_exp_list
+c2:CLOSE_PAREN )
+      | ( ( cursor_name | subquery )
+           pc:PERCENTAGE
+           (nf:&quot;notfound&quot;
+            | fo:&quot;found&quot;
+            | io:&quot;isopen&quot;
+        ) ) )? )
+      | ( cursor_name (p3:PERCENTAGE
+          (n4:&quot;notfound&quot;
+         |  f2:&quot;found&quot;
+         | i2:&quot;isopen&quot;
+      )))?
+      | boolean_literal
+      ;
+
+It seems that I need to add parens around the plsql_expression
+relational_op... portion of this rule, but that seems to add ambiguity
+to the first clause, and no matter how I tried to add those parens, it
+fails. Does anyone have some pointers they could give me (understanding
+that I'm not the most advanced parser guy in the world :-))...
+
+Thanks.
+
+--Steve
+
+
+Blue Cross Blue Shield of Florida, Inc., and its subsidiary and affiliate companies are not responsible for errors or omissions in this e-mail message. Any personal comments made in this e-mail do not reflect the views of Blue Cross Blue Shield of Florida, Inc.  The information contained in this document may be confidential and intended solely for the use of the individual or entity to whom it is addressed.  This document may contain material that is privileged or protected from disclosure under applicable law.  If you are not the intended recipient or the individual responsible for delivering to the intended recipient, please (1) be advised that any use, dissemination, forwarding, or copying of this document IS STRICTLY PROHIBITED; and (2) notify sender immediately by telephone and destroy the document. THANK YOU.
+
+</PRE>
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="025023.html">[antlr-interest] ANTLRWorks 1.1.5 released
+</A></li>
+	<LI>Next message: <A HREF="025025.html">[antlr-interest] Error nodes created upon syntax error
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#25024">[ date ]</a>
+              <a href="thread.html#25024">[ thread ]</a>
+              <a href="subject.html#25024">[ subject ]</a>
+              <a href="author.html#25024">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

@@ -1,0 +1,148 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] CommonTree &amp; Tree grammar versus DIY
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20CommonTree%20%26%20Tree%20grammar%20versus%20DIY&In-Reply-To=%3C200808212104.m7LL4mSe003283%40zinc.newtechlaw.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="030271.html">
+   <LINK REL="Next"  HREF="030246.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] CommonTree &amp; Tree grammar versus DIY</H1>
+    <B>Gerald Rosenberg</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20CommonTree%20%26%20Tree%20grammar%20versus%20DIY&In-Reply-To=%3C200808212104.m7LL4mSe003283%40zinc.newtechlaw.com%3E"
+       TITLE="[antlr-interest] CommonTree &amp; Tree grammar versus DIY">gerald at certiv.net
+       </A><BR>
+    <I>Thu Aug 21 14:04:56 PDT 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="030271.html">[antlr-interest] CommonTree &amp; Tree grammar versus DIY
+</A></li>
+        <LI>Next message: <A HREF="030246.html">[antlr-interest] OT:Can we fix the list to a more reasonable line width?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30244">[ date ]</a>
+              <a href="thread.html#30244">[ thread ]</a>
+              <a href="subject.html#30244">[ subject ]</a>
+              <a href="author.html#30244">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>At 11:07 AM 8/21/2008, Terence Parr wrote:
+
+&gt;<i>On Aug 20, 2008, at 7:42 PM, Gerald Rosenberg wrote:
+</I>&gt;<i>
+</I>&gt;&gt;<i>Antlr could directly generate at least the low-level API.  For
+</I>&gt;&gt;<i>example, consider an AST that is the underlying data structure for
+</I>&gt;&gt;<i>an HTML editor.  A grammar to generate the desired API  might be
+</I>&gt;&gt;<i>specified as:
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>        access grammar html;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>        start_tag : open_tag ID ^( name ^( attr )* )*
+</I>&gt;&gt;<i>                =&gt; find (int start_node, boolean direction, 
+</I>&gt;&gt;<i> String  $ID.text ) returns [int node_index]
+</I>&gt;&gt;<i>                =&gt; find (int start_node, boolean direction, 
+</I>&gt;&gt;<i> String  $ID.text, String name, String attr ) returns [int node_index]
+</I>&gt;&gt;<i>                =&gt; create (String $ID.text, String name, List attr 
+</I>&gt;&gt;<i> ) returns [$start_tag.tree]
+</I>&gt;&gt;<i>                =&gt; copy (int node_index) returns [$start_tag.tree]
+</I>&gt;&gt;<i>                =&gt; insert (int node_index, $start_tag.tree) 
+</I>&gt;&gt;<i> returns  [boolean status]
+</I>&gt;&gt;<i>                =&gt; delete (int node_index) returns [$start_tag.tree]
+</I>&gt;&gt;<i>        ;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>This is not far off from a tree grammar: tersely abstracted, but
+</I>&gt;&gt;<i>still providing sufficient information to unambiguously define
+</I>&gt;&gt;<i>implementation of the API.  The generated code will be no more
+</I>&gt;&gt;<i>fragile than that produced from a tree grammar.  Add in
+</I>&gt;&gt;<i>heterogeneous tree node support and it is a rather complete
+</I>&gt;&gt;<i>solution.  Non-trivial, but complete.  The devil is in figuring out
+</I>&gt;&gt;<i>the appropriate grammar syntax for defining the API productions --
+</I>&gt;&gt;<i>what is shown is good for discussion, but probably not much more.
+</I>&gt;<i>
+</I>&gt;<i>So, ANTLR's job would be to fill in those find/create/... methods?
+</I>
+Exactly.
+
+&gt;<i>I'm not sure he could figure that out from the argument list.
+</I>
+The necessary information content is there. For example, consider the 
+equivalence of:
+
+&gt;&gt;<i>        access grammar html;
+</I>&gt;&gt;<i>
+</I>&gt;&gt;<i>        start_tag : open_tag ID ^( name ^( attr )* )*
+</I>&gt;&gt;<i>                =&gt; find (int start_node, boolean direction, String 
+</I>&gt;&gt;<i> $ID.text, , String name, String attr ) returns [int node_index] ;
+</I>
+with:
+
+         tree grammar html;
+
+         start_tag : open_tag { if (direction &amp;&amp; 
+$open_tag.node_index &gt; start_node) else if (!direction &amp;&amp; 
+$open_tag.node_index &lt;= start_node)  }?
+                         ID { $ID.text.equals(&quot;someIDString&quot;) }?
+                         ^( n=name ^( a=attr { 
+$n.equals(&quot;someNameString&quot;) &amp;&amp; $a.equals(&quot;someAttrString&quot;) }? )+ )+
+                 -&gt; { return $open_tag.node_index } ;
+
+Likewise, you could emulate the remaining functionality of the access 
+grammar with a set of tree grammars; separate grammars would be 
+needed for each node type and API operation.  (The tree grammar 
+syntax, as used in this manner, is messy/noisy and the complex of 
+tree walkers produced would be clumsy to orchestrate -- better to 
+have a clean, purpose defined grammar syntax that directly produces a 
+conventional-looking API.)
+
+So, to answer your concern, the given structure of the node is 
+sufficient to define the scope/nesting of where the elements of the 
+argument list need to be tested.  It is implicitly being done in 
+standard tree rewrites -- basically the same as figuring out where to 
+put the TYPE and DEF:
+
+         tree grammar html2;
+
+         start_tag : open_tag ID ^( name ^( attr )* )*
+                 -&gt; open_tag ID TYPE ^( name ^( DEF attr )* )* ;
+
+The production grammar syntax needs to be better designed to make the 
+intent of the access grammar more explicit -- as previously noted, 
+the syntax shown is good for discussion, but probably not much more.
+
+
+</PRE>
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="030271.html">[antlr-interest] CommonTree &amp; Tree grammar versus DIY
+</A></li>
+	<LI>Next message: <A HREF="030246.html">[antlr-interest] OT:Can we fix the list to a more reasonable line width?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#30244">[ date ]</a>
+              <a href="thread.html#30244">[ thread ]</a>
+              <a href="subject.html#30244">[ subject ]</a>
+              <a href="author.html#30244">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

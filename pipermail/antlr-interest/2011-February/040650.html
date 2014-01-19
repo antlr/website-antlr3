@@ -1,0 +1,202 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Memory management of C target
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Memory%20management%20of%20C%20target&In-Reply-To=%3C18eafa052b3df78cbb14c31cee1e7ccf%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="040646.html">
+   <LINK REL="Next"  HREF="040659.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Memory management of C target</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Memory%20management%20of%20C%20target&In-Reply-To=%3C18eafa052b3df78cbb14c31cee1e7ccf%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Memory management of C target">jimi at temporal-wave.com
+       </A><BR>
+    <I>Tue Feb  1 09:15:19 PST 2011</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="040646.html">[antlr-interest] Memory management of C target
+</A></li>
+        <LI>Next message: <A HREF="040659.html">[antlr-interest] Memory management of C target
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40650">[ date ]</a>
+              <a href="thread.html#40650">[ thread ]</a>
+              <a href="subject.html#40650">[ subject ]</a>
+              <a href="author.html#40650">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>&gt;<i> -----Original Message-----
+</I>&gt;<i> From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:antlr-interest-
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">bounces at antlr.org</A>] On Behalf Of Marco Trudel
+</I>&gt;<i> Sent: Tuesday, February 01, 2011 5:39 AM
+</I>&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> Subject: Re: [antlr-interest] Memory management of C target
+</I>&gt;<i>
+</I>&gt;<i> Dear Jim
+</I>&gt;<i>
+</I>&gt;<i> On 31.01.2011 18:43, Jim Idle wrote:
+</I>&gt;<i> &gt; The C target will be a lot faster than the Java target, but the
+</I>&gt;<i> &gt; objects that are created are probably bigger. For v4 I plan to reduce
+</I>&gt;<i> that a lot.
+</I>&gt;<i> &gt; It is probably better to reduce the input though. 530,000 lines of C
+</I>&gt;<i> &gt; code as input seems a bit of a tall order for anything, even if you
+</I>&gt;<i> parse it.
+</I>&gt;<i> &gt; The individual input files would be better.
+</I>&gt;<i>
+</I>&gt;<i> The splitting function I wrote is way slower (&gt; 1 min) than the time
+</I>&gt;<i> the Java target needs to parse the whole file (20s).
+</I>
+
+You need a better splitting function! Do it in place not by memcpy and so
+on. You can also write a simple override for the character stream.
+
+&gt;<i>
+</I>&gt;<i> &gt; Also, I think you were using $text references in your parser and
+</I>&gt;<i> these
+</I>&gt;<i> &gt; will create hundreds of thousands of string objects that will not be
+</I>&gt;<i> &gt; released until you release the parser.
+</I>&gt;<i>
+</I>&gt;<i> You mean like in:
+</I>&gt;<i>
+</I>&gt;<i> foo
+</I>&gt;<i>     : IDENTIFIER { printf(&quot;\%s\n&quot;, $IDENTIFIER.text-&gt;chars); }
+</I>&gt;<i>     ;
+</I>&gt;<i>
+</I>&gt;<i> This is done about 90'000 times. Nothing 2gb memory couldn't handle.
+</I>
+It is a ton of tiny allocations and it will accumulate. However, I think
+that in 3.3 I have fixed a bug that was not releasing memory references
+when building a tree until the tree was freed. Try making a version that
+does not build a tree and see how it differs.
+
+&gt;<i>
+</I>&gt;<i> &gt; To use the text of an object it is
+</I>&gt;<i> &gt; better to get the pointer to the input from that object and use the
+</I>&gt;<i> &gt; length (start and end pointer are stored in the object) so that you
+</I>&gt;<i> &gt; make no copies or memory allocations.
+</I>&gt;<i>
+</I>&gt;<i> Like:
+</I>&gt;<i>
+</I>&gt;<i> foo
+</I>&gt;<i>     : IDENTIFIER
+</I>&gt;<i>       { printf(&quot;Input length: \%d, start: \%d, end: \%d\n&quot;,
+</I>&gt;<i>            strlen($IDENTIFIER-&gt;input-&gt;data),
+</I>&gt;<i>            $IDENTIFIER-&gt;start,
+</I>&gt;<i>            $IDENTIFIER-&gt;stop);
+</I>&gt;<i>       }
+</I>&gt;<i>     ;
+</I>&gt;<i>
+</I>&gt;<i> I guess I'm doing something wrong. Though the length is correct, the
+</I>&gt;<i> indexes are way out of bounds (example output: Input length: 253,
+</I>&gt;<i> start:
+</I>&gt;<i> 9338085, end: 9338088).
+</I>
+As per the prior email these are POINTERs to the start and end addresses
+in the input text. You cannot use strlen as this will not stop until the
+end of the input string, The start pointer points directly to the input
+text and so does the end point. The length is the difference in the two.
+
+&gt;<i> But this isn't the main memory usage anyway with only about 90'000
+</I>&gt;<i> calls to $IDENTIFIER.text.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> So I guess my best alternative is using the Java target. But I'm still
+</I>&gt;<i> very open to other suggestions where I might waste memory...
+</I>
+Your splitting routine does not seem to be a good algorithm, but why do
+you end up with 640,000 lines of C code in the first place? Perhaps you
+should start there. However, if you are able to deal with the Java
+version, you will certainly find it easier I suspect.
+
+Jim
+
+&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Thanks for your time
+</I>&gt;<i> Marco
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> &gt; The $text (in the C target) is a convenience
+</I>&gt;<i> &gt; method that is relatively slow and inefficient; it is just there when
+</I>&gt;<i> you
+</I>&gt;<i> &gt; don't really care that much about those factors. This catches so many
+</I>&gt;<i> &gt; people that I may abandon it in v4, in favor of functions/macros that
+</I>&gt;<i> give
+</I>&gt;<i> &gt; you the information.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; You can also try 64bit mode, which will raise the 2GB bar.
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; Jim
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;&gt; -----Original Message-----
+</I>&gt;<i> &gt;&gt; From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:antlr-interest-
+</I>&gt;<i> &gt;&gt; <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">bounces at antlr.org</A>] On Behalf Of Marco Trudel
+</I>&gt;<i> &gt;&gt; Sent: Monday, January 31, 2011 5:37 AM
+</I>&gt;<i> &gt;&gt; To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> &gt;&gt; Subject: [antlr-interest] Memory management of C target
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; Dear all
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; Does anyone know how the C target handles memory? I noticed that
+</I>&gt;<i> with
+</I>&gt;<i> &gt;&gt; very big input (e.g. 530.000 lines of C code) it crashes because it
+</I>&gt;<i> &gt;&gt; hits the 2gb process memory limit. Is there something I can tweak to
+</I>&gt;<i> &gt;&gt; make it work or do I have to split the input?
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; The Java target manages to parse the input if I give the process
+</I>&gt;<i> 1gb.
+</I>&gt;<i> &gt;&gt; It even requires only 20 seconds.
+</I>&gt;<i> &gt;&gt; Would be great if the C target could also do that. Even better it
+</I>&gt;<i> the
+</I>&gt;<i> &gt;&gt; required time would be about half of the one of the Java target (as
+</I>&gt;<i> I'm
+</I>&gt;<i> &gt;&gt; used to when the C target can handle the input).
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; Thanks
+</I>&gt;<i> &gt;&gt; Marco
+</I>&gt;<i> &gt;&gt;
+</I>&gt;<i> &gt;&gt; List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> &gt;&gt; Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-">http://www.antlr.org/mailman/options/antlr-</A>
+</I>&gt;<i> interest/your-
+</I>&gt;<i> &gt;&gt; email-address
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt; List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> &gt; Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-">http://www.antlr.org/mailman/options/antlr-</A>
+</I>&gt;<i> interest/your-email-address
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-">http://www.antlr.org/mailman/options/antlr-interest/your-</A>
+</I>&gt;<i> email-address
+</I></PRE>
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="040646.html">[antlr-interest] Memory management of C target
+</A></li>
+	<LI>Next message: <A HREF="040659.html">[antlr-interest] Memory management of C target
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#40650">[ date ]</a>
+              <a href="thread.html#40650">[ thread ]</a>
+              <a href="subject.html#40650">[ subject ]</a>
+              <a href="author.html#40650">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

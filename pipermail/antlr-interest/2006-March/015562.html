@@ -1,0 +1,469 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Help with circular reference in parser?
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Help%20with%20circular%20reference%20in%20parser%3F&In-Reply-To=44071615.50902%40comcast.net">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="015560.html">
+   <LINK REL="Next"  HREF="015564.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Help with circular reference in parser?</H1>
+    <B>Christopher Schultz</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=%5Bantlr-interest%5D%20Help%20with%20circular%20reference%20in%20parser%3F&In-Reply-To=44071615.50902%40comcast.net"
+       TITLE="[antlr-interest] Help with circular reference in parser?">christopher.d.schultz at comcast.net
+       </A><BR>
+    <I>Thu Mar  2 08:22:32 PST 2006</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="015560.html">[antlr-interest] Help with circular reference in parser?
+</A></li>
+        <LI>Next message: <A HREF="015564.html">[antlr-interest] Help with circular reference in parser?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#15562">[ date ]</a>
+              <a href="thread.html#15562">[ thread ]</a>
+              <a href="subject.html#15562">[ subject ]</a>
+              <a href="author.html#15562">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Sorry, forgot the attachment.
+
+Here is the grammar in all it's glory.
+
+Thanks,
+-chris
+
+
+header {
+    package net.christopherschultz.evaluator.parser;
+
+    import net.christopherschultz.evaluator.*;
+}
+
+class ExpressionParserImpl extends Parser;
+
+options {
+   buildAST = false;
+   k=2; // 2-token lookahead: can differentiate between
+        // ( MINUS INT ) and ( MINUS FLOAT )
+defaultErrorHandler = false;
+}
+
+/* We have expr and mexpr separate, with the addition and subtraction
+   separate from multiplication in order to enforce order-of-operations. */
+expr returns [Expression exp = null] throws EvaluationException
+    {
+        Expression right;
+    }
+    :
+        exp=relexpr (
+            ( AND^ right=relexpr) { exp = new MathExpression(exp, &quot;&amp;&amp;&quot;,
+right); }
+            | (OR^ right=relexpr)  { exp = new MathExpression(exp, &quot;||&quot;,
+right); }
+        )*
+        // This (EOF)? seem totally sketchy, but it works!
+        (EOF!)?
+    ;
+
+// Relational Expression
+relexpr returns [Expression exp = null] throws EvaluationException
+    {
+        Expression right;
+    }
+    :
+        exp=addexpr (
+            (EQUALS^ right=addexpr) { exp = new MathExpression(exp, &quot;=&quot;,
+right); }
+            | (NOT_EQUALS^ right=addexpr) { exp = new
+MathExpression(exp, &quot;!=&quot;, right); }
+            | (GREATERTHAN^ right=addexpr) { exp = new
+MathExpression(exp, &quot;&gt;&quot;, right); }
+            | (LESSTHAN^ right=addexpr) { exp = new MathExpression(exp,
+&quot;&lt;&quot;, right); }
+            | (GREATERTHANEQUALTO^ right=addexpr) { exp = new
+MathExpression(exp, &quot;&gt;=&quot;, right); }
+            | (LESSTHANEQUALTO^ right=addexpr) { exp = new
+MathExpression(exp, &quot;&lt;=&quot;, right); }
+        )*
+    ;
+
+// Arithmetic Expression
+addexpr returns [Expression exp = null] throws EvaluationException
+    {
+        Expression right;
+    }
+    :
+        exp=multexpr (( PLUS^ right=multexpr { exp = new
+MathExpression(exp, &quot;+&quot;, right); }
+                      | MINUS^ right=multexpr { exp = new
+MathExpression(exp, &quot;-&quot;, right); } ))*
+    ;
+
+// Multiplicative (or divisive) expression
+multexpr returns [Expression exp = null] throws EvaluationException
+    {
+        Expression right;
+    }
+    :
+        exp=unaryExpr (
+            ( STAR^ right=unaryExpr { exp = new MathExpression(exp, &quot;*&quot;,
+right); } )
+            |
+            ( SLASH right=unaryExpr { exp = new MathExpression(exp, &quot;/&quot;,
+right); } )
+            |
+            ( PERCENT right=unaryExpr { exp = new MathExpression(exp,
+&quot;%&quot;, right); } )
+
+        )*
+    ;
+
+// (Logically) negated expression
+unaryExpr returns [ Expression exp = null ] throws EvaluationException
+    :
+        (
+         (BANG^ exp=atom { exp = new NegatedExpression(exp); })
+         |
+         (MINUS^ exp=atom { exp = new UnaryMinusExpression(exp); })
+         |
+         (PLUS!)? exp=atom
+        )
+    ;
+
+// Function call expression
+functioncall returns [ Expression exp = null ] throws EvaluationException
+    {
+        java.util.List args = null;
+    }
+    :
+        func:IDENTIFIER^ LPAREN! (args=argumentlist)? RPAREN!
+        {
+            exp = new FunctionCallExpression(func.getText(), args);
+        }
+    ;
+
+// Array reference (i.e. a[3])
+arrayref returns [ Expression exp = null ] throws EvaluationException
+    {
+        Expression index; // dynamic index ;)
+    }
+    :
+        array:IDENTIFIER^ LBRACKET! (index=expr) RBRACKET!
+        {
+            exp = new ArrayReferenceExpression(array.getText(), index);
+        }
+    ;
+
+// arrayref returns [ Expression exp = null ] throws EvaluationException
+//     {
+//         Expression array; // dynamic reference ;)
+//         Expression index; // dynamic index ;)
+//     }
+//     :
+//         (array=expr)
+//         |
+//         (array=expr) LBRACKET! (index=expr) RBRACKET!
+//         {
+//             exp = new ArrayReferenceExpression(array.getText(), index);
+//         }
+//     ;
+
+// Argument List
+argumentlist returns [java.util.List list = new java.util.ArrayList()]
+throws EvaluationException
+    {
+        Expression arg;
+    }
+    :
+        arg=argument { list.add(arg); }
+        (COMMA! arg=argument { list.add(arg); })*
+    ;
+
+// Argument (i.e. anything)
+argument returns [Expression exp = null] throws EvaluationException
+    :
+        exp=expr
+    ;
+
+// Indentifiers (i.e. symbols)
+identifier returns [ Expression exp = null ] throws EvaluationException
+    :
+        id:IDENTIFIER
+        {
+            exp = new IdentifierExpression(id.getText());
+        }
+    ;
+
+// Atoms
+atom returns [Expression exp = null] throws EvaluationException
+    :
+        exp=functioncall
+        |
+        exp=arrayref
+        |
+        exp=identifier
+        |
+        hex:HEX_LITERAL {   Object value;
+                            String hexStr = hex.getText();
+                            int length = hexStr.length();
+                            if(length &gt; 10) // 8 hex + leading &quot;0x&quot;
+                                value = Long.decode(hexStr);
+                            else if(length &gt; 6)
+                                value = Integer.decode(hexStr);
+                            else if(length &gt; 4)
+                                value = Short.decode(hexStr);
+                            else
+                                value = Byte.decode(hexStr);
+                            exp = new ConstantExpression(value);
+                        }
+        |
+        oct:OCTAL_LITERAL { Object value;
+                            String octalStr = oct.getText();
+                            int length = octalStr.length();
+                            if(length &gt; 11) // 10 octal + leading &quot;0&quot;
+                                value = Long.decode(octalStr);
+                            else if(length &gt; 6)
+                                value = Integer.decode(octalStr);
+                            else if(length &gt; 3)
+                                value = Short.decode(octalStr);
+                            else
+                                value = Byte.decode(octalStr);
+                            exp = new ConstantExpression(value);
+                        }
+        |
+/* TODO: allow larger precision than simply 32-bit integer. Long?
+BigInteger? */
+/* TODO: How can we use a BigInteger to determine if the value fits into
+a certain type of primitive? Just make BigInteger objects out of
+Integer.MAX_VALUE, etc? */
+        i:INT_LITERAL { exp = new ConstantExpression(new
+Integer(i.getText())); }
+        |
+        f:DECIMAL_LITERAL { exp = new ConstantExpression(new
+Double(f.getText())); }
+        |
+        s:STRING { exp = new ConstantExpression(s.getText()); }
+        |
+        LPAREN! exp=expr RPAREN!
+    ;
+
+class ExpressionLexerImpl extends Lexer;
+
+options {
+    k=2; // (2)needed for newline junk, (5) needed for booleans
+    charVocabulary = '\3'..'\377';
+}
+
+IDENTIFIER: WORDCHAR (WORDCHAR | DIGIT)*;
+
+STRING
+    :
+        DOUBLEQUOTE!
+        (CHAR_ESC | ~('\&quot;' | '\\') )*
+        DOUBLEQUOTE!
+    ;
+
+protected CHAR_ESC
+    :
+        '\\'
+        ( 'n'  { $setText(&quot;\n&quot;); }
+        | 'r'  { $setText(&quot;\r&quot;); }
+        | 't'  { $setText(&quot;\t&quot;); }
+        | 'b'  { $setText(&quot;\b&quot;); }
+        | 'f'  { $setText(&quot;\f&quot;); }
+        | '\&quot;' { $setText(&quot;\&quot;&quot;); }
+        | '\'' { $setText(&quot;\'&quot;); }
+        | '\\' { $setText(&quot;\\&quot;); }
+        )
+    ;
+
+NUMERIC_LITERAL:
+        (ZERO (OCTAL_DIGIT)+) =&gt; OCTAL_LITERAL { $setType(OCTAL_LITERAL); }
+        |
+        (ZERO Xx) =&gt; HEX_LITERAL  { $setType(HEX_LITERAL); }
+        |
+        (DOT DIGITS) =&gt; DECIMAL_LITERAL { $setType(DECIMAL_LITERAL); }
+        |
+        (DIGITS DOT) =&gt; DECIMAL_LITERAL { $setType(DECIMAL_LITERAL); }
+        |
+        (DIGITS)    { $setType(INT_LITERAL); }
+        ;
+
+/*
+NUMERIC_LITERAL:
+        (ZERO (OCTAL_DIGIT)+) =&gt; OCTAL_LITERAL { $setType(OCTAL_LITERAL); }
+        |
+        (ZERO Xx) =&gt; HEX_LITERAL  { $setType(HEX_LITERAL); }
+        |
+        ((
+            ( PLUS  { $setType(PLUS); } )
+            |
+            ( MINUS { $setType(MINUS); } )
+         )?
+            ( ( DIGITS { $setType(INT_LITERAL); } )
+              ( DOT (DIGITS)? { $setType(DECIMAL_LITERAL); } )?
+              |
+              ( ( DOT DIGITS ) =&gt; DECIMAL_LITERAL {
+$setType(DECIMAL_LITERAL); } )
+            )
+        )
+        |
+        (DIGITS)    { $setType(INT_LITERAL); }
+           ((DOT) =&gt; DECIMAL_LITERAL { $setType(DECIMAL_LITERAL); } )?
+        ;
+*/
+
+protected OCTAL_LITERAL: (ZERO (OCTAL_DIGIT)+) ;
+
+protected OCTAL_DIGIT: '0'..'7' ;
+
+protected HEX_LITERAL :  (ZERO Xx (HEX_DIGIT)+) ;
+
+protected ZERO: '0' ;
+
+protected Xx: ('x' | 'X') ;
+
+protected HEX_DIGIT: ( 'a'..'z' | 'A'..'Z' | DIGIT ) ;
+
+protected INT_LITERAL: DIGITS ;
+
+protected DECIMAL_LITERAL: ( ( DIGITS )? DOT ( DIGITS )? ) ;
+
+protected DIGITS : ( DIGIT )+ ;
+
+protected SIGN: ( PLUS | MINUS ) ;
+
+protected
+WORDCHAR:   'a'..'z' | 'A'..'Z' | '_' ;
+
+protected
+DIGIT: '0'..'9';
+
+protected
+DOT: '.' ;
+
+BANG: '!' ;
+
+COMMA: ','
+        ;
+
+LBRACKET: '['
+        ;
+
+RBRACKET: ']'
+        ;
+
+LPAREN: '('
+        ;
+
+RPAREN: ')'
+        ;
+
+PLUS: '+'
+        ;
+
+MINUS: '-'
+        ;
+
+STAR: '*'
+    ;
+
+PERCENT: '%'
+    ;
+
+SLASH: '/'
+    ;
+
+AND: '&amp;''&amp;'
+        ;
+
+OR: '|''|'
+        ;
+
+EQUALS: '='
+        ;
+
+NOT_EQUALS
+    :
+        BANG EQUALS
+    ;
+
+GREATERTHAN: '&gt;' ;
+
+LESSTHAN: '&lt;' ;
+
+GREATERTHANEQUALTO: '&gt;' '=' ;
+
+LESSTHANEQUALTO: '&lt;' '=' ;
+
+SINGLEQUOTE: '\'' ;
+
+DOUBLEQUOTE: '\&quot;' ;
+
+/*
+protected
+TRUE: 't''r''u''e'
+        ;
+
+protected
+FALSE: 'f''a''l''s''e'
+        ;
+*/
+
+WS:
+        (   ' '
+        |   '\t'
+        |   '\r' '\n' { newline(); }
+        |   '\n'      { newline(); }
+        )
+        {$setType(Token.SKIP);} //ignore this token
+    ;
+
+
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 250 bytes
+Desc: OpenPGP digital signature
+Url : <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20060302/3ec687ba/signature.bin">http://www.antlr.org/pipermail/antlr-interest/attachments/20060302/3ec687ba/signature.bin</A>
+</PRE>
+
+
+
+
+
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="015560.html">[antlr-interest] Help with circular reference in parser?
+</A></li>
+	<LI>Next message: <A HREF="015564.html">[antlr-interest] Help with circular reference in parser?
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#15562">[ date ]</a>
+              <a href="thread.html#15562">[ thread ]</a>
+              <a href="subject.html#15562">[ subject ]</a>
+              <a href="author.html#15562">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

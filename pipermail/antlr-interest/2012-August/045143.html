@@ -1,0 +1,175 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Pre-processor advice [C target]
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Pre-processor%20advice%20%5BC%20target%5D&In-Reply-To=%3Cd2e21d77e3bd6937dae3c3753f7ec17a%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="045142.html">
+   <LINK REL="Next"  HREF="045149.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Pre-processor advice [C target]</H1>
+    <B>Jim Idle</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Pre-processor%20advice%20%5BC%20target%5D&In-Reply-To=%3Cd2e21d77e3bd6937dae3c3753f7ec17a%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] Pre-processor advice [C target]">jimi at temporal-wave.com
+       </A><BR>
+    <I>Thu Aug 30 13:44:29 PDT 2012</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="045142.html">[antlr-interest] Pre-processor advice [C target]
+</A></li>
+        <LI>Next message: <A HREF="045149.html">[antlr-interest] The code for the static initializer is exceeding the 65535 bytes limit
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#45143">[ date ]</a>
+              <a href="thread.html#45143">[ thread ]</a>
+              <a href="subject.html#45143">[ subject ]</a>
+              <a href="author.html#45143">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>I would just create a couple of functions that worked off an output buffer
+and then add the text of the tokens that are in the output to that output
+buffer, adding blank lines for lines that don't make it.
+
+It looks to me like you can do that with a lexer only grammar:
+
+int switch = 0; // Inc and decrement, output only when zero
+
+
+IFDEF: '#ifdef' EXPR { process EXPR, inc/dec etc add a newline}
+
+...
+
+NL: '\n' { add a newline to preserve line numbers }|
+
+ANY : . {add this character if output is on} ;
+
+
+Should be fairly trivial unless your command set is larger than you show
+here. Also, have you thought of just coding it in m4? I doubt that using
+streams is much slower than in memory anyway except for huge numbers of
+input files.
+
+
+Jim
+
+&gt;<i> -----Original Message-----
+</I>&gt;<i> From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A> [mailto:antlr-interest-
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">bounces at antlr.org</A>] On Behalf Of Justin Murray
+</I>&gt;<i> Sent: Thursday, August 30, 2012 1:27 PM
+</I>&gt;<i> To: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest at antlr.org</A>
+</I>&gt;<i> Cc: &quot;Robert Jacobs&quot;@www.antlr.org
+</I>&gt;<i> Subject: [antlr-interest] Pre-processor advice [C target]
+</I>&gt;<i>
+</I>&gt;<i> Hello all,
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> We have a DSL at my company, for which we have our own compiler written
+</I>&gt;<i> in C/C++. It is very old, monstrous, and terribly written. A little
+</I>&gt;<i> over a year ago, I successfully replaced the lexer and parser with an
+</I>&gt;<i> ANTLR implementation, and now I am tasked with replacing the
+</I>&gt;<i> preprocessor. I am writing to ask for some general advice on the best
+</I>&gt;<i> approach for this.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> The current process is such that we read the source file from disk into
+</I>&gt;<i> a memory buffer. The preprocessor works on this buffer, doing text
+</I>&gt;<i> transformations as necessary. This string is then passed into
+</I>&gt;<i> antlr3StringStreamNew(), and the ANTLR lexer and parser take over from
+</I>&gt;<i> there, ultimately executing the semantic actions that produce our
+</I>&gt;<i> binary object code. Ideally, the preprocessor would be a drop-in
+</I>&gt;<i> replacement in this process.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> The set of preprocessor commands is relatively short, and fairly
+</I>&gt;<i> typical:
+</I>&gt;<i>
+</I>&gt;<i> #include, #define, #undef,  #ifdef, #else, #elseif, #endif, #nosubst,
+</I>&gt;<i> #subst (these last 2 basically just switch the #define substitution off
+</I>&gt;<i> and on for a block of code)
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> There are a few requirements that complicate this a bit:
+</I>&gt;<i>
+</I>&gt;<i> 1.       The original line numbers must be preserved for later stages
+</I>&gt;<i> (for error messages, and status at runtime), even after multi-line
+</I>&gt;<i> macro substitutions
+</I>&gt;<i>
+</I>&gt;<i> 2.       The rules for #define substitution are very complex. The
+</I>&gt;<i> allowed identifier for the macro name can contain any symbols, except
+</I>&gt;<i> for white space. The crazy thing is though, when searching the code
+</I>&gt;<i> text for possible substitutions, non-alphanumeric symbols are treated
+</I>&gt;<i> as both delimiters and not. The current algorithm is to identify tokens
+</I>&gt;<i> using white-space as a true delimiter, then identify all possible sub-
+</I>&gt;<i> tokens based on these partial delimiters. Each candidate sub-token is
+</I>&gt;<i> looked up in the table of defines, and if there is a match, the text is
+</I>&gt;<i> substituted. It does these largest to smallest, moving on once a
+</I>&gt;<i> substitution is found, or all possible tokens were tried. I suspect
+</I>&gt;<i> that I will still be doing this sub-token parsing and substitution by
+</I>&gt;<i> hand, since I don't think ANTLR supports overlapping tokens like these
+</I>&gt;<i> (but I would love to hear if someone has done something like this).
+</I>&gt;<i>
+</I>&gt;<i> 3.       Add support for function-like macros (text substitution with
+</I>&gt;<i> arguments).
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> I have spent some time searching the mailing lists and re-reading the
+</I>&gt;<i> ANTLR book, where I found some hints, but no clear-cut solution to my
+</I>&gt;<i> problems. String templates and TokenRewriteStream look the most
+</I>&gt;<i> promising, but as far as I can tell the TokenRewriteStream has not been
+</I>&gt;<i> implemented in the C target runtime. Can anyone suggest what options
+</I>&gt;<i> might be available to me, given these requirements?
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Thank you!
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> - Justin Murray
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+</I>&gt;<i> Unsubscribe: <A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-">http://www.antlr.org/mailman/options/antlr-interest/your-</A>
+</I>&gt;<i> email-address
+</I></PRE>
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="045142.html">[antlr-interest] Pre-processor advice [C target]
+</A></li>
+	<LI>Next message: <A HREF="045149.html">[antlr-interest] The code for the static initializer is exceeding the 65535 bytes limit
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#45143">[ date ]</a>
+              <a href="thread.html#45143">[ thread ]</a>
+              <a href="subject.html#45143">[ subject ]</a>
+              <a href="author.html#45143">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

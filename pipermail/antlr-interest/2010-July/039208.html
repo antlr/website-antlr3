@@ -1,0 +1,142 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] Lex Matching Issues
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Lex%20Matching%20Issues&In-Reply-To=%3C4C44A887.80602%40oracle.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="039203.html">
+   <LINK REL="Next"  HREF="039209.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] Lex Matching Issues</H1>
+    <B>Ron Hunter-Duvar</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20Lex%20Matching%20Issues&In-Reply-To=%3C4C44A887.80602%40oracle.com%3E"
+       TITLE="[antlr-interest] Lex Matching Issues">ron.hunter-duvar at oracle.com
+       </A><BR>
+    <I>Mon Jul 19 12:33:27 PDT 2010</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="039203.html">[antlr-interest] Lex Matching Issues
+</A></li>
+        <LI>Next message: <A HREF="039209.html">[antlr-interest] Lex Matching Issues
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#39208">[ date ]</a>
+              <a href="thread.html#39208">[ thread ]</a>
+              <a href="subject.html#39208">[ subject ]</a>
+              <a href="author.html#39208">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>
+Cid Dennis wrote:
+&gt;<i> So I am new to ANTLR and have created a grammar but found a strange issue.  Because of the structure of the language I am parsing there can be tokens that match reserved works as variables but only when they are in a sub rule that does not use the reserved word.
+</I>&gt;<i>
+</I>&gt;<i> ...
+</I>Hi Cid,
+
+I had to deal with a similar situation, and neither of the solutions 
+suggested in the wiki worked for me 
+(<A HREF="http://www.antlr.org/wiki/pages/viewpage.action?pageId=1741">http://www.antlr.org/wiki/pages/viewpage.action?pageId=1741</A>), and I 
+haven't seen any other solutions described in the email. After a lot of 
+experimentation I came up with a hybrid solution.
+
+One approach described is to define identifier like this:
+
+identifier : KEY1 | KEY2 | ... | ID ;
+
+The reason that this doesn't work is that where you have a production 
+that says &quot;( KEY1 | identifier ) &quot;Antlr reports a conflict and disables 
+the second alternative unless it can resolve the conflict with its 
+extended lookahead. So depending on which order you put them either KEY1 
+or identifier gets disabled, neither of which gives you a working 
+parser. The only way you would be able to make this work would be to 
+define a different identifier production for every different situation, 
+with the conflicting keywords removed. That might work for a handful of 
+different keywords, but doesn't scale.
+
+The other suggested solution is to create productions like this:
+
+keyIF : {input.LT(1).getText().equals(&quot;if&quot;)}? ID ;
+keyCALL : {input.LT(1).getText().equals(&quot;call&quot;)}? ID ;
+
+This is even worse than the other solution. I don't think there is any 
+way to make this work at all. The problem is that the semantic predicate 
+doesn't get applied when doing looking ahead in other productions, only 
+when actually trying to make the keyXXX productions. So everywhere you 
+have &quot;( key1 | identifier )&quot;, to Antlr this looks like &quot;( ID | ID )&quot;. 
+This completely throws the lookahead for a loop. In many cases it will 
+actually generate a parser without warnings, but the actual lookahead 
+it's doing is just wrong. For example, I had a case something like 
+&quot;(keyA keyB LEFT_BRACKET) | (keyC keyD keyE)&quot;. To Antler's lookahead 
+analysis this said &quot;(ID ID LEFT_BRACKET)|(ID ID ID)&quot;, so it generated 
+lookahead that basically said &quot;if (LT(3) == LEFT_BRACKET) option1 else 
+option2&quot;. So it was taking other things like &quot;C D (&quot; and trying to parse 
+them as &quot;A B (&quot;, then of course throwing run time exceptions on the 
+failed semantic predicates.
+
+The hybrid approach I came up with was to define the keywords as 
+separate token types and define an identifier rule like in the first 
+approach, but then also create keyword productions similar to the second 
+approach:
+
+keyIF: {input.LT(1).getText().equals(&quot;if&quot;)}? IF ;
+
+I know at first glance the semantic predicate seems pointless. But it 
+causes Antlr to ignore the conflicts that it would have reported 
+otherwise, resulting in a working grammar.
+
+There are just two caveats with this approach. First, it can also 
+suppress reporting of real conflicts, causing bugs in your parser. To 
+avoid this it's a good idea to first develop and test the grammar 
+without the semantic predicates in the keyword rules and without the 
+keywords as alternatives in the identifier rule. Once you have the 
+grammar working this way with no conflicts, then it's safe to put the 
+other rules that handle the non-reserved keywords.
+
+Second, all those semantic predicates can cause the size of the 
+generated parser to blow up. It can cause syntactic predicates to have a 
+lot of special states and make the DFAs huge. This may only be a problem 
+with the Java runtime, where the JVM imposes extreme size limits on 
+class size (64KB). With large grammars or complex lookahead situations 
+it can result in an uncompilable Java class being generated.
+
+Hope this helps,
+
+Ron
+
+-- 
+Ron Hunter-Duvar | Software Developer V | 403-272-6580
+Oracle Service Engineering
+Gulf Canada Square 401 - 9th Avenue S.W., Calgary, AB, Canada T2P 3C5
+
+All opinions expressed here are mine, and do not necessarily represent
+those of my employer.
+
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="039203.html">[antlr-interest] Lex Matching Issues
+</A></li>
+	<LI>Next message: <A HREF="039209.html">[antlr-interest] Lex Matching Issues
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#39208">[ date ]</a>
+              <a href="thread.html#39208">[ thread ]</a>
+              <a href="subject.html#39208">[ subject ]</a>
+              <a href="author.html#39208">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

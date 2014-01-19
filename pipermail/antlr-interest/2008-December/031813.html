@@ -1,0 +1,170 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] wildcard in tree grammar
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20wildcard%20in%20tree%20grammar&In-Reply-To=%3C86403CA0939415448BCCB83855EFE09A64E985%40Bloodymary.ironwillgames.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="031812.html">
+   <LINK REL="Next"  HREF="031816.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] wildcard in tree grammar</H1>
+    <B>Sam Harwell</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20wildcard%20in%20tree%20grammar&In-Reply-To=%3C86403CA0939415448BCCB83855EFE09A64E985%40Bloodymary.ironwillgames.com%3E"
+       TITLE="[antlr-interest] wildcard in tree grammar">sharwell at pixelminegames.com
+       </A><BR>
+    <I>Mon Dec  1 09:57:29 PST 2008</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="031812.html">[antlr-interest] wildcard in tree grammar
+</A></li>
+        <LI>Next message: <A HREF="031816.html">[antlr-interest] wildcard in tree grammar
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#31813">[ date ]</a>
+              <a href="thread.html#31813">[ thread ]</a>
+              <a href="subject.html#31813">[ subject ]</a>
+              <a href="author.html#31813">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Here's a fictional example of why you might want to distinguish &quot;any
+node or tree&quot; from &quot;any node&quot; in a tree parser.
+
+Input: (3)+(2)
+Resulting Tree: ^(+ ^(expr 3) ^(expr 2))
+Goal: pattern rewrite in a filter tree parser to remove some nodes
+resulting from unnecessary parentheses.
+
+Pattern:
+
+remove_parens_atomicblock
+  : ^(binary_op ^(expr left=.) ^(expr right=.))
+    -&gt; ^(binary_op $left $right)
+  ;
+
+Result: ^(+ 3 2)
+
+This works as long as '.' means &quot;any node&quot;, but may fail due to order of
+operations if the parenthesized expression is not a primary expression.
+
+On a sidenote, the reason I said ^(.) is not currently allowed in a tree
+parser earlier is this:
+
+ANTLR.g3 line 534:
+
+tree_
+	:	TREE_BEGIN^
+		treeRoot ( element )+
+		RPAREN!
+	;
+
+One possible resolution add a 'WILDCARD_TREE' rule in ANTLR.g3 as
+follows, and add it as an alt to 'terminal'. This clears up both the
+wildcard-as-root issue and the &quot;any node&quot;/&quot;any node or tree&quot; ambiguity.
+It would be allowed anywhere in a tree parser except as a tree root.
+
+WILDCARD_TREE : '^.';
+
+This has the added advantage in the Tool's source that WILDCARD always
+refers to a single element of the source stream.
+
+Sam
+
+-----Original Message-----
+From: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>
+[mailto:<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-interest-bounces at antlr.org</A>] On Behalf Of Terence Parr
+Sent: Monday, December 01, 2008 10:44 AM
+To: Gavin Lambert
+Cc: antlr-interest Interest
+Subject: Re: [antlr-interest] wildcard in tree grammar
+
+
+On Nov 30, 2008, at 11:15 PM, Gavin Lambert wrote:
+
+&gt;<i> At 09:29 1/12/2008, Terence Parr wrote:
+</I>&gt;<i> &gt;not sure.  I guess i left out as it's weird.  When would you write:
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;^(. ID).  It's always the root that says what kind of thing it is,
+</I>&gt;<i> &gt;
+</I>&gt;<i> &gt;right?
+</I>&gt;<i>
+</I>&gt;<i> This is a completely fabricated example, but your tree structure  
+</I>&gt;<i> might dictate that at that position you know it's either a  
+</I>&gt;<i> ^(ORDER1FN ID) or a ^(ORDER2FN ID) or a ^(ORDER3FN ID).  In one tree  
+</I>&gt;<i> grammar you care about the distinction, while in another you don't.
+</I>
+'.' is great to avoid a subtree or any random operand node you don't  
+care about.  As a root, it can only be a node so it's pretty easy to  
+give the set of valid roots if necessary.  Operands can be subtrees  
+and those can be whole grammars; harder to ignore.  Remember that AST  
+construction is all about identifying the ops and pseudo-ops in your  
+program, then making them roots.  Why would you ever want to ingore  
+what operation your looking at?
+
+Oh, I just found one.  You want to find all ID refs...well, actually  
+that is just:
+
+id : ID ;
+
+If you don't care about the root, just don't give it, right?
+
+x : ^(. ID) ;
+
+is identical to ID except it won't match ID as a root but plain ID  
+would.
+
+See my drift here?  Random root with known children == children.
+
+&gt;<i> Of course you could just write ^((ORDER1FN | ORDER2FN | ORDER3FN)  
+</I>&gt;<i> ID), but if you know that there will never be any other  
+</I>&gt;<i> possibilities then it's simpler to just write ^(. ID), especially as  
+</I>&gt;<i> the number of variations increases.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> And then of course there's Oliver's example, where he just wanted to  
+</I>&gt;<i> traverse the (sub)tree regardless of structure (presumably to pretty- 
+</I>&gt;<i> print it or something).
+</I>
+If you don't care about structure, one could argue why you're using a  
+grammar to do that ;)
+
+&gt;<i> They might be unusual cases, admittedly, but they seem reasonable.
+</I>
+I'm still unconvinced I'm afraid. ;)
+
+Ter
+
+
+List: <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">http://www.antlr.org/mailman/listinfo/antlr-interest</A>
+Unsubscribe:
+<A HREF="http://www.antlr.org/mailman/options/antlr-interest/your-email-addr">http://www.antlr.org/mailman/options/antlr-interest/your-email-addr</A>
+ess
+
+</PRE>
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="031812.html">[antlr-interest] wildcard in tree grammar
+</A></li>
+	<LI>Next message: <A HREF="031816.html">[antlr-interest] wildcard in tree grammar
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#31813">[ date ]</a>
+              <a href="thread.html#31813">[ thread ]</a>
+              <a href="subject.html#31813">[ subject ]</a>
+              <a href="author.html#31813">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>

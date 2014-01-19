@@ -1,0 +1,339 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+ <HEAD>
+   <TITLE> [antlr-interest] [antlr-dev] Syntax highlighting and	performance possibilities
+   </TITLE>
+   <LINK REL="Index" HREF="index.html" >
+   <LINK REL="made" HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5Bantlr-dev%5D%20Syntax%20highlighting%20and%0A%09performance%20possibilities&In-Reply-To=%3C5d9afe010905221409q2d65c05bw834a3612a0f0e755%40mail.gmail.com%3E">
+   <META NAME="robots" CONTENT="index,nofollow">
+   <META http-equiv="Content-Type" content="text/html; charset=us-ascii">
+   <LINK REL="Previous"  HREF="034592.html">
+   <LINK REL="Next"  HREF="034595.html">
+ </HEAD>
+ <BODY BGCOLOR="#ffffff">
+   <H1>[antlr-interest] [antlr-dev] Syntax highlighting and	performance possibilities</H1>
+    <B>George Scott</B> 
+    <A HREF="mailto:antlr-interest%40antlr.org?Subject=Re:%20%5Bantlr-interest%5D%20%5Bantlr-dev%5D%20Syntax%20highlighting%20and%0A%09performance%20possibilities&In-Reply-To=%3C5d9afe010905221409q2d65c05bw834a3612a0f0e755%40mail.gmail.com%3E"
+       TITLE="[antlr-interest] [antlr-dev] Syntax highlighting and	performance possibilities">george.scott at gmail.com
+       </A><BR>
+    <I>Fri May 22 14:09:27 PDT 2009</I>
+    <P><UL>
+        <LI>Previous message: <A HREF="034592.html">[antlr-interest] Syntax highlighting and performance possibilities
+</A></li>
+        <LI>Next message: <A HREF="034595.html">[antlr-interest] [antlr-dev] Syntax highlighting and	performance possibilities
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#34593">[ date ]</a>
+              <a href="thread.html#34593">[ thread ]</a>
+              <a href="subject.html#34593">[ subject ]</a>
+              <a href="author.html#34593">[ author ]</a>
+         </LI>
+       </UL>
+    <HR>  
+<!--beginarticle-->
+<PRE>Sam,
+Have you looked at Incremental lexing?  I think it provides very good
+performance and used by a number of IDEs.  A great reference on incremental
+lexing is this paper:
+
+<A HREF="http://harmonia.cs.berkeley.edu/papers/twagner-lexing.pdf">http://harmonia.cs.berkeley.edu/papers/twagner-lexing.pdf</A>
+
+To reduce memory you can use flyweight tokens (one token instance shared by
+all token streams) for token types whose length does not vary.  You can use
+this for keywords, common white-space patterns such as a single-space, etc.
+ The trade-off is that you have to compute the start/stop indexes for tokens
+based on a nearby non-flyweight token and the known-length of the flyweight.
+ Generally, not a problem since syntax highlighting finds a start token
+given a line number and walks forward in token order, so you can keep a
+running count.
+
+When using incremental lexing with syntax highlighting, you generally only
+have to re-lex from the point of the edit to the token containing the last
+visible character on screen, so there is not a large cost even if editing at
+the beginning of the file.  As the user scrolls the document, you continue
+lexing from the last token.
+
+It is pretty straight-forward to modify the ANTLR runtime to use these
+techniques.
+
+George
+
+
+On Fri, May 22, 2009 at 1:23 PM, Sam Harwell &lt;<A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">sharwell at pixelminegames.com</A>&gt;wrote:
+
+&gt;<i>  As I mentioned once in the past, I&#8217;ve been working on improving lexer
+</I>&gt;<i> performance for applications where the full information/features in
+</I>&gt;<i> Lexer/CommonToken is not required. A key example is syntax highlighters
+</I>&gt;<i> which have strict performance requirements and must be updated as a person
+</I>&gt;<i> types. I&#8217;ll start with a basic description of Visual Studio&#8217;s syntax
+</I>&gt;<i> highlighting mechanism and the information a lexer must provide it. Then
+</I>&gt;<i> I&#8217;ll describe some pathological use cases that should be avoided regardless
+</I>&gt;<i> of the lexer used, as the algorithms involved have more of an impact than
+</I>&gt;<i> simply improving the lexer&#8217;s per-line processing speed. Finally, I&#8217;ll
+</I>&gt;<i> describe the &#8220;SlimLexer&#8221; and how one could potentially use it to gain an
+</I>&gt;<i> additional performance edge after the other issues are addressed.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> 1         Syntax Highlighting in Visual Studio
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> The syntax highlighter for a programming language in Visual Studio is
+</I>&gt;<i> called a *colorizer*, and is one item provided by a *language service*.
+</I>&gt;<i> Visual Studio&#8217;s syntax highlighting API uses a per-line scanning mechanism.
+</I>&gt;<i> The IDE itself directly stores (caches) a few pieces of information, where a
+</I>&gt;<i> few additional items can be easily derived from them. The Visual Studio SDK
+</I>&gt;<i> provides a wrapper for the core API that is somewhat more friendly when
+</I>&gt;<i> using a tokenizing lexer for syntax highlighting.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> 1.1       Items internally cached by Visual Studio IDE
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Visual Studio maintains an &#8220;attribute cache&#8221; describing the color of each
+</I>&gt;<i> character on the lines currently on the screen. Naturally, as the user
+</I>&gt;<i> scroll the window vertically, this cache is continually updated. The
+</I>&gt;<i> information describing a character&#8217;s attributes is stored as a 32-bit
+</I>&gt;<i> integer. The customizable elements are:
+</I>&gt;<i>
+</I>&gt;<i> &#183;         The color, stored as an index (range 0-255 inclusive) to a
+</I>&gt;<i> customizable lookup table of colors available for use in the document.
+</I>&gt;<i>
+</I>&gt;<i> &#183;         A Boolean value of whether or not to show a line after the
+</I>&gt;<i> current line. If you&#8217;ve used Visual Basic in Visual Studio, this is the
+</I>&gt;<i> horizontal line that follows each procedure. It is a full-width underlining,
+</I>&gt;<i> similar to the &lt;hr /&gt; HTML element, only with tighter spacing.
+</I>&gt;<i>
+</I>&gt;<i> &#183;         A Boolean value of whether the character is part of code or part
+</I>&gt;<i> of &#8220;human-language text&#8221; (a comment). This affects how the IDE handles
+</I>&gt;<i> word-select mode, and improper use is the elusive source of some miserable
+</I>&gt;<i> bugs. VSPhp actually suffers from this problem and it&#8217;s quite irritating.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> The IDE also maintains a &#8220;colorizer state&#8221; per line of text. The state is a
+</I>&gt;<i> 32-bit value exclusively reserved for the language service. The intent here
+</I>&gt;<i> is the colorizer state allows a lexer to parse any line of text in the file
+</I>&gt;<i> in isolation, without requiring any lookahead/behind to other lines. A
+</I>&gt;<i> simple example of this is in multiline (block) comments. If a multiline
+</I>&gt;<i> comment reaches the end of line X without closing, then the colorizer state
+</I>&gt;<i> can include a flag that tells line X+1 to start the line inside a multiline
+</I>&gt;<i> comment. Even though line X+1 doesn&#8217;t contain the opening token of the
+</I>&gt;<i> comment (say /*), it can properly color the line without ever looking back
+</I>&gt;<i> to line X.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Definition: Line X has a *valid cache state* iff line X was colorized *
+</I>&gt;<i> after* the last time its cached state value was *changed*.
+</I>&gt;<i>
+</I>&gt;<i> Definition: The colorizer *state at the start of line X is valid* iff the
+</I>&gt;<i> colorizer state at the end of all lines 0-(X-1) is valid AND line X has a
+</I>&gt;<i> valid cache state.
+</I>&gt;<i>
+</I>&gt;<i> Definition: The colorizer *state at the end of line X is valid* iff the
+</I>&gt;<i> colorizer state at the beginning of line X is valid AND the text on line X
+</I>&gt;<i> has not changed since the end state was last computed.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Here is the process for colorizing line X:
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> 1.       If the colorizer state at the end of line X-1 is not valid,
+</I>&gt;<i> colorize line X-1 to make it valid.
+</I>&gt;<i>
+</I>&gt;<i> 2.       Provide the state at the start of line X, plus the text on the
+</I>&gt;<i> line X to the language service&#8217;s colorizer. The colorizer&#8217;s result includes
+</I>&gt;<i> the state at the end of line X.
+</I>&gt;<i>
+</I>&gt;<i> 3.       If the new state at the end of line X is different from the
+</I>&gt;<i> cached value for the state at the beginning of line X+1, mark line X+1 as
+</I>&gt;<i> having an *invalid colorizer state*, and store the new state in place of
+</I>&gt;<i> the old.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> 1.2       Additional items the user can easily compute
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> The syntax highlighter can take advantage of the user state update
+</I>&gt;<i> mechanism to effectively track the state per character on the line (or per
+</I>&gt;<i> token), as follows:
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> StateAtPosition( line, column ) = StateAtEndOfLine( StartState(line),
+</I>&gt;<i> TextOnLine(line).Substring(0,column) )
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> 1.3       How the SDK exposes these features
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> The Visual Studio SDK offers a Colorizer class and an IScanner interface to
+</I>&gt;<i> simplify the creation of syntax highlighters. Since lexers generally operate
+</I>&gt;<i> on tokens as opposed to individual characters, there is a disconnect between
+</I>&gt;<i> what people are used to and what Visual Studio&#8217;s cache stores. These
+</I>&gt;<i> interfaces allow the language service to provide information about the
+</I>&gt;<i> tokens on a line, which it then internally breaks into characters and passes
+</I>&gt;<i> the information to Visual Studio. Some additional things to note about using
+</I>&gt;<i> this wrapper:
+</I>&gt;<i>
+</I>&gt;<i> &#183;         The wrapper does not expose (at all) the Boolean value for the
+</I>&gt;<i> underline following a line.
+</I>&gt;<i>
+</I>&gt;<i> &#183;         The wrapper hides the Boolean value for whether a line is
+</I>&gt;<i> human-language text, but the method is generally successful.
+</I>&gt;<i>
+</I>&gt;<i> &#183;         The wrapper exposes the ability to set the background color
+</I>&gt;<i> following the end of a line, but only via an undocumented/sneaky technique
+</I>&gt;<i> that you&#8217;d only see if you saw the wrapper&#8217;s source code and knew about the
+</I>&gt;<i> underlying interfaces.
+</I>&gt;<i>
+</I>&gt;<i> &#183;         The wrapper takes advantage of the mechanism in section 1.2 to
+</I>&gt;<i> provide an additional 32-bit user-defined value per token. I personally use
+</I>&gt;<i> this to keep track of ANTLR&#8217;s token type, but there aren&#8217;t any real
+</I>&gt;<i> requirements since the value is never used by Visual Studio or its SDK.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> 2         High Performance Syntax Highlighting
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> A high performance syntax highlighter must avoid cascading updates where
+</I>&gt;<i> possible. A cascading update is incurred when a change in the document&#8217;s
+</I>&gt;<i> text causes the state at multiple lines after the altered line to change.
+</I>&gt;<i> Sometimes this is unavoidable; for example, adding a /* to a line in C++ can
+</I>&gt;<i> cause multiple lines afterwards to become comment lines instead of code
+</I>&gt;<i> lines, all of which must be updated. Other times, this is avoidable. For
+</I>&gt;<i> example, storing the line number in the state forces the state for all lines
+</I>&gt;<i> after line X to be updated when a new line is added immediately following
+</I>&gt;<i> line X. If the line number itself does not change the color of characters on
+</I>&gt;<i> the line, then the line number should not be part of the colorizer state for
+</I>&gt;<i> performance reasons.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> For a document with M lines and a maximum line width of W, this makes an
+</I>&gt;<i> algorithmic difference of O(M) instead of O(1). You might only test your
+</I>&gt;<i> colorizer with short test documents, but are your users programming in
+</I>&gt;<i> documents with 10,000 or more lines? I know some generated ANTLR code files
+</I>&gt;<i> in my language services are well in excess of 30,000 lines, and some
+</I>&gt;<i> UnrealScript files I&#8217;ve seen have nearly 20,000 lines (my most complete
+</I>&gt;<i> language service to date is for UnrealScript).
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> Even some of my own language services suffer from this problem; be aware
+</I>&gt;<i> that it can be difficult to redesign your language service after you start
+</I>&gt;<i> using the colorizer state for other purposes (like line numbers), so make
+</I>&gt;<i> sure your state design is correct from the start. This is one of many areas
+</I>&gt;<i> where I&#8217;ve formed new/improved ideas but haven&#8217;t been able to incorporate
+</I>&gt;<i> them in my largest language service due to the intricate relationships
+</I>&gt;<i> between various IntelliSense features.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> 3         High Performance Lexing
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> I&#8217;ve observed that the Lexer/CommonToken features are overkill for certain
+</I>&gt;<i> applications, including syntax highlighting. The simplest example is
+</I>&gt;<i> single-line syntax highlighters have no need to store the line number as
+</I>&gt;<i> part of the token. In order to reduce memory usage and improve speed for
+</I>&gt;<i> this type of application, I&#8217;ve created a SlimLexer and SlimToken for testing
+</I>&gt;<i> purposes. These currently have the following features:
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> &#183;         The SlimToken is a C# struct, which is a stack-allocated value
+</I>&gt;<i> type that is passed to methods and returned by value. As long as you don&#8217;t
+</I>&gt;<i> force boxing by casting it to Object, it never requires heap allocation.
+</I>&gt;<i>
+</I>&gt;<i> &#183;         The SlimToken is precisely 64-bits to allow efficient
+</I>&gt;<i> pass-by-value in registers. As used in my testing, it stores:
+</I>&gt;<i>
+</I>&gt;<i> o   Token type (16 bits)
+</I>&gt;<i>
+</I>&gt;<i> o   Token channel (16 bits)
+</I>&gt;<i>
+</I>&gt;<i> o   Start index (16 bits)
+</I>&gt;<i>
+</I>&gt;<i> o   Stop index (16 bits)
+</I>&gt;<i>
+</I>&gt;<i> &#183;         The SlimLexer&#8217;s tokens are strongly typed to SlimToken to
+</I>&gt;<i> eliminate the need to box values.
+</I>&gt;<i>
+</I>&gt;<i> &#183;         The SlimLexer&#8217;s most frequently called methods are non-virtual,
+</I>&gt;<i> allowing the runtime to easily inline its small methods.
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> For applications that only need this information (or even a subset of
+</I>&gt;<i> that), SlimLexer/SlimToken appears to operate about 6 times faster than
+</I>&gt;<i> Lexer/CommonToken in about 1/4 the memory. I&#8217;m currently evaluating the
+</I>&gt;<i> following items:
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> 1.       Is this layout of SlimToken the best choice? I certainly believe
+</I>&gt;<i> 64-bits is the optimal width for a high-performance pass-by-value token.
+</I>&gt;<i> However, if SlimToken only applies to a subset X of potential lexer
+</I>&gt;<i> applications Y, then I want to make X as large as possible so more people
+</I>&gt;<i> can benefit from its significant performance improvement.
+</I>&gt;<i>
+</I>&gt;<i> 2.       Do SlimLexer/SlimToken have a place in the ANTLR runtime, or are
+</I>&gt;<i> they more suited to separate distribution?
+</I>&gt;<i>
+</I>&gt;<i> 3.       What are the possibilities, if any, for a SlimParser?
+</I>&gt;<i>
+</I>&gt;<i> a.       Could a SlimParser take advantage of an unboxed SlimToken?
+</I>&gt;<i>
+</I>&gt;<i> b.      Could a SlimParser have some unboxed output?
+</I>&gt;<i>
+</I>&gt;<i> c.       In my experience, syntax highlighters don&#8217;t need a parser, and
+</I>&gt;<i> the parsers I&#8217;ve used need more complete token information than SlimToken is
+</I>&gt;<i> able to provide. Is this a general view?
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>&gt;<i> _______________________________________________
+</I>&gt;<i> antlr-dev mailing list
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-interest">antlr-dev at antlr.org</A>
+</I>&gt;<i> <A HREF="http://www.antlr.org/mailman/listinfo/antlr-dev">http://www.antlr.org/mailman/listinfo/antlr-dev</A>
+</I>&gt;<i>
+</I>&gt;<i>
+</I>-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <A HREF="http://www.antlr.org/pipermail/antlr-interest/attachments/20090522/152a87a8/attachment.html">http://www.antlr.org/pipermail/antlr-interest/attachments/20090522/152a87a8/attachment.html</A> 
+</PRE>
+
+
+
+
+
+
+
+<!--endarticle-->
+    <HR>
+    <P><UL>
+        <!--threads-->
+	<LI>Previous message: <A HREF="034592.html">[antlr-interest] Syntax highlighting and performance possibilities
+</A></li>
+	<LI>Next message: <A HREF="034595.html">[antlr-interest] [antlr-dev] Syntax highlighting and	performance possibilities
+</A></li>
+         <LI> <B>Messages sorted by:</B> 
+              <a href="date.html#34593">[ date ]</a>
+              <a href="thread.html#34593">[ thread ]</a>
+              <a href="subject.html#34593">[ subject ]</a>
+              <a href="author.html#34593">[ author ]</a>
+         </LI>
+       </UL>
+
+<hr>
+<a href="http://www.antlr.org/mailman/listinfo/antlr-interest">More information about the antlr-interest
+mailing list</a><br>
+</body></html>
